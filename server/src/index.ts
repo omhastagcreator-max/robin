@@ -34,13 +34,15 @@ const PORT = parseInt(process.env.PORT || '4002', 10);
 
 // ── CORS ─────────────────────────────────────────────────────────────────────
 const corsOrigin = (origin: string | undefined, cb: (e: Error | null, allow?: boolean) => void) => {
-  // Allow requests with no origin (curl, Postman, server-to-server)
   if (!origin) return cb(null, true);
-  // Allow any localhost port in development
+  // Any localhost port (dev)
   if (/^http:\/\/localhost:\d+$/.test(origin)) return cb(null, true);
-  // Allow any Vercel preview/production domain
+  // Vercel preview + production
   if (/\.vercel\.app$/.test(origin)) return cb(null, true);
-  // Allow the explicitly configured FRONTEND_URL
+  // Custom production domain
+  if (/^https?:\/\/(robin\.)?hastagcreator\.com$/.test(origin)) return cb(null, true);
+  if (/\.hastagcreator\.com$/.test(origin)) return cb(null, true);
+  // Explicit FRONTEND_URL env var
   if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) return cb(null, true);
   cb(new Error(`CORS: origin ${origin} not allowed`));
 };
