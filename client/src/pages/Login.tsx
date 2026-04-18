@@ -20,10 +20,12 @@ const DEMO_ACCOUNTS = [
 function LoginInner() {
   const { login, user, role, loginWithToken } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
-  const [showPw, setShowPw]     = useState(false);
-  const [loading, setLoading]   = useState(false);
+  const [email, setEmail]           = useState('');
+  const [password, setPassword]     = useState('');
+  const [showPw, setShowPw]         = useState(false);
+  const [loading, setLoading]       = useState(false);
+  const [errMsg, setErrMsg]         = useState('');
+  const [waking, setWaking]         = useState(false);   // Render cold-start
 
   useEffect(() => {
     if (user) navigate(dashboardForRole(role), { replace: true });
@@ -31,11 +33,25 @@ function LoginInner() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) { toast.error('Please fill in all fields'); return; }
+    if (!email || !password) { setErrMsg('Please enter your email and password'); return; }
+    setErrMsg('');
     setLoading(true);
+    setWaking(false);
+
+    // If takes > 4s, likely Render is cold-starting — show friendly message
+    const wakingTimer = setTimeout(() => setWaking(true), 4000);
+
     const { error } = await login(email, password);
+    clearTimeout(wakingTimer);
+    setWaking(false);
     setLoading(false);
-    if (error) { toast.error(error); return; }
+
+    if (error) {
+      const isNetwork = error.toLowerCase().includes('network') || error === 'Login failed';
+      setErrMsg(isNetwork ? 'Unable to reach server. Please try again in a moment.' : error);
+      toast.error(isNetwork ? 'Network error — server may be starting up, try again in 10s' : error);
+      return;
+    }
     navigate(dashboardForRole(role), { replace: true });
   };
 
@@ -112,8 +128,25 @@ function LoginInner() {
 
             <button type="submit" disabled={loading}
               className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2 shadow-md shadow-primary/20">
-              {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Signing in…</> : 'Sign In'}
+              {loading
+                ? waking
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Server starting up…</>
+                  : <><Loader2 className="h-4 w-4 animate-spin" /> Signing in…</>
+                : 'Sign In'}
             </button>
+
+            {/* Inline error message */}
+            {errMsg && (
+              <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
+                className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl px-4 py-2.5 text-center">
+                {errMsg}
+              </motion.div>
+            )}
+            {waking && (
+              <p className="text-center text-[11px] text-amber-600">
+                🔄 Server is waking up (free tier). This may take up to 30 seconds on first use.
+              </p>
+            )}
           </form>
 
           {/* Google Sign-In */}
