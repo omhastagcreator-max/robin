@@ -11,10 +11,14 @@ import * as api from '@/api';
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 const DEMO_ACCOUNTS = [
-  { label: 'Admin',    email: 'admin@robin.app',    password: 'Admin1234!',    color: 'bg-violet-100 text-violet-700 border-violet-200 hover:bg-violet-200' },
-  { label: 'Employee', email: 'employee@robin.app', password: 'Employee1234!', color: 'bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200' },
-  { label: 'Client',   email: 'client@robin.app',   password: 'Client1234!',   color: 'bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200' },
-  { label: 'Sales',    email: 'sales@robin.app',     password: 'Sales1234!',    color: 'bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200' },
+  // Real team members — primary
+  { label: 'Rahul',    sub: 'Admin / Manager',      email: 'rahul@hastag.in',    password: 'Rahul@1234',    color: 'bg-violet-100 text-violet-700 border-violet-200 hover:bg-violet-200' },
+  { label: 'Rishi',    sub: 'Sales',                email: 'rishi@hastag.in',    password: 'Rishi@1234',    color: 'bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200' },
+  { label: 'Sakshi',   sub: 'Meta Ads',             email: 'sakshi@hastag.in',   password: 'Sakshi@1234',   color: 'bg-pink-100 text-pink-700 border-pink-200 hover:bg-pink-200' },
+  { label: 'Priyanka', sub: 'Influencer Mktg',      email: 'priyanka@hastag.in', password: 'Priyanka@1234', color: 'bg-rose-100 text-rose-700 border-rose-200 hover:bg-rose-200' },
+  { label: 'Om',       sub: 'Web Developer',        email: 'om@hastag.in',       password: 'Om@1234',       color: 'bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200' },
+  // Generic demo
+  { label: 'Client',   sub: 'Demo Client',          email: 'client@robin.app',   password: 'Client1234!',   color: 'bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200' },
 ];
 
 function LoginInner() {
@@ -174,21 +178,22 @@ function LoginInner() {
           {/* Divider */}
           <div className="flex items-center gap-3 my-5">
             <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-muted-foreground">Quick access</span>
+            <span className="text-xs text-muted-foreground">Quick access — team members</span>
             <div className="flex-1 h-px bg-border" />
           </div>
 
-          {/* Demo accounts */}
-          <div className="grid grid-cols-2 gap-2">
+          {/* Team account quick-fill buttons */}
+          <div className="grid grid-cols-3 gap-2">
             {DEMO_ACCOUNTS.map(acc => (
-              <button key={acc.label} type="button" onClick={() => fillDemo(acc)}
-                className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all ${acc.color}`}>
-                {acc.label}
+              <button key={acc.email} type="button" onClick={() => fillDemo(acc)}
+                className={`px-2 py-2.5 rounded-xl text-xs font-medium border transition-all text-left ${acc.color}`}>
+                <p className="font-bold">{acc.label}</p>
+                {'sub' in acc && <p className="opacity-60 text-[10px] leading-tight mt-0.5 truncate">{acc.sub}</p>}
               </button>
             ))}
           </div>
-          <p className="text-center text-[11px] text-muted-foreground/70 mt-3">
-            Click a role above to auto-fill credentials, then sign in
+          <p className="text-center text-[11px] text-muted-foreground/70 mt-2">
+            Click a name to auto-fill credentials, then sign in
           </p>
         </div>
       </motion.div>
