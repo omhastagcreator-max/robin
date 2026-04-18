@@ -132,3 +132,4 @@ export const createInfluencer   = (d: Record<string, unknown>)            => api
 export const updateInfluencer   = (id: string, d: Record<string, unknown>)=> api.put(`/influencers/${id}`, d).then(r => r.data);
 export const deleteInfluencer   = (id: string)                            => api.delete(`/influencers/${id}`).then(r => r.data);
 export const influencerStats    = ()                                       => api.get('/influencers/stats').then(r => r.data);
+export const createUser = (d: Record<string, unknown>) => api.post('/users', d).then(r => r.data);

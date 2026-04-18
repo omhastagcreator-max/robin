@@ -3,6 +3,35 @@ import { AuthRequest } from '../middleware/authMiddleware';
 import User from '../models/User';
 import Session from '../models/Session';
 import ProjectTask from '../models/ProjectTask';
+import bcrypt from 'bcryptjs';
+import Lead from '../models/Lead';
+import Project from '../models/Project';
+
+// POST /api/users  (admin creates a new user — client, employee, etc.)
+export async function createUser(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const { name, email, password, role = 'client', team = '', phone = '', company = '', department = '', fromLeadId } = req.body;
+    if (!name || !email || !password) { res.status(400).json({ error: 'name, email and password are required' }); return; }
+
+    const exists = await User.findOne({ email: email.toLowerCase() });
+    if (exists) { res.status(409).json({ error: 'A user with this email already exists' }); return; }
+
+    // Inherit org from the creating admin
+    const admin = await User.findById(req.user!.id).select('organizationId');
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await User.create({
+      name, email: email.toLowerCase(), passwordHash, role, team, phone, department,
+      company, organizationId: admin?.organizationId, isActive: true,
+    });
+
+    // If created from a won lead — mark the lead as converted
+    if (fromLeadId) {
+      await Lead.findByIdAndUpdate(fromLeadId, { convertedToClientId: String(user._id) });
+    }
+
+    res.status(201).json({ ...user.toObject(), passwordHash: undefined, generatedPassword: password });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
 
 // GET /api/users
 export async function listUsers(req: AuthRequest, res: Response): Promise<void> {

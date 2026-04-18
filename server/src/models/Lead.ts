@@ -48,9 +48,10 @@ const LeadSchema = new Schema({
   notes:          [{ content: String, authorId: String, createdAt: { type: Date, default: Date.now } }],
   stageHistory:   [StageActivitySchema],
   // Outcome details
-  closedAt:       Date,
-  lostReason:     String,
-  wonAmount:      Number,
+  closedAt:             Date,
+  lostReason:           String,
+  wonAmount:            Number,
+  convertedToClientId:  { type: String, default: null }, // set when admin converts lead → client account
 }, { timestamps: true });
 
 // Keep status in sync with stage
