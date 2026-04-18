@@ -14,7 +14,6 @@ export async function createQuery(req: AuthRequest, res: Response): Promise<void
   try {
     const orgId = await getOrgId(req.user!.id);
     const query = await ClientQuery.create({ ...req.body, clientId: req.user!.id, organizationId: orgId });
-    // Notify admins
     const admins = await User.find({ organizationId: orgId, role: 'admin' }).select('_id');
     await Notification.insertMany(admins.map(a => ({
       userId: String(a._id),
@@ -26,7 +25,7 @@ export async function createQuery(req: AuthRequest, res: Response): Promise<void
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
-// List queries — client sees own, admin/team sees all
+// List queries
 export async function listQueries(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await getOrgId(req.user!.id);
@@ -47,7 +46,6 @@ export async function replyQuery(req: AuthRequest, res: Response): Promise<void>
       { new: true }
     );
     if (!query) { res.status(404).json({ error: 'Query not found' }); return; }
-    // Notify client
     await Notification.create({ userId: query.clientId, title: 'Reply to your query', message: content, type: 'info' });
     res.json(query);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
@@ -64,13 +62,38 @@ export async function updateQueryStatus(req: AuthRequest, res: Response): Promis
 // Sales: send payment due notification to client
 export async function sendPaymentAlert(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const { clientId, amount, dueDate, description } = req.body;
-    await Notification.create({
-      userId: clientId,
-      title: `Payment Due: ₹${Number(amount).toLocaleString('en-IN')}`,
-      message: `${description || 'Invoice payment is due'}${dueDate ? ` — Due by ${new Date(dueDate).toLocaleDateString('en-IN')}` : ''}`,
-      type: 'warning',
-    });
-    res.json({ message: 'Payment alert sent to client' });
+    const { clientId, clientName, amount, dueDate, note, description } = req.body;
+    const msg = note || description || 'Invoice payment is due';
+    const dueStr = dueDate
+      ? new Date(dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+      : '';
+
+    // Resolve targetUserId — try clientId first, then look up by name
+    let targetUserId = clientId;
+    if (!targetUserId && clientName) {
+      const found = await User.findOne({ name: new RegExp(clientName, 'i'), role: 'client' });
+      if (found) targetUserId = String(found._id);
+    }
+
+    if (targetUserId) {
+      const notif = await Notification.create({
+        userId:  targetUserId,
+        title:   `💰 Payment Due: ₹${Number(amount || 0).toLocaleString('en-IN')}`,
+        message: `${msg}${dueStr ? ` — Due by ${dueStr}` : ''}`,
+        type:    'warning',
+      });
+      // Real-time push via Socket.io
+      const io = (req as any).app.get('io');
+      if (io) {
+        io.to(`user:${targetUserId}`).emit('notification:new', {
+          _id:     notif._id,
+          title:   notif.title,
+          message: notif.message,
+          type:    'warning',
+        });
+      }
+    }
+
+    res.json({ message: 'Payment alert sent' });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
