@@ -83,7 +83,7 @@ export default function NotificationsPage() {
                         <p className={`text-sm font-medium ${!n.isRead ? 'text-foreground' : 'text-muted-foreground'}`}>{n.title}</p>
                         <p className="text-[10px] text-muted-foreground shrink-0">{format(new Date(n.createdAt), 'MMM d, h:mm a')}</p>
                       </div>
-                      {n.message && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>}
+                      {(n.body || n.message) && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.body || n.message}</p>}
                       <div className="flex gap-3 mt-1.5">
                         {!n.isRead && (
                           <button onClick={() => readOne(n._id)} className="text-[11px] text-primary hover:text-primary/80">Mark read</button>

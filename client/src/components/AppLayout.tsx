@@ -65,10 +65,10 @@ export function AppLayout({ children, requiredRole }: Props) {
     if (!socket) return;
 
     // New push notification arrives
-    socket.on('notification:new', (data: { title: string; message?: string; type?: string }) => {
+    socket.on('notification:new', (data: { title: string; body?: string; message?: string; type?: string }) => {
       setUnreadCount(c => c + 1);
       toast(data.title, {
-        description: data.message,
+        description: data.body || data.message,
         icon: '🔔',
         duration: 6000,
       });
