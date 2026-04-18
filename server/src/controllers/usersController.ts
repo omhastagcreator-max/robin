@@ -36,7 +36,13 @@ export async function createUser(req: AuthRequest, res: Response): Promise<void>
 // GET /api/users
 export async function listUsers(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const users = await User.find({ isActive: true }).select('-passwordHash').lean();
+    const { role, team, isActive } = req.query as Record<string, string>;
+    const filter: Record<string, any> = {};
+    if (role)     filter.role     = role;
+    if (team)     filter.team     = team;
+    if (isActive !== undefined) filter.isActive = isActive !== 'false';
+    else filter.isActive = { $ne: false };   // default: exclude deactivated
+    const users = await User.find(filter).select('-passwordHash').lean();
     res.json(users);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
