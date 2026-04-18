@@ -3,20 +3,23 @@
 @tailwind utilities;
 
 :root {
-  --background:    224 71% 4%;
-  --foreground:    213 31% 91%;
-  --card:          222 47% 7%;
-  --card-foreground: 213 31% 91%;
-  --border:        216 34% 13%;
-  --input:         216 34% 13%;
-  --primary:       265 85% 65%;
+  /* ── Lightened Dark Theme ─────────────────────────────────────────────── */
+  --background:       222 28% 14%;       /* was 4%  — main page bg           */
+  --foreground:       213 25% 93%;       /* text on dark bg                  */
+  --card:             220 25% 20%;       /* was 7%  — card / panel bg        */
+  --card-foreground:  213 25% 93%;
+  --popover:          220 25% 22%;
+  --popover-foreground: 213 25% 93%;
+  --border:           218 22% 30%;       /* was 13% — borders, dividers      */
+  --input:            218 22% 28%;       /* input borders                    */
+  --primary:          265 80% 68%;       /* violet accent                    */
   --primary-foreground: 0 0% 100%;
-  --muted:         223 47% 11%;
-  --muted-foreground: 215 20% 55%;
-  --ring:          265 85% 65%;
-  --destructive:   0 63% 55%;
-  --success:       142 70% 45%;
-  --warning:       38 95% 55%;
+  --muted:            220 22% 26%;       /* was 11% — muted bg chips         */
+  --muted-foreground: 215 18% 65%;       /* was 55% — secondary text         */
+  --ring:             265 80% 68%;
+  --destructive:      0 63% 55%;
+  --success:          142 70% 45%;
+  --warning:          38 95% 55%;
   color-scheme: dark;
 }
 
