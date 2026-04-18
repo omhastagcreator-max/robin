@@ -28,7 +28,7 @@ export async function approveUpdate(req: AuthRequest, res: Response): Promise<vo
   try {
     const update = await ProjectUpdate.findByIdAndUpdate(req.params.id, { isApproved: true }, { new: true });
     if (!update) { res.status(404).json({ error: 'Update not found' }); return; }
-    await Notification.create({ userId: update.authorId, title: 'Update approved!', message: `Your project update was approved.`, type: 'success' });
+    await Notification.create({ recipientId: String(update.authorId), title: 'Update approved!', body: `Your project update was approved.`, type: 'success' });
     res.json(update);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -38,7 +38,7 @@ export async function rejectUpdate(req: AuthRequest, res: Response): Promise<voi
     const { feedback } = req.body;
     const update = await ProjectUpdate.findByIdAndUpdate(req.params.id, { isApproved: false, feedback }, { new: true });
     if (!update) { res.status(404).json({ error: 'Update not found' }); return; }
-    await Notification.create({ userId: update.authorId, title: 'Update rejected', message: feedback || 'Your update needs revision.', type: 'warning' });
+    await Notification.create({ recipientId: String(update.authorId), title: 'Update rejected', body: feedback || 'Your update needs revision.', type: 'warning' });
     res.json(update);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }

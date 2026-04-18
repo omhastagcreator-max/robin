@@ -16,9 +16,9 @@ export async function createQuery(req: AuthRequest, res: Response): Promise<void
     const query = await ClientQuery.create({ ...req.body, clientId: req.user!.id, organizationId: orgId });
     const admins = await User.find({ organizationId: orgId, role: 'admin' }).select('_id');
     await Notification.insertMany(admins.map(a => ({
-      userId: String(a._id),
+      recipientId: String(a._id),
       title: `New client query: ${query.title}`,
-      message: query.description,
+      body: query.description,
       type: 'info',
     })));
     res.status(201).json(query);
@@ -46,7 +46,7 @@ export async function replyQuery(req: AuthRequest, res: Response): Promise<void>
       { new: true }
     );
     if (!query) { res.status(404).json({ error: 'Query not found' }); return; }
-    await Notification.create({ userId: query.clientId, title: 'Reply to your query', message: content, type: 'info' });
+    await Notification.create({ recipientId: String(query.clientId), title: 'Reply to your query', body: content, type: 'info' });
     res.json(query);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -63,7 +63,7 @@ export async function updateQueryStatus(req: AuthRequest, res: Response): Promis
 export async function sendPaymentAlert(req: AuthRequest, res: Response): Promise<void> {
   try {
     const { clientId, clientName, amount, dueDate, note, description } = req.body;
-    const msg = note || description || 'Invoice payment is due';
+    const bodyText = note || description || 'Invoice payment is due';
     const dueStr = dueDate
       ? new Date(dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
       : '';
@@ -71,27 +71,31 @@ export async function sendPaymentAlert(req: AuthRequest, res: Response): Promise
     // Resolve targetUserId — try clientId first, then look up by name
     let targetUserId = clientId;
     if (!targetUserId && clientName) {
-      const found = await User.findOne({ name: new RegExp(clientName, 'i'), role: 'client' });
+      const found = await User.findOne({ name: new RegExp(clientName, 'i') });
       if (found) targetUserId = String(found._id);
     }
 
-    if (targetUserId) {
-      const notif = await Notification.create({
-        userId:  targetUserId,
-        title:   `💰 Payment Due: ₹${Number(amount || 0).toLocaleString('en-IN')}`,
-        message: `${msg}${dueStr ? ` — Due by ${dueStr}` : ''}`,
-        type:    'warning',
+    if (!targetUserId) {
+      res.status(400).json({ error: 'Could not resolve a client to notify' });
+      return;
+    }
+
+    const notif = await Notification.create({
+      recipientId: targetUserId,
+      title:       `💰 Payment Due: ₹${Number(amount || 0).toLocaleString('en-IN')}`,
+      body:        `${bodyText}${dueStr ? ` — Due by ${dueStr}` : ''}`,
+      type:        'warning',
+    });
+
+    // Real-time push via Socket.io
+    const io = (req as any).app.get('io');
+    if (io) {
+      io.to(`user:${targetUserId}`).emit('notification:new', {
+        _id:   notif._id,
+        title: notif.title,
+        body:  notif.body,
+        type:  'warning',
       });
-      // Real-time push via Socket.io
-      const io = (req as any).app.get('io');
-      if (io) {
-        io.to(`user:${targetUserId}`).emit('notification:new', {
-          _id:     notif._id,
-          title:   notif.title,
-          message: notif.message,
-          type:    'warning',
-        });
-      }
     }
 
     res.json({ message: 'Payment alert sent' });
