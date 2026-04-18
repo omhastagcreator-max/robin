@@ -27,6 +27,7 @@ import chatRoutes         from './routes/chat';
 import queriesRoutes      from './routes/queries';
 import adReportsRoutes    from './routes/adReports';
 import influencerRoutes   from './routes/influencers';
+import seedRoutes         from './routes/seed';
 
 const app = express();
 const httpServer = createServer(app);
@@ -146,6 +147,7 @@ app.use('/api/chat',            chatRoutes);
 app.use('/api/queries',         queriesRoutes);
 app.use('/api/ad-reports',      adReportsRoutes);
 app.use('/api/influencers',     influencerRoutes);
+app.use('/api/seed',            seedRoutes);
 
 // ── 404 + Error handler ───────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
