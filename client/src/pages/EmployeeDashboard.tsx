@@ -73,7 +73,8 @@ export default function EmployeeDashboard() {
   };
 
   const cycleStatus = async (task: any) => {
-    const next = { pending: 'in_progress', in_progress: 'done', done: 'pending', blocked: 'in_progress' }[task.status as string] || 'pending';
+    const MAP: Record<string, 'pending' | 'in_progress' | 'done' | 'blocked'> = { pending: 'in_progress', in_progress: 'done', done: 'pending', blocked: 'in_progress' };
+    const next = MAP[task.status as string] ?? 'pending';
     await updateTask(task._id, { status: next });
   };
 
@@ -258,7 +259,7 @@ export default function EmployeeDashboard() {
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
                           {/* Status badge — clickable */}
                           <select value={task.status}
-                            onChange={e => updateTask(task._id, { status: e.target.value })}
+                            onChange={e => updateTask(task._id, { status: e.target.value as 'pending' | 'in_progress' | 'done' | 'blocked' })}
                             onClick={e => e.stopPropagation()}
                             className={`text-[10px] px-1.5 py-0.5 rounded font-medium border-0 cursor-pointer ${STATUS_COLORS[task.status]}`}
                             style={{ background: 'transparent' }}>

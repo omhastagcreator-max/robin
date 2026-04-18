@@ -16,9 +16,10 @@ const priorityColor: Record<string, string> = {
 };
 
 const statusColor: Record<string, string> = {
-  pending: 'bg-muted text-muted-foreground',
-  ongoing: 'bg-blue-500/15 text-blue-400',
-  done:    'bg-green-500/15 text-green-400',
+  pending:     'bg-muted text-muted-foreground',
+  in_progress: 'bg-blue-500/15 text-blue-400',
+  done:        'bg-green-500/15 text-green-400',
+  blocked:     'bg-red-500/15 text-red-400',
 };
 
 interface NewTaskForm { title: string; priority: string; dueDate: string; taskType: string; }
@@ -57,7 +58,10 @@ export default function TasksPage() {
   };
 
   const toggle = async (id: string, status: string) => {
-    const next = status === 'done' ? 'pending' : status === 'pending' ? 'ongoing' : 'done';
+    const MAP: Record<string, 'pending' | 'in_progress' | 'done' | 'blocked'> = {
+      pending: 'in_progress', in_progress: 'done', done: 'pending', blocked: 'in_progress',
+    };
+    const next = MAP[status] ?? 'pending';
     await updateTask(id, { status: next });
   };
 
@@ -90,11 +94,12 @@ export default function TasksPage() {
     </motion.div>
   );
 
-  const STATUSES = ['pending', 'ongoing', 'done'] as const;
+  const STATUSES = ['pending', 'in_progress', 'done', 'blocked'] as const;
   const boardColors: Record<string, string> = {
-    pending: 'border-t-muted-foreground/30',
-    ongoing: 'border-t-blue-500',
-    done:    'border-t-green-500',
+    pending:     'border-t-muted-foreground/30',
+    in_progress: 'border-t-blue-500',
+    done:        'border-t-green-500',
+    blocked:     'border-t-red-500',
   };
 
   return (

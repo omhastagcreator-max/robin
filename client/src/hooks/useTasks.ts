@@ -5,12 +5,14 @@ import { useAuth } from '@/contexts/AuthContext';
 export interface Task {
   _id: string;
   title: string;
-  status: 'pending' | 'ongoing' | 'done';
+  status: 'pending' | 'in_progress' | 'done' | 'blocked';
   priority: 'low' | 'medium' | 'high' | 'urgent';
   dueDate?: string;
   taskType?: string;
   projectId?: string;
   assignedTo?: string;
+  assignedBy?: string;
+  completedAt?: string;
 }
 
 export function useTasks() {
@@ -26,9 +28,6 @@ export function useTasks() {
       setTasks(Array.isArray(data) ? data : []);
     } finally { setLoading(false); }
   }, [user]);
-
-  // Auto-load on mount via the parent component calling refresh
-  useState(() => { refresh(); });
 
   const updateTask = useCallback(async (id: string, patch: Partial<Task>) => {
     await api.updateTask(id, patch as Record<string, unknown>);

@@ -1,6 +1,3 @@
-import { createClient } from '@supabase/supabase-js';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
-
-export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Stub — Supabase is fully removed. This file is kept to avoid import errors in legacy files.
+// All auth is now handled via JWT (AuthContext + /api/auth)
+export const supabase = null;

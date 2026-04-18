@@ -15,19 +15,16 @@ export interface SessionData {
 
 export function useSession() {
   const { user } = useAuth();
-  const [activeSession, setActiveSession] = useState<SessionData | null>(null);
-  const [isOnBreak, setIsOnBreak] = useState(false);
-  const [breakStart, setBreakStart] = useState<Date | null>(null);
+  const [session, setSession] = useState<SessionData | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchActiveSession = useCallback(async () => {
     if (!user) return;
     try {
       const data = await api.getActiveSession();
-      setActiveSession(data);
-      setIsOnBreak(data?.status === 'on_break');
+      setSession(data || null);
     } catch {
-      setActiveSession(null);
+      setSession(null);
     } finally {
       setLoading(false);
     }
@@ -35,34 +32,41 @@ export function useSession() {
 
   useEffect(() => { fetchActiveSession(); }, [fetchActiveSession]);
 
-  const startWork = async () => {
-    if (activeSession) return;
+  const startSession = async () => {
+    if (session) return;
     const data = await api.startSession();
-    setActiveSession(data);
+    setSession(data);
   };
 
   const startBreak = async () => {
-    if (!activeSession || isOnBreak) return;
+    if (!session || session.status === 'on_break') return;
     await api.startBreak();
-    setIsOnBreak(true);
-    setBreakStart(new Date());
+    setSession(prev => prev ? { ...prev, status: 'on_break' } : null);
   };
 
   const endBreak = async () => {
-    if (!isOnBreak) return;
+    if (!session || session.status !== 'on_break') return;
     const updated = await api.endBreak();
-    setActiveSession(updated);
-    setIsOnBreak(false);
-    setBreakStart(null);
+    setSession(updated);
   };
 
-  const endWork = async () => {
-    if (!activeSession) return;
-    if (isOnBreak) await endBreak();
+  const endSession = async () => {
+    if (!session) return;
+    if (session.status === 'on_break') await endBreak();
     await api.endSession();
-    setActiveSession(null);
-    setIsOnBreak(false);
+    setSession(null);
   };
 
-  return { activeSession, isOnBreak, breakStart, loading, startWork, startBreak, endBreak, endWork, refreshSession: fetchActiveSession };
+  return {
+    session,
+    loading,
+    startSession,
+    startBreak,
+    endBreak,
+    endSession,
+    refreshSession: fetchActiveSession,
+    // Convenience getters
+    isActive:  session?.status === 'active',
+    isOnBreak: session?.status === 'on_break',
+  };
 }
