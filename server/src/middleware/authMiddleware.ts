@@ -1,21 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import User, { IUser } from '../models/User';
+import User from '../models/User';
 
 export interface AuthRequest extends Request {
   user?: {
-    id: string;          // MongoDB _id as string
-    email: string;
-    role: string;
-    name: string;
+    id:             string;
+    email:          string;
+    role:           string;
+    name:           string;
+    team?:          string;
+    organizationId?: string;
   };
-}
-
-interface JwtPayload {
-  userId: string;
-  email: string;
-  role: string;
-  name: string;
 }
 
 export async function authMiddleware(
@@ -31,15 +26,35 @@ export async function authMiddleware(
 
   const token = authHeader.split(' ')[1];
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
+    // JWT payload is { id: userId } — look up fresh user from DB
+    const payload = jwt.verify(token, process.env.JWT_SECRET!) as { id?: string; userId?: string };
+    const userId  = payload.id || payload.userId;
+    if (!userId) { res.status(401).json({ error: 'Invalid token payload' }); return; }
+
+    const user = await User.findById(userId).select('email name role team organizationId');
+    if (!user) { res.status(401).json({ error: 'User not found' }); return; }
+
     req.user = {
-      id: payload.userId,
-      email: payload.email,
-      role: payload.role,
-      name: payload.name,
+      id:             String(user._id),
+      email:          user.email,
+      role:           user.role ?? 'employee',
+      name:           user.name,
+      team:           user.team ?? '',
+      organizationId: user.organizationId ? String(user.organizationId) : undefined,
     };
     next();
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });
   }
+}
+
+/** Convenience helper — call after authMiddleware */
+export function requireRole(...roles: string[]) {
+  return (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      res.status(403).json({ error: `Requires one of roles: ${roles.join(', ')}` });
+      return;
+    }
+    next();
+  };
 }
