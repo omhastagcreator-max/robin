@@ -3,24 +3,24 @@
 @tailwind utilities;
 
 :root {
-  /* ── Lightened Dark Theme ─────────────────────────────────────────────── */
-  --background:       222 28% 14%;       /* was 4%  — main page bg           */
-  --foreground:       213 25% 93%;       /* text on dark bg                  */
-  --card:             220 25% 20%;       /* was 7%  — card / panel bg        */
-  --card-foreground:  213 25% 93%;
-  --popover:          220 25% 22%;
-  --popover-foreground: 213 25% 93%;
-  --border:           218 22% 30%;       /* was 13% — borders, dividers      */
-  --input:            218 22% 28%;       /* input borders                    */
-  --primary:          265 80% 68%;       /* violet accent                    */
-  --primary-foreground: 0 0% 100%;
-  --muted:            220 22% 26%;       /* was 11% — muted bg chips         */
-  --muted-foreground: 215 18% 65%;       /* was 55% — secondary text         */
-  --ring:             265 80% 68%;
-  --destructive:      0 63% 55%;
-  --success:          142 70% 45%;
-  --warning:          38 95% 55%;
-  color-scheme: dark;
+  /* ── Clean Light Theme ─────────────────────────────────────────────────── */
+  --background:          210 40% 97%;       /* very light blue-white page bg  */
+  --foreground:          222 47% 11%;       /* dark navy text                 */
+  --card:                0 0% 100%;         /* pure white cards               */
+  --card-foreground:     222 47% 11%;
+  --popover:             0 0% 100%;
+  --popover-foreground:  222 47% 11%;
+  --border:              214 32% 88%;       /* subtle light border            */
+  --input:               214 32% 88%;
+  --primary:             265 70% 58%;       /* violet accent                  */
+  --primary-foreground:  0 0% 100%;
+  --muted:               210 40% 94%;       /* light gray-blue muted bg       */
+  --muted-foreground:    215 16% 47%;       /* medium gray text               */
+  --ring:                265 70% 58%;
+  --destructive:         0 72% 51%;
+  --success:             142 70% 40%;
+  --warning:             38 92% 50%;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -38,11 +38,11 @@ body {
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.4); }
 
 /* Page animation */
 .page-transition-enter {
-  animation: fadeSlideIn 0.22s ease forwards;
+  animation: fadeSlideIn 0.2s ease forwards;
 }
 @keyframes fadeSlideIn {
   from { opacity: 0; transform: translateY(6px); }

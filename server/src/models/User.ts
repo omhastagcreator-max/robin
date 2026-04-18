@@ -1,5 +1,4 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import bcrypt from 'bcryptjs';
 
 export type AppRole = 'admin' | 'employee' | 'client' | 'sales';
 
@@ -9,40 +8,36 @@ export interface IUser extends Document {
   passwordHash: string;
   name: string;
   role: AppRole;
-  team?: string;
+  roles: AppRole[];           // secondary/multiple roles
+  team?: string;              // primary team
+  teams: string[];            // multiple teams
   phone?: string;
   avatarUrl?: string;
+  googleId?: string;
   organizationId?: mongoose.Types.ObjectId;
+  department?: string;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
-  comparePassword(plain: string): Promise<boolean>;
 }
 
 const UserSchema = new Schema<IUser>(
   {
     email:          { type: String, required: true, unique: true, lowercase: true, trim: true },
-    passwordHash:   { type: String, required: true },
+    passwordHash:   { type: String, required: true, select: false },
     name:           { type: String, default: '' },
     role:           { type: String, enum: ['admin', 'employee', 'client', 'sales'], default: 'employee' },
+    roles:          { type: [String], default: [] },               // extra roles
     team:           { type: String, default: '' },
+    teams:          { type: [String], default: [] },               // multiple teams
     phone:          { type: String, default: '' },
     avatarUrl:      { type: String, default: '' },
+    googleId:       { type: String, default: '' },
+    department:     { type: String, default: '' },
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization' },
     isActive:       { type: Boolean, default: true },
   },
   { timestamps: true }
 );
-
-// Hash password before save
-UserSchema.pre('save', async function (next) {
-  if (!this.isModified('passwordHash')) return next();
-  this.passwordHash = await bcrypt.hash(this.passwordHash, 12);
-  next();
-});
-
-UserSchema.methods.comparePassword = function (plain: string): Promise<boolean> {
-  return bcrypt.compare(plain, this.passwordHash);
-};
 
 export default mongoose.model<IUser>('User', UserSchema);

@@ -2,6 +2,7 @@ import api from './axios';
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const login        = (email: string, password: string) => api.post('/auth/login', { email, password }).then(r => r.data);
+export const googleLogin  = (credential: string)              => api.post('/auth/google', { credential }).then(r => r.data);
 export const register     = (data: Record<string, unknown>)   => api.post('/auth/register', data).then(r => r.data);
 export const getMe        = ()                                 => api.get('/auth/me').then(r => r.data);
 export const updateMe     = (data: Record<string, unknown>)   => api.put('/auth/me', data).then(r => r.data);

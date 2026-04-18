@@ -15,6 +15,7 @@ interface AuthContextValue {
   role: string;
   loading: boolean;
   login: (email: string, password: string) => Promise<{ error?: string }>;
+  loginWithToken: (token: string, u: any) => void;
   logout: () => void;
   refreshProfile: () => Promise<void>;
   updatePassword: (currentPassword: string, newPassword: string) => Promise<{ error?: string }>;
@@ -63,6 +64,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const loginWithToken = (token: string, u: any) => {
+    localStorage.setItem(TOKEN_KEY, token);
+    const mapped: RobinUser = { id: u.id || u._id, email: u.email, name: u.name, role: u.role, team: u.team, avatarUrl: u.avatarUrl };
+    localStorage.setItem(USER_KEY, JSON.stringify(mapped));
+    setUser(mapped);
+  };
+
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
@@ -89,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, role: user?.role || 'guest', loading, login, logout, refreshProfile, updatePassword }}>
+    <AuthContext.Provider value={{ user, role: user?.role || 'guest', loading, login, loginWithToken, logout, refreshProfile, updatePassword }}>
       {children}
     </AuthContext.Provider>
   );

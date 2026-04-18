@@ -1,112 +1,143 @@
 import { Request, Response } from 'express';
+import { OAuth2Client } from 'google-auth-library';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User';
 import Organization from '../models/Organization';
-import { AuthRequest } from '../middleware/authMiddleware';
 
-function signToken(userId: string, email: string, role: string, name: string): string {
-  return jwt.sign(
-    { userId, email, role, name },
-    process.env.JWT_SECRET!,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' } as any
-  );
+const JWT_SECRET  = process.env.JWT_SECRET!;
+const JWT_EXPIRES = process.env.JWT_EXPIRES_IN || '7d';
+
+function signToken(userId: string) {
+  return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES as any });
 }
 
-// POST /api/auth/register
+// ── Register ─────────────────────────────────────────────────────────────────
 export async function register(req: Request, res: Response): Promise<void> {
   try {
-    const { email, password, name, role = 'employee', team = '' } = req.body;
-    if (!email || !password) { res.status(400).json({ error: 'Email and password required' }); return; }
-    if (password.length < 6) { res.status(400).json({ error: 'Password must be at least 6 characters' }); return; }
+    const { email, password, name, organizationName, role = 'employee' } = req.body;
+    if (!email || !password || !name) { res.status(400).json({ error: 'email, password, name required' }); return; }
 
-    const existing = await User.findOne({ email: email.toLowerCase() });
-    if (existing) { res.status(409).json({ error: 'Email already in use' }); return; }
+    const exists = await User.findOne({ email: email.toLowerCase() });
+    if (exists) { res.status(409).json({ error: 'Email already registered' }); return; }
 
-    let org = await Organization.findOne();
-    if (!org) org = await Organization.create({ name: 'Robin Agency', plan: 'pro' });
+    let org = await Organization.findOne({ name: organizationName || 'Default Agency' });
+    if (!org) org = await Organization.create({ name: organizationName || 'Default Agency' });
 
-    const user = await User.create({
-      email: email.toLowerCase(),
-      passwordHash: password,   // model pre-save will hash it
-      name: name || email.split('@')[0],
-      role,
-      team,
-      organizationId: org._id,
-    });
+    const hashed = await bcrypt.hash(password, 12);
+    const user = await User.create({ email: email.toLowerCase(), passwordHash: hashed, name, role, organizationId: org._id });
+    const token = signToken(String(user._id));
 
-    const token = signToken(String(user._id), user.email, user.role, user.name);
     res.status(201).json({
       token,
-      user: { id: String(user._id), email: user.email, name: user.name, role: user.role, team: user.team },
+      user: { id: user._id, email: user.email, name: user.name, role: user.role, team: user.team },
     });
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
-// POST /api/auth/login
+// ── Login ─────────────────────────────────────────────────────────────────────
 export async function login(req: Request, res: Response): Promise<void> {
   try {
     const { email, password } = req.body;
-    if (!email || !password) { res.status(400).json({ error: 'Email and password required' }); return; }
+    if (!email || !password) { res.status(400).json({ error: 'email and password required' }); return; }
 
-    const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user || !(await user.comparePassword(password))) {
-      res.status(401).json({ error: 'Invalid email or password' });
-      return;
-    }
+    const user = await User.findOne({ email: email.toLowerCase() }).select('+passwordHash');
+    if (!user || !user.passwordHash) { res.status(401).json({ error: 'Invalid credentials' }); return; }
 
-    const token = signToken(String(user._id), user.email, user.role, user.name);
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) { res.status(401).json({ error: 'Invalid credentials' }); return; }
+
+    const token = signToken(String(user._id));
     res.json({
       token,
-      user: { id: String(user._id), email: user.email, name: user.name, role: user.role, team: user.team, avatarUrl: user.avatarUrl },
+      user: { id: user._id, email: user.email, name: user.name, role: user.role, team: user.team },
+    });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+// ── Google OAuth ───────────────────────────────────────────────────────────────
+export async function googleAuth(req: Request, res: Response): Promise<void> {
+  try {
+    const { credential, clientId } = req.body;
+    if (!credential) { res.status(400).json({ error: 'Google credential token required' }); return; }
+
+    const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+    if (!GOOGLE_CLIENT_ID) { res.status(501).json({ error: 'Google OAuth not configured on server. Add GOOGLE_CLIENT_ID env var.' }); return; }
+
+    const client = new OAuth2Client(GOOGLE_CLIENT_ID);
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    if (!payload?.email) { res.status(400).json({ error: 'Invalid Google token' }); return; }
+
+    const email  = payload.email.toLowerCase();
+    const name   = payload.name || email.split('@')[0];
+    const avatar = payload.picture;
+
+    // Find or auto-create the user (Google users start as employee by default)
+    let user = await User.findOne({ email });
+    if (!user) {
+      let org = await Organization.findOne({}) || await Organization.create({ name: 'Default Agency' });
+      user = await User.create({
+        email, name, role: 'employee',
+        organizationId: org._id,
+        googleId: payload.sub,
+        avatarUrl: avatar,
+        passwordHash: await bcrypt.hash(Math.random().toString(36), 10), // placeholder
+      });
+    } else {
+      // Update Google info if missing
+      if (!user.googleId) {
+        user.googleId = payload.sub;
+        if (avatar) user.avatarUrl = avatar;
+        await user.save();
+      }
+    }
+
+    const token = signToken(String(user._id));
+    res.json({
+      token,
+      user: { id: user._id, email: user.email, name: user.name, role: user.role, team: user.team, avatarUrl: user.avatarUrl },
     });
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    const msg = (err as Error).message;
+    if (msg.includes('Token used too late') || msg.includes('Invalid token')) {
+      res.status(401).json({ error: 'Google token expired or invalid' });
+    } else {
+      res.status(500).json({ error: msg });
+    }
   }
 }
 
-// GET /api/auth/me  (requires auth)
-export async function getMe(req: AuthRequest, res: Response): Promise<void> {
+// ── Get Me ────────────────────────────────────────────────────────────────────
+export async function getMe(req: any, res: Response): Promise<void> {
   try {
-    const user = await User.findById(req.user!.id).select('-passwordHash');
+    const user = await User.findById(req.user.id);
     if (!user) { res.status(404).json({ error: 'User not found' }); return; }
-    res.json({ user, role: user.role });
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
+    res.json({ user: { _id: user._id, email: user.email, name: user.name, role: user.role, team: user.team, avatarUrl: user.avatarUrl } });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
-// PUT /api/auth/me  (update own profile)
-export async function updateMe(req: AuthRequest, res: Response): Promise<void> {
+// ── Update Me / Password ──────────────────────────────────────────────────────
+export async function updateMe(req: any, res: Response): Promise<void> {
   try {
-    const { name, phone, team, avatarUrl } = req.body;
-    const user = await User.findByIdAndUpdate(
-      req.user!.id,
-      { $set: { ...(name && { name }), ...(phone !== undefined && { phone }), ...(team !== undefined && { team }), ...(avatarUrl && { avatarUrl }) } },
-      { new: true }
-    ).select('-passwordHash');
-    if (!user) { res.status(404).json({ error: 'User not found' }); return; }
-    res.json({ user, role: user.role });
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
+    const { name, team, avatarUrl } = req.body;
+    const user = await User.findByIdAndUpdate(req.user.id, { name, team, avatarUrl }, { new: true });
+    res.json({ user });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
-// PUT /api/auth/password
-export async function changePassword(req: AuthRequest, res: Response): Promise<void> {
+export async function changePassword(req: any, res: Response): Promise<void> {
   try {
     const { currentPassword, newPassword } = req.body;
-    if (!newPassword || newPassword.length < 6) { res.status(400).json({ error: 'New password must be at least 6 characters' }); return; }
-    const user = await User.findById(req.user!.id);
-    if (!user) { res.status(404).json({ error: 'User not found' }); return; }
-    if (currentPassword && !(await user.comparePassword(currentPassword))) {
-      res.status(401).json({ error: 'Current password is incorrect' }); return;
-    }
-    user.passwordHash = newPassword;
+    const user = await User.findById(req.user.id).select('+passwordHash');
+    if (!user || !user.passwordHash) { res.status(404).json({ error: 'User not found' }); return; }
+    const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!ok) { res.status(400).json({ error: 'Current password incorrect' }); return; }
+    user.passwordHash = await bcrypt.hash(newPassword, 12);
     await user.save();
     res.json({ message: 'Password updated' });
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
