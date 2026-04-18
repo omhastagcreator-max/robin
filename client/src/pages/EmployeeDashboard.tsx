@@ -3,7 +3,9 @@ import { AppLayout } from '@/components/AppLayout';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Clock, Play, Pause, StopCircle, CheckCircle2, AlertTriangle,
-  Plus, Calendar, Target, Bell, Loader2, X, Send, UserPlus, Info
+  Plus, Calendar, Target, Bell, Loader2, X, Send, UserPlus, Info,
+  TrendingUp, Megaphone, Code2, Users, BarChart3, IndianRupee,
+  Star, Zap, Globe, Share2
 } from 'lucide-react';
 import { format, isToday, isBefore, startOfDay } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,6 +13,7 @@ import { toast } from 'sonner';
 import * as api from '@/api';
 import { useSession } from '@/hooks/useSession';
 import { useTasks } from '@/hooks/useTasks';
+
 
 const PRIORITY_COLORS: Record<string, string> = {
   urgent: 'text-red-400', high: 'text-orange-400', medium: 'text-yellow-400', low: 'text-green-400'
@@ -22,6 +25,65 @@ const STATUS_COLORS: Record<string, string> = {
   blocked:     'bg-red-500/15 text-red-400',
 };
 const STATUSES = ['pending', 'in_progress', 'done', 'blocked'] as const;
+
+// ── Team / Role specific widget ────────────────────────────────────────────
+function TeamRoleWidget({ team, tasks }: { team: string; tasks: any[] }) {
+  const done    = tasks.filter(t => t.status === 'done').length;
+  const total   = tasks.length;
+  const pct     = total ? Math.round((done / total) * 100) : 0;
+  const overdue = tasks.filter(t => t.status !== 'done' && t.dueDate && isBefore(new Date(t.dueDate), startOfDay(new Date()))).length;
+
+  if (team === 'ads') return (
+    <div className="grid sm:grid-cols-4 gap-3">
+      {[
+        { label: 'Active Campaigns', value: '3',     icon: Megaphone, color: 'text-blue-600',   bg: 'bg-blue-50'   },
+        { label: 'Avg. ROAS',        value: '2.8x',  icon: TrendingUp,color: 'text-green-600',  bg: 'bg-green-50'  },
+        { label: 'Tasks Done',       value: `${done}/${total}`, icon: BarChart3, color: 'text-violet-600', bg: 'bg-violet-50' },
+        { label: 'Overdue',          value: String(overdue),    icon: Zap, color: 'text-red-500', bg: 'bg-red-50' },
+      ].map(k => (
+        <div key={k.label} className={`${k.bg} rounded-2xl px-4 py-3 flex items-center gap-3 border border-gray-100`}>
+          <k.icon className={`h-5 w-5 ${k.color} opacity-80 shrink-0`} />
+          <div><p className="text-xs text-gray-500">{k.label}</p><p className={`text-lg font-bold ${k.color}`}>{k.value}</p></div>
+        </div>
+      ))}
+    </div>
+  );
+
+  if (team === 'influencer') return (
+    <div className="grid sm:grid-cols-4 gap-3">
+      {[
+        { label: 'Active Campaigns', value: '2',       icon: Star,    color: 'text-pink-600',   bg: 'bg-pink-50'   },
+        { label: 'Influencers Live', value: '12',      icon: Users,   color: 'text-purple-600', bg: 'bg-purple-50' },
+        { label: 'Avg Engagement',   value: '4.2%',    icon: Share2,  color: 'text-amber-600',  bg: 'bg-amber-50'  },
+        { label: 'Tasks Progress',   value: `${pct}%`, icon: Target,  color: 'text-emerald-600',bg: 'bg-emerald-50'},
+      ].map(k => (
+        <div key={k.label} className={`${k.bg} rounded-2xl px-4 py-3 flex items-center gap-3 border border-gray-100`}>
+          <k.icon className={`h-5 w-5 ${k.color} opacity-80 shrink-0`} />
+          <div><p className="text-xs text-gray-500">{k.label}</p><p className={`text-lg font-bold ${k.color}`}>{k.value}</p></div>
+        </div>
+      ))}
+    </div>
+  );
+
+  if (team === 'dev') return (
+    <div className="grid sm:grid-cols-4 gap-3">
+      {[
+        { label: 'Active Projects', value: '1',       icon: Globe,   color: 'text-indigo-600', bg: 'bg-indigo-50' },
+        { label: 'Tasks Done',      value: `${done}/${total}`, icon: Code2,   color: 'text-blue-600',   bg: 'bg-blue-50'   },
+        { label: 'Overdue',         value: String(overdue),    icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-50' },
+        { label: 'Progress',        value: `${pct}%`, icon: TrendingUp, color: 'text-green-600', bg: 'bg-green-50' },
+      ].map(k => (
+        <div key={k.label} className={`${k.bg} rounded-2xl px-4 py-3 flex items-center gap-3 border border-gray-100`}>
+          <k.icon className={`h-5 w-5 ${k.color} opacity-80 shrink-0`} />
+          <div><p className="text-xs text-gray-500">{k.label}</p><p className={`text-lg font-bold ${k.color}`}>{k.value}</p></div>
+        </div>
+      ))}
+    </div>
+  );
+
+  // default
+  return null;
+}
 
 export default function EmployeeDashboard() {
   const { user } = useAuth();
@@ -95,6 +157,9 @@ export default function EmployeeDashboard() {
           <h1 className="text-2xl font-bold">Good {new Date().getHours() < 12 ? 'morning' : 'afternoon'}, {user?.name?.split(' ')[0] || 'there'} 👋</h1>
           <p className="text-sm text-muted-foreground">{format(new Date(), 'EEEE, dd MMMM yyyy')}</p>
         </div>
+
+        {/* Team/role specific widget */}
+        {user?.team && <TeamRoleWidget team={user.team} tasks={tasks} />}
 
         {/* Day-Start Gate Banner */}
         <AnimatePresence>
