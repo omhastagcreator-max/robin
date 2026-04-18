@@ -11,7 +11,7 @@ import * as api from '@/api';
 import { useSocket } from '@/hooks/useSocket';
 import { toast } from 'sonner';
 
-interface NavItem { to: string; label: string; icon: React.ElementType; roles?: string[]; }
+interface NavItem { to: string; label: string; icon: React.ElementType; roles?: string[]; team?: string; }
 
 const NAV_ITEMS: NavItem[] = [
   // Role dashboards
@@ -29,7 +29,9 @@ const NAV_ITEMS: NavItem[] = [
   // Work room
   { to: '/workroom',         label: 'Work Room',    icon: Video,           roles: ['admin', 'employee', 'sales'] },
   // Group Chat — ALL internal roles
-  { to: '/chat',             label: 'Group Chat',   icon: MessageSquare,   roles: ['admin', 'employee', 'sales'] },
+  { to: '/chat',             label: 'Group Chat',      icon: MessageSquare,  roles: ['admin', 'employee', 'sales'] },
+  // Influencer Sheet — only for influencer team
+  { to: '/influencers',      label: 'Influencer Sheet', icon: Users,         roles: ['employee'], team: 'influencer' },
   // Bottom nav
   { to: '/notifications',    label: 'Notifications', icon: Bell },
   { to: '/profile',          label: 'Profile',      icon: User },
@@ -99,7 +101,11 @@ export function AppLayout({ children, requiredRole }: Props) {
     if (location.pathname.startsWith('/chat')) setChatUnread(0);
   }, [location.pathname]);
 
-  const visibleNav = NAV_ITEMS.filter(item => !item.roles || item.roles.includes(role));
+  const visibleNav = NAV_ITEMS.filter(item => {
+    if (item.roles && !item.roles.includes(role)) return false;
+    if (item.team  && item.team !== user?.team)   return false;
+    return true;
+  });
 
   const NavLink = ({ item }: { item: NavItem }) => {
     const active = item.to === '/admin'

@@ -12,6 +12,7 @@ import ClientTransaction from '../src/models/ClientTransaction';
 import ProjectUpdate from '../src/models/ProjectUpdate';
 import Session from '../src/models/Session';
 import LeadNote from '../src/models/LeadNote';
+import Influencer from '../src/models/Influencer';
 
 const hash = (p: string) => bcrypt.hash(p, 10);
 
@@ -25,6 +26,7 @@ async function seed() {
     ProjectTask.deleteMany({}), Lead.deleteMany({}), Deal.deleteMany({}),
     Metric.deleteMany({}), ClientTransaction.deleteMany({}),
     ProjectUpdate.deleteMany({}), Session.deleteMany({}), LeadNote.deleteMany({}),
+    Influencer.deleteMany({}),
   ]);
   console.log('[Seed] Cleared existing data ✓');
 
@@ -200,6 +202,31 @@ async function seed() {
   console.log('  Client:   client@robin.app    / Client1234!');
   console.log('  Sales:    sales@robin.app     / Sales1234!');
   console.log('─────────────────────────────────────────────────\n');
+
+  // ── 10. Influencer Sheet (Priyanka's database) ───────────────────────────
+  await Influencer.insertMany([
+    { organizationId: org._id, addedBy: priyankaId, name: 'Sneha Arora',       handle: 'sneha.arora',   platform: 'instagram', category: 'fashion',       followers: 285000, engagementRate: 4.2, ratePerPost: 18000, email: 'sneha@snehaworld.in', city: 'Mumbai',   status: 'active',    notes: 'Great for festive launches. UGC quality is excellent.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Kavya Menon',       handle: 'kavya.m',       platform: 'instagram', category: 'fashion',       followers: 95000,  engagementRate: 6.1, ratePerPost: 8000,  email: 'kavya@gmail.com',    city: 'Bangalore', status: 'approached',notes: 'Responded to DM. Trial reel priced at ₹8K.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Ayesha Khan',       handle: 'brishti_ay',    platform: 'instagram', category: 'beauty',        followers: 510000, engagementRate: 3.8, ratePerPost: 32000, email: 'collabs@ayeshak.in', city: 'Delhi',     status: 'active',    notes: 'Skincare niche. Top performer for beauty campaigns.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Ritika Singh',      handle: 'ritika.glows',  platform: 'instagram', category: 'beauty',        followers: 68000,  engagementRate: 5.5, ratePerPost: 5500,  email: 'ritikabeauty@gmail.com', city: 'Jaipur', status: 'prospect',  notes: 'Nail & makeup. Responsive, affordable.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Rohit Shetty',      handle: 'rohitkitchen', platform: 'youtube',   category: 'food',          followers: 1200000,engagementRate: 2.1, ratePerPost: 75000, email: 'biz@rohitkitchen.in', city: 'Pune',    status: 'approached',notes: 'Food review channel. Good reach for food-brand sponsors.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Deepika Nair',      handle: 'deepika_bites', platform: 'instagram', category: 'food',          followers: 145000, engagementRate: 4.9, ratePerPost: 12000, email: 'deepika@tastefully.in', city: 'Kochi',  status: 'active',    notes: 'Kerala cuisine. Works for regional food brands.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Arjun Mehta',       handle: 'fitarjun',      platform: 'instagram', category: 'fitness',       followers: 320000, engagementRate: 5.2, ratePerPost: 20000, email: 'arjunfit@gmail.com', city: 'Ahmedabad',status: 'active',    notes: 'Gym + nutrition. Works for supplement brands.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Prerna Verma',      handle: 'prerna.yoga',   platform: 'instagram', category: 'fitness',       followers: 88000,  engagementRate: 7.3, ratePerPost: 7000,  email: 'prenrayoga@outlook.com', city: 'Lucknow', status: 'prospect',  notes: 'Yoga & wellness. High engagement.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Samar Khan',        handle: 'samartravels',  platform: 'youtube',   category: 'travel',        followers: 890000, engagementRate: 3.0, ratePerPost: 55000, email: 'collab@samartravels.com', city: 'Hyderabad',status: 'active',  notes: 'Budget travel vlogs. Domestic + SEA coverage.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Nidhi Kapoor',      handle: 'wanderlust_ni', platform: 'instagram', category: 'travel',        followers: 175000, engagementRate: 4.4, ratePerPost: 14000, email: 'nidhi@wanderstories.in', city: 'Delhi',   status: 'approached',notes: 'Luxury travel. Great for hospitality brands.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Harsh Patel',       handle: 'harshtechie',   platform: 'youtube',   category: 'tech',          followers: 430000, engagementRate: 2.8, ratePerPost: 28000, email: 'collab@harshtech.in', city: 'Surat',    status: 'prospect',  notes: 'Gadget reviews. Good for tech accessories.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Tanvi Desai',       handle: 'tanvi.techlife', platform: 'instagram', category: 'tech',         followers: 62000,  engagementRate: 3.9, ratePerPost: 6000,  email: 'tanvidesai@gmail.com', city: 'Nashik',   status: 'prospect',  notes: 'Female tech influencer. Rare niche.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Meera Iyer',        handle: 'meera.life',    platform: 'instagram', category: 'lifestyle',     followers: 220000, engagementRate: 4.7, ratePerPost: 16000, email: 'pr@meeralives.in', city: 'Chennai',    status: 'active',    notes: 'Home decor + lifestyle. Consistent quality.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Jay Sharma',        handle: 'jay.everyday',  platform: 'instagram', category: 'lifestyle',     followers: 78000,  engagementRate: 5.8, ratePerPost: 7500,  email: 'jaysharma@gmail.com', city: 'Indore',    status: 'approached',notes: 'Men\'s lifestyle. Clothing + grooming.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Ananya Bhatt',      handle: 'ananya.comedy', platform: 'instagram', category: 'entertainment', followers: 650000, engagementRate: 6.5, ratePerPost: 45000, email: 'booking@ananyab.com', city: 'Mumbai',    status: 'active',    notes: 'Meme-style reels. Great reach for youth products.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Rohan Das',         handle: 'rohancomedy',   platform: 'youtube',   category: 'entertainment', followers: 980000, engagementRate: 2.4, ratePerPost: 60000, email: 'collab@rohandas.in', city: 'Kolkata',    status: 'prospect',  notes: 'Bengali comedy. Hyper-regional.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Pooja Rathore',     handle: 'pooja.parenting', platform: 'instagram',category: 'parenting',   followers: 115000, engagementRate: 5.1, ratePerPost: 9000,  email: 'pooja.r@gmail.com',  city: 'Bhopal',    status: 'active',    notes: 'Mommy blogger. Baby products, EdTech.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Vishal Sood',       handle: 'educatevsood',  platform: 'youtube',   category: 'education',     followers: 760000, engagementRate: 3.3, ratePerPost: 40000, email: 'biz@vishalsood.com', city: 'Chandigarh', status: 'approached',notes: 'Career + UPSC content. Premium EdTech brands.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Bhavna Joshi',      handle: 'bhavna.snaps',  platform: 'instagram', category: 'photography',   followers: 48000,  engagementRate: 6.9, ratePerPost: 4500,  email: 'bhavna.clicks@gmail.com', city: 'Ahmedabad', status: 'prospect', notes: 'Product photography specialist. Surprisingly high ER.' },
+    { organizationId: org._id, addedBy: priyankaId, name: 'Karan Malhotra',    handle: 'karanshots',    platform: 'instagram', category: 'photography',   followers: 92000,  engagementRate: 4.0, ratePerPost: 8500,  email: 'karan@karanshots.in', city: 'Gurgaon',   status: 'blacklisted', notes: 'Posted without disclosure. Do not rebook.' },
+  ]);
+  console.log('[Seed] Created 20 influencers ✓');
 
   await mongoose.disconnect();
   process.exit(0);

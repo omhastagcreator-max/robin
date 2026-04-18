@@ -19,6 +19,7 @@ const SalesDashboard    = lazy(() => import('@/pages/SalesDashboard'));
 const TasksPage         = lazy(() => import('@/pages/TasksPage'));
 const WorkRoom          = lazy(() => import('@/pages/WorkRoom'));
 const GroupChat         = lazy(() => import('@/pages/GroupChat'));
+const InfluencerSheet   = lazy(() => import('@/pages/InfluencerSheet'));
 const NotificationsPage = lazy(() => import('@/pages/NotificationsPage'));
 const ProfilePage       = lazy(() => import('@/pages/ProfilePage'));
 
@@ -64,6 +65,7 @@ function AppRoutes() {
 
         {/* Sales */}
         <Route path="/sales"            element={<E><SalesDashboard /></E>} />
+        <Route path="/influencers"       element={<E><InfluencerSheet /></E>} />
 
         {/* Catch-all */}
         <Route path="*"                 element={<Navigate to="/" replace />} />

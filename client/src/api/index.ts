@@ -125,3 +125,10 @@ export const createAdReport    = (d: Record<string, unknown>)       => api.post(
 export const updateAdReport    = (id: string, d: Record<string, unknown>) => api.put(`/ad-reports/${id}`, d).then(r => r.data);
 export const deleteAdReport    = (id: string)                        => api.delete(`/ad-reports/${id}`).then(r => r.data);
 export const getAdReportSummary = (params?: Record<string, unknown>)  => api.get('/ad-reports/summary', { params }).then(r => r.data);
+
+// ── Influencer Sheet ──────────────────────────────────────────────────────────
+export const listInfluencers    = (params?: Record<string, unknown>)      => api.get('/influencers', { params }).then(r => r.data);
+export const createInfluencer   = (d: Record<string, unknown>)            => api.post('/influencers', d).then(r => r.data);
+export const updateInfluencer   = (id: string, d: Record<string, unknown>)=> api.put(`/influencers/${id}`, d).then(r => r.data);
+export const deleteInfluencer   = (id: string)                            => api.delete(`/influencers/${id}`).then(r => r.data);
+export const influencerStats    = ()                                       => api.get('/influencers/stats').then(r => r.data);
