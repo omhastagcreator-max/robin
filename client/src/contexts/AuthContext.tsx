@@ -8,6 +8,7 @@ interface RobinUser {
   role: string;
   team?: string;
   avatarUrl?: string;
+  organizationId?: string;
 }
 
 interface AuthContextValue {
@@ -39,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     api.getMe()
       .then(({ user: u }) => {
-        const mapped: RobinUser = { id: u._id, email: u.email, name: u.name, role: u.role, team: u.team, avatarUrl: u.avatarUrl };
+        const mapped: RobinUser = { id: u._id, email: u.email, name: u.name, role: u.role, team: u.team, avatarUrl: u.avatarUrl, organizationId: u.organizationId };
         setUser(mapped);
         localStorage.setItem(USER_KEY, JSON.stringify(mapped));
       })
@@ -55,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { token, user: u } = await api.login(email, password);
       localStorage.setItem(TOKEN_KEY, token);
-      const mapped: RobinUser = { id: u.id, email: u.email, name: u.name, role: u.role, team: u.team, avatarUrl: u.avatarUrl };
+      const mapped: RobinUser = { id: u.id, email: u.email, name: u.name, role: u.role, team: u.team, avatarUrl: u.avatarUrl, organizationId: u.organizationId };
       localStorage.setItem(USER_KEY, JSON.stringify(mapped));
       setUser(mapped);
       return {};
@@ -66,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithToken = (token: string, u: any) => {
     localStorage.setItem(TOKEN_KEY, token);
-    const mapped: RobinUser = { id: u.id || u._id, email: u.email, name: u.name, role: u.role, team: u.team, avatarUrl: u.avatarUrl };
+    const mapped: RobinUser = { id: u.id || u._id, email: u.email, name: u.name, role: u.role, team: u.team, avatarUrl: u.avatarUrl, organizationId: u.organizationId };
     localStorage.setItem(USER_KEY, JSON.stringify(mapped));
     setUser(mapped);
   };
@@ -81,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshProfile = useCallback(async () => {
     try {
       const { user: u } = await api.getMe();
-      const mapped: RobinUser = { id: u._id, email: u.email, name: u.name, role: u.role, team: u.team, avatarUrl: u.avatarUrl };
+      const mapped: RobinUser = { id: u._id, email: u.email, name: u.name, role: u.role, team: u.team, avatarUrl: u.avatarUrl, organizationId: u.organizationId };
       setUser(mapped);
       localStorage.setItem(USER_KEY, JSON.stringify(mapped));
     } catch { /* ignore */ }
