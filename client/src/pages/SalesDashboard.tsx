@@ -51,6 +51,9 @@ export default function SalesDashboard() {
   const [paymentTarget, setPaymentTarget] = useState<any | null>(null);
   const [paymentForm, setPaymentForm]     = useState({ amount: '', dueDate: '', note: '' });
   const [sendingPayment, setSendingPayment] = useState(false);
+  const [onboardLead, setOnboardLead]     = useState<any | null>(null);
+  const [onboardForm, setOnboardForm]     = useState({ clientName: '', email: '', password: '', services: [] as string[], projectType: 'combined', servicesDescription: '' });
+  const [onboarding, setOnboarding]       = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,11 +81,19 @@ export default function SalesDashboard() {
     e.preventDefault();
     const id = e.dataTransfer.getData('leadId');
     if (!id) return;
+    setDragging(null);
+    if (targetStage === 'won') {
+      const actualLead = leads.find(l => l._id === id);
+      if (actualLead) {
+        setOnboardLead(actualLead);
+        setOnboardForm({ clientName: actualLead.name || '', email: actualLead.email || '', password: '', services: [], projectType: 'combined', servicesDescription: '' });
+      }
+      return;
+    }
     setLeads(prev => prev.map(l => l._id === id ? { ...l, stage: targetStage, status: targetStage } : l));
     try {
-      await api.updateLead(id, { stage: targetStage, status: targetStage, ...(targetStage === 'won' ? { closedAt: new Date() } : {}) });
+      await api.updateLead(id, { stage: targetStage, status: targetStage });
     } catch { toast.error('Failed to update stage'); load(); }
-    setDragging(null);
   };
 
   const createLead = async (e: React.FormEvent) => {
@@ -114,6 +125,44 @@ export default function SalesDashboard() {
     } catch (err: any) {
       toast.error(err?.response?.data?.error || 'Failed to send payment alert');
     } finally { setSendingPayment(false); }
+  };
+
+  const handleOnboardClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onboardLead) return;
+    setOnboarding(true);
+    try {
+      // 1. Create User (Client)
+      const userRes = await api.createUser({
+        name: onboardForm.clientName,
+        email: onboardForm.email,
+        password: onboardForm.password || 'Welcome123!',
+        role: 'client',
+        company: onboardLead.company,
+        fromLeadId: onboardLead._id
+      });
+      
+      // 2. Create Project
+      await api.createProject({
+        name: `${onboardLead.company || onboardLead.name} - ${onboardForm.projectType}`,
+        clientId: userRes._id,
+        projectType: onboardForm.projectType,
+        services: onboardForm.services,
+        servicesDescription: onboardForm.servicesDescription,
+        deadline: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0] // default 30 days
+      });
+      
+      // 3. Move Lead to Won
+      await api.updateLead(onboardLead._id, { stage: 'won', status: 'won', closedAt: new Date() });
+      
+      toast.success('Client onboarded successfully!');
+      setOnboardLead(null);
+      load();
+    } catch(err: any) {
+      toast.error('Failed to onboard: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setOnboarding(false);
+    }
   };
 
   // ── Lead Card ─────────────────────────────────────────────────────────────
@@ -404,7 +453,7 @@ export default function SalesDashboard() {
 
         {/* ── Lead Detail Modal ── */}
         <AnimatePresence>
-          {viewLead && (
+          {viewLead ? (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
               onClick={e => { if (e.target === e.currentTarget) setViewLead(null); }}>
@@ -429,6 +478,12 @@ export default function SalesDashboard() {
                   <select defaultValue={viewLead.stage || viewLead.status}
                     onChange={async e => {
                       const stage = e.target.value;
+                      if (stage === 'won') {
+                        setOnboardLead(viewLead);
+                        setOnboardForm({ clientName: viewLead.name || '', email: viewLead.email || '', password: '', services: [], projectType: 'combined', servicesDescription: '' });
+                        setViewLead(null);
+                        return;
+                      }
                       await api.updateLead(viewLead._id, { stage, status: stage });
                       toast.success('Stage updated'); setViewLead(null); load();
                     }}
@@ -436,7 +491,6 @@ export default function SalesDashboard() {
                     {ALL_STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                   </select>
                 </div>
-                {/* Payment Due — straight from the lead modal */}
                 <button
                   onClick={() => { setViewLead(null); setPaymentTarget(viewLead); setPaymentForm({ amount: String(viewLead.estimatedValue||''), dueDate: '', note: '' }); }}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl text-sm font-medium hover:bg-amber-100 transition-all">
@@ -444,7 +498,62 @@ export default function SalesDashboard() {
                 </button>
               </motion.div>
             </motion.div>
-          )}
+          ) : onboardLead ? (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto"
+              onClick={e => { if (e.target === e.currentTarget) setOnboardLead(null); }}>
+              <motion.form initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95 }}
+                onSubmit={handleOnboardClient}
+                className="bg-white border border-gray-100 rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-xl my-8">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h2 className="font-bold text-xl text-green-700 inline-flex items-center gap-2"><Trophy className="h-5 w-5" /> Deal Won! Onboard Client</h2>
+                    <p className="text-sm text-gray-500">Create client portal & set up projects/services</p>
+                  </div>
+                  <button type="button" onClick={() => setOnboardLead(null)}><X className="h-4 w-4 text-gray-400" /></button>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3 mt-4">
+                  <div className="col-span-2 sm:col-span-1 border rounded-xl p-3 bg-gray-50 space-y-2">
+                    <p className="text-xs font-semibold uppercase text-gray-500">Client Details</p>
+                    <input required value={onboardForm.clientName} onChange={e => setOnboardForm(p => ({ ...p, clientName: e.target.value }))} placeholder="Client Name" className="w-full text-sm p-2 border rounded-lg bg-white" />
+                    <input required type="email" value={onboardForm.email} onChange={e => setOnboardForm(p => ({ ...p, email: e.target.value }))} placeholder="Client Email" className="w-full text-sm p-2 border rounded-lg bg-white" />
+                    <input value={onboardForm.password} onChange={e => setOnboardForm(p => ({ ...p, password: e.target.value }))} placeholder="Set Password (opt)" className="w-full text-sm p-2 border rounded-lg bg-white" />
+                  </div>
+                  <div className="col-span-2 sm:col-span-1 border rounded-xl p-3 bg-gray-50 space-y-2">
+                    <p className="text-xs font-semibold uppercase text-gray-500">Services</p>
+                    <select value={onboardForm.projectType} onChange={e => setOnboardForm(p => ({ ...p, projectType: e.target.value }))} className="w-full text-sm p-2 border rounded-lg bg-white">
+                      <option value="ads">Ads (Meta/Google)</option>
+                      <option value="website">Website Dev</option>
+                      <option value="combined">Combined / Both</option>
+                      <option value="seo">SEO</option>
+                      <option value="social">Social Media</option>
+                    </select>
+                    <div>
+                        {['Meta Ads', 'Google Ads', 'Shopify', 'WordPress', 'SEO', 'Creative'].map(svc => (
+                            <label key={svc} className="flex items-center gap-2 text-xs mb-1">
+                                <input type="checkbox" checked={onboardForm.services.includes(svc)} onChange={e => {
+                                    if(e.target.checked) setOnboardForm(p => ({...p, services: [...p.services, svc]}));
+                                    else setOnboardForm(p => ({...p, services: p.services.filter(s => s !== svc)}));
+                                }} /> {svc}
+                            </label>
+                        ))}
+                    </div>
+                  </div>
+                  <div className="col-span-2 text-sm">
+                      <textarea value={onboardForm.servicesDescription} onChange={e => setOnboardForm(p => ({...p, servicesDescription: e.target.value}))} placeholder="Specific instructions for delivery team... (e.g. Needs 5 creatives per week, focus on ROAS)" className="w-full p-2 border rounded-lg bg-gray-50 flex-1 resize-none h-20" />
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setOnboardLead(null)} className="flex-1 py-2 text-gray-500 font-medium text-sm">Cancel</button>
+                  <button type="submit" disabled={onboarding || !onboardForm.email} className="flex-2 py-2 px-4 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2 flex-grow">
+                    {onboarding ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCheck className="h-4 w-4" />} Create Client & Handover
+                  </button>
+                </div>
+              </motion.form>
+            </motion.div>
+          ) : null}
         </AnimatePresence>
 
         {/* ── Payment Due Modal ── */}

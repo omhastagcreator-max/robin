@@ -7,7 +7,7 @@ const router = Router();
 router.use(authMiddleware);
 
 router.get('/',                             listProjects);
-router.post('/',                            requireRole('admin'), createProject);
+router.post('/',                            requireRole('admin', 'sales'), createProject);
 router.get('/:id',                          getProject);
 router.put('/:id',                          requireRole('admin', 'employee'), updateProject);
 router.delete('/:id',                       requireRole('admin'), deleteProject);

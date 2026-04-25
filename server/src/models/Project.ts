@@ -11,6 +11,8 @@ const ProjectSchema = new Schema({
   clientId: String,
   projectLeadId: String,
   projectType: { type: String, required: true, enum: ['ads', 'website', 'combined'] },
+  services: [{ type: String }],
+  servicesDescription: String,
   dealId: { type: Types.ObjectId, ref: 'Deal' },
   deadline: Date,
   status: { type: String, default: 'active', enum: ['active', 'completed', 'paused', 'cancelled'] },

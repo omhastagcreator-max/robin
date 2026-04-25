@@ -7,7 +7,7 @@ const router = Router();
 router.use(authMiddleware);
 
 router.get('/',       listUsers);
-router.post('/',      requireRole('admin'), createUser);
+router.post('/',      requireRole('admin', 'sales'), createUser);
 router.get('/:id',    getUserById);
 router.put('/:id',    requireRole('admin'), updateUser);
 router.delete('/:id', requireRole('admin'), deleteUser);

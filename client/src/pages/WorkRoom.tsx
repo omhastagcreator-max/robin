@@ -152,13 +152,23 @@ export default function WorkRoom() {
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-border flex items-center gap-2">
             <Video className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold text-sm">Team Video Call (Jitsi)</h2>
+            <h2 className="font-semibold text-sm">Team Video Calls (Jitsi)</h2>
           </div>
-          <div className="p-4">
-            <a href="https://meet.jit.si/robin-team-room" target="_blank" rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 py-3 bg-primary/10 border border-primary/30 rounded-xl text-sm text-primary font-medium hover:bg-primary/20 transition-all">
-              <Video className="h-4 w-4" /> Join Robin Team Room
-            </a>
+          <div className="p-4 space-y-3">
+            <p className="text-xs text-muted-foreground">Avoid global static rooms which lock out members. Join an organization-specific room below:</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { name: 'Main Office', id: 'MainOffice' },
+                { name: 'Sales Huddle', id: 'SalesHuddle' },
+                { name: 'Dev Sync', id: 'DevSync' },
+                { name: 'Client Meet', id: 'ClientMeet' }
+              ].map(room => (
+                <a key={room.id} href={`https://meet.jit.si/RobinAgency_${user?.organizationId || 'HQ'}_${room.id}`} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 py-3 bg-primary/10 border border-primary/30 rounded-xl text-sm text-primary font-medium hover:bg-primary/20 transition-all">
+                  <Video className="h-4 w-4" /> {room.name}
+                </a>
+              ))}
+            </div>
           </div>
         </div>
       </div>
