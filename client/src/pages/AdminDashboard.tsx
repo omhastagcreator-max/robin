@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity } from 'lucide-react';
+import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useWebRTCReceiver } from '@/hooks/useWebRTC';
+import { useAuth } from '@/contexts/AuthContext';
 import * as api from '@/api';
 import { FullPageSpinner } from '@/components/shared/Spinner';
 
@@ -37,6 +39,34 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // WebRTC Screen Monitor additions
+  const { user } = useAuth();
+  const [screenSessions, setScreenSessions] = useState<any[]>([]);
+  const [viewingUser, setViewingUser] = useState<string | null>(null);
+  const { remoteStream, isConnecting, viewScreen, stopViewing } = useWebRTCReceiver(user?.id || '');
+
+  const videoRef = useCallback((el: HTMLVideoElement | null) => {
+    if (el && remoteStream) el.srcObject = remoteStream;
+  }, [remoteStream]);
+
+  useEffect(() => {
+    const loadSessions = async () => {
+      try {
+        const data = await api.listScreenSessions();
+        setScreenSessions(Array.isArray(data) ? data : []);
+      } catch { /* ignore */ }
+    };
+    loadSessions();
+    const i = setInterval(loadSessions, 10000);
+    return () => clearInterval(i);
+  }, []);
+
+  const handleView = (targetId: string) => {
+    if (viewingUser === targetId) { stopViewing(); setViewingUser(null); return; }
+    setViewingUser(targetId);
+    viewScreen(targetId);
+  };
 
   useEffect(() => {
     Promise.all([
@@ -139,6 +169,89 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
+
+        {/* Admin Live Screen Monitor */}
+        <div className="space-y-4 pt-4 border-t border-border">
+          <div className="flex items-center gap-2">
+            <Monitor className="h-4 w-4 text-primary" />
+            <h2 className="font-semibold text-lg">Live Employee Screens</h2>
+            <span className="ml-auto text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+              {screenSessions.filter(s => s.status === 'active').length} active
+            </span>
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1 space-y-3">
+              {screenSessions.length === 0 ? (
+                <div className="bg-card border border-border rounded-2xl flex flex-col items-center justify-center py-8 gap-3">
+                  <MonitorOff className="h-8 w-8 text-muted-foreground/30" />
+                  <p className="text-sm text-muted-foreground">No active screen sessions</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
+                  {screenSessions.map(session => (
+                    <motion.div key={session._id || session.userId} layout
+                      className={`bg-card border rounded-2xl p-4 space-y-3 transition-all ${session.status === 'active' ? 'border-primary/40' : 'border-border'}`}>
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-xl bg-primary/20 flex items-center justify-center text-sm font-bold text-primary">
+                          {(session.profile?.name || '?')[0].toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{session.profile?.name || session.userId}</p>
+                          <p className={`text-[10px] ${session.status === 'active' ? 'text-green-500 font-semibold' : 'text-muted-foreground'}`}>
+                            {session.status === 'active' ? 'Broadcasting live' : 'Offline'}
+                          </p>
+                        </div>
+                        <span className={`h-2.5 w-2.5 rounded-full ${session.status === 'active' ? 'bg-green-400 animate-pulse' : 'bg-muted-foreground/30'}`} />
+                      </div>
+                      
+                      {session.status === 'active' && (
+                        <button onClick={() => handleView(session.userId)}
+                          className={`w-full py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                            viewingUser === session.userId
+                              ? 'bg-red-500/15 text-red-400 border border-red-500/30'
+                              : 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90'
+                          }`}>
+                          {isConnecting && viewingUser === session.userId ? (
+                            <><Loader2 className="h-4 w-4 animate-spin" /> Connecting…</>
+                          ) : viewingUser === session.userId ? (
+                            <><MonitorOff className="h-4 w-4" /> Stop Viewing</>
+                          ) : (
+                            <><Video className="h-4 w-4" /> View Screen</>
+                          )}
+                        </button>
+                      )}
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Remote Viewer Panel */}
+            <div className="lg:col-span-2">
+              {remoteStream ? (
+                <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
+                  className="bg-black/95 rounded-2xl overflow-hidden border border-primary/30 shadow-2xl shadow-primary/10 h-full min-h-[400px] flex flex-col">
+                  <div className="flex items-center justify-between px-4 py-3 bg-card border-b border-primary/20">
+                    <div className="flex items-center gap-3">
+                      <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
+                      <p className="text-sm font-semibold">Live Feed: {screenSessions.find(s => s.userId === viewingUser)?.profile?.name}</p>
+                    </div>
+                    <button onClick={() => { stopViewing(); setViewingUser(null); }} className="text-xs font-semibold text-red-400 bg-red-400/10 px-3 py-1.5 rounded-lg hover:bg-red-400/20">
+                      Close Viewer
+                    </button>
+                  </div>
+                  <video ref={videoRef} autoPlay playsInline className="w-full flex-1 max-h-[600px] object-contain bg-black/50" />
+                </motion.div>
+              ) : (
+                <div className="bg-muted/10 border border-dashed border-border/50 rounded-2xl h-full min-h-[400px] flex flex-col items-center justify-center gap-3">
+                  <Monitor className="h-10 w-10 text-muted-foreground/30" />
+                  <p className="text-sm font-medium text-muted-foreground">Select an active session to view the live screen</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </AppLayout>
   );
