@@ -6,6 +6,7 @@ import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, Trendi
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useWebRTCReceiver } from '@/hooks/useWebRTC';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSocket } from '@/hooks/useSocket';
 import * as api from '@/api';
 import { FullPageSpinner } from '@/components/shared/Spinner';
 
@@ -63,6 +64,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const socket = useSocket();
 
   // WebRTC Screen Monitor additions
   const { user } = useAuth();
@@ -79,31 +81,49 @@ export default function AdminDashboard() {
     });
   }, [screenSessions, remoteStreams, connectingTo, viewScreen]);
 
+  const loadSessions = useCallback(async () => {
+    try {
+      const data = await api.listScreenSessions();
+      setScreenSessions(Array.isArray(data) ? data : []);
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadStats = useCallback(async () => {
+    try {
+      const [s, e] = await Promise.all([
+        api.getAdminStats().catch(() => null),
+        api.adminEmployees().catch(() => []),
+      ]);
+      setStats(s);
+      setEmployees(Array.isArray(e) ? e : []);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    const loadSessions = async () => {
-      try {
-        const data = await api.listScreenSessions();
-        setScreenSessions(Array.isArray(data) ? data : []);
-      } catch { /* ignore */ }
-    };
     loadSessions();
+    loadStats();
     const i = setInterval(loadSessions, 10000);
     return () => clearInterval(i);
-  }, []);
+  }, [loadSessions, loadStats]);
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.on('screen:started', loadSessions);
+    socket.on('screen:stopped', loadSessions);
+    socket.on('presence:update', loadStats);
+
+    return () => {
+      socket.off('screen:started', loadSessions);
+      socket.off('screen:stopped', loadSessions);
+      socket.off('presence:update', loadStats);
+    };
+  }, [socket, loadSessions, loadStats]);
 
   const handleView = (targetId: string) => {
     viewScreen(targetId);
   };
-
-  useEffect(() => {
-    Promise.all([
-      api.getAdminStats().catch(() => null),
-      api.adminEmployees().catch(() => []),
-    ]).then(([s, e]) => {
-      setStats(s);
-      setEmployees(Array.isArray(e) ? e : []);
-    }).finally(() => setLoading(false));
-  }, []);
 
   if (loading) return <FullPageSpinner />;
 
