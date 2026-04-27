@@ -17,11 +17,11 @@ export default function WorkRoom() {
   const { isSharing, startSharing, stopSharing } = useScreenShare();
 
   // Admin: view others' screens
-  const { remoteStream, isConnecting, viewScreen, stopViewing } = useWebRTCReceiver(user?.id || '');
+  const { remoteStreams, connectingTo, viewScreen, stopViewing } = useWebRTCReceiver(user?.id || '');
 
   const videoRef = useCallback((el: HTMLVideoElement | null) => {
-    if (el && remoteStream) el.srcObject = remoteStream;
-  }, [remoteStream]);
+    if (el && viewingUser && remoteStreams[viewingUser]) el.srcObject = remoteStreams[viewingUser];
+  }, [remoteStreams, viewingUser]);
 
   const loadSessions = async () => {
     try {
@@ -36,7 +36,7 @@ export default function WorkRoom() {
   }, [role]);
 
   const handleView = (targetId: string) => {
-    if (viewingUser === targetId) { stopViewing(); setViewingUser(null); return; }
+    if (viewingUser === targetId) { stopViewing(targetId); setViewingUser(null); return; }
     setViewingUser(targetId);
     viewScreen(targetId);
   };
@@ -116,7 +116,7 @@ export default function WorkRoom() {
                             ? 'bg-red-500/15 text-red-400 border border-red-500/30'
                             : 'bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25'
                         }`}>
-                        {isConnecting && viewingUser === session.userId ? (
+                        {connectingTo[session.userId] && viewingUser === session.userId ? (
                           <><Loader2 className="h-3 w-3 animate-spin" /> Connecting…</>
                         ) : viewingUser === session.userId ? (
                           <><MonitorOff className="h-3 w-3" /> Stop Viewing</>
@@ -131,7 +131,7 @@ export default function WorkRoom() {
             )}
 
             {/* Remote stream viewer */}
-            {remoteStream && (
+            {viewingUser && remoteStreams[viewingUser] && (
               <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
                 className="bg-black rounded-2xl overflow-hidden border border-primary/30 shadow-2xl shadow-primary/10">
                 <div className="flex items-center justify-between px-4 py-2.5 bg-card border-b border-primary/20">
@@ -139,7 +139,7 @@ export default function WorkRoom() {
                     <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
                     <p className="text-xs font-medium">Live screen view</p>
                   </div>
-                  <button onClick={() => { stopViewing(); setViewingUser(null); }} className="text-xs text-muted-foreground hover:text-red-400">
+                  <button onClick={() => { stopViewing(viewingUser); setViewingUser(null); }} className="text-xs text-muted-foreground hover:text-red-400">
                     Stop
                   </button>
                 </div>
