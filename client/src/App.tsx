@@ -74,12 +74,16 @@ function AppRoutes() {
   );
 }
 
+import { ScreenShareProvider } from '@/contexts/ScreenShareContext';
+
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
-        <Toaster position="top-right" richColors expand />
+        <ScreenShareProvider>
+          <AppRoutes />
+          <Toaster position="top-right" richColors expand />
+        </ScreenShareProvider>
       </AuthProvider>
     </BrowserRouter>
   );

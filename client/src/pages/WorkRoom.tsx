@@ -3,7 +3,8 @@ import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { Video, Monitor, MonitorOff, Users, Loader2 } from 'lucide-react';
-import { useWebRTCSender, useWebRTCReceiver } from '@/hooks/useWebRTC';
+import { useScreenShare } from '@/contexts/ScreenShareContext';
+import { useWebRTCReceiver } from '@/hooks/useWebRTC';
 import * as api from '@/api';
 
 export default function WorkRoom() {
@@ -12,8 +13,8 @@ export default function WorkRoom() {
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [viewingUser, setViewingUser] = useState<string | null>(null);
 
-  // Employee: share their screen
-  const { isSharing, startSharing, stopSharing } = useWebRTCSender(user?.id || '');
+  // Employee: share their screen (Global persistent context)
+  const { isSharing, startSharing, stopSharing } = useScreenShare();
 
   // Admin: view others' screens
   const { remoteStream, isConnecting, viewScreen, stopViewing } = useWebRTCReceiver(user?.id || '');

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2 } from 'lucide-react';
+import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2, X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useWebRTCReceiver } from '@/hooks/useWebRTC';
 import { useAuth } from '@/contexts/AuthContext';
@@ -35,6 +35,30 @@ function KPICard({ label, value, sub, icon: Icon, color }: { label: string; valu
   );
 }
 
+function RemoteVideo({ stream, isPinned, onPin, name, onDisconnect }: { stream: MediaStream, isPinned: boolean, onPin: () => void, name: string, onDisconnect: () => void }) {
+  const ref = useCallback((el: HTMLVideoElement | null) => {
+    if (el && stream) el.srcObject = stream;
+  }, [stream]);
+
+  return (
+    <div className={`relative bg-black/95 rounded-2xl overflow-hidden border transition-all ${isPinned ? 'border-primary/50 shadow-2xl col-span-full h-[60vh] xl:h-[70vh]' : 'border-border/50 h-48 sm:h-56'}`}>
+      <video ref={ref} autoPlay playsInline className="w-full h-full object-contain" />
+      <div className="absolute bottom-3 left-3 bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-lg text-xs font-semibold text-white flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+        {name}
+      </div>
+      <div className="absolute top-3 right-3 flex items-center gap-2 opacity-0 hover:opacity-100 transition-opacity absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-transparent flex justify-end items-start p-3">
+        <button onClick={onPin} className="bg-black/60 hover:bg-primary/80 backdrop-blur-md p-2 rounded-lg text-white transition-all shadow-sm">
+          {isPinned ? <MonitorOff className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
+        </button>
+        <button onClick={onDisconnect} className="bg-black/60 hover:bg-red-500/80 backdrop-blur-md p-2 rounded-lg text-white transition-all shadow-sm">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -43,12 +67,17 @@ export default function AdminDashboard() {
   // WebRTC Screen Monitor additions
   const { user } = useAuth();
   const [screenSessions, setScreenSessions] = useState<any[]>([]);
-  const [viewingUser, setViewingUser] = useState<string | null>(null);
-  const { remoteStream, isConnecting, viewScreen, stopViewing } = useWebRTCReceiver(user?.id || '');
+  const [pinnedUser, setPinnedUser] = useState<string | null>(null);
+  const { remoteStreams, connectingTo, viewScreen, stopViewing } = useWebRTCReceiver(user?.id || '');
 
-  const videoRef = useCallback((el: HTMLVideoElement | null) => {
-    if (el && remoteStream) el.srcObject = remoteStream;
-  }, [remoteStream]);
+  // Auto-connect to new screens
+  useEffect(() => {
+    screenSessions.forEach(s => {
+      if (s.status === 'active' && !remoteStreams[s.userId] && !connectingTo[s.userId]) {
+        viewScreen(s.userId);
+      }
+    });
+  }, [screenSessions, remoteStreams, connectingTo, viewScreen]);
 
   useEffect(() => {
     const loadSessions = async () => {
@@ -63,8 +92,6 @@ export default function AdminDashboard() {
   }, []);
 
   const handleView = (targetId: string) => {
-    if (viewingUser === targetId) { stopViewing(); setViewingUser(null); return; }
-    setViewingUser(targetId);
     viewScreen(targetId);
   };
 
@@ -171,86 +198,63 @@ export default function AdminDashboard() {
         )}
 
         {/* Admin Live Screen Monitor */}
-        <div className="space-y-4 pt-4 border-t border-border">
-          <div className="flex items-center gap-2">
-            <Monitor className="h-4 w-4 text-primary" />
+        <div className="space-y-4 pt-4 border-t border-border mt-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Monitor className="h-5 w-5 text-primary" />
             <h2 className="font-semibold text-lg">Live Employee Screens</h2>
-            <span className="ml-auto text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-              {screenSessions.filter(s => s.status === 'active').length} active
+            <span className="ml-auto text-xs text-muted-foreground bg-green-500/10 text-green-500 border border-green-500/20 px-3 py-1 rounded-full font-semibold flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+              {screenSessions.filter(s => s.status === 'active').length} broadcasting
             </span>
           </div>
 
-          <div className="grid lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-1 space-y-3">
-              {screenSessions.length === 0 ? (
-                <div className="bg-card border border-border rounded-2xl flex flex-col items-center justify-center py-8 gap-3">
-                  <MonitorOff className="h-8 w-8 text-muted-foreground/30" />
-                  <p className="text-sm text-muted-foreground">No active screen sessions</p>
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
-                  {screenSessions.map(session => (
-                    <motion.div key={session._id || session.userId} layout
-                      className={`bg-card border rounded-2xl p-4 space-y-3 transition-all ${session.status === 'active' ? 'border-primary/40' : 'border-border'}`}>
-                      <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-xl bg-primary/20 flex items-center justify-center text-sm font-bold text-primary">
-                          {(session.profile?.name || '?')[0].toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{session.profile?.name || session.userId}</p>
-                          <p className={`text-[10px] ${session.status === 'active' ? 'text-green-500 font-semibold' : 'text-muted-foreground'}`}>
-                            {session.status === 'active' ? 'Broadcasting live' : 'Offline'}
-                          </p>
-                        </div>
-                        <span className={`h-2.5 w-2.5 rounded-full ${session.status === 'active' ? 'bg-green-400 animate-pulse' : 'bg-muted-foreground/30'}`} />
-                      </div>
-                      
-                      {session.status === 'active' && (
-                        <button onClick={() => handleView(session.userId)}
-                          className={`w-full py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-                            viewingUser === session.userId
-                              ? 'bg-red-500/15 text-red-400 border border-red-500/30'
-                              : 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90'
-                          }`}>
-                          {isConnecting && viewingUser === session.userId ? (
-                            <><Loader2 className="h-4 w-4 animate-spin" /> Connecting…</>
-                          ) : viewingUser === session.userId ? (
-                            <><MonitorOff className="h-4 w-4" /> Stop Viewing</>
-                          ) : (
-                            <><Video className="h-4 w-4" /> View Screen</>
-                          )}
-                        </button>
-                      )}
-                    </motion.div>
-                  ))}
-                </div>
-              )}
+          {screenSessions.filter(s => s.status === 'active').length === 0 ? (
+            <div className="bg-card border border-border rounded-2xl flex flex-col items-center justify-center py-16 gap-4">
+              <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center">
+                <MonitorOff className="h-8 w-8 text-muted-foreground/40" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-semibold text-foreground">No active screen sessions</p>
+                <p className="text-xs text-muted-foreground mt-1">When employees start sharing their screen, they will appear here automatically.</p>
+              </div>
             </div>
+          ) : (
+            <div className={`grid gap-4 ${pinnedUser ? 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'}`}>
+              {/* Force pinned user to render first if pinned */}
+              {pinnedUser && remoteStreams[pinnedUser] && (
+                <RemoteVideo 
+                  key={`pinned-${pinnedUser}`}
+                  stream={remoteStreams[pinnedUser]}
+                  isPinned={true} 
+                  onPin={() => setPinnedUser(null)}
+                  name={screenSessions.find(s => s.userId === pinnedUser)?.profile?.name || pinnedUser}
+                  onDisconnect={() => { stopViewing(pinnedUser); setPinnedUser(null); }}
+                />
+              )}
 
-            {/* Remote Viewer Panel */}
-            <div className="lg:col-span-2">
-              {remoteStream ? (
-                <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
-                  className="bg-black/95 rounded-2xl overflow-hidden border border-primary/30 shadow-2xl shadow-primary/10 h-full min-h-[400px] flex flex-col">
-                  <div className="flex items-center justify-between px-4 py-3 bg-card border-b border-primary/20">
-                    <div className="flex items-center gap-3">
-                      <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
-                      <p className="text-sm font-semibold">Live Feed: {screenSessions.find(s => s.userId === viewingUser)?.profile?.name}</p>
-                    </div>
-                    <button onClick={() => { stopViewing(); setViewingUser(null); }} className="text-xs font-semibold text-red-400 bg-red-400/10 px-3 py-1.5 rounded-lg hover:bg-red-400/20">
-                      Close Viewer
-                    </button>
-                  </div>
-                  <video ref={videoRef} autoPlay playsInline className="w-full flex-1 max-h-[600px] object-contain bg-black/50" />
-                </motion.div>
-              ) : (
-                <div className="bg-muted/10 border border-dashed border-border/50 rounded-2xl h-full min-h-[400px] flex flex-col items-center justify-center gap-3">
-                  <Monitor className="h-10 w-10 text-muted-foreground/30" />
-                  <p className="text-sm font-medium text-muted-foreground">Select an active session to view the live screen</p>
+              {/* Render the rest */}
+              {Object.entries(remoteStreams).filter(([id]) => id !== pinnedUser).map(([userId, stream]) => (
+                <RemoteVideo 
+                  key={userId}
+                  stream={stream}
+                  isPinned={false} 
+                  onPin={() => setPinnedUser(userId)}
+                  name={screenSessions.find(s => s.userId === userId)?.profile?.name || userId}
+                  onDisconnect={() => stopViewing(userId)}
+                />
+              ))}
+
+              {/* Connecting Indicators */}
+              {Object.entries(connectingTo).filter(([id, connecting]) => connecting).map(([userId]) => (
+                <div key={`connecting-${userId}`} className="bg-muted/10 border border-dashed border-border/50 rounded-2xl h-48 sm:h-56 flex flex-col items-center justify-center gap-3">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  <p className="text-xs font-semibold text-muted-foreground">
+                    Connecting to {screenSessions.find(s => s.userId === userId)?.profile?.name || 'User'}…
+                  </p>
                 </div>
-              )}
+              ))}
             </div>
-          </div>
+          )}
         </div>
       </div>
     </AppLayout>

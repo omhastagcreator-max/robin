@@ -5,10 +5,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bird, LayoutDashboard, ListTodo, Video, Bell, User, LogOut,
   Briefcase, Users, Building2, BarChart2, TrendingUp, Menu, X,
-  MessageSquare
+  MessageSquare, Monitor, MonitorOff
 } from 'lucide-react';
 import * as api from '@/api';
 import { useSocket } from '@/hooks/useSocket';
+import { useScreenShare } from '@/contexts/ScreenShareContext';
 import { toast } from 'sonner';
 
 interface NavItem { to: string; label: string; icon: React.ElementType; roles?: string[]; team?: string; }
@@ -43,6 +44,7 @@ export function AppLayout({ children, requiredRole }: Props) {
   const { user, role, logout } = useAuth();
   const location = useLocation();
   const socket = useSocket();
+  const { isSharing, stopSharing } = useScreenShare();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [chatUnread, setChatUnread] = useState(0);
@@ -221,6 +223,18 @@ export function AppLayout({ children, requiredRole }: Props) {
             </Link>
           )}
         </header>
+
+        {isSharing && (
+          <div className="bg-green-500/10 border-b border-green-500/20 px-4 py-2 flex items-center justify-between sticky top-0 z-20 w-full animate-in slide-in-from-top-4">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+              <p className="text-xs font-bold text-green-600">Your screen is currently being broadcasted live to the Admin</p>
+            </div>
+            <button onClick={stopSharing} className="text-xs flex items-center gap-1.5 bg-red-500 text-white px-3 py-1.5 rounded-lg hover:bg-red-600 shadow-sm">
+              <MonitorOff className="h-3 w-3" /> Stop Sharing
+            </button>
+          </div>
+        )}
 
         {/* Page content */}
         <div className="flex-1 p-4 sm:p-6 lg:p-8 overflow-x-hidden">

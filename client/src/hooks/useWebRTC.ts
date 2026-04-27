@@ -74,9 +74,9 @@ export function useWebRTCSender(userId: string) {
 
 // ── Receiver (Admin) ──────────────────────────────────────────────────────────
 export function useWebRTCReceiver(userId: string) {
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
+  const [connectingTo, setConnectingTo] = useState<Record<string, boolean>>({});
+  const pcMap = useRef<Map<string, RTCPeerConnection>>(new Map());
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -86,33 +86,47 @@ export function useWebRTCReceiver(userId: string) {
 
     socket.on('webrtc:offer', async ({ offer, senderId }: any) => {
       const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-      pcRef.current = pc;
+      pcMap.current.set(senderId, pc);
+
       pc.onicecandidate = e => { if (e.candidate) socket.emit('webrtc:ice', { target: senderId, candidate: e.candidate, senderId: userId }); };
-      pc.ontrack = e => { setRemoteStream(e.streams[0]); setIsConnecting(false); };
+      pc.ontrack = e => { 
+        setRemoteStreams(prev => ({ ...prev, [senderId]: e.streams[0] })); 
+        setConnectingTo(prev => ({ ...prev, [senderId]: false })); 
+      };
+
       await pc.setRemoteDescription(offer);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       socket.emit('webrtc:answer', { target: senderId, answer, adminId: userId });
     });
 
-    socket.on('webrtc:ice', async ({ candidate }: any) => {
-      if (pcRef.current && candidate) await pcRef.current.addIceCandidate(candidate);
+    socket.on('webrtc:ice', async ({ candidate, senderId }: any) => {
+      const pc = pcMap.current.get(senderId);
+      if (pc && candidate) await pc.addIceCandidate(candidate);
     });
 
     return () => { socket.off('webrtc:offer'); socket.off('webrtc:ice'); };
   }, [userId]);
 
   const viewScreen = useCallback((targetId: string) => {
-    setIsConnecting(true);
+    setConnectingTo(prev => ({ ...prev, [targetId]: true }));
     socketRef.current?.emit('view:request', { targetId, adminId: userId });
   }, [userId]);
 
-  const stopViewing = useCallback(() => {
-    pcRef.current?.close();
-    pcRef.current = null;
-    setRemoteStream(null);
-    setIsConnecting(false);
+  const stopViewing = useCallback((targetId: string) => {
+    const pc = pcMap.current.get(targetId);
+    pc?.close();
+    pcMap.current.delete(targetId);
+    setRemoteStreams(prev => { const nw = {...prev}; delete nw[targetId]; return nw; });
+    setConnectingTo(prev => { const nw = {...prev}; delete nw[targetId]; return nw; });
   }, []);
 
-  return { remoteStream, isConnecting, viewScreen, stopViewing };
+  const stopAll = useCallback(() => {
+    pcMap.current.forEach(pc => pc.close());
+    pcMap.current.clear();
+    setRemoteStreams({});
+    setConnectingTo({});
+  }, []);
+
+  return { remoteStreams, connectingTo, viewScreen, stopViewing, stopAll };
 }
