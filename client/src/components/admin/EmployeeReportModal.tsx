@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   X, BarChart2, CheckCircle2, ListTodo, Activity as ActivityIcon, Loader2,
   Calendar, Clock, FileText, FolderKanban, ArrowRight,
+  Timer, Coffee, Zap, AlertTriangle, TrendingUp,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import * as api from '@/api';
@@ -24,6 +25,19 @@ interface ReportPayload {
     totalTasksAssignedInPeriod: number;
     totalTasksOngoing: number;
     activityCount: number;
+    // Time (ms)
+    totalWorkedMs: number;
+    activeMs: number;
+    totalBreakMs: number;
+    sessionCount: number;
+  };
+  completion?: {
+    totalTasksTouched: number;
+    completedInTouched: number;
+    completionRate: number;
+    statusBreakdown: Record<string, number>;
+    priorityBreakdown: Record<string, number>;
+    overdueCount: number;
   };
   activities: Array<{
     _id: string;
@@ -38,6 +52,16 @@ interface ReportPayload {
     ongoing: any[];
     touched: any[];
   };
+}
+
+function formatDuration(ms: number): { value: string; unit: string } {
+  if (!ms || ms < 0) return { value: '0', unit: 'h' };
+  const totalMinutes = Math.floor(ms / 60_000);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h === 0) return { value: String(m), unit: 'm' };
+  if (m === 0) return { value: String(h), unit: 'h' };
+  return { value: `${h}h ${m}`, unit: 'm' };
 }
 
 interface TimelineItem {
@@ -108,6 +132,83 @@ function StatCard({ icon: Icon, label, value, color }: { icon: any; label: strin
       <div className="min-w-0">
         <p className="text-2xl font-bold tabular-nums leading-none">{value}</p>
         <p className="text-xs text-muted-foreground mt-1">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+function TimeCard({ icon: Icon, label, ms, color }: { icon: any; label: string; ms: number; color: string }) {
+  const d = formatDuration(ms);
+  return (
+    <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
+      <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${color}`}>
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-2xl font-bold tabular-nums leading-none whitespace-nowrap">
+          {d.value}<span className="text-sm font-medium text-muted-foreground ml-0.5">{d.unit}</span>
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+function CompletionSummary({ completion }: { completion: NonNullable<ReportPayload['completion']> }) {
+  const { totalTasksTouched, completedInTouched, completionRate, statusBreakdown, priorityBreakdown, overdueCount } = completion;
+  const urgent = (priorityBreakdown.urgent || 0) + (priorityBreakdown.high || 0);
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="h-11 w-11 rounded-xl bg-primary/15 flex items-center justify-center">
+          <TrendingUp className="h-5 w-5 text-primary" />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-semibold">Task completion</p>
+          <p className="text-xs text-muted-foreground">
+            {completedInTouched} of {totalTasksTouched} tasks done this period
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-2xl font-bold tabular-nums leading-none">{completionRate}<span className="text-sm text-muted-foreground">%</span></p>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wide">rate</p>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-2 rounded-full bg-muted overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${
+            completionRate >= 75 ? 'bg-green-500' :
+            completionRate >= 40 ? 'bg-amber-500' :
+                                   'bg-red-500'
+          }`}
+          style={{ width: `${Math.min(100, Math.max(0, completionRate))}%` }}
+        />
+      </div>
+
+      {/* Status pills */}
+      <div className="flex flex-wrap gap-2 text-[11px]">
+        <span className="px-2 py-1 rounded-full bg-green-500/15 text-green-500 font-medium">
+          {statusBreakdown.done || 0} done
+        </span>
+        <span className="px-2 py-1 rounded-full bg-amber-500/15 text-amber-500 font-medium">
+          {statusBreakdown.ongoing || 0} ongoing
+        </span>
+        <span className="px-2 py-1 rounded-full bg-muted text-muted-foreground font-medium">
+          {statusBreakdown.pending || 0} pending
+        </span>
+        {urgent > 0 && (
+          <span className="px-2 py-1 rounded-full bg-orange-500/15 text-orange-500 font-medium">
+            {urgent} high/urgent
+          </span>
+        )}
+        {overdueCount > 0 && (
+          <span className="px-2 py-1 rounded-full bg-red-500/15 text-red-500 font-medium flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3" /> {overdueCount} overdue
+          </span>
+        )}
       </div>
     </div>
   );
@@ -274,6 +375,29 @@ export function EmployeeReportModal({ open, employee, onClose }: Props) {
                     <StatCard icon={ArrowRight}   label="Newly Assigned"    value={report.stats.totalTasksAssignedInPeriod} color="bg-amber-500/15 text-amber-500" />
                     <StatCard icon={ActivityIcon} label="Activity Count"    value={report.stats.activityCount}              color="bg-primary/15 text-primary" />
                   </div>
+
+                  {/* Time stats — Working / Active / Break */}
+                  <section>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+                      <Timer className="h-3.5 w-3.5" /> Time on the clock · {PERIOD_LABEL[period]}
+                    </h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <TimeCard icon={Timer}    label="Working hours" ms={report.stats.totalWorkedMs} color="bg-primary/15 text-primary" />
+                      <TimeCard icon={Zap}      label="Active hours"  ms={report.stats.activeMs}     color="bg-green-500/15 text-green-500" />
+                      <TimeCard icon={Coffee}   label="Break taken"   ms={report.stats.totalBreakMs} color="bg-amber-500/15 text-amber-500" />
+                      <StatCard icon={Calendar} label="Sessions"      value={report.stats.sessionCount} color="bg-indigo-500/15 text-indigo-500" />
+                    </div>
+                    {report.stats.sessionCount === 0 && (
+                      <p className="text-[11px] text-muted-foreground mt-2 italic">
+                        No clock-in sessions recorded for this period.
+                      </p>
+                    )}
+                  </section>
+
+                  {/* Task completion summary — brief info */}
+                  {report.completion && (
+                    <CompletionSummary completion={report.completion} />
+                  )}
 
                   {/* Ongoing tasks */}
                   {report.tasks.ongoing.length > 0 && (

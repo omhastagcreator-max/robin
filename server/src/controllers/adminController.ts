@@ -160,15 +160,92 @@ export async function getEmployeeReport(req: AuthRequest, res: Response): Promis
       createdAt: { $gte: startDate },
     });
 
+    // ── Session time aggregation (working / active / break hours) ──────────
+    // Pull every session that overlaps the period: it either started inside
+    // the window, or it's still open (no endTime) and was started before.
+    const now = Date.now();
+    const sessions = await Session.find({
+      userId: id,
+      $or: [
+        { startTime: { $gte: startDate } },                                // started in period
+        { endTime:   { $gte: startDate } },                                // ended in period
+        { status:    { $in: ['active', 'on_break'] } },                    // still running
+      ],
+    }).lean();
+
+    let totalWorkedMs = 0;
+    let totalBreakMs  = 0;
+
+    for (const s of sessions) {
+      const startMs = new Date(s.startTime as Date).getTime();
+      const endMs   = s.endTime ? new Date(s.endTime as Date).getTime() : now;
+
+      // Clamp the worked window into the requested period
+      const clampedStart = Math.max(startMs, startDate.getTime());
+      const clampedEnd   = Math.min(endMs, now);
+      if (clampedEnd <= clampedStart) continue;
+
+      totalWorkedMs += (clampedEnd - clampedStart);
+
+      // Always re-derive breaks from breakEvents (breakTime is only finalised
+      // when a session ends, so live sessions report 0 there).
+      for (const b of (s.breakEvents || [])) {
+        if (!b.startedAt) continue;
+        const bStart = new Date(b.startedAt as Date).getTime();
+        const bEnd   = b.endedAt ? new Date(b.endedAt as Date).getTime() : now;
+        const cs = Math.max(bStart, startDate.getTime());
+        const ce = Math.min(bEnd,   now);
+        if (ce > cs) totalBreakMs += (ce - cs);
+      }
+    }
+
+    const activeMs = Math.max(0, totalWorkedMs - totalBreakMs);
+
+    // ── Task completion stats ───────────────────────────────────────────────
+    // "Touched" tasks within the period are the realistic universe of work
+    // they engaged with this period. Completion rate = done / touched.
+    const totalTasksTouched   = tasksTouchedInPeriod.length;
+    const completedInTouched  = tasksTouchedInPeriod.filter((t: any) => t.status === 'done').length;
+    const completionRate      = totalTasksTouched > 0
+      ? Math.round((completedInTouched / totalTasksTouched) * 100)
+      : 0;
+
+    // Status + priority breakdowns — useful for the "brief info" card
+    const statusBreakdown   = { pending: 0, ongoing: 0, done: 0 } as Record<string, number>;
+    const priorityBreakdown = { low: 0, medium: 0, high: 0, urgent: 0 } as Record<string, number>;
+    for (const t of tasksTouchedInPeriod as any[]) {
+      if (t.status   in statusBreakdown)   statusBreakdown[t.status]++;
+      if (t.priority in priorityBreakdown) priorityBreakdown[t.priority]++;
+    }
+
+    // Overdue tasks among the user's overall ongoing pipeline
+    const overdueCount = ongoingTasks.filter((t: any) =>
+      t.dueDate && new Date(t.dueDate).getTime() < now
+    ).length;
+
     res.json({
       period,
       startDate,
       employee,
       stats: {
+        // Tasks
         totalTasksDoneInPeriod:     completedTasks.length,
         totalTasksAssignedInPeriod,
         totalTasksOngoing:          ongoingTasks.length,
         activityCount:              activities.length,
+        // Time (all in milliseconds; client formats to hours/minutes)
+        totalWorkedMs,
+        activeMs,
+        totalBreakMs,
+        sessionCount:               sessions.length,
+      },
+      completion: {
+        totalTasksTouched,
+        completedInTouched,
+        completionRate,           // 0–100
+        statusBreakdown,
+        priorityBreakdown,
+        overdueCount,
       },
       activities,
       tasks: {
