@@ -11,6 +11,7 @@ import * as api from '@/api';
 import { useSocket } from '@/hooks/useSocket';
 import { useScreenShare } from '@/contexts/ScreenShareContext';
 import { toast } from 'sonner';
+import { SessionMiniWidget } from '@/components/shared/SessionMiniWidget';
 
 interface NavItem { to: string; label: string; icon: React.ElementType; roles?: string[]; team?: string; }
 
@@ -157,6 +158,11 @@ export function AppLayout({ children, requiredRole }: Props) {
         {visibleNav.map(item => <NavLink key={item.to} item={item} />)}
       </nav>
 
+      {/* Session mini-widget — visible across every page for employee/sales */}
+      <div className="px-1">
+        <SessionMiniWidget />
+      </div>
+
       {/* User + Logout */}
       <div className="border-t border-border pt-3 mt-2">
         <div className="flex items-center gap-3 px-3 py-2 mb-1">
@@ -228,7 +234,7 @@ export function AppLayout({ children, requiredRole }: Props) {
           <div className="bg-green-500/10 border-b border-green-500/20 px-4 py-2 flex items-center justify-between sticky top-0 z-20 w-full animate-in slide-in-from-top-4">
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-              <p className="text-xs font-bold text-green-600">Your screen is currently being broadcasted live to the Admin</p>
+              <p className="text-xs font-bold text-green-600">Your screen is currently being broadcasted live to your teammates</p>
             </div>
             <button onClick={stopSharing} className="text-xs flex items-center gap-1.5 bg-red-500 text-white px-3 py-1.5 rounded-lg hover:bg-red-600 shadow-sm">
               <MonitorOff className="h-3 w-3" /> Stop Sharing

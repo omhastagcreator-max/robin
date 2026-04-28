@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import * as api from '@/api';
 import { useSession } from '@/hooks/useSession';
 import { useTasks } from '@/hooks/useTasks';
+import { SessionClockCard } from '@/components/shared/SessionClockCard';
 
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -87,7 +88,7 @@ function TeamRoleWidget({ team, tasks }: { team: string; tasks: any[] }) {
 
 export default function EmployeeDashboard() {
   const { user } = useAuth();
-  const { session, startSession, startBreak, endBreak, endSession, loading: sessionLoading } = useSession();
+  const { session } = useSession();
   const { tasks, loading: tasksLoading, refresh, createTask, updateTask } = useTasks();
 
   const [allUsers, setAllUsers] = useState<any[]>([]);
@@ -96,7 +97,6 @@ export default function EmployeeDashboard() {
   const [addingTask, setAddingTask] = useState(false);
   const [newTask, setNewTask] = useState({ title: '', priority: 'medium', dueDate: '', taskType: 'dev', assignToId: '', projectId: '' });
   const [saving, setSaving] = useState(false);
-  const [elapsed, setElapsed]   = useState(0);
 
   // Tasks for today
   const todayTasks = tasks.filter(t => t.dueDate && isToday(new Date(t.dueDate)));
@@ -104,22 +104,12 @@ export default function EmployeeDashboard() {
   const overdueTasks = tasks.filter(t => t.status !== 'done' && t.dueDate && isBefore(new Date(t.dueDate), startOfDay(new Date())));
   const dayLocked = !session && todayTasks.length < 3;
 
-  // Session timer
-  useEffect(() => {
-    if (!session || session.status === 'ended') return;
-    const start = new Date(session.startTime).getTime();
-    const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000));
-    tick(); const i = setInterval(tick, 1000); return () => clearInterval(i);
-  }, [session]);
-
   useEffect(() => {
     refresh();
     api.listUsers().then(d => setAllUsers(Array.isArray(d) ? d.filter((u: any) => u._id !== user?.id) : []));
     api.listNotifications({ limit: 10 }).then(d => setNotifications(Array.isArray(d) ? d.slice(0, 5) : []));
     api.listProjects().then(d => setProjects(Array.isArray(d) ? d.filter(p => p.status === 'active') : []));
   }, []);
-
-  const fmt = (s: number) => `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,11 +131,6 @@ export default function EmployeeDashboard() {
     const MAP: Record<string, 'pending' | 'in_progress' | 'done' | 'blocked'> = { pending: 'in_progress', in_progress: 'done', done: 'pending', blocked: 'in_progress' };
     const next = MAP[task.status as string] ?? 'pending';
     await updateTask(task._id, { status: next });
-  };
-
-  const handleStartDay = async () => {
-    if (dayLocked) { toast.error('Add at least 3 tasks for today before starting your day'); return; }
-    await startSession();
   };
 
   // KPI summary
@@ -198,41 +183,12 @@ export default function EmployeeDashboard() {
         <div className="grid lg:grid-cols-3 gap-5">
           {/* Left — Session Control + KPIs */}
           <div className="space-y-4">
-            {/* Session Card */}
-            <div className={`rounded-2xl border p-5 space-y-4 ${session?.status === 'active' ? 'border-green-500/30 bg-green-500/5' : session?.status === 'on_break' ? 'border-amber-500/30 bg-amber-500/5' : 'border-border bg-card'}`}>
-              <div className="flex items-center gap-3">
-                <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${session?.status === 'active' ? 'bg-green-500/20' : session?.status === 'on_break' ? 'bg-amber-500/20' : 'bg-muted'}`}>
-                  <Clock className={`h-5 w-5 ${session?.status === 'active' ? 'text-green-400' : session?.status === 'on_break' ? 'text-amber-400' : 'text-muted-foreground'}`} />
-                </div>
-                <div>
-                  <p className="font-semibold text-sm">{session?.status === 'active' ? 'Work session active' : session?.status === 'on_break' ? 'On break' : 'Not clocked in'}</p>
-                  {session && <p className="text-2xl font-mono font-bold tabular-nums">{fmt(elapsed)}</p>}
-                </div>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                {!session && (
-                  <button onClick={handleStartDay} disabled={dayLocked || sessionLoading}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-medium hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed">
-                    <Play className="h-3.5 w-3.5" /> Start Day
-                  </button>
-                )}
-                {session?.status === 'active' && (
-                  <>
-                    <button onClick={startBreak} className="flex items-center gap-1.5 px-3 py-2 bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded-xl text-xs font-medium hover:bg-amber-500/25">
-                      <Pause className="h-3.5 w-3.5" /> Take Break
-                    </button>
-                    <button onClick={endSession} className="flex items-center gap-1.5 px-3 py-2 bg-red-500/15 text-red-400 border border-red-500/30 rounded-xl text-xs font-medium hover:bg-red-500/25">
-                      <StopCircle className="h-3.5 w-3.5" /> End Day
-                    </button>
-                  </>
-                )}
-                {session?.status === 'on_break' && (
-                  <button onClick={endBreak} className="flex items-center gap-1.5 px-3 py-2 bg-green-500/15 text-green-400 border border-green-500/30 rounded-xl text-xs font-medium hover:bg-green-500/25">
-                    <Play className="h-3.5 w-3.5" /> Resume
-                  </button>
-                )}
-              </div>
-            </div>
+            {/* Session Card (shared, used by all internal roles) */}
+            <SessionClockCard
+              dayLocked={dayLocked}
+              dayLockReason={`Add ${3 - todayTasks.length} more task${3 - todayTasks.length !== 1 ? 's' : ''} for today before clocking in`}
+              onLockedAttempt={() => setAddingTask(true)}
+            />
 
             {/* KPI Cards */}
             {[

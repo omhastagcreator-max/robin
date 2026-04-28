@@ -10,6 +10,7 @@ import {
 import * as api from '@/api';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import { SessionClockCard } from '@/components/shared/SessionClockCard';
 
 // ── Stage Config ──────────────────────────────────────────────────────────────
 const PIPELINE_STAGES = [
@@ -302,6 +303,9 @@ export default function SalesDashboard() {
             <Plus className="h-4 w-4" /> New Lead
           </button>
         </div>
+
+        {/* Clock-in (Start Day / Break / End Day) */}
+        <SessionClockCard />
 
         {/* KPI Bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
-import { Users, Plus, Activity, CheckCircle2, Mail, Phone, Loader2, UserCheck } from 'lucide-react';
+import { Users, Plus, Activity, CheckCircle2, Mail, Phone, Loader2, UserCheck, BarChart2 } from 'lucide-react';
 import * as api from '@/api';
 import { toast } from 'sonner';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { EmployeeReportModal } from '@/components/admin/EmployeeReportModal';
 
 const teamColors: Record<string, string> = {
   web:       'bg-blue-500/15 text-blue-400',
@@ -22,6 +23,7 @@ export default function AdminEmployees() {
   const [inviteRole, setInviteRole] = useState('employee');
   const [inviting, setInviting] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
+  const [reportFor, setReportFor] = useState<any | null>(null);
 
   const load = async () => {
     try {
@@ -118,6 +120,15 @@ export default function AdminEmployees() {
                   <CheckCircle2 className="h-3 w-3" />
                   <span>{emp.tasksDoneToday || 0} today</span>
                 </div>
+                {/* View Report */}
+                <button
+                  onClick={() => setReportFor(emp)}
+                  title="View productivity report"
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors shrink-0"
+                >
+                  <BarChart2 className="h-3.5 w-3.5" />
+                  <span className="hidden md:inline">Report</span>
+                </button>
                 {/* Role selector */}
                 <select value={emp.role} onChange={e => changeRole(emp._id, e.target.value)}
                   className="text-xs bg-background border border-input rounded-lg px-2 py-1 shrink-0">
@@ -133,6 +144,12 @@ export default function AdminEmployees() {
           </div>
         )}
       </div>
+
+      <EmployeeReportModal
+        open={!!reportFor}
+        employee={reportFor}
+        onClose={() => setReportFor(null)}
+      />
     </AppLayout>
   );
 }

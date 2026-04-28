@@ -5,6 +5,8 @@ import { updateScreenStatus, listScreenSessions } from '../controllers/screenSes
 
 const router = Router();
 router.use(authMiddleware);
-router.put('/status', requireRole('employee'), updateScreenStatus);
-router.get('/', requireRole('admin'), listScreenSessions);
+// Internal staff (admin / employee / sales) can broadcast their screen status
+router.put('/status', requireRole('employee', 'sales', 'admin'), updateScreenStatus);
+// And any internal staff member can list / view other staff screens
+router.get('/', requireRole('admin', 'employee', 'sales'), listScreenSessions);
 export default router;

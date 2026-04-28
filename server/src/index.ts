@@ -60,6 +60,18 @@ const io = new SocketServer(httpServer, {
 // Online users tracker
 const onlineUsers = new Map<string, { userId: string; name: string; role: string }>();
 
+// Meeting room participant tracker:
+//   roomId -> Map<userId, { name, role }>
+// We dedupe by userId so a user opening multiple tabs doesn't double-count.
+const meetingRooms = new Map<string, Map<string, { name: string; role: string }>>();
+
+function broadcastRoomParticipants(io: SocketServer, roomId: string) {
+  const members = Array.from(meetingRooms.get(roomId)?.entries() || []).map(
+    ([uid, info]) => ({ userId: uid, ...info })
+  );
+  io.to(`meeting:${roomId}`).emit('meeting:participants', { roomId, participants: members });
+}
+
 io.on('connection', (socket) => {
   const userId   = socket.handshake.query.userId   as string;
   const userName = socket.handshake.query.userName as string;
@@ -104,6 +116,43 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ── Meeting Room (mesh WebRTC presence) ──────────────────────────────────
+  // Currently a single org-wide room ("agency-global") but the API takes a
+  // roomId so we can scope per-project later.
+  socket.on('meeting:join', ({ roomId = 'agency-global' }) => {
+    if (!userId) return;
+    socket.join(`meeting:${roomId}`);
+    let room = meetingRooms.get(roomId);
+    if (!room) { room = new Map(); meetingRooms.set(roomId, room); }
+    room.set(userId, { name: userName || 'Unknown', role: userRole || 'employee' });
+
+    // Tell the new joiner who's already there (so they can initiate offers)
+    socket.emit('meeting:participants', {
+      roomId,
+      participants: Array.from(room.entries()).map(([uid, info]) => ({ userId: uid, ...info })),
+    });
+    // Tell existing members someone new joined
+    socket.to(`meeting:${roomId}`).emit('meeting:user-joined', { roomId, userId, name: userName, role: userRole });
+  });
+
+  socket.on('meeting:leave', ({ roomId = 'agency-global' }) => {
+    if (!userId) return;
+    socket.leave(`meeting:${roomId}`);
+    const room = meetingRooms.get(roomId);
+    if (room) {
+      room.delete(userId);
+      if (room.size === 0) meetingRooms.delete(roomId);
+    }
+    socket.to(`meeting:${roomId}`).emit('meeting:user-left', { roomId, userId });
+    broadcastRoomParticipants(io, roomId);
+  });
+
+  // Track-state changes (mic/camera/screen on/off) — small UI-only signal
+  socket.on('meeting:track-state', ({ roomId = 'agency-global', state }) => {
+    if (!userId) return;
+    socket.to(`meeting:${roomId}`).emit('meeting:track-state', { userId, state });
+  });
+
   // ── Real-time task notifications ─────────────────────────────────────────
   socket.on('task:assigned', ({ targetUserId, taskTitle, assignerName }) => {
     io.to(`user:${targetUserId}`).emit('notification:new', {
@@ -116,6 +165,22 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     onlineUsers.delete(socket.id);
     io.emit('presence:update', Array.from(onlineUsers.values()));
+
+    // Drop user from any meeting rooms they were in (only if no other tabs of
+    // theirs are still connected — checked via the presence map by userId).
+    if (userId) {
+      const stillConnected = Array.from(onlineUsers.values()).some(u => u.userId === userId);
+      if (!stillConnected) {
+        meetingRooms.forEach((room, roomId) => {
+          if (room.has(userId)) {
+            room.delete(userId);
+            io.to(`meeting:${roomId}`).emit('meeting:user-left', { roomId, userId });
+            broadcastRoomParticipants(io, roomId);
+            if (room.size === 0) meetingRooms.delete(roomId);
+          }
+        });
+      }
+    }
   });
 });
 

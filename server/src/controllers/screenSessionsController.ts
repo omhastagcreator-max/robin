@@ -20,12 +20,23 @@ export async function updateScreenStatus(req: AuthRequest, res: Response): Promi
 export async function listScreenSessions(req: AuthRequest, res: Response): Promise<void> {
   try {
     const me = await User.findById(req.user!.id).select('organizationId');
-    const employees = await User.find({ organizationId: me?.organizationId, role: { $in: ['employee'] }, isActive: true }).select('_id name email');
-    const employeeIds = employees.map(e => String(e._id));
-    const sessions = await ScreenSession.find({ userId: { $in: employeeIds } });
+    // Internal staff = admin + employee + sales. Clients are excluded from
+    // both the viewer side (route guard) and the listing.
+    const staff = await User.find({
+      organizationId: me?.organizationId,
+      role: { $in: ['employee', 'sales', 'admin'] },
+      isActive: true,
+    }).select('_id name email role team');
+
+    const staffIds = staff.map(e => String(e._id));
+    // Exclude the viewer's own session — they don't need to "view themselves".
+    const sessions = await ScreenSession.find({
+      userId: { $in: staffIds, $ne: req.user!.id },
+    });
+
     const result = sessions.map(s => ({
       ...s.toObject(),
-      profile: employees.find(e => String(e._id) === s.userId),
+      profile: staff.find(e => String(e._id) === s.userId),
     }));
     res.json(result);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }

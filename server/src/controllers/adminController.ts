@@ -103,3 +103,79 @@ export async function resetUserPassword(req: AuthRequest, res: Response): Promis
     res.json({ message: 'Password reset', newPassword });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
+
+// GET /api/admin/employees/:id/report?period=daily|weekly|monthly
+export async function getEmployeeReport(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const { id } = req.params;
+    const period = (req.query.period as string) || 'daily';
+
+    // Compute startDate based on server time
+    const startDate = new Date();
+    startDate.setHours(0, 0, 0, 0); // Default daily = today 00:00
+
+    if (period === 'weekly') {
+      const day = startDate.getDay();                              // 0 = Sun, 1 = Mon …
+      const diff = startDate.getDate() - day + (day === 0 ? -6 : 1); // back to Monday
+      startDate.setDate(diff);
+    } else if (period === 'monthly') {
+      startDate.setDate(1); // first of the month
+    }
+
+    // Verify employee exists
+    const employee = await User.findById(id).select('-passwordHash').lean();
+    if (!employee) { res.status(404).json({ error: 'Employee not found' }); return; }
+
+    // Activity log for the timeframe
+    const activities = await ActivityLog.find({ userId: id, createdAt: { $gte: startDate } })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Tasks assigned to user that were touched (created/updated/completed) within the timeframe
+    const tasksTouchedInPeriod = await ProjectTask.find({
+      assignedTo: id,
+      $or: [
+        { createdAt:   { $gte: startDate } },
+        { updatedAt:   { $gte: startDate } },
+        { completedAt: { $gte: startDate } },
+      ],
+    }).populate('projectId', 'name').sort({ updatedAt: -1 }).lean();
+
+    // Tasks completed within the timeframe
+    const completedTasks = await ProjectTask.find({
+      assignedTo: id,
+      status: 'done',
+      completedAt: { $gte: startDate },
+    }).populate('projectId', 'name').sort({ completedAt: -1 }).lean();
+
+    // Tasks currently ongoing (not bounded by period — overall pipeline)
+    const ongoingTasks = await ProjectTask.find({
+      assignedTo: id,
+      status: { $in: ['pending', 'ongoing'] },
+    }).populate('projectId', 'name').sort({ dueDate: 1 }).lean();
+
+    // Tasks newly assigned to user inside the period
+    const totalTasksAssignedInPeriod = await ProjectTask.countDocuments({
+      assignedTo: id,
+      createdAt: { $gte: startDate },
+    });
+
+    res.json({
+      period,
+      startDate,
+      employee,
+      stats: {
+        totalTasksDoneInPeriod:     completedTasks.length,
+        totalTasksAssignedInPeriod,
+        totalTasksOngoing:          ongoingTasks.length,
+        activityCount:              activities.length,
+      },
+      activities,
+      tasks: {
+        completed: completedTasks,
+        ongoing:   ongoingTasks,
+        touched:   tasksTouchedInPeriod,
+      },
+    });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
