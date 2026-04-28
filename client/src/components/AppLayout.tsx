@@ -5,13 +5,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bird, LayoutDashboard, ListTodo, Video, Bell, User, LogOut,
   Briefcase, Users, Building2, BarChart2, TrendingUp, Menu, X,
-  MessageSquare, Monitor, MonitorOff
+  MessageSquare, Monitor, MonitorOff, KeyRound
 } from 'lucide-react';
 import * as api from '@/api';
 import { useSocket } from '@/hooks/useSocket';
 import { useScreenShare } from '@/contexts/ScreenShareContext';
 import { toast } from 'sonner';
 import { SessionMiniWidget } from '@/components/shared/SessionMiniWidget';
+import { CommandPalette } from '@/components/shared/CommandPalette';
 
 interface NavItem { to: string; label: string; icon: React.ElementType; roles?: string[]; team?: string; }
 
@@ -30,6 +31,8 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/admin/reports',    label: 'Reports',      icon: BarChart2,       roles: ['admin'] },
   // Work room
   { to: '/workroom',         label: 'Work Room',    icon: Video,           roles: ['admin', 'employee', 'sales'] },
+  // Client credential vault
+  { to: '/vault',            label: 'Client Vault', icon: KeyRound,        roles: ['admin', 'employee', 'sales'] },
   // Group Chat — ALL internal roles
   { to: '/chat',             label: 'Group Chat',      icon: MessageSquare,  roles: ['admin', 'employee', 'sales'] },
   // Influencer Sheet — only for influencer team
@@ -158,6 +161,16 @@ export function AppLayout({ children, requiredRole }: Props) {
         {visibleNav.map(item => <NavLink key={item.to} item={item} />)}
       </nav>
 
+      {/* Quick keyboard shortcut hint — clickable for mouse users, also opens via Cmd/Ctrl-K */}
+      <button
+        onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
+        className="flex items-center gap-2 px-3 py-2 mb-2 rounded-xl border border-dashed border-border text-xs text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-colors"
+        title="Open the command palette"
+      >
+        <span className="flex-1 text-left">Jump anywhere</span>
+        <kbd className="px-1.5 py-0.5 rounded bg-muted border border-border font-mono text-[10px]">⌘K</kbd>
+      </button>
+
       {/* Session mini-widget — visible across every page for employee/sales */}
       <div className="px-1">
         <SessionMiniWidget />
@@ -247,6 +260,9 @@ export function AppLayout({ children, requiredRole }: Props) {
           {children}
         </div>
       </main>
+
+      {/* Global command palette — Cmd-K / Ctrl-K from anywhere */}
+      <CommandPalette />
     </div>
   );
 }

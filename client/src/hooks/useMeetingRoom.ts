@@ -16,7 +16,6 @@ export interface PeerView {
   role?: string;
   stream: MediaStream;
   audioOn: boolean;
-  videoOn: boolean;
   screenOn: boolean;
 }
 
@@ -28,18 +27,18 @@ interface UseMeetingRoomOptions {
 }
 
 /**
- * Mesh WebRTC meeting room.
+ * Audio + screen-share meeting room (no camera).
  *
- * Each participant maintains one RTCPeerConnection per other participant.
- * The local stream carries audio + camera video; screen-sharing replaces the
- * outgoing video track on every PC (so peers see your screen instead of cam).
+ * For a remote agency: people join the universal huddle, talk over mic when
+ * needed, and share their screen for collaboration. No video conferencing,
+ * no face cameras — keeps bandwidth low and the room feeling "ambient".
  *
- * Practical limit ~4–6 simultaneous participants (mesh). Fine for an agency.
+ * Mesh WebRTC: each participant maintains 1 RTCPeerConnection per peer.
+ * Screen sharing add/removes a video track and manually renegotiates per peer.
  */
 export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-global' }: UseMeetingRoomOptions) {
   const socketRef = useRef<Socket | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const cameraTrackRef = useRef<MediaStreamTrack | null>(null);   // last camera video track (for restore after screen share)
   const screenStreamRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const peerInfoRef = useRef<Map<string, MeetingParticipant>>(new Map());
@@ -50,7 +49,6 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
   const [joining, setJoining] = useState(false);
   const [peers, setPeers] = useState<Record<string, PeerView>>({});
   const [audioOn, setAudioOn] = useState(false);
-  const [videoOn, setVideoOn] = useState(false);
   const [screenOn, setScreenOn] = useState(false);
   const [error, setError]   = useState<string | null>(null);
 
@@ -64,8 +62,7 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
         name: info?.name,
         role: info?.role,
         stream: patch.stream || existing?.stream || new MediaStream(),
-        audioOn: patch.audioOn ?? existing?.audioOn ?? false,
-        videoOn: patch.videoOn ?? existing?.videoOn ?? false,
+        audioOn:  patch.audioOn  ?? existing?.audioOn  ?? false,
         screenOn: patch.screenOn ?? existing?.screenOn ?? false,
       };
       return { ...prev, [peerId]: next };
@@ -85,15 +82,14 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
     });
   }, []);
 
-  // ── Set up local media (camera + mic) lazily on first toggle ────────────
+  // ── Set up local audio stream lazily on join ─────────────────────────────
   const ensureLocalStream = useCallback(async () => {
     if (localStreamRef.current) return localStreamRef.current;
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-    // Start with both tracks DISABLED; user opts in via toggles.
+    // Audio only — no camera by design.
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    // Start muted; user opts in via the Mic toggle.
     stream.getAudioTracks().forEach(t => (t.enabled = false));
-    stream.getVideoTracks().forEach(t => (t.enabled = false));
     localStreamRef.current = stream;
-    cameraTrackRef.current = stream.getVideoTracks()[0] || null;
     return stream;
   }, []);
 
@@ -105,9 +101,13 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     peersRef.current.set(peerId, pc);
 
-    // Attach local tracks if we have any
+    // Always attach the local audio track on creation
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(t => pc.addTrack(t, localStreamRef.current!));
+      localStreamRef.current.getAudioTracks().forEach(t => pc.addTrack(t, localStreamRef.current!));
+    }
+    // If we're already sharing screen when this peer is built, attach that too
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(t => pc.addTrack(t, screenStreamRef.current!));
     }
 
     pc.onicecandidate = (e) => {
@@ -119,12 +119,6 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
       updatePeer(peerId, { stream });
     };
 
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        // peer dropped — keep entry for now, server will signal user-left
-      }
-    };
-
     return pc;
   }, [updatePeer, userId]);
 
@@ -134,6 +128,20 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
     await pc.setLocalDescription(offer);
     socketRef.current?.emit('webrtc:offer', { target: peerId, offer, senderId: userId });
   }, [buildPeerConnection, userId]);
+
+  // Renegotiate every existing peer (called when screen share toggles)
+  const renegotiateAll = useCallback(async () => {
+    const ids = Array.from(peersRef.current.keys());
+    for (const peerId of ids) {
+      try {
+        const pc = peersRef.current.get(peerId);
+        if (!pc) continue;
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socketRef.current?.emit('webrtc:offer', { target: peerId, offer, senderId: userId });
+      } catch { /* best-effort */ }
+    }
+  }, [userId]);
 
   // ── Socket setup (only while joined) ─────────────────────────────────────
   useEffect(() => {
@@ -148,15 +156,13 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
     socket.emit('meeting:join', { roomId });
 
     socket.on('meeting:participants', ({ participants }: { participants: MeetingParticipant[] }) => {
-      // Build PCs for everyone except self. Initiator rule: smaller userId calls.
       participants.forEach(p => {
         if (p.userId === userId) return;
         peerInfoRef.current.set(p.userId, p);
+        // Initiator rule: smaller userId calls. Stable & deterministic.
         if (userId < p.userId) {
-          // I initiate
           negotiate(p.userId);
         } else {
-          // Just prepare a PC so we can answer when their offer arrives
           buildPeerConnection(p.userId);
         }
       });
@@ -165,7 +171,6 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
     socket.on('meeting:user-joined', (p: MeetingParticipant) => {
       if (p.userId === userId) return;
       peerInfoRef.current.set(p.userId, p);
-      // I initiate to the newcomer if my id is "smaller"
       if (userId < p.userId) negotiate(p.userId);
     });
 
@@ -175,8 +180,7 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
 
     socket.on('meeting:track-state', ({ userId: peerId, state }: { userId: string; state: any }) => {
       updatePeer(peerId, {
-        audioOn: !!state.audioOn,
-        videoOn: !!state.videoOn,
+        audioOn:  !!state.audioOn,
         screenOn: !!state.screenOn,
       });
     });
@@ -184,7 +188,6 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
     socket.on('webrtc:offer', async ({ offer, senderId }: any) => {
       const pc = buildPeerConnection(senderId);
       await pc.setRemoteDescription(offer);
-      // Drain any ICE that arrived before remoteDescription
       const pending = pendingIceRef.current.get(senderId);
       if (pending) {
         for (const c of pending) await pc.addIceCandidate(c).catch(() => {});
@@ -196,7 +199,7 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
     });
 
     socket.on('webrtc:answer', async ({ answer, adminId }: any) => {
-      const peerId = adminId; // server passes the answerer's id back as adminId (legacy field name)
+      const peerId = adminId; // the answerer's id (legacy field name in signaling)
       const pc = peersRef.current.get(peerId);
       if (pc && answer) await pc.setRemoteDescription(answer);
     });
@@ -205,7 +208,6 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
       const pc = peersRef.current.get(senderId);
       if (!pc) return;
       if (!pc.remoteDescription) {
-        // Buffer until remoteDescription is set
         const list = pendingIceRef.current.get(senderId) || [];
         list.push(candidate);
         pendingIceRef.current.set(senderId, list);
@@ -237,7 +239,7 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
       await ensureLocalStream();
       setJoined(true);
     } catch (e: any) {
-      setError(e?.message || 'Could not access camera/microphone');
+      setError(e?.message || 'Could not access microphone');
     } finally {
       setJoining(false);
     }
@@ -245,26 +247,22 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
 
   // ── Public: leave ────────────────────────────────────────────────────────
   const leaveMeeting = useCallback(() => {
-    // Stop all local tracks
     localStreamRef.current?.getTracks().forEach(t => t.stop());
     localStreamRef.current = null;
-    cameraTrackRef.current = null;
     screenStreamRef.current?.getTracks().forEach(t => t.stop());
     screenStreamRef.current = null;
-    // Tear down peers
     peersRef.current.forEach(pc => pc.close());
     peersRef.current.clear();
     peerInfoRef.current.clear();
     pendingIceRef.current.clear();
     setPeers({});
     setAudioOn(false);
-    setVideoOn(false);
     setScreenOn(false);
     setJoined(false);
   }, []);
 
   // ── Toggle helpers ───────────────────────────────────────────────────────
-  const broadcastTrackState = useCallback((next: { audioOn: boolean; videoOn: boolean; screenOn: boolean }) => {
+  const broadcastTrackState = useCallback((next: { audioOn: boolean; screenOn: boolean }) => {
     socketRef.current?.emit('meeting:track-state', { roomId, state: next });
   }, [roomId]);
 
@@ -274,17 +272,8 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
     const next = !audioOn;
     stream.getAudioTracks().forEach(t => (t.enabled = next));
     setAudioOn(next);
-    broadcastTrackState({ audioOn: next, videoOn, screenOn });
-  }, [audioOn, videoOn, screenOn, broadcastTrackState]);
-
-  const toggleVideo = useCallback(() => {
-    const stream = localStreamRef.current;
-    if (!stream) return;
-    const next = !videoOn;
-    stream.getVideoTracks().forEach(t => (t.enabled = next));
-    setVideoOn(next);
-    broadcastTrackState({ audioOn, videoOn: next, screenOn });
-  }, [audioOn, videoOn, screenOn, broadcastTrackState]);
+    broadcastTrackState({ audioOn: next, screenOn });
+  }, [audioOn, screenOn, broadcastTrackState]);
 
   const startScreenShare = useCallback(async () => {
     if (screenOn) return;
@@ -293,52 +282,43 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
       screenStreamRef.current = screen;
       const screenTrack: MediaStreamTrack = screen.getVideoTracks()[0];
 
-      // Replace the outgoing video track on every peer connection
+      // Add the screen track to every existing peer connection
       peersRef.current.forEach(pc => {
-        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-        if (sender) sender.replaceTrack(screenTrack);
+        pc.addTrack(screenTrack, screen);
       });
 
-      // Also update our local stream so a self-preview shows the screen
-      const localVideo = localStreamRef.current?.getVideoTracks()[0];
-      if (localVideo && localStreamRef.current) {
-        // Remove the camera video from the local stream (keep camera track ref so we can restore)
-        cameraTrackRef.current = localVideo;
-        localStreamRef.current.removeTrack(localVideo);
-        localStreamRef.current.addTrack(screenTrack);
-      }
-
-      // Auto-stop on user clicking "Stop sharing" in browser UI
+      // Auto-stop on the browser's "Stop sharing" prompt
       screenTrack.onended = () => stopScreenShare();
 
       setScreenOn(true);
-      broadcastTrackState({ audioOn, videoOn, screenOn: true });
-    } catch (e: any) {
-      // user cancelled — silent
-    }
-  }, [screenOn, audioOn, videoOn, broadcastTrackState]);
+      broadcastTrackState({ audioOn, screenOn: true });
 
-  const stopScreenShare = useCallback(() => {
+      // Renegotiate every peer (track addition changes SDP)
+      await renegotiateAll();
+    } catch {
+      /* user cancelled the picker — silent */
+    }
+  }, [screenOn, audioOn, broadcastTrackState, renegotiateAll]);
+
+  const stopScreenShare = useCallback(async () => {
     if (!screenOn) return;
     const screenTrack = screenStreamRef.current?.getVideoTracks()[0];
     screenTrack?.stop();
     screenStreamRef.current = null;
 
-    // Restore camera track to peers + local stream (camera will be muted unless videoOn)
-    const cameraTrack = cameraTrackRef.current;
+    // Remove the video sender from each peer connection
     peersRef.current.forEach(pc => {
-      const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-      if (sender && cameraTrack) sender.replaceTrack(cameraTrack);
+      pc.getSenders()
+        .filter(s => s.track && s.track.kind === 'video')
+        .forEach(s => { try { pc.removeTrack(s); } catch { /* sender already gone */ } });
     });
-    if (localStreamRef.current && cameraTrack) {
-      // Replace whatever video is on the local stream with the camera track
-      localStreamRef.current.getVideoTracks().forEach(t => localStreamRef.current!.removeTrack(t));
-      localStreamRef.current.addTrack(cameraTrack);
-      cameraTrack.enabled = videoOn;
-    }
+
     setScreenOn(false);
-    broadcastTrackState({ audioOn, videoOn, screenOn: false });
-  }, [screenOn, audioOn, videoOn, broadcastTrackState]);
+    broadcastTrackState({ audioOn, screenOn: false });
+
+    // Renegotiate to reflect the removed track
+    await renegotiateAll();
+  }, [screenOn, audioOn, broadcastTrackState, renegotiateAll]);
 
   const toggleScreen = useCallback(() => {
     if (screenOn) stopScreenShare();
@@ -347,9 +327,7 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
 
   // Cleanup on unmount
   useEffect(() => {
-    return () => {
-      leaveMeeting();
-    };
+    return () => { leaveMeeting(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -359,13 +337,11 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
     peers: Object.values(peers),
     localStream: localStreamRef.current,
     audioOn,
-    videoOn,
     screenOn,
     error,
     joinMeeting,
     leaveMeeting,
     toggleAudio,
-    toggleVideo,
     toggleScreen,
   };
 }

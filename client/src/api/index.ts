@@ -65,6 +65,7 @@ export const endSession        = () => api.post('/sessions/end', {}).then(r => r
 export const getActiveSession  = () => api.get('/sessions/active').then(r => r.data);
 export const getSessionHistory = (params?: Record<string, unknown>) => api.get('/sessions/history', { params }).then(r => r.data);
 export const getPerformance    = (params?: Record<string, unknown>) => api.get('/sessions/performance', { params }).then(r => r.data);
+export const getTeamSessionStatus = () => api.get('/sessions/team-status').then(r => r.data);
 
 // ── Screen Sessions ───────────────────────────────────────────────────────────
 export const updateScreenStatus = (d: Record<string, unknown>) => api.put('/screen-sessions/status', d).then(r => r.data);
@@ -135,3 +136,9 @@ export const updateInfluencer   = (id: string, d: Record<string, unknown>)=> api
 export const deleteInfluencer   = (id: string)                            => api.delete(`/influencers/${id}`).then(r => r.data);
 export const influencerStats    = ()                                       => api.get('/influencers/stats').then(r => r.data);
 export const createUser = (d: Record<string, unknown>) => api.post('/users', d).then(r => r.data);
+
+// ── Client Credential Vault ───────────────────────────────────────────────────
+export const listCredentials   = (params?: Record<string, unknown>)      => api.get('/credentials', { params }).then(r => r.data);
+export const createCredential  = (d: Record<string, unknown>)            => api.post('/credentials', d).then(r => r.data);
+export const updateCredential  = (id: string, d: Record<string, unknown>)=> api.put(`/credentials/${id}`, d).then(r => r.data);
+export const deleteCredential  = (id: string)                            => api.delete(`/credentials/${id}`).then(r => r.data);

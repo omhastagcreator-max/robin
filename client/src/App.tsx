@@ -22,6 +22,7 @@ const GroupChat         = lazy(() => import('@/pages/GroupChat'));
 const InfluencerSheet   = lazy(() => import('@/pages/InfluencerSheet'));
 const NotificationsPage = lazy(() => import('@/pages/NotificationsPage'));
 const ProfilePage       = lazy(() => import('@/pages/ProfilePage'));
+const ClientVault       = lazy(() => import('@/pages/ClientVault'));
 
 function RootRedirect() {
   const { user, role, loading } = useAuth();
@@ -50,6 +51,7 @@ function AppRoutes() {
         <Route path="/tasks"            element={<E><TasksPage /></E>} />
         <Route path="/chat"             element={<E><GroupChat /></E>} />
         <Route path="/workroom"         element={<E><WorkRoom /></E>} />
+        <Route path="/vault"            element={<E><ClientVault /></E>} />
         <Route path="/notifications"    element={<E><NotificationsPage /></E>} />
         <Route path="/profile"          element={<E><ProfilePage /></E>} />
 

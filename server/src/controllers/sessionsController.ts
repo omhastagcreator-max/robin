@@ -9,6 +9,26 @@ async function getOrgId(userId: string) {
   return u?.organizationId;
 }
 
+/**
+ * Broadcast a session-status change to every connected client so the UI
+ * everywhere (sidebars, work room, dashboards) knows when a teammate just
+ * went on break or came back. Keeps the agency in sync without polling.
+ */
+async function broadcastPresence(req: AuthRequest, status: 'active' | 'on_break' | 'ended') {
+  const io = req.app.get('io');
+  if (!io) return;
+  const u = await User.findById(req.user!.id).select('name email role organizationId');
+  if (!u) return;
+  io.emit('presence:status', {
+    userId:         req.user!.id,
+    name:           u.name || u.email,
+    role:           u.role,
+    organizationId: u.organizationId,
+    status,         // 'active' | 'on_break' | 'ended'
+    at:             new Date().toISOString(),
+  });
+}
+
 export async function startSession(req: AuthRequest, res: Response): Promise<void> {
   try {
     const userId = req.user!.id;
@@ -16,6 +36,7 @@ export async function startSession(req: AuthRequest, res: Response): Promise<voi
     const existing = await Session.findOne({ userId, status: { $in: ['active', 'on_break'] } });
     if (existing) { res.json(existing); return; }
     const session = await Session.create({ userId, organizationId: orgId, startTime: new Date(), status: 'active' });
+    await broadcastPresence(req, 'active');
     res.json(session);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -28,6 +49,7 @@ export async function startBreak(req: AuthRequest, res: Response): Promise<void>
     session.breakEvents = session.breakEvents || [];
     session.breakEvents.push({ startedAt: new Date() } as any);
     await session.save();
+    await broadcastPresence(req, 'on_break');
     res.json(session);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -40,6 +62,7 @@ export async function endBreak(req: AuthRequest, res: Response): Promise<void> {
     const last = session.breakEvents?.[session.breakEvents.length - 1];
     if (last && !last.endedAt) last.endedAt = new Date();
     await session.save();
+    await broadcastPresence(req, 'active');
     res.json(session);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -56,6 +79,7 @@ export async function endSession(req: AuthRequest, res: Response): Promise<void>
     }, 0);
     session.breakTime = Math.round(totalBreakMs / 60000);
     await session.save();
+    await broadcastPresence(req, 'ended');
     res.json(session);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -89,5 +113,45 @@ export async function getPerformance(req: AuthRequest, res: Response): Promise<v
     }
     const sessions = await Session.find(match).sort({ startTime: -1 });
     res.json(sessions);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * GET /api/sessions/team-status
+ *
+ * Returns, for every internal staff member in the org, their current
+ * "right now" session status: 'active' | 'on_break' | 'off_clock'.
+ * Used by the WorkRoom and other UIs to show who's available to be pinged
+ * vs. who's on break (and shouldn't be disturbed).
+ */
+export async function getTeamSessionStatus(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    const staff = await User.find({
+      organizationId: orgId,
+      role: { $in: ['employee', 'sales', 'admin'] },
+      isActive: true,
+    }).select('_id name email role team').lean();
+
+    const liveSessions = await Session.find({
+      organizationId: orgId,
+      status: { $in: ['active', 'on_break'] },
+    }).lean();
+
+    const statusByUser = new Map<string, 'active' | 'on_break'>();
+    for (const s of liveSessions) {
+      statusByUser.set(String(s.userId), s.status as any);
+    }
+
+    const result = staff.map(u => ({
+      userId: String(u._id),
+      name:   u.name,
+      email:  u.email,
+      role:   u.role,
+      team:   u.team,
+      status: statusByUser.get(String(u._id)) || 'off_clock',
+    }));
+
+    res.json(result);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
