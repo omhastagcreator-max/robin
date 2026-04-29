@@ -2,11 +2,12 @@ import { useEffect, useState, useCallback } from 'react';
 import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2, X } from 'lucide-react';
+import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2, X, Coffee, CalendarOff } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useWebRTCReceiver } from '@/hooks/useWebRTC';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSocket } from '@/hooks/useSocket';
+import { useTeamPresence, type PresenceStatus } from '@/hooks/useTeamPresence';
 import * as api from '@/api';
 import { FullPageSpinner } from '@/components/shared/Spinner';
 
@@ -60,11 +61,19 @@ function RemoteVideo({ stream, isPinned, onPin, name, onDisconnect }: { stream: 
   );
 }
 
+function PresenceBadge({ status }: { status: PresenceStatus }) {
+  if (status === 'on_leave')  return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-purple-500/15 text-purple-500 border border-purple-500/30"><CalendarOff className="h-2.5 w-2.5" />Leave</span>;
+  if (status === 'on_break')  return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-amber-500/15 text-amber-600 border border-amber-500/30"><Coffee className="h-2.5 w-2.5" />Break</span>;
+  if (status === 'active')    return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-green-500/15 text-green-600 border border-green-500/30"><span className="h-1 w-1 rounded-full bg-green-500" />Working</span>;
+  return <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-muted text-muted-foreground">Off</span>;
+}
+
 export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const socket = useSocket();
+  const presence = useTeamPresence();
 
   // WebRTC Screen Monitor additions
   const { user } = useAuth();
@@ -147,7 +156,13 @@ export default function AdminDashboard() {
           <KPICard label="Total Tasks" value={stats?.totalTasks ?? 0} icon={CheckCircle2} color="bg-blue-500/15" sub={`${pct}% completed`} />
           <KPICard label="Overdue" value={stats?.overdueTasks ?? 0} icon={AlertTriangle} color="bg-red-500/15" sub="Need attention" />
           <KPICard label="Active Projects" value={stats?.activeProjects ?? 0} icon={Briefcase} color="bg-violet-500/15" sub={`of ${stats?.totalProjects ?? 0} total`} />
-          <KPICard label="Active Now" value={employees.filter(e => e.sessionStatus === 'active').length} icon={Activity} color="bg-green-500/15" sub={`of ${employees.length} employees`} />
+          <KPICard
+            label="Active Now"
+            value={presence.active.length}
+            icon={Activity}
+            color="bg-green-500/15"
+            sub={`${presence.onBreak.length} on break · ${presence.onLeave?.length || 0} on leave`}
+          />
         </div>
 
         <div className="grid lg:grid-cols-3 gap-4">
@@ -176,21 +191,21 @@ export default function AdminDashboard() {
               <h2 className="font-semibold text-sm">Team Status</h2>
             </div>
             <div className="divide-y divide-border/50 max-h-64 overflow-y-auto">
-              {employees.slice(0, 8).map(e => (
-                <div key={e._id} className="px-5 py-3 flex items-center gap-3">
-                  <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                    {(e.name || e.email || '?')[0].toUpperCase()}
+              {employees.slice(0, 8).map(e => {
+                const status = presence.statusOf(e._id);
+                return (
+                  <div key={e._id} className="px-5 py-3 flex items-center gap-3">
+                    <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                      {(e.name || e.email || '?')[0].toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{e.name || e.email}</p>
+                      <p className="text-[10px] text-muted-foreground capitalize">{e.team || 'No team'}</p>
+                    </div>
+                    <PresenceBadge status={status} />
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium truncate">{e.name || e.email}</p>
-                    <p className="text-[10px] text-muted-foreground capitalize">{e.team || 'No team'}</p>
-                  </div>
-                  <span className={`h-2 w-2 rounded-full shrink-0 ${
-                    e.sessionStatus === 'active' ? 'bg-green-400' :
-                    e.sessionStatus === 'on_break' ? 'bg-amber-400' : 'bg-muted-foreground/30'
-                  }`} />
-                </div>
-              ))}
+                );
+              })}
               {employees.length === 0 && <p className="text-xs text-muted-foreground text-center py-8">No employees yet</p>}
             </div>
             <Link to="/admin/employees" className="flex items-center justify-center gap-1 py-3 text-xs text-primary hover:text-primary/80 border-t border-border">

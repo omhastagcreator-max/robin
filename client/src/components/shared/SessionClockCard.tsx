@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { Clock, Play, Pause, StopCircle } from 'lucide-react';
+import { Clock, Coffee, Play, Pause, StopCircle, AlertTriangle } from 'lucide-react';
 import { useSession } from '@/hooks/useSession';
 import { toast } from 'sonner';
 
@@ -14,26 +13,30 @@ interface Props {
   onLockedAttempt?: () => void;
 }
 
+const SINGLE_BREAK_WARN_MS = 30 * 60 * 1000;
+const TOTAL_BREAK_WARN_MS  = 60 * 60 * 1000;
+
 /**
  * Shared clock-in / break / end-day card.
  * Used by employees and sales reps; visible across role dashboards
  * so anyone with a session can manage it from the same UI.
  */
 export function SessionClockCard({ dayLocked = false, dayLockReason, onLockedAttempt }: Props) {
-  const { session, loading, startSession, startBreak, endBreak, endSession } = useSession();
-  const [elapsed, setElapsed] = useState(0);
+  const {
+    session, loading, startSession, startBreak, endBreak, endSession,
+    workedMs, currentBreakMs, totalBreakMs,
+  } = useSession();
 
-  useEffect(() => {
-    if (!session || session.status === 'ended') { setElapsed(0); return; }
-    const start = new Date(session.startTime).getTime();
-    const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000));
-    tick();
-    const i = setInterval(tick, 1000);
-    return () => clearInterval(i);
-  }, [session]);
+  const fmtHMS = (ms: number) => {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  };
+  const fmtMS = (ms: number) => {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  };
 
-  const fmt = (s: number) =>
-    `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  const breakOverLimit = currentBreakMs > SINGLE_BREAK_WARN_MS || totalBreakMs > TOTAL_BREAK_WARN_MS;
 
   const handleStart = async () => {
     if (dayLocked) {
@@ -51,32 +54,54 @@ export function SessionClockCard({ dayLocked = false, dayLockReason, onLockedAtt
   return (
     <div className={`rounded-2xl border p-5 space-y-4 ${
       isActive  ? 'border-green-500/30 bg-green-500/5' :
-      isOnBreak ? 'border-amber-500/30 bg-amber-500/5' :
+      isOnBreak ? (breakOverLimit ? 'border-red-500/40 bg-red-500/5' : 'border-amber-500/30 bg-amber-500/5') :
                   'border-border bg-card'
     }`}>
       <div className="flex items-center gap-3">
         <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${
           isActive  ? 'bg-green-500/20' :
-          isOnBreak ? 'bg-amber-500/20' :
+          isOnBreak ? (breakOverLimit ? 'bg-red-500/20' : 'bg-amber-500/20') :
                       'bg-muted'
         }`}>
-          <Clock className={`h-5 w-5 ${
-            isActive  ? 'text-green-400' :
-            isOnBreak ? 'text-amber-400' :
-                        'text-muted-foreground'
-          }`} />
+          {isOnBreak ? (
+            <Coffee className={`h-5 w-5 ${breakOverLimit ? 'text-red-500' : 'text-amber-400'}`} />
+          ) : (
+            <Clock className={`h-5 w-5 ${isActive ? 'text-green-400' : 'text-muted-foreground'}`} />
+          )}
         </div>
-        <div>
+        <div className="flex-1 min-w-0">
           <p className="font-semibold text-sm">
             {isActive  ? 'Work session active' :
              isOnBreak ? 'On break' :
                          'Not clocked in'}
           </p>
-          {session
-            ? <p className="text-2xl font-mono font-bold tabular-nums">{fmt(elapsed)}</p>
-            : <p className="text-xs text-muted-foreground">Start your day to begin tracking time</p>}
+          {!session && (
+            <p className="text-xs text-muted-foreground">Start your day to begin tracking time</p>
+          )}
+          {isActive && (
+            <p className="text-2xl font-mono font-bold tabular-nums">{fmtHMS(workedMs)}</p>
+          )}
+          {isOnBreak && (
+            <div className="flex items-baseline gap-3 flex-wrap">
+              <p className={`text-2xl font-mono font-bold tabular-nums ${breakOverLimit ? 'text-red-500' : 'text-amber-500'}`}>
+                {fmtMS(currentBreakMs)}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                worked <span className="font-mono">{fmtHMS(workedMs - totalBreakMs)}</span> · breaks today <span className="font-mono">{fmtMS(totalBreakMs)}</span>
+              </p>
+            </div>
+          )}
         </div>
       </div>
+
+      {isOnBreak && breakOverLimit && (
+        <div className="flex items-start gap-2 rounded-xl bg-red-500/10 border border-red-500/30 p-3">
+          <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+          <p className="text-xs text-red-500">
+            You've crossed the suggested break limit. Resume soon so you don't fall short on working hours.
+          </p>
+        </div>
+      )}
 
       <div className="flex gap-2 flex-wrap">
         {!session && (

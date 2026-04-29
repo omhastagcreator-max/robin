@@ -186,6 +186,12 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
     });
 
     socket.on('webrtc:offer', async ({ offer, senderId }: any) => {
+      // Guard: only handle offers from peers we know are in the meeting.
+      // Without this, legacy 1-to-many screen-broadcast offers (which travel
+      // on a sibling socket but reach this one too via the user:USERID room)
+      // would create ghost peer connections in the meeting graph.
+      if (!peerInfoRef.current.has(senderId)) return;
+
       const pc = buildPeerConnection(senderId);
       await pc.setRemoteDescription(offer);
       const pending = pendingIceRef.current.get(senderId);

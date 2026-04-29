@@ -1,45 +1,48 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Clock, Pause, Play, StopCircle } from 'lucide-react';
+import { Clock, Coffee, Pause, Play, StopCircle, AlertTriangle } from 'lucide-react';
 import { useSession } from '@/hooks/useSession';
 import { useAuth } from '@/contexts/AuthContext';
 
+// Soft / hard limits used to cue the user when their break is running long.
+// These are advisory — they don't block anything server-side.
+const SINGLE_BREAK_WARN_MS  = 30 * 60 * 1000;  // 30 min warning per break
+const TOTAL_BREAK_WARN_MS   = 60 * 60 * 1000;  // 1 hour cumulative warning
+
 /**
  * Compact persistent clock widget rendered in AppLayout's sidebar.
- * Visible across every page for `employee` and `sales` roles so they
- * never lose track of their session no matter where they navigate.
  *
- * - When clocked out: shows "Start Day" CTA linked to dashboard
- * - When active:      shows live HH:MM:SS + Break/End controls
- * - When on break:    shows paused state + Resume button
+ * - Clocked out → "Not clocked in" link to dashboard
+ * - Active      → live HH:MM:SS + Break / End controls
+ * - On break    → live break MM:SS counter + total today + Resume.
+ *                 Turns red once the soft limits trip so the user
+ *                 self-regulates and doesn't lose working hours.
  */
 export function SessionMiniWidget() {
   const { role } = useAuth();
-  const { session, startBreak, endBreak, endSession } = useSession();
-  const [elapsed, setElapsed] = useState(0);
+  const {
+    session, startBreak, endBreak, endSession,
+    workedMs, currentBreakMs, totalBreakMs,
+  } = useSession();
 
   // Only employees & sales clock in/out
   const visibleRoles = ['employee', 'sales'];
   const visible = visibleRoles.includes(role);
-
-  useEffect(() => {
-    if (!session || session.status === 'ended') { setElapsed(0); return; }
-    const start = new Date(session.startTime).getTime();
-    const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000));
-    tick();
-    const i = setInterval(tick, 1000);
-    return () => clearInterval(i);
-  }, [session]);
-
   if (!visible) return null;
 
-  const fmt = (s: number) =>
-    `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  const fmtHMS = (ms: number) => {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  };
+  const fmtMS = (ms: number) => {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  };
 
   const isActive  = session?.status === 'active';
   const isOnBreak = session?.status === 'on_break';
+  const breakOverLimit = currentBreakMs > SINGLE_BREAK_WARN_MS || totalBreakMs > TOTAL_BREAK_WARN_MS;
 
-  // Not clocked in yet — gentle nudge to dashboard
+  // Not clocked in yet
   if (!session) {
     const dashHref = role === 'sales' ? '/sales' : '/dashboard';
     return (
@@ -54,17 +57,49 @@ export function SessionMiniWidget() {
   }
 
   return (
-    <div className={`mb-2 rounded-xl border p-2.5 ${
-      isActive  ? 'bg-green-500/10 border-green-500/30' :
-                  'bg-amber-500/10 border-amber-500/30'
+    <div className={`mb-2 rounded-xl border p-2.5 transition-colors ${
+      isOnBreak
+        ? (breakOverLimit ? 'bg-red-500/10 border-red-500/40' : 'bg-amber-500/10 border-amber-500/30')
+        : 'bg-green-500/10 border-green-500/30'
     }`}>
       <div className="flex items-center gap-2 mb-2">
-        <span className={`h-2 w-2 rounded-full ${isActive ? 'bg-green-500 animate-pulse' : 'bg-amber-500'}`} />
-        <span className={`text-[10px] uppercase tracking-wide font-semibold ${isActive ? 'text-green-500' : 'text-amber-500'}`}>
+        <span className={`h-2 w-2 rounded-full ${
+          isActive ? 'bg-green-500 animate-pulse' :
+          breakOverLimit ? 'bg-red-500 animate-pulse' :
+          'bg-amber-500'
+        }`} />
+        <span className={`text-[10px] uppercase tracking-wide font-semibold ${
+          isActive ? 'text-green-500' :
+          breakOverLimit ? 'text-red-500' :
+          'text-amber-500'
+        }`}>
           {isActive ? 'On the clock' : 'On break'}
         </span>
       </div>
-      <p className="text-base font-mono font-bold tabular-nums leading-none mb-2.5">{fmt(elapsed)}</p>
+
+      {isActive && (
+        <p className="text-base font-mono font-bold tabular-nums leading-none mb-2.5">{fmtHMS(workedMs)}</p>
+      )}
+
+      {isOnBreak && (
+        <div className="space-y-1 mb-2.5">
+          <div className="flex items-center gap-1.5">
+            <Coffee className="h-3 w-3" />
+            <p className={`text-base font-mono font-bold tabular-nums leading-none ${breakOverLimit ? 'text-red-500' : ''}`}>
+              {fmtMS(currentBreakMs)}
+            </p>
+          </div>
+          <p className="text-[10px] text-muted-foreground tabular-nums">
+            today total: <span className="font-mono">{fmtMS(totalBreakMs)}</span>
+          </p>
+          {breakOverLimit && (
+            <p className="text-[10px] text-red-500 flex items-center gap-1 leading-tight">
+              <AlertTriangle className="h-3 w-3" /> long break — finish your hours
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="flex gap-1.5">
         {isActive ? (
           <>
