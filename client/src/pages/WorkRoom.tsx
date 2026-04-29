@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   Mic, MicOff, ScreenShare, ScreenShareOff,
-  PhoneCall, PhoneOff, Coffee, Users, Loader2, Headphones,
+  PhoneCall, PhoneOff, Coffee, Users, Loader2, Headphones, CalendarOff,
 } from 'lucide-react';
 import { useMeetingRoom, type PeerView } from '@/hooks/useMeetingRoom';
 import { useTeamPresence, type TeamMember, type PresenceStatus } from '@/hooks/useTeamPresence';
@@ -78,6 +78,26 @@ export default function WorkRoom() {
               </p>
               <p className="text-xs text-amber-700/70 dark:text-amber-400/70 mt-1">
                 {presence.onBreak.map(m => m.name).filter(Boolean).join(', ')}
+              </p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* On-leave banner — visible to whole team so people know who's out */}
+        {presence.onLeave && presence.onLeave.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+            className="rounded-2xl border border-purple-500/30 bg-purple-500/10 p-4 flex items-start gap-3"
+          >
+            <div className="h-9 w-9 rounded-xl bg-purple-500/20 flex items-center justify-center shrink-0">
+              <CalendarOff className="h-4 w-4 text-purple-500" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-purple-700 dark:text-purple-400">
+                {presence.onLeave.length} teammate{presence.onLeave.length === 1 ? ' is' : 's are'} on leave today
+              </p>
+              <p className="text-xs text-purple-700/70 dark:text-purple-400/70 mt-1">
+                {presence.onLeave.map(m => m.name).filter(Boolean).join(', ')}
               </p>
             </div>
           </motion.div>
@@ -208,12 +228,20 @@ function statusRank(s: PresenceStatus) {
   switch (s) {
     case 'active':    return 0;
     case 'on_break':  return 1;
-    case 'off_clock': return 2;
-    default:          return 3;
+    case 'on_leave':  return 2;
+    case 'off_clock': return 3;
+    default:          return 4;
   }
 }
 
 function StatusBadge({ status }: { status: PresenceStatus }) {
+  if (status === 'on_leave') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/15 text-purple-500 border border-purple-500/30">
+        <CalendarOff className="h-3 w-3" /> On leave
+      </span>
+    );
+  }
   if (status === 'on_break') {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-600 border border-amber-500/30">

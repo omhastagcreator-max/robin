@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, ArrowRight, LayoutDashboard, ListTodo, Briefcase, Users, Building2,
   BarChart2, Video, MessageSquare, Bell, User as UserIcon, KeyRound, Plus,
-  Coffee, Play, StopCircle, CornerDownLeft,
+  Coffee, Play, StopCircle, CornerDownLeft, CalendarOff, ClipboardCheck,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import * as api from '@/api';
@@ -76,6 +76,12 @@ export function CommandPalette() {
         visibleFor: ['admin'], action: goto('/admin/clients') },
       { id: 'go-reports',   label: 'Reports',    hint: 'Org analytics',     group: 'go', icon: BarChart2,
         visibleFor: ['admin'], action: goto('/admin/reports') },
+      { id: 'go-admin-leaves', label: 'Leave Approvals', hint: 'Review pending leave', group: 'go', icon: ClipboardCheck,
+        visibleFor: ['admin'], action: goto('/admin/leaves') },
+
+      { id: 'go-leaves',    label: 'My Leaves',  hint: 'Apply / view your leave',     group: 'go', icon: CalendarOff,
+        visibleFor: ['employee', 'sales'], action: goto('/leaves'),
+        keywords: 'time off vacation holiday' },
 
       { id: 'go-notifs',  label: 'Notifications', hint: 'Inbox',            group: 'go', icon: Bell,
         action: goto('/notifications') },
@@ -85,6 +91,8 @@ export function CommandPalette() {
       // ── Do ──
       { id: 'do-add-credential', label: 'Add a credential', hint: 'Save a new client login', group: 'do', icon: Plus,
         visibleFor: ['admin', 'employee', 'sales'], action: goto('/vault?new=1') },
+      { id: 'do-apply-leave', label: 'Apply for leave', hint: 'Pick days and submit', group: 'do', icon: CalendarOff,
+        visibleFor: ['employee', 'sales'], action: goto('/leaves') },
       { id: 'do-join-huddle', label: 'Join the huddle', hint: 'Open Work Room and connect', group: 'do', icon: Video,
         visibleFor: ['admin', 'employee', 'sales'], action: goto('/workroom') },
 

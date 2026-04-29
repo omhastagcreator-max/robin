@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import * as api from '@/api';
 import { useSocket } from '@/hooks/useSocket';
 
-export type PresenceStatus = 'active' | 'on_break' | 'off_clock' | 'ended';
+export type PresenceStatus = 'active' | 'on_break' | 'on_leave' | 'off_clock' | 'ended';
 
 export interface TeamMember {
   userId: string;
@@ -69,12 +69,13 @@ export function useTeamPresence() {
   }, [socket]);
 
   const list   = useMemo(() => Object.values(members), [members]);
-  const onBreak = useMemo(() => list.filter(m => m.status === 'on_break'), [list]);
-  const active  = useMemo(() => list.filter(m => m.status === 'active'),   [list]);
-  const off     = useMemo(() => list.filter(m => m.status === 'off_clock'),[list]);
+  const onBreak = useMemo(() => list.filter(m => m.status === 'on_break'),  [list]);
+  const onLeave = useMemo(() => list.filter(m => m.status === 'on_leave'),  [list]);
+  const active  = useMemo(() => list.filter(m => m.status === 'active'),    [list]);
+  const off     = useMemo(() => list.filter(m => m.status === 'off_clock'), [list]);
 
   const statusOf = (userId: string): PresenceStatus =>
     members[userId]?.status || 'off_clock';
 
-  return { loading, members, list, onBreak, active, off, statusOf };
+  return { loading, members, list, onBreak, onLeave, active, off, statusOf };
 }

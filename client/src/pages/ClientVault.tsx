@@ -306,7 +306,10 @@ function CredentialRow({
 
             {cred.password && (
               <button
-                onClick={() => copyToClipboard(cred.password!, 'Password copied')}
+                onClick={() => {
+                  copyToClipboard(cred.password!, 'Password copied');
+                  api.logCredentialAccess(cred._id, 'copy'); // audit
+                }}
                 className="group inline-flex items-center gap-1.5 max-w-full text-left text-xs px-2 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-transparent hover:border-amber-500/30 transition-colors"
                 title="Click to copy password"
               >
@@ -316,7 +319,12 @@ function CredentialRow({
                 </span>
                 <span
                   role="button"
-                  onClick={(e) => { e.stopPropagation(); setShowPw(v => !v); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const next = !showPw;
+                    setShowPw(next);
+                    if (next) api.logCredentialAccess(cred._id, 'reveal'); // audit
+                  }}
                   className="inline-flex items-center text-muted-foreground hover:text-foreground"
                   title={showPw ? 'Hide' : 'Show'}
                 >

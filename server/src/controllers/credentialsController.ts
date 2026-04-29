@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
 import ClientCredential from '../models/ClientCredential';
 import User from '../models/User';
+import ActivityLog from '../models/ActivityLog';
 import { encrypt, decrypt } from '../lib/crypto';
 
 async function getOrgId(userId: string) {
@@ -48,7 +49,50 @@ export async function listCredentials(req: AuthRequest, res: Response): Promise<
       .sort({ updatedAt: -1 })
       .lean();
 
+    // Audit: who opened the vault, when, and how (filters used).
+    // Fire-and-forget — don't block the response on the log write.
+    ActivityLog.create({
+      organizationId: orgId,
+      userId: req.user!.id,
+      action: 'vault.list',
+      entity: 'ClientCredential',
+      metadata: { count: docs.length, q: q || undefined, type: type || undefined, clientId: clientId || undefined },
+    }).catch(() => {});
+
     res.json(docs.map(hydrate));
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+// POST /api/credentials/:id/access  — log per-credential reveal/copy
+// Called from the client whenever a user copies the password or shows it,
+// so admins can audit who accessed which credential and when.
+export async function logCredentialAccess(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    const cred = await ClientCredential.findOne({ _id: req.params.id, organizationId: orgId })
+      .select('title type clientId')
+      .populate('clientId', 'name email')
+      .lean();
+    if (!cred) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const action = (req.body?.action === 'reveal') ? 'vault.reveal' : 'vault.copy';
+
+    await ActivityLog.create({
+      organizationId: orgId,
+      userId: req.user!.id,
+      action,
+      entity: 'ClientCredential',
+      entityId: cred._id,
+      metadata: {
+        title: (cred as any).title,
+        type:  (cred as any).type,
+        client: (cred as any).clientId
+          ? ((cred as any).clientId.name || (cred as any).clientId.email)
+          : undefined,
+      },
+    });
+
+    res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 

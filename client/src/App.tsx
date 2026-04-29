@@ -23,6 +23,8 @@ const InfluencerSheet   = lazy(() => import('@/pages/InfluencerSheet'));
 const NotificationsPage = lazy(() => import('@/pages/NotificationsPage'));
 const ProfilePage       = lazy(() => import('@/pages/ProfilePage'));
 const ClientVault       = lazy(() => import('@/pages/ClientVault'));
+const LeavesPage        = lazy(() => import('@/pages/LeavesPage'));
+const AdminLeaves       = lazy(() => import('@/pages/AdminLeaves'));
 
 function RootRedirect() {
   const { user, role, loading } = useAuth();
@@ -52,6 +54,7 @@ function AppRoutes() {
         <Route path="/chat"             element={<E><GroupChat /></E>} />
         <Route path="/workroom"         element={<E><WorkRoom /></E>} />
         <Route path="/vault"            element={<E><ClientVault /></E>} />
+        <Route path="/leaves"           element={<E><LeavesPage /></E>} />
         <Route path="/notifications"    element={<E><NotificationsPage /></E>} />
         <Route path="/profile"          element={<E><ProfilePage /></E>} />
 
@@ -61,6 +64,7 @@ function AppRoutes() {
         <Route path="/admin/employees"  element={<E><AdminEmployees /></E>} />
         <Route path="/admin/clients"    element={<E><AdminClients /></E>} />
         <Route path="/admin/reports"    element={<E><AdminReports /></E>} />
+        <Route path="/admin/leaves"     element={<E><AdminLeaves /></E>} />
 
         {/* Client */}
         <Route path="/client"           element={<E><ClientDashboard /></E>} />

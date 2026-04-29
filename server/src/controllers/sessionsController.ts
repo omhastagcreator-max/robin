@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/authMiddleware';
 import User from '../models/User';
 import Session from '../models/Session';
 import Organization from '../models/Organization';
+import LeaveApplication from '../models/LeaveApplication';
 
 async function getOrgId(userId: string) {
   const u = await User.findById(userId).select('organizationId');
@@ -143,14 +144,34 @@ export async function getTeamSessionStatus(req: AuthRequest, res: Response): Pro
       statusByUser.set(String(s.userId), s.status as any);
     }
 
-    const result = staff.map(u => ({
-      userId: String(u._id),
-      name:   u.name,
-      email:  u.email,
-      role:   u.role,
-      team:   u.team,
-      status: statusByUser.get(String(u._id)) || 'off_clock',
-    }));
+    // Pull approved leaves covering today — those users get 'on_leave' which
+    // takes priority over session status (an on-leave employee shouldn't be
+    // shown as "Working" even if their session is technically still open).
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    const todayEnd = new Date(todayStart);
+    todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
+    const onLeave = await LeaveApplication.find({
+      organizationId: orgId,
+      status: 'approved',
+      'days.date': { $gte: todayStart, $lt: todayEnd },
+    }).select('userId').lean();
+    const onLeaveSet = new Set(onLeave.map(l => String(l.userId)));
+
+    const result = staff.map(u => {
+      const id = String(u._id);
+      const status = onLeaveSet.has(id)
+        ? 'on_leave'
+        : (statusByUser.get(id) || 'off_clock');
+      return {
+        userId: id,
+        name:   u.name,
+        email:  u.email,
+        role:   u.role,
+        team:   u.team,
+        status,
+      };
+    });
 
     res.json(result);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }

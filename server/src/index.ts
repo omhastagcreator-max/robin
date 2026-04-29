@@ -29,6 +29,7 @@ import adReportsRoutes    from './routes/adReports';
 import influencerRoutes   from './routes/influencers';
 import seedRoutes         from './routes/seed';
 import credentialsRoutes  from './routes/credentials';
+import leavesRoutes       from './routes/leaves';
 
 const app = express();
 const httpServer = createServer(app);
@@ -214,6 +215,7 @@ app.use('/api/queries',         queriesRoutes);
 app.use('/api/ad-reports',      adReportsRoutes);
 app.use('/api/influencers',     influencerRoutes);
 app.use('/api/credentials',     credentialsRoutes);
+app.use('/api/leaves',          leavesRoutes);
 app.use('/api/seed',            seedRoutes);
 
 // ── 404 + Error handler ───────────────────────────────────────────────────────

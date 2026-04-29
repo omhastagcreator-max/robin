@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bird, LayoutDashboard, ListTodo, Video, Bell, User, LogOut,
   Briefcase, Users, Building2, BarChart2, TrendingUp, Menu, X,
-  MessageSquare, Monitor, MonitorOff, KeyRound
+  MessageSquare, Monitor, MonitorOff, KeyRound, CalendarOff
 } from 'lucide-react';
 import * as api from '@/api';
 import { useSocket } from '@/hooks/useSocket';
@@ -29,6 +29,9 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/admin/employees',  label: 'Employees',    icon: Users,           roles: ['admin'] },
   { to: '/admin/clients',    label: 'Clients',      icon: Building2,       roles: ['admin'] },
   { to: '/admin/reports',    label: 'Reports',      icon: BarChart2,       roles: ['admin'] },
+  { to: '/admin/leaves',     label: 'Leave Approvals', icon: CalendarOff,  roles: ['admin'] },
+  // Leave applications — employees and sales (private to each user)
+  { to: '/leaves',           label: 'My Leaves',    icon: CalendarOff,     roles: ['employee', 'sales'] },
   // Work room
   { to: '/workroom',         label: 'Work Room',    icon: Video,           roles: ['admin', 'employee', 'sales'] },
   // Client credential vault

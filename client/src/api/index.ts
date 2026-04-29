@@ -142,3 +142,18 @@ export const listCredentials   = (params?: Record<string, unknown>)      => api.
 export const createCredential  = (d: Record<string, unknown>)            => api.post('/credentials', d).then(r => r.data);
 export const updateCredential  = (id: string, d: Record<string, unknown>)=> api.put(`/credentials/${id}`, d).then(r => r.data);
 export const deleteCredential  = (id: string)                            => api.delete(`/credentials/${id}`).then(r => r.data);
+export const logCredentialAccess = (id: string, action: 'copy' | 'reveal' = 'copy') =>
+  api.post(`/credentials/${id}/access`, { action }).then(r => r.data).catch(() => null);
+
+// ── Leave Applications ────────────────────────────────────────────────────────
+export const createLeave       = (d: { days: { date: string; reason: string }[] }) =>
+  api.post('/leaves', d).then(r => r.data);
+export const listMyLeaves      = () => api.get('/leaves/mine').then(r => r.data);
+export const cancelLeave       = (id: string) => api.put(`/leaves/${id}/cancel`, {}).then(r => r.data);
+export const adminListLeaves   = (params?: Record<string, unknown>) =>
+  api.get('/leaves/admin', { params }).then(r => r.data);
+export const approveLeave      = (id: string, note?: string) =>
+  api.put(`/leaves/${id}/approve`, { note }).then(r => r.data);
+export const rejectLeave       = (id: string, note?: string) =>
+  api.put(`/leaves/${id}/reject`, { note }).then(r => r.data);
+export const onLeaveToday      = () => api.get('/leaves/on-leave-today').then(r => r.data);
