@@ -13,6 +13,7 @@ import { useScreenShare } from '@/contexts/ScreenShareContext';
 import { toast } from 'sonner';
 import { SessionMiniWidget } from '@/components/shared/SessionMiniWidget';
 import { CommandPalette } from '@/components/shared/CommandPalette';
+import { PresenceStrip } from '@/components/shared/PresenceStrip';
 
 interface NavItem { to: string; label: string; icon: React.ElementType; roles?: string[]; team?: string; }
 
@@ -245,6 +246,9 @@ export function AppLayout({ children, requiredRole }: Props) {
             </Link>
           )}
         </header>
+
+        {/* Persistent break / leave strip — visible on every page */}
+        <PresenceStrip />
 
         {isSharing && (
           <div className="bg-green-500/10 border-b border-green-500/20 px-4 py-2 flex items-center justify-between sticky top-0 z-20 w-full animate-in slide-in-from-top-4">

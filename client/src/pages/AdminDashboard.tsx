@@ -8,6 +8,7 @@ import { useWebRTCReceiver } from '@/hooks/useWebRTC';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSocket } from '@/hooks/useSocket';
 import { useTeamPresence, type PresenceStatus } from '@/hooks/useTeamPresence';
+import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 import * as api from '@/api';
 import { FullPageSpinner } from '@/components/shared/Spinner';
 
@@ -146,9 +147,12 @@ export default function AdminDashboard() {
             <h1 className="text-2xl font-bold">Admin Dashboard</h1>
             <p className="text-sm text-muted-foreground">Agency overview &amp; insights</p>
           </div>
-          <Link to="/admin/reports" className="flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors">
-            Full report <ArrowRight className="h-4 w-4" />
-          </Link>
+          <div className="flex items-center gap-3">
+            <HuddleQuickPill />
+            <Link to="/admin/reports" className="flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors">
+              Full report <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
 
         {/* KPI Grid */}

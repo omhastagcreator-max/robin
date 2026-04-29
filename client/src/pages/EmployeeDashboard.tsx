@@ -14,6 +14,7 @@ import * as api from '@/api';
 import { useSession } from '@/hooks/useSession';
 import { useTasks } from '@/hooks/useTasks';
 import { SessionClockCard } from '@/components/shared/SessionClockCard';
+import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -141,9 +142,12 @@ export default function EmployeeDashboard() {
     <AppLayout>
       <div className="max-w-5xl mx-auto space-y-5 page-transition-enter">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold">Good {new Date().getHours() < 12 ? 'morning' : 'afternoon'}, {user?.name?.split(' ')[0] || 'there'} 👋</h1>
-          <p className="text-sm text-muted-foreground">{format(new Date(), 'EEEE, dd MMMM yyyy')}</p>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold">Good {new Date().getHours() < 12 ? 'morning' : 'afternoon'}, {user?.name?.split(' ')[0] || 'there'} 👋</h1>
+            <p className="text-sm text-muted-foreground">{format(new Date(), 'EEEE, dd MMMM yyyy')}</p>
+          </div>
+          <HuddleQuickPill />
         </div>
 
         {/* Team/role specific widget */}

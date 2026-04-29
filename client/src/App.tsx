@@ -81,14 +81,21 @@ function AppRoutes() {
 }
 
 import { ScreenShareProvider } from '@/contexts/ScreenShareContext';
+import { HuddleProvider } from '@/contexts/HuddleContext';
+import { HuddleDock } from '@/components/shared/HuddleDock';
 
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
         <ScreenShareProvider>
-          <AppRoutes />
-          <Toaster position="top-right" richColors expand />
+          <HuddleProvider>
+            <AppRoutes />
+            {/* Persistent huddle dock — sits above page navigation so the
+                Jitsi call survives route changes. */}
+            <HuddleDock />
+            <Toaster position="top-right" richColors expand />
+          </HuddleProvider>
         </ScreenShareProvider>
       </AuthProvider>
     </BrowserRouter>

@@ -11,6 +11,7 @@ import * as api from '@/api';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { SessionClockCard } from '@/components/shared/SessionClockCard';
+import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 
 // ── Stage Config ──────────────────────────────────────────────────────────────
 const PIPELINE_STAGES = [
@@ -298,10 +299,13 @@ export default function SalesDashboard() {
               {leads.length} leads · {wonLeads.length} won · ₹{pipelineValue.toLocaleString('en-IN')} pipeline
             </p>
           </div>
-          <button onClick={() => setShowAdd(v => !v)}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 shadow-sm">
-            <Plus className="h-4 w-4" /> New Lead
-          </button>
+          <div className="flex items-center gap-2">
+            <HuddleQuickPill />
+            <button onClick={() => setShowAdd(v => !v)}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 shadow-sm">
+              <Plus className="h-4 w-4" /> New Lead
+            </button>
+          </div>
         </div>
 
         {/* Clock-in (Start Day / Break / End Day) */}

@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
-import { Users, Plus, Activity, CheckCircle2, Mail, Phone, Loader2, UserCheck, BarChart2 } from 'lucide-react';
+import { Users, Plus, Activity, CheckCircle2, Mail, Phone, Loader2, UserCheck, BarChart2, Coffee, CalendarOff } from 'lucide-react';
 import * as api from '@/api';
 import { toast } from 'sonner';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { EmployeeReportModal } from '@/components/admin/EmployeeReportModal';
+import { useTeamPresence, type PresenceStatus } from '@/hooks/useTeamPresence';
 
 const teamColors: Record<string, string> = {
   web:       'bg-blue-500/15 text-blue-400',
@@ -16,6 +17,29 @@ const teamColors: Record<string, string> = {
   admin:     'bg-red-500/15 text-red-400',
 };
 
+function PresenceBadge({ status }: { status: PresenceStatus }) {
+  if (status === 'on_leave') return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/15 text-purple-500 border border-purple-500/30">
+      <CalendarOff className="h-3 w-3" /> On leave
+    </span>
+  );
+  if (status === 'on_break') return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-600 border border-amber-500/30">
+      <Coffee className="h-3 w-3" /> On break
+    </span>
+  );
+  if (status === 'active') return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-500/15 text-green-600 border border-green-500/30">
+      <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" /> Working
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground">
+      Off the clock
+    </span>
+  );
+}
+
 export default function AdminEmployees() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,6 +48,7 @@ export default function AdminEmployees() {
   const [inviting, setInviting] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [reportFor, setReportFor] = useState<any | null>(null);
+  const presence = useTeamPresence();
 
   const load = async () => {
     try {
@@ -110,10 +135,9 @@ export default function AdminEmployees() {
                   </div>
                   <p className="text-xs text-muted-foreground truncate">{emp.email}</p>
                 </div>
-                {/* Session status */}
-                <div className="hidden sm:flex items-center gap-1.5 text-xs">
-                  <span className={`h-2 w-2 rounded-full ${emp.sessionStatus === 'active' ? 'bg-green-400' : emp.sessionStatus === 'on_break' ? 'bg-amber-400' : 'bg-muted-foreground/30'}`} />
-                  <span className="text-muted-foreground capitalize">{emp.sessionStatus === 'none' ? 'offline' : emp.sessionStatus}</span>
+                {/* Live presence badge — updates in real time */}
+                <div className="hidden sm:flex items-center">
+                  <PresenceBadge status={presence.statusOf(emp._id)} />
                 </div>
                 {/* Tasks done */}
                 <div className="hidden lg:flex items-center gap-1 text-xs text-muted-foreground">
