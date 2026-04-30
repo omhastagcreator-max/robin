@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useMeetingRoom, type PeerView } from '@/hooks/useMeetingRoom';
 import { useTeamPresence, type PresenceStatus } from '@/hooks/useTeamPresence';
 import { RemoteAudio, useAudioLevel } from '@/components/shared/RemoteAudio';
+import { TurnSetupBanner } from '@/components/shared/TurnSetupBanner';
 
 /**
  * Full-page Google-Meet-like huddle stage. Used INSIDE the WorkRoom page
@@ -106,6 +107,12 @@ export function HuddleStage() {
       {/* JOINED — Meet-style stage */}
       {meeting.joined && (
         <>
+          {/* Network blocked — show TURN setup */}
+          {meeting.networkBlocked && (
+            <div className="px-4 py-3 border-b border-border">
+              <TurnSetupBanner />
+            </div>
+          )}
           {/* Screen share area — ALWAYS shown when anyone is sharing */}
           {(sharingPeer || selfSharing) && (
             <div className="relative bg-black border-b border-border">

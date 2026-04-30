@@ -82,6 +82,9 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
   const [audioOn, setAudioOn] = useState(false);
   const [screenOn, setScreenOn] = useState(false);
   const [error, setError]     = useState<string | null>(null);
+  // True when one or more peer connections enter the `failed` state — almost
+  // always means TURN is unreachable from the user's network. Surfaces in UI.
+  const [networkBlocked, setNetworkBlocked] = useState(false);
 
   const updatePeer = useCallback((peerId: string, patch: Partial<PeerView>) => {
     setPeers(prev => {
@@ -163,8 +166,14 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
       updatePeer(peerId, { stream });
     };
 
-    pc.oniceconnectionstatechange = () => log('ice', peerId, '→', pc.iceConnectionState);
-    pc.onconnectionstatechange    = () => log('conn', peerId, '→', pc.connectionState);
+    pc.oniceconnectionstatechange = () => {
+      log('ice', peerId, '→', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'failed') setNetworkBlocked(true);
+    };
+    pc.onconnectionstatechange = () => {
+      log('conn', peerId, '→', pc.connectionState);
+      if (pc.connectionState === 'failed') setNetworkBlocked(true);
+    };
 
     return pc;
   }, [audioOn, updatePeer, userId]);
@@ -409,6 +418,7 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
     audioOn,
     screenOn,
     error,
+    networkBlocked,
     joinMeeting,
     leaveMeeting,
     toggleAudio,
