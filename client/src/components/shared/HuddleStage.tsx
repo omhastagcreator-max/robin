@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useMeetingRoom, type PeerView } from '@/hooks/useMeetingRoom';
+import type { PeerView } from '@/hooks/useMeetingRoom';
 import { useTeamPresence, type PresenceStatus } from '@/hooks/useTeamPresence';
 import { RemoteAudio, useAudioLevel } from '@/components/shared/RemoteAudio';
 import { TurnSetupBanner } from '@/components/shared/TurnSetupBanner';
@@ -22,32 +22,13 @@ import { TurnSetupBanner } from '@/components/shared/TurnSetupBanner';
  *   • Bottom controls: Mic / Screen-share / Leave.
  */
 export function HuddleStage() {
-  const { user, role } = useAuth();
-  const { mode, join, leave, markJoined } = useHuddle();
-
-  const meeting = useMeetingRoom({
-    userId:   user?.id || '',
-    userName: user?.name,
-    userRole: role,
-    roomId:   'agency-global',
-  });
-
+  const { user } = useAuth();
+  // ALL huddle state from the single context-owned useMeetingRoom instance.
+  const meeting = useHuddle();
+  const { mode, join, leave } = meeting;
   const presence = useTeamPresence();
 
-  // Sync HuddleContext mode with useMeetingRoom lifecycle (same as the dock).
-  useEffect(() => {
-    if (mode === 'joining' && !meeting.joined && !meeting.joining) meeting.joinMeeting();
-  }, [mode, meeting.joined, meeting.joining, meeting]);
-
-  useEffect(() => {
-    if (meeting.joined && (mode === 'idle' || mode === 'joining')) markJoined();
-  }, [meeting.joined, mode, markJoined]);
-
-  useEffect(() => {
-    if (mode === 'idle' && meeting.joined) meeting.leaveMeeting();
-  }, [mode, meeting.joined, meeting]);
-
-  const handleLeave = () => { meeting.leaveMeeting(); leave(); };
+  const handleLeave = () => leave();
 
   // Whoever is sharing screen — only one main view at a time.
   const sharingPeer = meeting.peers.find(p => p.screenOn);
@@ -97,9 +78,9 @@ export function HuddleStage() {
               All shared screens appear here automatically. Mute by default, click your mic to talk.
             </p>
           </div>
-          {meeting.error && (
+          {meeting.meetingError && (
             <p className="text-xs text-red-500 max-w-sm flex items-center gap-1">
-              <AlertTriangle className="h-3 w-3" /> {meeting.error}
+              <AlertTriangle className="h-3 w-3" /> {meeting.meetingError}
             </p>
           )}
           <button

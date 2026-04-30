@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Headphones, ChevronDown, ChevronUp, PhoneCall, PhoneOff,
@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useMeetingRoom, type PeerView } from '@/hooks/useMeetingRoom';
+import type { PeerView } from '@/hooks/useMeetingRoom';
 import { RemoteAudio } from '@/components/shared/RemoteAudio';
 import { TurnSetupBanner } from '@/components/shared/TurnSetupBanner';
 
@@ -30,48 +30,18 @@ export function HuddleDock() {
   const location = useLocation();
   const onWorkRoom = location.pathname.startsWith('/workroom');
 
-  const { mode, join, leave, collapse, expand, setParticipantCount, markJoined, participantCount } = useHuddle();
-
-  const meeting = useMeetingRoom({
-    userId:   user?.id || '',
-    userName: user?.name,
-    userRole: role,
-    roomId:   'agency-global',
-  });
-
-  // ── Sync the mesh hook's join lifecycle with our HuddleContext modes ────
-  useEffect(() => {
-    if (mode === 'joining' && !meeting.joined && !meeting.joining) {
-      meeting.joinMeeting();
-    }
-  }, [mode, meeting.joined, meeting.joining, meeting]);
-
-  useEffect(() => {
-    if (meeting.joined && (mode === 'idle' || mode === 'joining')) {
-      markJoined();
-    }
-  }, [meeting.joined, mode, markJoined]);
-
-  useEffect(() => {
-    setParticipantCount(meeting.peers.length + (meeting.joined ? 1 : 0));
-  }, [meeting.peers.length, meeting.joined, setParticipantCount]);
-
-  useEffect(() => {
-    if (mode === 'idle' && meeting.joined) {
-      meeting.leaveMeeting();
-    }
-  }, [mode, meeting.joined, meeting]);
+  // ALL huddle state comes from the single context-owned useMeetingRoom.
+  const huddle = useHuddle();
+  const { mode, join, leave, collapse, expand, participantCount } = huddle;
 
   if (!internal) return null;
   // On the WorkRoom page, the full HuddleStage is the primary UI — hide
   // the dock so we don't show two huddle interfaces side-by-side.
   if (onWorkRoom) return null;
 
-  // The peer (or self) currently sharing screen. Only one shown big.
-  const sharingPeer = meeting.peers.find(p => p.screenOn);
-  const selfSharing = meeting.screenOn;
-
-  const handleLeave = () => { meeting.leaveMeeting(); leave(); };
+  const sharingPeer = huddle.peers.find(p => p.screenOn);
+  const selfSharing = huddle.screenOn;
+  const handleLeave = () => leave();
 
   // The card stays mounted with real dimensions whenever a call is in
   // progress — translateY moves it off-screen for collapsed state without
@@ -100,13 +70,13 @@ export function HuddleDock() {
             In huddle{participantCount > 0 ? ` · ${participantCount}` : ''}
           </span>
           <button
-            onClick={meeting.toggleAudio}
-            title={meeting.audioOn ? 'Mute' : 'Unmute'}
+            onClick={huddle.toggleAudio}
+            title={huddle.audioOn ? 'Mute' : 'Unmute'}
             className={`ml-2 h-7 w-7 rounded-full flex items-center justify-center text-white transition-colors ${
-              meeting.audioOn ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'
+              huddle.audioOn ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'
             }`}
           >
-            {meeting.audioOn ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
+            {huddle.audioOn ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
           </button>
           <button
             onClick={expand}
@@ -167,13 +137,13 @@ export function HuddleDock() {
 
           {/* Body */}
           <div className="flex-1 flex flex-col overflow-hidden">
-            {meeting.error ? (
+            {huddle.meetingError ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-3 p-5 text-center">
                 <AlertTriangle className="h-8 w-8 text-red-500" />
                 <p className="text-sm font-semibold">Couldn't access microphone</p>
-                <p className="text-xs text-muted-foreground">{meeting.error}</p>
+                <p className="text-xs text-muted-foreground">{huddle.meetingError}</p>
               </div>
-            ) : !meeting.joined ? (
+            ) : !huddle.joined ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-3 p-5 text-center">
                 <div className="h-12 w-12 rounded-2xl bg-primary/15 flex items-center justify-center">
                   <PhoneCall className="h-5 w-5 text-primary animate-pulse" />
@@ -184,7 +154,7 @@ export function HuddleDock() {
             ) : (
               <>
                 {/* Network blocked — actionable TURN setup banner */}
-                {meeting.networkBlocked && (
+                {huddle.networkBlocked && (
                   <div className="px-3 py-2 border-b border-border">
                     <TurnSetupBanner compact />
                   </div>
@@ -195,8 +165,8 @@ export function HuddleDock() {
                   <div className="bg-black border-b border-border" style={{ height: 200 }}>
                     {sharingPeer
                       ? <PeerScreenView peer={sharingPeer} />
-                      : selfSharing && meeting.localStream
-                        ? <SelfScreenView stream={meeting.localStream} />
+                      : selfSharing && huddle.localStream
+                        ? <SelfScreenView stream={huddle.localStream} />
                         : null}
                     <p className="absolute mt-[-26px] ml-2 text-[10px] text-white bg-black/60 px-2 py-0.5 rounded-md">
                       {sharingPeer ? `${sharingPeer.name || 'Teammate'} is sharing` : 'You are sharing'}
@@ -209,15 +179,15 @@ export function HuddleDock() {
                   <ParticipantTile
                     name={user?.name || user?.email || 'You'}
                     isSelf
-                    audioOn={meeting.audioOn}
-                    screenOn={meeting.screenOn}
+                    audioOn={huddle.audioOn}
+                    screenOn={huddle.screenOn}
                   />
-                  {meeting.peers.length === 0 && (
+                  {huddle.peers.length === 0 && (
                     <p className="text-[11px] text-muted-foreground italic text-center pt-4">
                       Waiting for teammates to join…
                     </p>
                   )}
-                  {meeting.peers.map(p => (
+                  {huddle.peers.map(p => (
                     <ParticipantTile
                       key={p.userId}
                       peer={p}
@@ -230,23 +200,23 @@ export function HuddleDock() {
           </div>
 
           {/* Controls */}
-          {meeting.joined && (
+          {huddle.joined && (
             <div className="flex items-center justify-center gap-2 px-3 py-3 border-t border-border bg-card shrink-0">
               <ControlButton
-                on={meeting.audioOn}
+                on={huddle.audioOn}
                 onIcon={Mic}
                 offIcon={MicOff}
-                onClick={meeting.toggleAudio}
-                tone={meeting.audioOn ? 'good' : 'danger'}
-                label={meeting.audioOn ? 'Mute' : 'Unmute'}
+                onClick={huddle.toggleAudio}
+                tone={huddle.audioOn ? 'good' : 'danger'}
+                label={huddle.audioOn ? 'Mute' : 'Unmute'}
               />
               <ControlButton
-                on={meeting.screenOn}
+                on={huddle.screenOn}
                 onIcon={MonitorOff}
                 offIcon={Monitor}
-                onClick={meeting.toggleScreen}
-                tone={meeting.screenOn ? 'primary' : 'neutral'}
-                label={meeting.screenOn ? 'Stop sharing' : 'Share screen'}
+                onClick={huddle.toggleScreen}
+                tone={huddle.screenOn ? 'primary' : 'neutral'}
+                label={huddle.screenOn ? 'Stop sharing' : 'Share screen'}
               />
               <button
                 onClick={handleLeave}
