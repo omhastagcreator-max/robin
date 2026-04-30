@@ -44,9 +44,14 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
   const meteredKey    = env.VITE_METERED_API_KEY    as string | undefined;
   const meteredDomain = env.VITE_METERED_DOMAIN     as string | undefined;
   if (meteredKey && meteredDomain) {
+    // 5-second timeout so a flaky/down Metered endpoint never hangs the
+    // whole join flow. Fallback to STUN if the request is too slow.
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 5000);
     try {
       const url = `https://${meteredDomain}/api/v1/turn/credentials?apiKey=${meteredKey}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
       if (res.ok) {
         const servers = (await res.json()) as RTCIceServer[];
         if (Array.isArray(servers) && servers.length > 0) {
@@ -59,8 +64,13 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
         }
       }
       console.warn('[ice] Metered API returned non-OK status', res.status);
-    } catch (e) {
-      console.warn('[ice] failed to fetch Metered credentials, falling back', e);
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      if (e?.name === 'AbortError') {
+        console.warn('[ice] Metered API timed out after 5s — falling back to STUN');
+      } else {
+        console.warn('[ice] failed to fetch Metered credentials, falling back', e);
+      }
     }
   }
 
