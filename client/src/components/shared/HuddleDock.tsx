@@ -1,171 +1,78 @@
-import { useEffect, useRef, useState } from 'react';
-import { Headphones, ChevronDown, ChevronUp, PhoneOff, Mic, MicOff, AlertTriangle } from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import {
+  Headphones, ChevronDown, ChevronUp, PhoneCall, PhoneOff,
+  Mic, MicOff, Monitor, MonitorOff, AlertTriangle, Users,
+} from 'lucide-react';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { useAuth } from '@/contexts/AuthContext';
-
-declare global { interface Window { JitsiMeetExternalAPI?: any } }
-
-const JITSI_DOMAIN = 'meet.jit.si';
-const SCRIPT_SRC   = `https://${JITSI_DOMAIN}/external_api.js`;
+import { useMeetingRoom, type PeerView } from '@/hooks/useMeetingRoom';
 
 /**
- * Persistent huddle dock — Jitsi-based audio + screen-share huddle that
- * lives at the top of the React tree (above AppRoutes), so the iframe
- * survives every page navigation.
+ * Persistent huddle dock — self-hosted mesh WebRTC (no Jitsi, no third-party
+ * limits). Lives at the top of the React tree so the connection survives
+ * navigation. Audio + screen share, no camera.
  *
- * Two important UI tricks for reliability:
- *   1. The Jitsi container ALWAYS has real CSS dimensions while a call is
- *      live. We slide the whole panel off-screen with `translateY(100%)`
- *      to "minimise" instead of shrinking to 0×0, because Chrome will
- *      pause / break media in zero-sized iframes.
- *   2. We ALWAYS render the container <div> in the DOM (even when idle)
- *      so the ref is stable. The Jitsi API mounts into it on Join.
+ *   • Idle      → floating "Join huddle" pill (1 click).
+ *   • Joined    → small 380×540 card bottom-right with participant tiles,
+ *                 mic / screen-share / leave controls.
+ *   • Collapsed → tiny status pill, call still alive (audio keeps flowing
+ *                 because hidden audio elements don't pause).
+ *
+ * Mesh ceiling is ~6 simultaneous participants for audio — fine for an
+ * agency huddle, free forever.
  */
 export function HuddleDock() {
   const { user, role } = useAuth();
   const internal = role === 'admin' || role === 'employee' || role === 'sales';
+
   const { mode, join, leave, collapse, expand, setParticipantCount, markJoined, participantCount } = useHuddle();
 
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const apiRef       = useRef<any>(null);
-  const [muted, setMuted] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const meeting = useMeetingRoom({
+    userId:   user?.id || '',
+    userName: user?.name,
+    userRole: role,
+    roomId:   'agency-global',
+  });
 
-  // Stable per-org room.
-  const orgId = (user as any)?.organizationId || 'global';
-  const roomName = `RobinAgency_${orgId}_huddle`;
-
-  // ── Boot Jitsi when the user clicks Join ─────────────────────────────────
+  // ── Sync the mesh hook's join lifecycle with our HuddleContext modes ────
   useEffect(() => {
-    if (!internal) return;
-    if (mode !== 'joining' || apiRef.current || !containerRef.current) return;
-
-    let disposed = false;
-
-    const ensureScript = () =>
-      new Promise<void>((resolve, reject) => {
-        if (window.JitsiMeetExternalAPI) { resolve(); return; }
-        const existing = document.querySelector<HTMLScriptElement>(`script[src="${SCRIPT_SRC}"]`);
-        if (existing) {
-          existing.addEventListener('load',  () => resolve());
-          existing.addEventListener('error', () => reject(new Error('Jitsi script failed to load')));
-          return;
-        }
-        const s = document.createElement('script');
-        s.src = SCRIPT_SRC; s.async = true;
-        s.onload  = () => resolve();
-        s.onerror = () => reject(new Error('Jitsi script failed to load'));
-        document.body.appendChild(s);
-      });
-
-    setError(null);
-
-    ensureScript().then(() => {
-      if (disposed || !containerRef.current || !window.JitsiMeetExternalAPI) return;
-
-      // Clear any prior iframe (HMR etc).
-      containerRef.current.innerHTML = '';
-
-      const api = new window.JitsiMeetExternalAPI(JITSI_DOMAIN, {
-        roomName,
-        parentNode: containerRef.current,
-        width:  '100%',
-        height: '100%',
-        userInfo: {
-          displayName: user?.name || user?.email || 'Team member',
-          email: user?.email,
-        },
-        configOverwrite: {
-          // Keep the prejoin page so users see the explicit mic permission
-          // dialog and can choose their audio device. Without it, some users
-          // were ending up muted with no clear path to grant permission.
-          prejoinPageEnabled:  true,
-          // Always start with video muted — we never want camera.
-          startWithVideoMuted: true,
-          // Still let Jitsi acquire the mic device up front.
-          disableInitialGUM:   false,
-          startWithAudioMuted: false,
-          disableProfile:      true,
-          // No camera button anywhere.
-          toolbarButtons: [
-            'microphone', 'desktop', 'chat', 'raisehand',
-            'tileview', 'fullscreen', 'settings', 'participants-pane', 'hangup',
-          ],
-        },
-        interfaceConfigOverwrite: {
-          DEFAULT_BACKGROUND:        '#000',
-          DISABLE_VIDEO_BACKGROUND:  true,
-          HIDE_INVITE_MORE_HEADER:   true,
-          MOBILE_APP_PROMO:          false,
-          SHOW_JITSI_WATERMARK:      false,
-          SHOW_WATERMARK_FOR_GUESTS: false,
-          TOOLBAR_BUTTONS: [
-            'microphone', 'desktop', 'chat', 'raisehand',
-            'tileview', 'fullscreen', 'settings', 'hangup',
-          ],
-        },
-      });
-
-      apiRef.current = api;
-
-      api.addEventListener('videoConferenceJoined', () => {
-        markJoined();
-        // Read initial mute state — Jitsi may auto-mute new participants
-        try { api.isAudioMuted?.().then((m: boolean) => setMuted(!!m)); } catch { /* ignore */ }
-      });
-      api.addEventListener('readyToClose', () => {
-        try { api.dispose(); } catch { /* ignore */ }
-        apiRef.current = null;
-        leave();
-      });
-      api.addEventListener('audioMuteStatusChanged', (e: any) => setMuted(!!e.muted));
-
-      const updateCount = () => {
-        try {
-          const list = api.getParticipantsInfo?.() || [];
-          setParticipantCount(list.length + 1); // +1 for self
-        } catch { /* ignore */ }
-      };
-      api.addEventListener('participantJoined', updateCount);
-      api.addEventListener('participantLeft',   updateCount);
-    }).catch((err: Error) => {
-      setError(err.message || 'Could not load the huddle. Check your internet.');
-      leave();
-    });
-
-    return () => { disposed = true; };
-  }, [mode, internal, roomName, user?.name, user?.email, markJoined, setParticipantCount, leave]);
-
-  // Tear down iframe on actual leave
-  useEffect(() => {
-    if (mode === 'idle' && apiRef.current) {
-      try { apiRef.current.dispose(); } catch { /* ignore */ }
-      apiRef.current = null;
-      setMuted(true);
+    if (mode === 'joining' && !meeting.joined && !meeting.joining) {
+      meeting.joinMeeting();
     }
-  }, [mode]);
+  }, [mode, meeting.joined, meeting.joining, meeting]);
+
+  useEffect(() => {
+    if (meeting.joined && (mode === 'idle' || mode === 'joining')) {
+      markJoined();
+    }
+  }, [meeting.joined, mode, markJoined]);
+
+  useEffect(() => {
+    setParticipantCount(meeting.peers.length + (meeting.joined ? 1 : 0));
+  }, [meeting.peers.length, meeting.joined, setParticipantCount]);
+
+  useEffect(() => {
+    if (mode === 'idle' && meeting.joined) {
+      meeting.leaveMeeting();
+    }
+  }, [mode, meeting.joined, meeting]);
 
   if (!internal) return null;
 
-  const toggleMic = () => { try { apiRef.current?.executeCommand('toggleAudio'); } catch {} };
-  const handleLeave = () => {
-    try { apiRef.current?.executeCommand('hangup'); } catch {}
-    try { apiRef.current?.dispose(); } catch {}
-    apiRef.current = null;
-    leave();
-  };
+  // The peer (or self) currently sharing screen. Only one shown big.
+  const sharingPeer = meeting.peers.find(p => p.screenOn);
+  const selfSharing = meeting.screenOn;
 
-  // The panel is ALWAYS rendered with real dimensions. We slide it
-  // off-screen with translateY when it shouldn't be visible — that way
-  // the Jitsi iframe never sees a 0×0 container (which Chrome treats as
-  // hidden and pauses media in).
-  // Joining + expanded both show the panel: while joining, the user needs
-  // to see the Jitsi prejoin page to grant mic permission.
+  const handleLeave = () => { meeting.leaveMeeting(); leave(); };
+
+  // The card stays mounted with real dimensions whenever a call is in
+  // progress — translateY moves it off-screen for collapsed state without
+  // pausing the audio elements (which need to keep playing).
   const panelVisible = mode === 'expanded' || mode === 'joining';
 
   return (
     <>
-      {/* Idle — single floating "Join huddle" pill */}
+      {/* Idle — single floating Join pill */}
       {mode === 'idle' && (
         <button
           onClick={join}
@@ -177,7 +84,7 @@ export function HuddleDock() {
         </button>
       )}
 
-      {/* Collapsed — small status pill with quick mic + leave + expand. */}
+      {/* Collapsed — small status pill with quick mic + leave + expand */}
       {mode === 'collapsed' && (
         <div className="fixed bottom-4 right-4 z-50 flex items-center gap-1 bg-card border border-primary/40 rounded-full pl-4 pr-1.5 py-1.5 shadow-xl">
           <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
@@ -185,13 +92,13 @@ export function HuddleDock() {
             In huddle{participantCount > 0 ? ` · ${participantCount}` : ''}
           </span>
           <button
-            onClick={toggleMic}
-            title={muted ? 'Unmute' : 'Mute'}
+            onClick={meeting.toggleAudio}
+            title={meeting.audioOn ? 'Mute' : 'Unmute'}
             className={`ml-2 h-7 w-7 rounded-full flex items-center justify-center text-white transition-colors ${
-              muted ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'
+              meeting.audioOn ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'
             }`}
           >
-            {muted ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+            {meeting.audioOn ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
           </button>
           <button
             onClick={expand}
@@ -210,17 +117,14 @@ export function HuddleDock() {
         </div>
       )}
 
-      {/* Persistent Jitsi panel — small floating card in the bottom-right
-          (Slack-huddle style). Always rendered with real dimensions so the
-          iframe stays mounted across all mode transitions. Translate the
-          card off-screen when not visible instead of shrinking to 0×0. */}
+      {/* Persistent card — small floating bottom-right.
+          Always rendered with real dimensions so audio keeps playing across
+          collapse/expand and across page navigation. */}
       <div
         className="fixed z-40 transition-transform duration-200"
         style={{
           right:  '1rem',
           bottom: '1rem',
-          // Small attractive card — wide enough to read participant names
-          // and use Jitsi controls, but doesn't dominate the dashboard.
           width:  'min(92vw, 380px)',
           height: 'min(70vh, 540px)',
           transform: panelVisible ? 'translateY(0)' : 'translateY(calc(100% + 2rem))',
@@ -228,18 +132,13 @@ export function HuddleDock() {
         }}
       >
         <div className="bg-card border border-primary/30 rounded-2xl overflow-hidden h-full flex flex-col shadow-2xl shadow-primary/20">
-          {/* Header — kept compact for the 380px card */}
+          {/* Header */}
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card shrink-0">
             <Headphones className="h-4 w-4 text-primary shrink-0" />
             <p className="text-sm font-semibold">Huddle</p>
             {participantCount > 0 && (
-              <span className="text-[10px] bg-primary/15 text-primary border border-primary/30 px-1.5 py-0.5 rounded-full">
-                {participantCount}
-              </span>
-            )}
-            {muted && (
-              <span className="text-[10px] flex items-center gap-0.5 text-red-500 font-medium" title="You're muted">
-                <MicOff className="h-3 w-3" />
+              <span className="text-[10px] bg-primary/15 text-primary border border-primary/30 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                <Users className="h-2.5 w-2.5" /> {participantCount}
               </span>
             )}
             <button
@@ -258,22 +157,189 @@ export function HuddleDock() {
             </button>
           </div>
 
-          {/* Jitsi iframe lives here — single, stable ref */}
-          <div ref={containerRef} className="w-full flex-1 bg-black" />
+          {/* Body */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {meeting.error ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 p-5 text-center">
+                <AlertTriangle className="h-8 w-8 text-red-500" />
+                <p className="text-sm font-semibold">Couldn't access microphone</p>
+                <p className="text-xs text-muted-foreground">{meeting.error}</p>
+              </div>
+            ) : !meeting.joined ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 p-5 text-center">
+                <div className="h-12 w-12 rounded-2xl bg-primary/15 flex items-center justify-center">
+                  <PhoneCall className="h-5 w-5 text-primary animate-pulse" />
+                </div>
+                <p className="text-sm font-semibold">Connecting…</p>
+                <p className="text-xs text-muted-foreground">Allow microphone access if your browser asks.</p>
+              </div>
+            ) : (
+              <>
+                {/* Screen share area — primary view if anyone is sharing */}
+                {(sharingPeer || selfSharing) && (
+                  <div className="bg-black border-b border-border" style={{ height: 200 }}>
+                    {sharingPeer
+                      ? <PeerScreenView peer={sharingPeer} />
+                      : selfSharing && meeting.localStream
+                        ? <SelfScreenView stream={meeting.localStream} />
+                        : null}
+                    <p className="absolute mt-[-26px] ml-2 text-[10px] text-white bg-black/60 px-2 py-0.5 rounded-md">
+                      {sharingPeer ? `${sharingPeer.name || 'Teammate'} is sharing` : 'You are sharing'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Participant strip */}
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                  <ParticipantTile
+                    name={user?.name || user?.email || 'You'}
+                    isSelf
+                    audioOn={meeting.audioOn}
+                    screenOn={meeting.screenOn}
+                  />
+                  {meeting.peers.length === 0 && (
+                    <p className="text-[11px] text-muted-foreground italic text-center pt-4">
+                      Waiting for teammates to join…
+                    </p>
+                  )}
+                  {meeting.peers.map(p => (
+                    <ParticipantTile
+                      key={p.userId}
+                      peer={p}
+                      name={p.name || 'Teammate'}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Controls */}
+          {meeting.joined && (
+            <div className="flex items-center justify-center gap-2 px-3 py-3 border-t border-border bg-card shrink-0">
+              <ControlButton
+                on={meeting.audioOn}
+                onIcon={Mic}
+                offIcon={MicOff}
+                onClick={meeting.toggleAudio}
+                tone={meeting.audioOn ? 'good' : 'danger'}
+                label={meeting.audioOn ? 'Mute' : 'Unmute'}
+              />
+              <ControlButton
+                on={meeting.screenOn}
+                onIcon={MonitorOff}
+                offIcon={Monitor}
+                onClick={meeting.toggleScreen}
+                tone={meeting.screenOn ? 'primary' : 'neutral'}
+                label={meeting.screenOn ? 'Stop sharing' : 'Share screen'}
+              />
+              <button
+                onClick={handleLeave}
+                className="ml-2 flex items-center gap-1.5 px-3 py-2 rounded-full bg-red-500 text-white text-xs font-medium hover:bg-red-600 shadow"
+                title="Leave huddle"
+              >
+                <PhoneOff className="h-3.5 w-3.5" /> Leave
+              </button>
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Inline error banner */}
-      {error && (
-        <div className="fixed bottom-20 right-4 z-50 max-w-sm bg-red-500/10 border border-red-500/30 text-red-600 text-xs px-3 py-2 rounded-xl shadow-lg flex items-start gap-2">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-semibold">Couldn't start the huddle</p>
-            <p className="opacity-80">{error}</p>
-          </div>
-        </div>
-      )}
     </>
+  );
+}
+
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+function ParticipantTile({
+  name, audioOn, screenOn, isSelf, peer,
+}: {
+  name: string;
+  audioOn?: boolean;
+  screenOn?: boolean;
+  isSelf?: boolean;
+  /** Real peer — used to render their hidden audio element so we hear them. */
+  peer?: PeerView;
+}) {
+  // Always-mounted audio element for peers. Hidden visually; the browser
+  // continues to play it. For self we don't play our own audio (would echo).
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    if (peer && audioRef.current && peer.stream) {
+      audioRef.current.srcObject = peer.stream;
+    }
+  }, [peer]);
+
+  const initial = (name || '?')[0].toUpperCase();
+  const showAudioOn = isSelf ? audioOn : peer?.audioOn;
+  const showScreenOn = isSelf ? screenOn : peer?.screenOn;
+
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 rounded-xl bg-muted/30 border border-border/40">
+      <div className="h-8 w-8 rounded-full bg-primary/15 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+        {initial}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium truncate">{name}{isSelf ? ' (you)' : ''}</p>
+        <p className="text-[10px] text-muted-foreground">
+          {showAudioOn ? 'Talking-ready' : 'Muted'}
+          {showScreenOn ? ' · sharing screen' : ''}
+        </p>
+      </div>
+      <span className={`h-6 w-6 rounded-full flex items-center justify-center shrink-0 ${
+        showAudioOn ? 'bg-green-500/15 text-green-500' : 'bg-red-500/15 text-red-500'
+      }`}>
+        {showAudioOn ? <Mic className="h-3 w-3" /> : <MicOff className="h-3 w-3" />}
+      </span>
+      {showScreenOn && (
+        <span className="h-6 w-6 rounded-full bg-primary/15 text-primary flex items-center justify-center shrink-0">
+          <Monitor className="h-3 w-3" />
+        </span>
+      )}
+      {peer && <audio ref={audioRef} autoPlay className="hidden" />}
+    </div>
+  );
+}
+
+function PeerScreenView({ peer }: { peer: PeerView }) {
+  const ref = useRef<HTMLVideoElement | null>(null);
+  useEffect(() => {
+    if (ref.current && peer.stream) ref.current.srcObject = peer.stream;
+  }, [peer.stream]);
+  return <video ref={ref} autoPlay playsInline className="w-full h-full object-contain bg-black" />;
+}
+
+function SelfScreenView({ stream }: { stream: MediaStream }) {
+  const ref = useRef<HTMLVideoElement | null>(null);
+  useEffect(() => { if (ref.current) ref.current.srcObject = stream; }, [stream]);
+  return <video ref={ref} autoPlay playsInline muted className="w-full h-full object-contain bg-black" />;
+}
+
+function ControlButton({
+  on, onIcon: OnIcon, offIcon: OffIcon, onClick, tone, label,
+}: {
+  on: boolean;
+  onIcon: any;
+  offIcon: any;
+  onClick: () => void;
+  tone: 'good' | 'danger' | 'primary' | 'neutral';
+  label: string;
+}) {
+  const Icon = on ? OnIcon : OffIcon;
+  const palette = {
+    good:    'bg-green-500 text-white hover:bg-green-600',
+    danger:  'bg-red-500   text-white hover:bg-red-600',
+    primary: 'bg-primary   text-primary-foreground hover:bg-primary/90',
+    neutral: 'bg-muted     text-foreground hover:bg-muted/80 border border-border',
+  }[tone];
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium transition-colors ${palette}`}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      <span className="hidden sm:inline">{label}</span>
+    </button>
   );
 }
 

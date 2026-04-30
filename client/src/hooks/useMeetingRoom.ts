@@ -2,7 +2,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000';
-const ICE_SERVERS: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+// STUN + free TURN for NAT traversal (matches useWebRTC.ts).
+// Override via VITE_TURN_URL / VITE_TURN_USERNAME / VITE_TURN_CREDENTIAL.
+const TURN_URL  = (import.meta as any).env?.VITE_TURN_URL  || 'turn:openrelay.metered.ca:443';
+const TURN_USER = (import.meta as any).env?.VITE_TURN_USERNAME   || 'openrelayproject';
+const TURN_PASS = (import.meta as any).env?.VITE_TURN_CREDENTIAL || 'openrelayproject';
+
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: TURN_URL,                                     username: TURN_USER, credential: TURN_PASS },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: TURN_USER, credential: TURN_PASS },
+];
 
 export interface MeetingParticipant {
   userId: string;
