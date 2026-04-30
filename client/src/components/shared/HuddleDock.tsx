@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Headphones, ChevronDown, ChevronUp, PhoneCall, PhoneOff,
   Mic, MicOff, Monitor, MonitorOff, AlertTriangle, Users,
@@ -6,6 +7,7 @@ import {
 import { useHuddle } from '@/contexts/HuddleContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMeetingRoom, type PeerView } from '@/hooks/useMeetingRoom';
+import { RemoteAudio } from '@/components/shared/RemoteAudio';
 
 /**
  * Persistent huddle dock — self-hosted mesh WebRTC (no Jitsi, no third-party
@@ -24,6 +26,8 @@ import { useMeetingRoom, type PeerView } from '@/hooks/useMeetingRoom';
 export function HuddleDock() {
   const { user, role } = useAuth();
   const internal = role === 'admin' || role === 'employee' || role === 'sales';
+  const location = useLocation();
+  const onWorkRoom = location.pathname.startsWith('/workroom');
 
   const { mode, join, leave, collapse, expand, setParticipantCount, markJoined, participantCount } = useHuddle();
 
@@ -58,6 +62,9 @@ export function HuddleDock() {
   }, [mode, meeting.joined, meeting]);
 
   if (!internal) return null;
+  // On the WorkRoom page, the full HuddleStage is the primary UI — hide
+  // the dock so we don't show two huddle interfaces side-by-side.
+  if (onWorkRoom) return null;
 
   // The peer (or self) currently sharing screen. Only one shown big.
   const sharingPeer = meeting.peers.find(p => p.screenOn);
@@ -260,21 +267,13 @@ function ParticipantTile({
   /** Real peer — used to render their hidden audio element so we hear them. */
   peer?: PeerView;
 }) {
-  // Always-mounted audio element for peers. Hidden visually; the browser
-  // continues to play it. For self we don't play our own audio (would echo).
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  useEffect(() => {
-    if (peer && audioRef.current && peer.stream) {
-      audioRef.current.srcObject = peer.stream;
-    }
-  }, [peer]);
-
   const initial = (name || '?')[0].toUpperCase();
   const showAudioOn = isSelf ? audioOn : peer?.audioOn;
   const showScreenOn = isSelf ? screenOn : peer?.screenOn;
 
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5 rounded-xl bg-muted/30 border border-border/40">
+    <div className="relative flex items-center gap-2 px-2 py-1.5 rounded-xl bg-muted/30 border border-border/40">
+      {peer && <RemoteAudio stream={peer.stream} />}
       <div className="h-8 w-8 rounded-full bg-primary/15 flex items-center justify-center text-xs font-bold text-primary shrink-0">
         {initial}
       </div>
@@ -295,7 +294,6 @@ function ParticipantTile({
           <Monitor className="h-3 w-3" />
         </span>
       )}
-      {peer && <audio ref={audioRef} autoPlay className="hidden" />}
     </div>
   );
 }

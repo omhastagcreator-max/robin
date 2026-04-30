@@ -4,12 +4,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   Coffee, Users, Loader2, Headphones, CalendarOff,
-  Monitor, MonitorOff, Eye, PhoneCall,
+  Monitor, MonitorOff, Eye,
 } from 'lucide-react';
 import { useTeamPresence, type TeamMember, type PresenceStatus } from '@/hooks/useTeamPresence';
 import { useScreenShare } from '@/contexts/ScreenShareContext';
 import { useWebRTCReceiver } from '@/hooks/useWebRTC';
-import { useHuddle } from '@/contexts/HuddleContext';
+import { HuddleStage } from '@/components/shared/HuddleStage';
 import * as api from '@/api';
 
 /**
@@ -26,9 +26,6 @@ import * as api from '@/api';
 export default function WorkRoom() {
   const { user, role } = useAuth();
   const isInternal = role === 'admin' || role === 'employee' || role === 'sales';
-
-  // Huddle is now global — drive it via the persistent dock context.
-  const huddle = useHuddle();
 
   const presence = useTeamPresence();
 
@@ -77,12 +74,6 @@ export default function WorkRoom() {
               The agency's universal huddle — mic + screen share, all in one tab.
             </p>
           </div>
-          {(huddle.mode === 'expanded' || huddle.mode === 'collapsed') && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/30 text-xs text-green-600 font-medium">
-              <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-              In the huddle{huddle.participantCount > 0 ? ` · ${huddle.participantCount}` : ''}
-            </div>
-          )}
         </div>
 
         {/* Break banner */}
@@ -125,39 +116,8 @@ export default function WorkRoom() {
           </motion.div>
         )}
 
-        {/* ── HUDDLE — driven by the global dock; just a one-click CTA here ─── */}
-        <section className="bg-card border border-primary/30 rounded-2xl p-4 flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-primary/15 flex items-center justify-center">
-            <Headphones className="h-5 w-5 text-primary" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm">Live huddle</p>
-            <p className="text-xs text-muted-foreground">
-              The agency-wide audio room — mic, screen share, chat. The huddle dock at the bottom of
-              your screen stays connected even when you switch pages.
-            </p>
-          </div>
-          {huddle.mode === 'idle' ? (
-            <button
-              onClick={huddle.join}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-all shadow-md"
-            >
-              <PhoneCall className="h-4 w-4" /> Join huddle
-            </button>
-          ) : huddle.mode === 'collapsed' ? (
-            <button
-              onClick={huddle.expand}
-              className="flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary border border-primary/30 rounded-xl text-sm font-medium hover:bg-primary/20"
-            >
-              <PhoneCall className="h-4 w-4" /> Show huddle
-            </button>
-          ) : (
-            <span className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/30 text-xs text-green-600 font-medium">
-              <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-              Live below
-            </span>
-          )}
-        </section>
+        {/* ── FULL HUDDLE STAGE — Meet-style, in-page ───────────────────────── */}
+        <HuddleStage />
 
         {/* ── LIVE SCREENS — broadcast / monitor ──────────────────── */}
         {isInternal && (
