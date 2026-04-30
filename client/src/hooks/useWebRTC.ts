@@ -1,33 +1,19 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import * as api from '@/api';
+import { getIceServers } from '@/lib/iceServers';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000';
 
-// ICE servers for NAT traversal.
-//   - Google STUN works on simple home networks.
-//   - TURN is required when STUN can't punch through (most corporate /
-//     hotel / mobile networks, symmetric NATs, etc.). Without TURN the
-//     signalling completes but no media bytes flow → black video.
-//
-// Open Relay Project provides free public TURN with usable bandwidth and
-// is the standard "it just works for testing" choice. For production it's
-// worth swapping to Twilio NTS / Cloudflare TURN with paid credentials.
-//
-// You can override with VITE_TURN_URL / VITE_TURN_USERNAME / VITE_TURN_CREDENTIAL
-// if you wire up your own TURN later.
-const TURN_URL  = (import.meta as any).env?.VITE_TURN_URL  || 'turn:openrelay.metered.ca:443';
-const TURN_USER = (import.meta as any).env?.VITE_TURN_USERNAME   || 'openrelayproject';
-const TURN_PASS = (import.meta as any).env?.VITE_TURN_CREDENTIAL || 'openrelayproject';
-
-const ICE_SERVERS: RTCIceServer[] = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  // UDP TURN
-  { urls: TURN_URL,                                  username: TURN_USER, credential: TURN_PASS },
-  // TCP fallback for restrictive firewalls
-  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: TURN_USER, credential: TURN_PASS },
-];
+// Resolved at first use via getIceServers() — see lib/iceServers.ts. Order:
+// (1) Metered.live REST API   (2) static VITE_TURN_*   (3) public STUN.
+let resolvedIceServers: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
+let icePromise: Promise<RTCIceServer[]> | null = null;
+async function ensureIce() {
+  if (!icePromise) icePromise = getIceServers().then(s => { resolvedIceServers = s; return s; });
+  await icePromise;
+  return resolvedIceServers;
+}
 
 function attachConnLogging(pc: RTCPeerConnection, label: string) {
   pc.onconnectionstatechange    = () => console.log(`[webrtc:${label}] conn=${pc.connectionState}`);
@@ -83,7 +69,7 @@ export function useWebRTCSender(userId: string) {
       // Tear down any prior PC for this admin (they may be reconnecting).
       pcMap.current.get(adminId)?.close();
 
-      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      const pc = new RTCPeerConnection({ iceServers: resolvedIceServers });
       attachConnLogging(pc, `sender→${adminId.slice(0, 6)}`);
       pcMap.current.set(adminId, pc);
 
@@ -140,6 +126,9 @@ export function useWebRTCSender(userId: string) {
 
   const startSharing = useCallback(async () => {
     try {
+      // Resolve ICE servers up front — guarantees TURN is fetched before
+      // an admin asks to view this stream.
+      await ensureIce();
       const stream = await (navigator.mediaDevices as any).getDisplayMedia({ video: true, audio: false });
       streamRef.current = stream;
       stream.getVideoTracks()[0].onended = () => stopSharing();
@@ -176,7 +165,7 @@ export function useWebRTCReceiver(userId: string) {
       }
       pcMap.current.get(senderId)?.close();
 
-      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      const pc = new RTCPeerConnection({ iceServers: resolvedIceServers });
       attachConnLogging(pc, `receiver←${senderId.slice(0, 6)}`);
       pcMap.current.set(senderId, pc);
 
@@ -221,7 +210,10 @@ export function useWebRTCReceiver(userId: string) {
     };
   }, [userId]);
 
-  const viewScreen = useCallback((targetId: string) => {
+  const viewScreen = useCallback(async (targetId: string) => {
+    // Make sure TURN credentials are loaded before the broadcaster's offer
+    // arrives — otherwise we'd build the PC with a stale STUN-only config.
+    await ensureIce();
     expected.current.add(targetId);
     setConnectingTo(prev => ({ ...prev, [targetId]: true }));
     socketRef.current?.emit('view:request', { targetId, adminId: userId });

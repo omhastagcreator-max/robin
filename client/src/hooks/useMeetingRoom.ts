@@ -1,20 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { getIceServers } from '@/lib/iceServers';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000';
-
-// STUN + free TURN for NAT traversal. Override via VITE_TURN_*.
-const TURN_URL  = (import.meta as any).env?.VITE_TURN_URL  || 'turn:openrelay.metered.ca:443';
-const TURN_USER = (import.meta as any).env?.VITE_TURN_USERNAME   || 'openrelayproject';
-const TURN_PASS = (import.meta as any).env?.VITE_TURN_CREDENTIAL || 'openrelayproject';
-
-const ICE_SERVERS: RTCIceServer[] = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: TURN_URL,                                     username: TURN_USER, credential: TURN_PASS },
-  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: TURN_USER, credential: TURN_PASS },
-];
-
 const log = (...args: any[]) => console.log('[huddle]', ...args);
 
 export interface MeetingParticipant {
@@ -75,6 +63,8 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
   const screenSenderByPeer = useRef<Map<string, RTCRtpSender>>(new Map());
   const peerInfoRef  = useRef<Map<string, MeetingParticipant>>(new Map());
   const pendingIceRef= useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+  // Resolved ICE config (Metered / static TURN / STUN-only). Populated on join.
+  const iceServersRef = useRef<RTCIceServer[]>([{ urls: 'stun:stun.l.google.com:19302' }]);
 
   const [joined, setJoined]   = useState(false);
   const [joining, setJoining] = useState(false);
@@ -134,7 +124,7 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
     if (existing) return existing;
 
     log('buildPeerConnection', peerId);
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
     peersRef.current.set(peerId, pc);
 
     // Audio: attach the real mic track so the SDP gets an audio m-line and
@@ -299,6 +289,10 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
     setError(null);
     setJoining(true);
     try {
+      // Resolve ICE servers FIRST (Metered REST API / static TURN / STUN).
+      // If this fails, we fall back to STUN-only inside getIceServers().
+      iceServersRef.current = await getIceServers();
+      log('iceServers resolved:', iceServersRef.current.length);
       await ensureLocalStream();
       setJoined(true);
     } catch (e: any) {
