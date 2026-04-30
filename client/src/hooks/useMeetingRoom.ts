@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { getIceServers } from '@/lib/iceServers';
+import { getIceServers, getLastIceMeta, type IceSource } from '@/lib/iceServers';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000';
 const log = (...args: any[]) => console.log('[huddle]', ...args);
@@ -75,6 +75,7 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
   // True when one or more peer connections enter the `failed` state — almost
   // always means TURN is unreachable from the user's network. Surfaces in UI.
   const [networkBlocked, setNetworkBlocked] = useState(false);
+  const [iceMeta, setIceMeta] = useState<{ source: IceSource; count: number }>({ source: 'stun-only', count: 0 });
 
   const updatePeer = useCallback((peerId: string, patch: Partial<PeerView>) => {
     setPeers(prev => {
@@ -292,7 +293,9 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
       // Resolve ICE servers FIRST (Metered REST API / static TURN / STUN).
       // If this fails, we fall back to STUN-only inside getIceServers().
       iceServersRef.current = await getIceServers();
-      log('iceServers resolved:', iceServersRef.current.length);
+      const meta = getLastIceMeta();
+      setIceMeta(meta);
+      log('iceServers resolved:', iceServersRef.current.length, '— source:', meta.source);
       await ensureLocalStream();
       setJoined(true);
     } catch (e: any) {
@@ -413,6 +416,7 @@ export function useMeetingRoom({ userId, userName, userRole, roomId = 'agency-gl
     screenOn,
     error,
     networkBlocked,
+    iceMeta,
     joinMeeting,
     leaveMeeting,
     toggleAudio,

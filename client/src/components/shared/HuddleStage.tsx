@@ -69,6 +69,22 @@ export function HuddleStage() {
         </span>
       </div>
 
+      {/* ICE diagnostic strip — instantly visible without console scrollback */}
+      {meeting.joined && (
+        <div className="px-4 py-1.5 border-b border-border bg-muted/30 text-[10px] text-muted-foreground flex items-center gap-2 flex-wrap">
+          <span>ICE:</span>
+          {meeting.iceMeta.source === 'metered' && (
+            <span className="text-green-600 font-semibold">✓ Metered API · {meeting.iceMeta.count} servers</span>
+          )}
+          {meeting.iceMeta.source === 'static' && (
+            <span className="text-green-600 font-semibold">✓ Static TURN · {meeting.iceMeta.count} servers</span>
+          )}
+          {meeting.iceMeta.source === 'stun-only' && (
+            <span className="text-amber-600 font-semibold">⚠ STUN-only — TURN env vars not detected. Set VITE_METERED_API_KEY + VITE_METERED_DOMAIN in Vercel and Redeploy.</span>
+          )}
+        </div>
+      )}
+
       {/* JOIN screen */}
       {!meeting.joined && !meeting.joining && (
         <div className="flex flex-col items-center justify-center gap-4 py-14 px-6 text-center">

@@ -19,7 +19,15 @@
  */
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
-let cached: { servers: RTCIceServer[]; at: number } | null = null;
+let cached: { servers: RTCIceServer[]; at: number; source: IceSource } | null = null;
+
+export type IceSource = 'metered' | 'static' | 'stun-only';
+
+/** Last-resolved metadata, used by UI to show what config is in use. */
+export function getLastIceMeta(): { source: IceSource; count: number } {
+  if (!cached) return { source: 'stun-only', count: 0 };
+  return { source: cached.source, count: cached.servers.length };
+}
 
 const FALLBACK_STUN: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -44,7 +52,7 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
         if (Array.isArray(servers) && servers.length > 0) {
           // Layer Google STUN on top — extra paths if Metered's are slow.
           const out = [...FALLBACK_STUN, ...servers];
-          cached = { servers: out, at: now };
+          cached = { servers: out, at: now, source: 'metered' };
           // eslint-disable-next-line no-console
           console.log('[ice] using Metered API credentials —', servers.length, 'servers');
           return out;
@@ -65,14 +73,14 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
       ...FALLBACK_STUN,
       { urls: turnUrl, username: turnUser, credential: turnPass },
     ];
-    cached = { servers: out, at: now };
+    cached = { servers: out, at: now, source: 'static' };
     console.log('[ice] using static TURN credentials');
     return out;
   }
 
   // 3) STUN-only fallback
   console.warn('[ice] no TURN configured — STUN-only. Most NATs will fail.');
-  cached = { servers: FALLBACK_STUN, at: now };
+  cached = { servers: FALLBACK_STUN, at: now, source: 'stun-only' };
   return FALLBACK_STUN;
 }
 
