@@ -59,7 +59,93 @@ export async function listCredentials(req: AuthRequest, res: Response): Promise<
       metadata: { count: docs.length, q: q || undefined, type: type || undefined, clientId: clientId || undefined },
     }).catch(() => {});
 
-    res.json(docs.map(hydrate));
+    // ── Admins also get last-access info per credential ──────────────────
+    // (who copied/revealed it last + when). Hidden from non-admin staff so
+    // they don't see who accessed what — the audit is an admin-only signal.
+    const ids = docs.map(d => d._id);
+    const lastAccessByCred = new Map<string, { userId: string; userName?: string; at: Date; action: string }>();
+    if (req.user!.role === 'admin' && ids.length > 0) {
+      const recent = await ActivityLog.aggregate([
+        { $match: {
+            organizationId: orgId,
+            entity: 'ClientCredential',
+            entityId: { $in: ids },
+            action:   { $in: ['vault.copy', 'vault.reveal'] },
+          } },
+        { $sort: { createdAt: -1 } },
+        { $group: {
+            _id: '$entityId',
+            userId:   { $first: '$userId' },
+            action:   { $first: '$action' },
+            at:       { $first: '$createdAt' },
+          } },
+      ]);
+      const accessUserIds = Array.from(new Set(recent.map(r => r.userId).filter(Boolean)));
+      const users = await User.find({ _id: { $in: accessUserIds } }).select('_id name email').lean();
+      const userMap = new Map(users.map(u => [String(u._id), u]));
+      for (const r of recent) {
+        const u = userMap.get(String(r.userId));
+        lastAccessByCred.set(String(r._id), {
+          userId:   r.userId,
+          userName: u?.name || u?.email,
+          at:       r.at,
+          action:   r.action,
+        });
+      }
+    }
+
+    const out = docs.map(d => {
+      const hyd = hydrate(d);
+      const la = lastAccessByCred.get(String(d._id));
+      return { ...hyd, lastAccess: la || null };
+    });
+
+    res.json(out);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+// GET /api/credentials/audit?limit=&credentialId=
+// Recent vault access feed for the org. Used by the "Audit log" panel
+// inside the vault page so any internal staff member can see who viewed
+// what credentials and when.
+export async function listVaultAudit(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+    const credentialId = req.query.credentialId as string | undefined;
+
+    const filter: any = {
+      organizationId: orgId,
+      entity: 'ClientCredential',
+      action: { $in: ['vault.copy', 'vault.reveal', 'vault.list'] },
+    };
+    if (credentialId) filter.entityId = credentialId;
+
+    const logs = await ActivityLog.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    // Hydrate user info per log
+    const userIds = Array.from(new Set(logs.map(l => l.userId).filter(Boolean) as string[]));
+    const users = await User.find({ _id: { $in: userIds } }).select('_id name email role').lean();
+    const userMap = new Map(users.map(u => [String(u._id), u]));
+
+    res.json(logs.map(l => ({
+      _id:       String(l._id),
+      action:    l.action,
+      at:        l.createdAt,
+      entityId:  l.entityId ? String(l.entityId) : null,
+      metadata:  l.metadata,
+      user: l.userId
+        ? {
+            userId: l.userId,
+            name:   userMap.get(String(l.userId))?.name,
+            email:  userMap.get(String(l.userId))?.email,
+            role:   userMap.get(String(l.userId))?.role,
+          }
+        : null,
+    })));
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 

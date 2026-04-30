@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSocket } from '@/hooks/useSocket';
 import { useTeamPresence, type PresenceStatus } from '@/hooks/useTeamPresence';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
+import { VaultAuditPanel } from '@/components/admin/VaultAuditPanel';
 import * as api from '@/api';
 import { FullPageSpinner } from '@/components/shared/Spinner';
 
@@ -235,6 +236,9 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
+
+        {/* Vault Audit Log — admin-only feed of who saw which credentials */}
+        <VaultAuditPanel limit={15} />
 
         {/* Admin Live Screen Monitor */}
         <div className="space-y-4 pt-4 border-t border-border mt-8">

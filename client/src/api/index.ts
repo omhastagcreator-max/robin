@@ -144,6 +144,8 @@ export const updateCredential  = (id: string, d: Record<string, unknown>)=> api.
 export const deleteCredential  = (id: string)                            => api.delete(`/credentials/${id}`).then(r => r.data);
 export const logCredentialAccess = (id: string, action: 'copy' | 'reveal' = 'copy') =>
   api.post(`/credentials/${id}/access`, { action }).then(r => r.data).catch(() => null);
+export const listVaultAudit    = (params?: Record<string, unknown>) =>
+  api.get('/credentials/audit', { params }).then(r => r.data);
 
 // ── Leave Applications ────────────────────────────────────────────────────────
 export const createLeave       = (d: { days: { date: string; reason: string }[] }) =>

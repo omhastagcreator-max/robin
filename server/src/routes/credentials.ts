@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
 import {
-  listCredentials, createCredential, updateCredential, deleteCredential, logCredentialAccess,
+  listCredentials, createCredential, updateCredential, deleteCredential, logCredentialAccess, listVaultAudit,
 } from '../controllers/credentialsController';
 
 const router = Router();
@@ -12,6 +12,8 @@ router.use(authMiddleware);
 const staff = requireRole('admin', 'employee', 'sales');
 
 router.get('/',              staff, listCredentials);
+// Audit feed is ADMIN-ONLY (must be declared BEFORE '/:id')
+router.get('/audit',         requireRole('admin'), listVaultAudit);
 router.post('/',             staff, createCredential);
 router.put('/:id',           staff, updateCredential);
 router.delete('/:id',        staff, deleteCredential);
