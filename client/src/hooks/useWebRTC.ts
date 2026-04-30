@@ -4,6 +4,36 @@ import * as api from '@/api';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000';
 
+// ICE servers for NAT traversal.
+//   - Google STUN works on simple home networks.
+//   - TURN is required when STUN can't punch through (most corporate /
+//     hotel / mobile networks, symmetric NATs, etc.). Without TURN the
+//     signalling completes but no media bytes flow → black video.
+//
+// Open Relay Project provides free public TURN with usable bandwidth and
+// is the standard "it just works for testing" choice. For production it's
+// worth swapping to Twilio NTS / Cloudflare TURN with paid credentials.
+//
+// You can override with VITE_TURN_URL / VITE_TURN_USERNAME / VITE_TURN_CREDENTIAL
+// if you wire up your own TURN later.
+const TURN_URL  = (import.meta as any).env?.VITE_TURN_URL  || 'turn:openrelay.metered.ca:443';
+const TURN_USER = (import.meta as any).env?.VITE_TURN_USERNAME   || 'openrelayproject';
+const TURN_PASS = (import.meta as any).env?.VITE_TURN_CREDENTIAL || 'openrelayproject';
+
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  // UDP TURN
+  { urls: TURN_URL,                                  username: TURN_USER, credential: TURN_PASS },
+  // TCP fallback for restrictive firewalls
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: TURN_USER, credential: TURN_PASS },
+];
+
+function attachConnLogging(pc: RTCPeerConnection, label: string) {
+  pc.onconnectionstatechange    = () => console.log(`[webrtc:${label}] conn=${pc.connectionState}`);
+  pc.oniceconnectionstatechange = () => console.log(`[webrtc:${label}] ice=${pc.iceConnectionState}`);
+}
+
 let socketSingleton: Socket | null = null;
 
 function getSocket(userId: string, userName?: string, userRole?: string): Socket {
@@ -53,7 +83,8 @@ export function useWebRTCSender(userId: string) {
       // Tear down any prior PC for this admin (they may be reconnecting).
       pcMap.current.get(adminId)?.close();
 
-      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      attachConnLogging(pc, `sender→${adminId.slice(0, 6)}`);
       pcMap.current.set(adminId, pc);
 
       streamRef.current.getTracks().forEach(t => pc.addTrack(t, streamRef.current!));
@@ -145,7 +176,8 @@ export function useWebRTCReceiver(userId: string) {
       }
       pcMap.current.get(senderId)?.close();
 
-      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      attachConnLogging(pc, `receiver←${senderId.slice(0, 6)}`);
       pcMap.current.set(senderId, pc);
 
       pc.onicecandidate = (e) => {

@@ -210,45 +210,48 @@ export function HuddleDock() {
         </div>
       )}
 
-      {/* Persistent Jitsi panel — always rendered with real dimensions.
-          Slides off-screen via translateY when not visible. The container
-          <div> below is the single source of truth for the ref so Jitsi
-          mounts into the same DOM node across all mode transitions. */}
+      {/* Persistent Jitsi panel — small floating card in the bottom-right
+          (Slack-huddle style). Always rendered with real dimensions so the
+          iframe stays mounted across all mode transitions. Translate the
+          card off-screen when not visible instead of shrinking to 0×0. */}
       <div
-        className="fixed left-1/2 z-40 transition-transform duration-200"
+        className="fixed z-40 transition-transform duration-200"
         style={{
-          bottom: 0,
-          width:   'min(960px, calc(100% - 1rem))',
-          height:  'min(60vh, 560px)',
-          transform: panelVisible ? 'translateX(-50%)' : 'translate(-50%, 110%)',
+          right:  '1rem',
+          bottom: '1rem',
+          // Small attractive card — wide enough to read participant names
+          // and use Jitsi controls, but doesn't dominate the dashboard.
+          width:  'min(92vw, 380px)',
+          height: 'min(70vh, 540px)',
+          transform: panelVisible ? 'translateY(0)' : 'translateY(calc(100% + 2rem))',
           pointerEvents: panelVisible ? 'auto' : 'none',
         }}
       >
-        <div className="bg-card border border-border rounded-t-2xl overflow-hidden h-full flex flex-col shadow-2xl">
-          {/* Header */}
-          <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-card shrink-0">
-            <Headphones className="h-4 w-4 text-primary" />
-            <p className="text-sm font-semibold">Live huddle</p>
+        <div className="bg-card border border-primary/30 rounded-2xl overflow-hidden h-full flex flex-col shadow-2xl shadow-primary/20">
+          {/* Header — kept compact for the 380px card */}
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card shrink-0">
+            <Headphones className="h-4 w-4 text-primary shrink-0" />
+            <p className="text-sm font-semibold">Huddle</p>
             {participantCount > 0 && (
               <span className="text-[10px] bg-primary/15 text-primary border border-primary/30 px-1.5 py-0.5 rounded-full">
-                {participantCount} {participantCount === 1 ? 'person' : 'people'}
+                {participantCount}
               </span>
             )}
             {muted && (
-              <span className="text-[10px] flex items-center gap-1 text-red-500 font-medium">
-                <MicOff className="h-3 w-3" /> Mic off — click the toolbar mic to unmute
+              <span className="text-[10px] flex items-center gap-0.5 text-red-500 font-medium" title="You're muted">
+                <MicOff className="h-3 w-3" />
               </span>
             )}
             <button
               onClick={collapse}
-              className="ml-auto h-7 w-7 rounded-full flex items-center justify-center hover:bg-muted text-muted-foreground"
+              className="ml-auto h-7 w-7 rounded-full flex items-center justify-center hover:bg-muted text-muted-foreground shrink-0"
               title="Minimise (call keeps running)"
             >
               <ChevronDown className="h-4 w-4" />
             </button>
             <button
               onClick={handleLeave}
-              className="h-7 px-2 rounded-full flex items-center gap-1 bg-red-500 text-white text-xs font-medium hover:bg-red-600"
+              className="h-7 px-2 rounded-full flex items-center gap-1 bg-red-500 text-white text-xs font-medium hover:bg-red-600 shrink-0"
               title="Leave huddle"
             >
               <PhoneOff className="h-3 w-3" /> Leave
