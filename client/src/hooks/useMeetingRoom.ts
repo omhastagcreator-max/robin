@@ -14,6 +14,13 @@ const LIVEKIT_URL = (import.meta as any).env?.VITE_LIVEKIT_URL || '';
 
 const log = (...args: any[]) => console.log('[huddle]', ...args);
 
+// Make the env state observable from the browser console at load time —
+// users can also just type `import.meta.env.VITE_LIVEKIT_URL` to inspect.
+// eslint-disable-next-line no-console
+console.log('[huddle] env at load:', {
+  VITE_LIVEKIT_URL: LIVEKIT_URL || '(empty — set it on Vercel + redeploy without cache)',
+});
+
 export interface MeetingParticipant {
   userId: string;
   name?: string;
@@ -121,7 +128,11 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
     setJoining(true);
     try {
       if (!LIVEKIT_URL) {
-        throw new Error('Huddle not configured. Set VITE_LIVEKIT_URL on Vercel and LIVEKIT_API_KEY + LIVEKIT_API_SECRET on the server.');
+        throw new Error(
+          'Huddle not configured: VITE_LIVEKIT_URL is empty in the bundle. ' +
+          'On Vercel → Settings → Environment Variables, confirm the variable is named exactly VITE_LIVEKIT_URL ' +
+          '(VITE_ prefix is mandatory) and is enabled for Production. Then Deployments → Redeploy WITHOUT "Use existing Build Cache".'
+        );
       }
       log('requesting JWT…');
       const { token } = await api.getHuddleToken();
