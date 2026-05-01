@@ -8,7 +8,6 @@ import { useHuddle } from '@/contexts/HuddleContext';
 import { useAuth } from '@/contexts/AuthContext';
 import type { PeerView } from '@/hooks/useMeetingRoom';
 import { RemoteAudio } from '@/components/shared/RemoteAudio';
-import { TurnSetupBanner } from '@/components/shared/TurnSetupBanner';
 
 /**
  * Persistent huddle dock — self-hosted mesh WebRTC (no Jitsi, no third-party
@@ -153,13 +152,6 @@ export function HuddleDock() {
               </div>
             ) : (
               <>
-                {/* Network blocked — actionable TURN setup banner */}
-                {huddle.networkBlocked && (
-                  <div className="px-3 py-2 border-b border-border">
-                    <TurnSetupBanner compact />
-                  </div>
-                )}
-
                 {/* Screen share area — primary view if anyone is sharing */}
                 {(sharingPeer || selfSharing) && (
                   <div className="bg-black border-b border-border" style={{ height: 200 }}>

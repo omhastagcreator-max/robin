@@ -7,7 +7,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { PeerView } from '@/hooks/useMeetingRoom';
 import { useTeamPresence, type PresenceStatus } from '@/hooks/useTeamPresence';
 import { RemoteAudio, useAudioLevel } from '@/components/shared/RemoteAudio';
-import { TurnSetupBanner } from '@/components/shared/TurnSetupBanner';
 
 /**
  * Full-page Google-Meet-like huddle stage. Used INSIDE the WorkRoom page
@@ -50,19 +49,11 @@ export function HuddleStage() {
         </span>
       </div>
 
-      {/* ICE diagnostic strip — instantly visible without console scrollback */}
+      {/* Connection status strip */}
       {meeting.joined && (
         <div className="px-4 py-1.5 border-b border-border bg-muted/30 text-[10px] text-muted-foreground flex items-center gap-2 flex-wrap">
-          <span>ICE:</span>
-          {meeting.iceMeta.source === 'metered' && (
-            <span className="text-green-600 font-semibold">✓ Metered API · {meeting.iceMeta.count} servers</span>
-          )}
-          {meeting.iceMeta.source === 'static' && (
-            <span className="text-green-600 font-semibold">✓ Static TURN · {meeting.iceMeta.count} servers</span>
-          )}
-          {meeting.iceMeta.source === 'stun-only' && (
-            <span className="text-amber-600 font-semibold">⚠ STUN-only — TURN env vars not detected. Set VITE_METERED_API_KEY + VITE_METERED_DOMAIN in Vercel and Redeploy.</span>
-          )}
+          <span className="text-green-600 font-semibold">● LiveKit Cloud — connected</span>
+          <span className="text-muted-foreground/70">free forever for an agency</span>
         </div>
       )}
 
@@ -104,12 +95,6 @@ export function HuddleStage() {
       {/* JOINED — Meet-style stage */}
       {meeting.joined && (
         <>
-          {/* Network blocked — show TURN setup */}
-          {meeting.networkBlocked && (
-            <div className="px-4 py-3 border-b border-border">
-              <TurnSetupBanner />
-            </div>
-          )}
           {/* Screen share area — ALWAYS shown when anyone is sharing */}
           {(sharingPeer || selfSharing) && (
             <div className="relative bg-black border-b border-border">

@@ -21,7 +21,7 @@
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 let cached: { servers: RTCIceServer[]; at: number; source: IceSource } | null = null;
 
-export type IceSource = 'metered' | 'static' | 'stun-only';
+export type IceSource = 'metered' | 'static' | 'stun-only' | 'livekit';
 
 /** Last-resolved metadata, used by UI to show what config is in use. */
 export function getLastIceMeta(): { source: IceSource; count: number } {
