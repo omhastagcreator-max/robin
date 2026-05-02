@@ -15,6 +15,7 @@ import { useSession } from '@/hooks/useSession';
 import { useTasks } from '@/hooks/useTasks';
 import { SessionClockCard } from '@/components/shared/SessionClockCard';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
+import { QuickActionsCard } from '@/components/shared/QuickActionsCard';
 
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -149,6 +150,9 @@ export default function EmployeeDashboard() {
           </div>
           <HuddleQuickPill />
         </div>
+
+        {/* Quick actions — start your day in one click */}
+        <QuickActionsCard />
 
         {/* Team/role specific widget */}
         {user?.team && <TeamRoleWidget team={user.team} tasks={tasks} />}

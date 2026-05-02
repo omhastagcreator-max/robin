@@ -92,15 +92,16 @@ export default function WorkRoom() {
 
             {presence.loading ? (
               <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
+            ) : presence.list.length === 0 ? (
+              <p className="px-5 py-4 text-sm text-muted-foreground bg-card border border-border rounded-2xl text-center">
+                No teammates found.
+              </p>
             ) : (
-              <div className="bg-card border border-border rounded-2xl divide-y divide-border/40 overflow-hidden">
-                {presence.list.length === 0 && (
-                  <p className="px-5 py-4 text-sm text-muted-foreground">No teammates found.</p>
-                )}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 {presence.list
                   .slice()
                   .sort((a, b) => statusRank(a.status) - statusRank(b.status))
-                  .map(m => <RosterRow key={m.userId} member={m} />)}
+                  .map(m => <RosterCard key={m.userId} member={m} />)}
               </div>
             )}
           </section>
@@ -151,22 +152,22 @@ function StatusBadge({ status }: { status: PresenceStatus }) {
   );
 }
 
-function RosterRow({ member }: { member: TeamMember }) {
+function RosterCard({ member }: { member: TeamMember }) {
+  const accent =
+    member.status === 'active'    ? 'border-green-500/30 bg-green-500/5' :
+    member.status === 'on_break'  ? 'border-amber-500/30 bg-amber-500/5' :
+    member.status === 'on_leave'  ? 'border-purple-500/30 bg-purple-500/5' :
+                                    'border-border bg-card';
   return (
-    <div className="flex items-center gap-3 px-5 py-3 hover:bg-muted/20">
-      <div className="h-9 w-9 rounded-xl bg-primary/15 flex items-center justify-center text-sm font-bold text-primary shrink-0">
+    <div className={`rounded-2xl border ${accent} p-4 flex flex-col items-center text-center gap-2 transition-colors hover:shadow-md`}>
+      <div className="h-12 w-12 rounded-2xl bg-primary/15 flex items-center justify-center text-base font-bold text-primary">
         {(member.name || member.email || '?')[0].toUpperCase()}
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-sm font-medium truncate">{member.name || 'Unnamed'}</p>
-          {member.role && (
-            <span className="text-[10px] uppercase font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded">
-              {member.role}
-            </span>
-          )}
-        </div>
-        <p className="text-[11px] text-muted-foreground truncate">{member.email}</p>
+      <div className="min-w-0 w-full">
+        <p className="text-sm font-semibold truncate">{member.name || 'Unnamed'}</p>
+        {member.role && (
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{member.role}</p>
+        )}
       </div>
       <StatusBadge status={member.status} />
     </div>

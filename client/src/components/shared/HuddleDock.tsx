@@ -61,12 +61,12 @@ export function HuddleDock() {
         </button>
       )}
 
-      {/* Collapsed — small status pill with quick mic + leave + expand */}
+      {/* Collapsed — small status pill with quick mic + screen + expand + leave */}
       {mode === 'collapsed' && (
         <div className="fixed bottom-4 right-4 z-50 flex items-center gap-1 bg-card border border-primary/40 rounded-full pl-4 pr-1.5 py-1.5 shadow-xl">
           <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
           <span className="text-xs font-medium">
-            In huddle{participantCount > 0 ? ` · ${participantCount}` : ''}
+            Huddle{participantCount > 0 ? ` · ${participantCount}` : ''}
           </span>
           <button
             onClick={huddle.toggleAudio}
@@ -76,6 +76,17 @@ export function HuddleDock() {
             }`}
           >
             {huddle.audioOn ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            onClick={huddle.toggleScreen}
+            title={huddle.screenOn ? 'Stop sharing' : 'Share screen'}
+            className={`h-7 w-7 rounded-full flex items-center justify-center transition-colors ${
+              huddle.screenOn
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                : 'bg-muted hover:bg-muted/80 text-foreground border border-border'
+            }`}
+          >
+            {huddle.screenOn ? <MonitorOff className="h-3.5 w-3.5" /> : <Monitor className="h-3.5 w-3.5" />}
           </button>
           <button
             onClick={expand}

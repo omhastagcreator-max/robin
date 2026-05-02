@@ -144,9 +144,9 @@ export function HuddleStage() {
             </section>
           )}
 
-          {/* Participant tile grid */}
+          {/* Participant tile grid — compact */}
           <div className="p-3">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
               <SelfTile
                 name={user?.name || user?.email || 'You'}
                 audioOn={meeting.audioOn}
@@ -158,7 +158,7 @@ export function HuddleStage() {
                 <PeerTile key={p.userId} peer={p} presenceStatus={presence.statusOf(p.userId)} />
               ))}
               {meeting.peers.length === 0 && (
-                <div className="col-span-full flex items-center justify-center py-6 text-xs text-muted-foreground italic">
+                <div className="col-span-full flex items-center justify-center py-3 text-xs text-muted-foreground italic">
                   Waiting for teammates to join…
                 </div>
               )}
@@ -193,35 +193,48 @@ export function HuddleStage() {
         </>
       )}
 
-      {/* ── Pinned-fullscreen overlay ──────────────────────────────────── */}
+      {/* ── Pinned screen modal — smaller, easy to close ──────────────── */}
       <AnimatePresence>
         {pinnedSharer && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-sm flex flex-col"
-          >
-            <div className="flex items-center gap-2 px-4 py-3 bg-black/60 border-b border-white/10">
-              <Pin className="h-4 w-4 text-primary" />
-              <p className="text-sm font-semibold text-white truncate flex-1">
-                {pinnedSharer.name}'s screen
-                {pinnedSharer.isSelf && <span className="text-white/50 font-normal"> (you)</span>}
-              </p>
-              <span className="hidden sm:inline text-[11px] text-white/60">press Esc to close</span>
-              <button
-                onClick={() => setPinned(null)}
-                className="h-8 px-3 flex items-center gap-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs"
-              >
-                <X className="h-3.5 w-3.5" /> Close
-              </button>
-            </div>
-            <div className="flex-1 flex items-center justify-center">
-              {pinnedSharer.peer
-                ? <PeerScreenView peer={pinnedSharer.peer} fullscreen />
-                : pinnedSharer.stream
-                  ? <SelfScreenView stream={pinnedSharer.stream} fullscreen />
-                  : null}
-            </div>
-          </motion.div>
+          <>
+            {/* Backdrop — click to close */}
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setPinned(null)}
+              className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm"
+            />
+            {/* Modal */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }}
+              transition={{ duration: 0.16 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[61] bg-card border border-border rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+              style={{ width: 'min(960px, calc(100vw - 2rem))', height: 'min(640px, calc(100vh - 4rem))' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-card shrink-0">
+                <Pin className="h-3.5 w-3.5 text-primary shrink-0" />
+                <p className="text-sm font-semibold truncate flex-1">
+                  {pinnedSharer.name}'s screen
+                  {pinnedSharer.isSelf && <span className="text-muted-foreground font-normal"> (you)</span>}
+                </p>
+                <span className="hidden sm:inline text-[10px] text-muted-foreground">Esc to close</span>
+                <button
+                  onClick={() => setPinned(null)}
+                  className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
+                  title="Close (Esc)"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="flex-1 bg-black flex items-center justify-center min-h-0">
+                {pinnedSharer.peer
+                  ? <PeerScreenView peer={pinnedSharer.peer} fullscreen />
+                  : pinnedSharer.stream
+                    ? <SelfScreenView stream={pinnedSharer.stream} fullscreen />
+                    : null}
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </section>
@@ -265,17 +278,20 @@ function SelfTile({
   const level = useAudioLevel(audioOn ? stream : null);
   const initial = (name || '?')[0].toUpperCase();
   return (
-    <div className="relative bg-muted/30 border border-primary/20 rounded-2xl p-3 flex flex-col items-center gap-2 aspect-square">
+    <div className="relative bg-muted/30 border border-primary/30 rounded-xl p-2 flex items-center gap-2.5">
       <PresenceTopRight status={presenceStatus} />
       <AvatarWithRing initial={initial} active={audioOn && level > 0.05} />
-      <p className="text-xs font-medium text-center truncate w-full">{name} (you)</p>
-      <div className="flex items-center gap-1 absolute bottom-2 left-2">
-        <span className={`h-6 w-6 rounded-full flex items-center justify-center ${audioOn ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
-          {audioOn ? <Mic className="h-3 w-3" /> : <MicOff className="h-3 w-3" />}
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold truncate">{name}</p>
+        <p className="text-[10px] text-muted-foreground">you</p>
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <span className={`h-5 w-5 rounded-full flex items-center justify-center ${audioOn ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+          {audioOn ? <Mic className="h-2.5 w-2.5" /> : <MicOff className="h-2.5 w-2.5" />}
         </span>
         {screenOn && (
-          <span className="h-6 w-6 rounded-full bg-primary/15 text-primary flex items-center justify-center">
-            <Monitor className="h-3 w-3" />
+          <span className="h-5 w-5 rounded-full bg-primary/15 text-primary flex items-center justify-center">
+            <Monitor className="h-2.5 w-2.5" />
           </span>
         )}
       </div>
@@ -287,18 +303,21 @@ function PeerTile({ peer, presenceStatus }: { peer: PeerView; presenceStatus: Pr
   const level = useAudioLevel(peer.audioOn ? peer.stream : null);
   const initial = (peer.name || '?')[0].toUpperCase();
   return (
-    <div className="relative bg-muted/30 border border-border rounded-2xl p-3 flex flex-col items-center gap-2 aspect-square">
+    <div className="relative bg-muted/30 border border-border rounded-xl p-2 flex items-center gap-2.5">
       <PresenceTopRight status={presenceStatus} />
       <RemoteAudio stream={peer.stream} />
       <AvatarWithRing initial={initial} active={peer.audioOn && level > 0.05} />
-      <p className="text-xs font-medium text-center truncate w-full">{peer.name || 'Teammate'}</p>
-      <div className="flex items-center gap-1 absolute bottom-2 left-2">
-        <span className={`h-6 w-6 rounded-full flex items-center justify-center ${peer.audioOn ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
-          {peer.audioOn ? <Mic className="h-3 w-3" /> : <MicOff className="h-3 w-3" />}
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold truncate">{peer.name || 'Teammate'}</p>
+        {peer.role && <p className="text-[10px] text-muted-foreground capitalize">{peer.role}</p>}
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <span className={`h-5 w-5 rounded-full flex items-center justify-center ${peer.audioOn ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+          {peer.audioOn ? <Mic className="h-2.5 w-2.5" /> : <MicOff className="h-2.5 w-2.5" />}
         </span>
         {peer.screenOn && (
-          <span className="h-6 w-6 rounded-full bg-primary/15 text-primary flex items-center justify-center">
-            <Monitor className="h-3 w-3" />
+          <span className="h-5 w-5 rounded-full bg-primary/15 text-primary flex items-center justify-center">
+            <Monitor className="h-2.5 w-2.5" />
           </span>
         )}
       </div>
@@ -308,8 +327,8 @@ function PeerTile({ peer, presenceStatus }: { peer: PeerView; presenceStatus: Pr
 
 function AvatarWithRing({ initial, active }: { initial: string; active: boolean }) {
   return (
-    <div className={`h-14 w-14 rounded-full flex items-center justify-center text-lg font-bold transition-all ${
-      active ? 'ring-4 ring-green-500/60 bg-primary/20 text-primary' : 'bg-primary/15 text-primary'
+    <div className={`h-9 w-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 transition-all ${
+      active ? 'ring-2 ring-green-500/70 bg-primary/20 text-primary' : 'bg-primary/15 text-primary'
     }`}>
       {initial}
     </div>

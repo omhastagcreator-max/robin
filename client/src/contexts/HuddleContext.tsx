@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
 import { useMeetingRoom, type PeerView } from '@/hooks/useMeetingRoom';
 import { useAuth } from '@/contexts/AuthContext';
 import type { IceSource } from '@/lib/iceServers';
@@ -76,6 +76,27 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
       setMode('expanded');
     }
   }, [meeting.joined, mode]);
+
+  // Auto-share screen the first time someone joins the huddle in a session.
+  // Browser shows the screen-picker; user can pick or cancel — either is fine.
+  // We track whether we've already auto-prompted to avoid re-firing on every
+  // remount (e.g. page navigation while the call is alive).
+  const autoSharedThisJoinRef = useRef(false);
+  useEffect(() => {
+    if (!meeting.joined) {
+      autoSharedThisJoinRef.current = false;
+      return;
+    }
+    if (autoSharedThisJoinRef.current) return;
+    if (meeting.screenOn) { autoSharedThisJoinRef.current = true; return; }
+    autoSharedThisJoinRef.current = true;
+    // Small delay so the user sees the join confirmation before the picker
+    // opens — feels less abrupt.
+    const t = setTimeout(() => {
+      try { meeting.toggleScreen(); } catch { /* user can still trigger manually */ }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [meeting.joined, meeting.screenOn, meeting.toggleScreen]);
 
   const participantCount = meeting.peers.length + (meeting.joined ? 1 : 0);
 

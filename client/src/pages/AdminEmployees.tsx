@@ -119,52 +119,72 @@ export default function AdminEmployees() {
         ) : employees.length === 0 ? (
           <EmptyState icon={Users} title="No team members" description="Add your first member above." />
         ) : (
-          <div className="bg-card border border-border rounded-2xl divide-y divide-border/40 overflow-hidden">
-            {employees.map((emp, i) => (
-              <motion.div key={emp._id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }}
-                className="flex items-center gap-4 px-5 py-4 hover:bg-muted/20 transition-colors">
-                {/* Avatar */}
-                <div className="h-10 w-10 rounded-xl bg-primary/20 flex items-center justify-center text-sm font-bold text-primary shrink-0">
-                  {(emp.name || emp.email)[0].toUpperCase()}
-                </div>
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-semibold text-sm">{emp.name || 'Unnamed'}</p>
-                    {emp.team && <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${teamColors[emp.team] || 'bg-muted text-muted-foreground'}`}>{emp.team}</span>}
-                  </div>
-                  <p className="text-xs text-muted-foreground truncate">{emp.email}</p>
-                </div>
-                {/* Live presence badge — updates in real time */}
-                <div className="hidden sm:flex items-center">
-                  <PresenceBadge status={presence.statusOf(emp._id)} />
-                </div>
-                {/* Tasks done */}
-                <div className="hidden lg:flex items-center gap-1 text-xs text-muted-foreground">
-                  <CheckCircle2 className="h-3 w-3" />
-                  <span>{emp.tasksDoneToday || 0} today</span>
-                </div>
-                {/* View Report */}
-                <button
-                  onClick={() => setReportFor(emp)}
-                  title="View productivity report"
-                  className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors shrink-0"
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {employees.map((emp, i) => {
+              const status = presence.statusOf(emp._id);
+              const accent =
+                status === 'active'    ? 'border-green-500/30' :
+                status === 'on_break'  ? 'border-amber-500/30' :
+                status === 'on_leave'  ? 'border-purple-500/30' :
+                                          'border-border';
+              return (
+                <motion.div
+                  key={emp._id}
+                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
+                  className={`bg-card border ${accent} rounded-2xl p-4 flex flex-col gap-3 hover:shadow-md transition-shadow`}
                 >
-                  <BarChart2 className="h-3.5 w-3.5" />
-                  <span className="hidden md:inline">Report</span>
-                </button>
-                {/* Role selector */}
-                <select value={emp.role} onChange={e => changeRole(emp._id, e.target.value)}
-                  className="text-xs bg-background border border-input rounded-lg px-2 py-1 shrink-0">
-                  {['employee', 'sales', 'client', 'admin'].map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-                {/* Reset pw */}
-                <button onClick={() => resetPw(emp._id, emp.name || emp.email)}
-                  className="text-xs text-muted-foreground hover:text-primary transition-colors shrink-0">
-                  Reset PW
-                </button>
-              </motion.div>
-            ))}
+                  {/* Header — avatar + name + presence chip */}
+                  <div className="flex items-start gap-3">
+                    <div className="h-11 w-11 rounded-xl bg-primary/20 flex items-center justify-center text-base font-bold text-primary shrink-0">
+                      {(emp.name || emp.email)[0].toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{emp.name || 'Unnamed'}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{emp.email}</p>
+                    </div>
+                    <PresenceBadge status={status} />
+                  </div>
+
+                  {/* Meta — team chip + tasks today */}
+                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground flex-wrap">
+                    {emp.team && (
+                      <span className={`px-1.5 py-0.5 rounded font-medium ${teamColors[emp.team] || 'bg-muted text-muted-foreground'}`}>
+                        {emp.team}
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3" />
+                      {emp.tasksDoneToday || 0} done today
+                    </span>
+                  </div>
+
+                  {/* Actions row */}
+                  <div className="flex items-center gap-2 mt-auto pt-1">
+                    <button
+                      onClick={() => setReportFor(emp)}
+                      title="View productivity report"
+                      className="flex-1 flex items-center justify-center gap-1 text-xs px-2 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors"
+                    >
+                      <BarChart2 className="h-3.5 w-3.5" /> Report
+                    </button>
+                    <select
+                      value={emp.role}
+                      onChange={e => changeRole(emp._id, e.target.value)}
+                      className="text-xs bg-background border border-input rounded-lg px-2 py-1.5"
+                    >
+                      {['employee', 'sales', 'client', 'admin'].map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                    <button
+                      onClick={() => resetPw(emp._id, emp.name || emp.email)}
+                      title="Reset password"
+                      className="text-[10px] text-muted-foreground hover:text-primary transition-colors px-1.5 py-1.5 rounded-lg hover:bg-muted"
+                    >
+                      Reset PW
+                    </button>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         )}
       </div>

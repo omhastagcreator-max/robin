@@ -83,6 +83,7 @@ function AppRoutes() {
 import { ScreenShareProvider } from '@/contexts/ScreenShareContext';
 import { HuddleProvider } from '@/contexts/HuddleContext';
 import { HuddleDock } from '@/components/shared/HuddleDock';
+import { BreakOverlay } from '@/components/shared/BreakOverlay';
 
 export default function App() {
   return (
@@ -92,8 +93,10 @@ export default function App() {
           <HuddleProvider>
             <AppRoutes />
             {/* Persistent huddle dock — sits above page navigation so the
-                Jitsi call survives route changes. */}
+                call survives route changes. */}
             <HuddleDock />
+            {/* Top-most break overlay — freezes the UI while user is on break. */}
+            <BreakOverlay />
             <Toaster position="top-right" richColors expand />
           </HuddleProvider>
         </ScreenShareProvider>
