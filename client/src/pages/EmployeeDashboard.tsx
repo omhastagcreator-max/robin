@@ -208,8 +208,9 @@ export default function EmployeeDashboard() {
           ))}
         </div>
 
-        {/* Tasks — full width, cleaner rows */}
-        <div className="space-y-3">
+        {/* Tasks (2/3) + Today rail (1/3) */}
+        <div className="grid lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-sm">My Tasks <span className="text-muted-foreground font-normal">({tasks.length})</span></h2>
               <button onClick={() => setAddingTask(v => !v)}
@@ -307,28 +308,23 @@ export default function EmployeeDashboard() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <AnimatePresence initial={false}>
-                    {(viewPast ? pastTasks : todayTasks).map(task => {
-                      const overdue = task.dueDate && isBefore(new Date(task.dueDate), startOfDay(new Date())) && task.status !== 'done';
-                      const accent =
-                        task.status === 'done'    ? 'border-green-500/30 bg-green-500/5' :
-                        task.status === 'blocked' ? 'border-red-500/30 bg-red-500/5' :
-                        overdue                   ? 'border-amber-500/30 bg-amber-500/5' :
-                                                    'border-border bg-card';
-                      return (
-                        <motion.div
-                          key={task._id}
-                          layout
-                          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                          className={`rounded-2xl border ${accent} p-3 flex flex-col gap-2.5 hover:shadow-md transition-shadow ${viewPast ? 'opacity-90' : ''}`}
-                        >
-                          {/* Title row */}
-                          <div className="flex items-start gap-2">
+                {/* ONE card containing all tasks as compact rows */}
+                {(viewPast ? pastTasks : todayTasks).length > 0 && (
+                  <div className="bg-card border border-border rounded-2xl divide-y divide-border/50 overflow-hidden">
+                    <AnimatePresence initial={false}>
+                      {(viewPast ? pastTasks : todayTasks).map(task => {
+                        const overdue = task.dueDate && isBefore(new Date(task.dueDate), startOfDay(new Date())) && task.status !== 'done';
+                        return (
+                          <motion.div
+                            key={task._id}
+                            layout
+                            initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                            className={`flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors ${viewPast ? 'opacity-90' : ''}`}
+                          >
                             <button
                               onClick={() => !viewPast && cycleStatus(task)}
                               disabled={viewPast}
-                              className="mt-0.5 shrink-0 disabled:cursor-default"
+                              className="shrink-0 disabled:cursor-default"
                               title={viewPast ? 'Past tasks are view-only' : 'Cycle status'}
                             >
                               <CheckCircle2 className={`h-4 w-4 transition-colors ${
@@ -337,49 +333,140 @@ export default function EmployeeDashboard() {
                                 'text-muted-foreground/30 hover:text-green-500'
                               }`} />
                             </button>
-                            <p className={`text-sm font-semibold leading-snug flex-1 ${task.status === 'done' ? 'line-through text-muted-foreground' : ''}`}>
-                              {task.title}
-                            </p>
-                          </div>
 
-                          {/* Meta chips */}
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {viewPast ? (
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${STATUS_COLORS[task.status]}`}>
-                                {task.status.replace('_', ' ')}
-                              </span>
-                            ) : (
-                              <select
-                                value={task.status}
-                                onChange={e => updateTask(task._id, { status: e.target.value as 'pending' | 'in_progress' | 'done' | 'blocked' })}
-                                onClick={e => e.stopPropagation()}
-                                className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border-0 cursor-pointer ${STATUS_COLORS[task.status]}`}
-                                style={{ background: 'transparent' }}
-                              >
-                                {STATUSES.map(s => <option key={s} value={s} className="bg-background text-foreground">{s.replace('_', ' ')}</option>)}
-                              </select>
-                            )}
-                            <span className={`text-[10px] font-semibold uppercase tracking-wide ${PRIORITY_COLORS[task.priority]}`}>
-                              {task.priority}
-                            </span>
-                            {task.taskType && (
-                              <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium">
-                                {task.taskType}
-                              </span>
-                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-sm font-medium truncate ${task.status === 'done' ? 'line-through text-muted-foreground' : ''}`}>
+                                {task.title}
+                              </p>
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                {viewPast ? (
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${STATUS_COLORS[task.status]}`}>
+                                    {task.status.replace('_', ' ')}
+                                  </span>
+                                ) : (
+                                  <select
+                                    value={task.status}
+                                    onChange={e => updateTask(task._id, { status: e.target.value as 'pending' | 'in_progress' | 'done' | 'blocked' })}
+                                    onClick={e => e.stopPropagation()}
+                                    className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border-0 cursor-pointer ${STATUS_COLORS[task.status]}`}
+                                    style={{ background: 'transparent' }}
+                                  >
+                                    {STATUSES.map(s => <option key={s} value={s} className="bg-background text-foreground">{s.replace('_', ' ')}</option>)}
+                                  </select>
+                                )}
+                                <span className={`text-[10px] font-semibold uppercase tracking-wide ${PRIORITY_COLORS[task.priority]}`}>
+                                  {task.priority}
+                                </span>
+                                {task.taskType && (
+                                  <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium">
+                                    {task.taskType}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
                             {task.dueDate && (
-                              <span className={`text-[10px] flex items-center gap-0.5 ml-auto ${overdue ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
-                                <Calendar className="h-2.5 w-2.5" />{format(new Date(task.dueDate), 'MMM d')}
+                              <span className={`text-[11px] flex items-center gap-1 shrink-0 ${overdue ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
+                                <Calendar className="h-3 w-3" />{format(new Date(task.dueDate), 'MMM d')}
                               </span>
                             )}
-                          </div>
-                        </motion.div>
-                      );
-                    })}
-                  </AnimatePresence>
-                </div>
+                          </motion.div>
+                        );
+                      })}
+                    </AnimatePresence>
+                  </div>
+                )}
               </>
             )}
+          </div>
+
+          {/* ─── Right rail — Today's schedule, reminders, team snapshot ─── */}
+          <aside className="space-y-3">
+            {/* Schedule / important items for today */}
+            <div className="bg-card border border-border rounded-2xl p-4">
+              <h3 className="font-semibold text-sm flex items-center gap-2 mb-3">
+                <Calendar className="h-4 w-4 text-primary" /> Today's schedule
+              </h3>
+              {todayTasks.length === 0 && overdueTasks.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-3 text-center">
+                  Nothing scheduled. Add a task to plan your day.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {overdueTasks.slice(0, 3).map(t => (
+                    <div key={t._id} className="flex items-start gap-2 px-2 py-1.5 rounded-lg bg-red-500/5 border border-red-500/20">
+                      <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium truncate">{t.title}</p>
+                        <p className="text-[10px] text-red-500">
+                          overdue · was due {t.dueDate ? format(new Date(t.dueDate), 'MMM d') : ''}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  {todayTasks.filter(t => t.status !== 'done').slice(0, 4).map(t => (
+                    <div key={t._id} className="flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-muted/30 transition-colors">
+                      <Clock className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium truncate">{t.title}</p>
+                        <p className="text-[10px] text-muted-foreground capitalize">
+                          {t.priority} · {t.taskType || 'task'}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Reminders / unread notifications */}
+            {notifications.filter(n => !n.isRead).length > 0 && (
+              <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4">
+                <h3 className="font-semibold text-sm flex items-center gap-2 mb-3">
+                  <Bell className="h-4 w-4 text-primary" /> Reminders
+                  <span className="text-[10px] text-muted-foreground font-normal ml-auto">
+                    {notifications.filter(n => !n.isRead).length} unread
+                  </span>
+                </h3>
+                <div className="space-y-2">
+                  {notifications.filter(n => !n.isRead).slice(0, 4).map(n => (
+                    <div key={n._id} className="flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-primary/10 transition-colors">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary mt-2 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium truncate">{n.title}</p>
+                        {n.message && (
+                          <p className="text-[10px] text-muted-foreground line-clamp-2">{n.message}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Quick links — light, accessible from one place */}
+            <div className="bg-card border border-border rounded-2xl p-4">
+              <h3 className="font-semibold text-sm mb-3">Quick links</h3>
+              <div className="space-y-1">
+                <button onClick={() => window.location.assign('/vault')}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted/40 text-xs">
+                  <span className="text-violet-500">🔑</span> Client vault
+                </button>
+                <button onClick={() => window.location.assign('/leaves')}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted/40 text-xs">
+                  <span className="text-purple-500">📅</span> Apply leave
+                </button>
+                <button onClick={() => window.location.assign('/chat')}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted/40 text-xs">
+                  <span className="text-pink-500">💬</span> Group chat
+                </button>
+                <button onClick={() => window.location.assign('/workroom')}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted/40 text-xs">
+                  <span className="text-green-500">🎙️</span> Work room
+                </button>
+              </div>
+            </div>
+          </aside>
         </div>
       </div>
     </AppLayout>
