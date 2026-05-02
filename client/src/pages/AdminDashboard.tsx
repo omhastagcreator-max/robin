@@ -1,14 +1,14 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2, X, Coffee, CalendarOff, ClipboardCheck, KeyRound, ListTodo, Pin, MoreVertical, Trash2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { useWebRTCReceiver } from '@/hooks/useWebRTC';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSocket } from '@/hooks/useSocket';
 import { useTeamPresence, type PresenceStatus } from '@/hooks/useTeamPresence';
+import { useHuddle } from '@/contexts/HuddleContext';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 import { VaultAuditPanel } from '@/components/admin/VaultAuditPanel';
 import * as api from '@/api';
@@ -40,30 +40,6 @@ function KPICard({ label, value, sub, icon: Icon, color }: { label: string; valu
   );
 }
 
-function RemoteVideo({ stream, isPinned, onPin, name, onDisconnect }: { stream: MediaStream, isPinned: boolean, onPin: () => void, name: string, onDisconnect: () => void }) {
-  const ref = useCallback((el: HTMLVideoElement | null) => {
-    if (el && stream) el.srcObject = stream;
-  }, [stream]);
-
-  return (
-    <div className={`relative bg-black/95 rounded-2xl overflow-hidden border transition-all ${isPinned ? 'border-primary/50 shadow-2xl col-span-full h-[60vh] xl:h-[70vh]' : 'border-border/50 h-48 sm:h-56'}`}>
-      <video ref={ref} autoPlay playsInline className="w-full h-full object-contain" />
-      <div className="absolute bottom-3 left-3 bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-lg text-xs font-semibold text-white flex items-center gap-2">
-        <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-        {name}
-      </div>
-      <div className="absolute top-3 right-3 flex items-center gap-2 opacity-0 hover:opacity-100 transition-opacity absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-transparent flex justify-end items-start p-3">
-        <button onClick={onPin} className="bg-black/60 hover:bg-primary/80 backdrop-blur-md p-2 rounded-lg text-white transition-all shadow-sm">
-          {isPinned ? <MonitorOff className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
-        </button>
-        <button onClick={onDisconnect} className="bg-black/60 hover:bg-red-500/80 backdrop-blur-md p-2 rounded-lg text-white transition-all shadow-sm">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 /** Compact live-screen tile used inside team-status cards. */
 function LiveTile({ stream }: { stream: MediaStream }) {
   const ref = useRef<HTMLVideoElement | null>(null);
@@ -88,27 +64,16 @@ export default function AdminDashboard() {
   const socket = useSocket();
   const presence = useTeamPresence();
 
-  // WebRTC Screen Monitor additions
   const { user } = useAuth();
-  const [screenSessions, setScreenSessions] = useState<any[]>([]);
-  const [pinnedUser, setPinnedUser] = useState<string | null>(null);
-  const { remoteStreams, connectingTo, viewScreen, stopViewing } = useWebRTCReceiver(user?.id || '');
-
-  // Auto-connect to new screens
-  useEffect(() => {
-    screenSessions.forEach(s => {
-      if (s.status === 'active' && !remoteStreams[s.userId] && !connectingTo[s.userId]) {
-        viewScreen(s.userId);
-      }
-    });
-  }, [screenSessions, remoteStreams, connectingTo, viewScreen]);
-
-  const loadSessions = useCallback(async () => {
-    try {
-      const data = await api.listScreenSessions();
-      setScreenSessions(Array.isArray(data) ? data : []);
-    } catch { /* ignore */ }
-  }, []);
+  // Live screens come from LiveKit huddle peers — admin must be in the huddle
+  // to subscribe. Each peer's `stream` already contains their screen-share
+  // track when they're presenting (see useMeetingRoom.buildPeerView).
+  const huddle = useHuddle();
+  const peerByUserId = useMemo(() => {
+    const m: Record<string, typeof huddle.peers[number]> = {};
+    for (const p of huddle.peers) m[p.userId] = p;
+    return m;
+  }, [huddle.peers]);
 
   const loadStats = useCallback(async () => {
     try {
@@ -126,28 +91,14 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    loadSessions();
     loadStats();
-    const i = setInterval(loadSessions, 10000);
-    return () => clearInterval(i);
-  }, [loadSessions, loadStats]);
+  }, [loadStats]);
 
   useEffect(() => {
     if (!socket) return;
-    socket.on('screen:started', loadSessions);
-    socket.on('screen:stopped', loadSessions);
     socket.on('presence:update', loadStats);
-
-    return () => {
-      socket.off('screen:started', loadSessions);
-      socket.off('screen:stopped', loadSessions);
-      socket.off('presence:update', loadStats);
-    };
-  }, [socket, loadSessions, loadStats]);
-
-  const handleView = (targetId: string) => {
-    viewScreen(targetId);
-  };
+    return () => { socket.off('presence:update', loadStats); };
+  }, [socket, loadStats]);
 
   const handleRemoveEmployee = async (emp: any) => {
     if (!confirm(`Remove ${emp.name || emp.email}? Their history is preserved but they won't be able to log in.`)) return;
@@ -161,11 +112,10 @@ export default function AdminDashboard() {
     setOpenMenuFor(null);
   };
 
-  // Pinned screen reference — used to render the live stream big.
+  // Pinned screen reference — uses the LiveKit peer's stream.
   const pinnedRef = (el: HTMLVideoElement | null) => {
-    if (el && pinnedScreenUser && remoteStreams[pinnedScreenUser]) {
-      el.srcObject = remoteStreams[pinnedScreenUser];
-    }
+    const p = pinnedScreenUser ? peerByUserId[pinnedScreenUser] : null;
+    if (el && p?.screenOn) el.srcObject = p.stream;
   };
 
   if (loading) return <FullPageSpinner />;
@@ -333,7 +283,7 @@ export default function AdminDashboard() {
               )}
             </div>
 
-            {pinnedScreenUser && remoteStreams[pinnedScreenUser] ? (
+            {pinnedScreenUser && peerByUserId[pinnedScreenUser]?.screenOn ? (
               /* Pinned single-employee view — inline 16:9 expand */
               <div className="p-3">
                 <div className="relative bg-black rounded-xl overflow-hidden border border-primary/30 aspect-video w-full">
@@ -346,9 +296,16 @@ export default function AdminDashboard() {
               </div>
             ) : (
               <div className="p-2 grid grid-cols-3 gap-1.5 max-h-80 overflow-y-auto">
+                {!huddle.joined && (
+                  <div className="col-span-full mb-1 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-700 flex items-center gap-2">
+                    <Video className="h-3.5 w-3.5" />
+                    Join the huddle to see live screens. Tap the headphones in the corner.
+                  </div>
+                )}
                 {employees.slice(0, 18).map(e => {
                   const status = presence.statusOf(e._id);
-                  const liveStream = remoteStreams[e._id];
+                  const peer = peerByUserId[e._id];
+                  const liveStream = peer?.screenOn ? peer.stream : null;
                   const isBroadcasting = !!liveStream;
                   const accent =
                     isBroadcasting          ? 'border-green-500/40' :
@@ -363,7 +320,7 @@ export default function AdminDashboard() {
                       className={`relative rounded-xl border ${accent} overflow-hidden aspect-video group bg-black`}
                     >
                       {/* Live screen, otherwise avatar */}
-                      {isBroadcasting ? (
+                      {isBroadcasting && liveStream ? (
                         <LiveTile stream={liveStream} />
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-card gap-1">
