@@ -1,8 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2, X, Coffee, CalendarOff, ClipboardCheck, KeyRound, ListTodo } from 'lucide-react';
+import { toast } from 'sonner';
+import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2, X, Coffee, CalendarOff, ClipboardCheck, KeyRound, ListTodo, Pin, MoreVertical, Trash2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useWebRTCReceiver } from '@/hooks/useWebRTC';
 import { useAuth } from '@/contexts/AuthContext';
@@ -63,6 +64,13 @@ function RemoteVideo({ stream, isPinned, onPin, name, onDisconnect }: { stream: 
   );
 }
 
+/** Compact live-screen tile used inside team-status cards. */
+function LiveTile({ stream }: { stream: MediaStream }) {
+  const ref = useRef<HTMLVideoElement | null>(null);
+  useEffect(() => { if (ref.current) ref.current.srcObject = stream; }, [stream]);
+  return <video ref={ref} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />;
+}
+
 function PresenceBadge({ status }: { status: PresenceStatus }) {
   if (status === 'on_leave')  return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-purple-500/15 text-purple-500 border border-purple-500/30"><CalendarOff className="h-2.5 w-2.5" />Leave</span>;
   if (status === 'on_break')  return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-amber-500/15 text-amber-600 border border-amber-500/30"><Coffee className="h-2.5 w-2.5" />Break</span>;
@@ -75,6 +83,8 @@ export default function AdminDashboard() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
+  const [pinnedScreenUser, setPinnedScreenUser] = useState<string | null>(null);
+  const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
   const socket = useSocket();
   const presence = useTeamPresence();
 
@@ -137,6 +147,25 @@ export default function AdminDashboard() {
 
   const handleView = (targetId: string) => {
     viewScreen(targetId);
+  };
+
+  const handleRemoveEmployee = async (emp: any) => {
+    if (!confirm(`Remove ${emp.name || emp.email}? Their history is preserved but they won't be able to log in.`)) return;
+    try {
+      await api.adminRemoveUser(emp._id);
+      setEmployees(prev => prev.filter(e => e._id !== emp._id));
+      toast.success(`${emp.name || emp.email} removed`);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Could not remove user');
+    }
+    setOpenMenuFor(null);
+  };
+
+  // Pinned screen reference — used to render the live stream big.
+  const pinnedRef = (el: HTMLVideoElement | null) => {
+    if (el && pinnedScreenUser && remoteStreams[pinnedScreenUser]) {
+      el.srcObject = remoteStreams[pinnedScreenUser];
+    }
   };
 
   if (loading) return <FullPageSpinner />;
@@ -284,37 +313,131 @@ export default function AdminDashboard() {
             )}
           </div>
 
-          {/* Team status — card grid (manager view, not the row list employees see) */}
+          {/* Team status — live screens when broadcasting, avatar otherwise */}
           <div className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col">
             <div className="px-4 py-3 border-b border-border flex items-center gap-2">
               <Users className="h-4 w-4 text-primary" />
               <h2 className="font-semibold text-sm">Team status</h2>
-              <Link to="/admin/employees" className="ml-auto text-[11px] text-primary hover:underline flex items-center gap-0.5">
-                Manage <ArrowRight className="h-3 w-3" />
-              </Link>
-            </div>
-            <div className="p-3 grid grid-cols-2 gap-2 max-h-72 overflow-y-auto">
-              {employees.slice(0, 8).map(e => {
-                const status = presence.statusOf(e._id);
-                const accent =
-                  status === 'active'    ? 'border-green-500/30 bg-green-500/5' :
-                  status === 'on_break'  ? 'border-amber-500/30 bg-amber-500/5' :
-                  status === 'on_leave'  ? 'border-purple-500/30 bg-purple-500/5' :
-                                            'border-border';
-                return (
-                  <div key={e._id} className={`rounded-xl border ${accent} p-2 flex flex-col items-center text-center gap-1`}>
-                    <div className="h-9 w-9 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
-                      {(e.name || e.email || '?')[0].toUpperCase()}
-                    </div>
-                    <p className="text-[11px] font-semibold truncate w-full">{e.name?.split(' ')[0] || e.email}</p>
-                    <PresenceBadge status={status} />
-                  </div>
-                );
-              })}
-              {employees.length === 0 && (
-                <p className="col-span-full text-xs text-muted-foreground text-center py-8">No employees yet</p>
+              {pinnedScreenUser ? (
+                <button
+                  onClick={() => setPinnedScreenUser(null)}
+                  className="ml-auto h-6 px-2 flex items-center gap-1 rounded-md bg-card hover:bg-muted text-xs"
+                  title="Back to grid"
+                >
+                  <X className="h-3 w-3" /> Close
+                </button>
+              ) : (
+                <Link to="/admin/employees" className="ml-auto text-[11px] text-primary hover:underline flex items-center gap-0.5">
+                  Manage <ArrowRight className="h-3 w-3" />
+                </Link>
               )}
             </div>
+
+            {pinnedScreenUser && remoteStreams[pinnedScreenUser] ? (
+              /* Pinned single-employee view — inline 16:9 expand */
+              <div className="p-3">
+                <div className="relative bg-black rounded-xl overflow-hidden border border-primary/30 aspect-video w-full">
+                  <video ref={pinnedRef} autoPlay playsInline className="w-full h-full object-contain bg-black" />
+                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[11px] text-white bg-black/60 backdrop-blur flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+                    {employees.find(e => e._id === pinnedScreenUser)?.name || 'Teammate'}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 grid grid-cols-2 gap-2 max-h-96 overflow-y-auto">
+                {employees.slice(0, 12).map(e => {
+                  const status = presence.statusOf(e._id);
+                  const liveStream = remoteStreams[e._id];
+                  const isBroadcasting = !!liveStream;
+                  const accent =
+                    isBroadcasting          ? 'border-green-500/40' :
+                    status === 'active'     ? 'border-green-500/30' :
+                    status === 'on_break'   ? 'border-amber-500/30' :
+                    status === 'on_leave'   ? 'border-purple-500/30' :
+                                               'border-border';
+
+                  return (
+                    <div
+                      key={e._id}
+                      className={`relative rounded-xl border ${accent} overflow-hidden aspect-video group bg-black`}
+                    >
+                      {/* Live screen, otherwise avatar */}
+                      {isBroadcasting ? (
+                        <LiveTile stream={liveStream} />
+                      ) : (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-card gap-1">
+                          <div className="h-9 w-9 rounded-full bg-primary/20 flex items-center justify-center text-sm font-bold text-primary">
+                            {(e.name || e.email || '?')[0].toUpperCase()}
+                          </div>
+                          <p className="text-[11px] font-semibold truncate max-w-full px-2">{e.name?.split(' ')[0] || e.email}</p>
+                        </div>
+                      )}
+
+                      {/* Bottom strip — name + presence */}
+                      <div className="absolute bottom-0 left-0 right-0 px-2 py-1 flex items-center gap-1.5 bg-gradient-to-t from-black/90 via-black/60 to-transparent">
+                        <p className="text-[11px] font-semibold text-white truncate flex-1">
+                          {e.name?.split(' ')[0] || e.email}
+                        </p>
+                        <PresenceBadge status={status} />
+                      </div>
+
+                      {/* Top-right actions */}
+                      <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
+                        {isBroadcasting && (
+                          <button
+                            onClick={() => setPinnedScreenUser(e._id)}
+                            className="h-6 w-6 flex items-center justify-center rounded-md bg-black/60 hover:bg-primary text-white backdrop-blur transition-colors"
+                            title="Pin to fullscreen"
+                          >
+                            <Pin className="h-3 w-3" />
+                          </button>
+                        )}
+                        <div className="relative">
+                          <button
+                            onClick={() => setOpenMenuFor(openMenuFor === e._id ? null : e._id)}
+                            className="h-6 w-6 flex items-center justify-center rounded-md bg-black/60 hover:bg-black/80 text-white backdrop-blur transition-colors"
+                            title="More"
+                          >
+                            <MoreVertical className="h-3 w-3" />
+                          </button>
+                          {openMenuFor === e._id && (
+                            <>
+                              <div className="fixed inset-0 z-30" onClick={() => setOpenMenuFor(null)} />
+                              <div className="absolute right-0 top-7 z-40 w-44 bg-card border border-border rounded-lg shadow-xl overflow-hidden">
+                                <Link
+                                  to="/admin/employees"
+                                  className="flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted"
+                                  onClick={() => setOpenMenuFor(null)}
+                                >
+                                  <Users className="h-3 w-3" /> View profile
+                                </Link>
+                                <button
+                                  onClick={() => handleRemoveEmployee(e)}
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-500 hover:bg-red-500/10 border-t border-border"
+                                >
+                                  <Trash2 className="h-3 w-3" /> Remove employee
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Live indicator dot top-left when broadcasting */}
+                      {isBroadcasting && (
+                        <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold text-white bg-red-500/90 flex items-center gap-1 backdrop-blur">
+                          <span className="h-1 w-1 rounded-full bg-white animate-pulse" /> LIVE
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {employees.length === 0 && (
+                  <p className="col-span-full text-xs text-muted-foreground text-center py-8">No employees yet</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -338,66 +461,6 @@ export default function AdminDashboard() {
 
         {/* Vault Audit Log — admin-only feed of who saw which credentials */}
         <VaultAuditPanel limit={15} />
-
-        {/* Admin Live Screen Monitor */}
-        <div className="space-y-4 pt-4 border-t border-border mt-8">
-          <div className="flex items-center gap-2 mb-4">
-            <Monitor className="h-5 w-5 text-primary" />
-            <h2 className="font-semibold text-lg">Live Employee Screens</h2>
-            <span className="ml-auto text-xs text-muted-foreground bg-green-500/10 text-green-500 border border-green-500/20 px-3 py-1 rounded-full font-semibold flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-              {screenSessions.filter(s => s.status === 'active').length} broadcasting
-            </span>
-          </div>
-
-          {screenSessions.filter(s => s.status === 'active').length === 0 ? (
-            <div className="bg-card border border-border rounded-2xl flex flex-col items-center justify-center py-16 gap-4">
-              <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center">
-                <MonitorOff className="h-8 w-8 text-muted-foreground/40" />
-              </div>
-              <div className="text-center">
-                <p className="text-sm font-semibold text-foreground">No active screen sessions</p>
-                <p className="text-xs text-muted-foreground mt-1">When employees start sharing their screen, they will appear here automatically.</p>
-              </div>
-            </div>
-          ) : (
-            <div className={`grid gap-4 ${pinnedUser ? 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'}`}>
-              {/* Force pinned user to render first if pinned */}
-              {pinnedUser && remoteStreams[pinnedUser] && (
-                <RemoteVideo 
-                  key={`pinned-${pinnedUser}`}
-                  stream={remoteStreams[pinnedUser]}
-                  isPinned={true} 
-                  onPin={() => setPinnedUser(null)}
-                  name={screenSessions.find(s => s.userId === pinnedUser)?.profile?.name || pinnedUser}
-                  onDisconnect={() => { stopViewing(pinnedUser); setPinnedUser(null); }}
-                />
-              )}
-
-              {/* Render the rest */}
-              {Object.entries(remoteStreams).filter(([id]) => id !== pinnedUser).map(([userId, stream]) => (
-                <RemoteVideo 
-                  key={userId}
-                  stream={stream}
-                  isPinned={false} 
-                  onPin={() => setPinnedUser(userId)}
-                  name={screenSessions.find(s => s.userId === userId)?.profile?.name || userId}
-                  onDisconnect={() => stopViewing(userId)}
-                />
-              ))}
-
-              {/* Connecting Indicators */}
-              {Object.entries(connectingTo).filter(([id, connecting]) => connecting).map(([userId]) => (
-                <div key={`connecting-${userId}`} className="bg-muted/10 border border-dashed border-border/50 rounded-2xl h-48 sm:h-56 flex flex-col items-center justify-center gap-3">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                  <p className="text-xs font-semibold text-muted-foreground">
-                    Connecting to {screenSessions.find(s => s.userId === userId)?.profile?.name || 'User'}…
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </AppLayout>
   );

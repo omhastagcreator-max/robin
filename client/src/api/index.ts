@@ -108,6 +108,7 @@ export const adminActivity   = (params?: Record<string, unknown>)        => api.
 export const adminInvite     = (d: Record<string, unknown>)              => api.post('/admin/invite', d).then(r => r.data);
 export const adminUpdateRole = (id: string, role: string)                => api.put(`/admin/users/${id}/role`, { role }).then(r => r.data);
 export const adminResetPass  = (id: string, newPassword?: string)        => api.put(`/admin/users/${id}/reset-password`, { newPassword }).then(r => r.data);
+export const adminRemoveUser = (id: string)                              => api.delete(`/admin/users/${id}`).then(r => r.data);
 export const adminEmployeeReport = (employeeId: string, period: 'daily' | 'weekly' | 'monthly' = 'daily') =>
   api.get(`/admin/employees/${employeeId}/report`, { params: { period } }).then(r => r.data);
 

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
 import {
-  listEmployees, listClients, getActivityLog, inviteUser, updateUserRole, resetUserPassword, getEmployeeReport
+  listEmployees, listClients, getActivityLog, inviteUser, updateUserRole, resetUserPassword, getEmployeeReport, deactivateUser
 } from '../controllers/adminController';
 
 const router = Router();
@@ -16,5 +16,6 @@ router.get('/activity',                 ...adminOnly, getActivityLog);
 router.post('/invite',                  ...adminOnly, inviteUser);
 router.put('/users/:id/role',           ...adminOnly, updateUserRole);
 router.put('/users/:id/reset-password', ...adminOnly, resetUserPassword);
+router.delete('/users/:id',             ...adminOnly, deactivateUser);
 
 export default router;

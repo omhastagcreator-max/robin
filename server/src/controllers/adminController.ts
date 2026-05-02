@@ -92,6 +92,22 @@ export async function updateUserRole(req: AuthRequest, res: Response): Promise<v
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
+// DELETE /api/admin/users/:id
+// Soft-deactivate the user (preserves history). Admin can't deactivate themselves.
+export async function deactivateUser(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    if (req.params.id === req.user!.id) {
+      res.status(400).json({ error: "You can't deactivate your own admin account" });
+      return;
+    }
+    const user = await User.findById(req.params.id);
+    if (!user) { res.status(404).json({ error: 'User not found' }); return; }
+    user.isActive = false;
+    await user.save();
+    res.json({ message: `${user.name || user.email} has been removed`, userId: String(user._id) });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
 // PUT /api/admin/users/:id/reset-password
 export async function resetUserPassword(req: AuthRequest, res: Response): Promise<void> {
   try {
