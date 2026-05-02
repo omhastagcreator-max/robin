@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from 'mongoose';
+import bcrypt from 'bcryptjs';
 
 export type AppRole = 'admin' | 'employee' | 'client' | 'sales';
 
@@ -39,5 +40,17 @@ const UserSchema = new Schema<IUser>(
   },
   { timestamps: true }
 );
+
+// Auto-hash passwordHash if it was set/modified to a plain (non-bcrypt) value.
+// Bcrypt hashes always start with "$2a$", "$2b$", or "$2y$" and are 60 chars.
+UserSchema.pre('save', async function (next) {
+  if (!this.isModified('passwordHash')) return next();
+  const v = this.passwordHash;
+  if (!v) return next();
+  // Skip if already a bcrypt hash
+  if (/^\$2[aby]\$\d{2}\$/.test(v) && v.length >= 60) return next();
+  this.passwordHash = await bcrypt.hash(v, 12);
+  next();
+});
 
 export default mongoose.model<IUser>('User', UserSchema);

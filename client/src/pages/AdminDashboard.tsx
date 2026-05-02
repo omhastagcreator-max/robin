@@ -345,8 +345,8 @@ export default function AdminDashboard() {
                 </div>
               </div>
             ) : (
-              <div className="p-3 grid grid-cols-2 gap-2 max-h-96 overflow-y-auto">
-                {employees.slice(0, 12).map(e => {
+              <div className="p-2 grid grid-cols-3 gap-1.5 max-h-80 overflow-y-auto">
+                {employees.slice(0, 18).map(e => {
                   const status = presence.statusOf(e._id);
                   const liveStream = remoteStreams[e._id];
                   const isBroadcasting = !!liveStream;
