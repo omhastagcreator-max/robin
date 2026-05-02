@@ -126,21 +126,59 @@ export function HuddleStage() {
       {/* JOINED — Meet-style stage */}
       {meeting.joined && (
         <>
-          {/* SHARED SCREENS GRID */}
+          {/* SHARED SCREENS — inline; expands in place when one is pinned */}
           {sharers.length > 0 && (
             <section className="border-b border-border">
               <div className="px-4 py-2 flex items-center gap-2 bg-muted/20">
                 <Monitor className="h-3.5 w-3.5 text-primary" />
-                <p className="text-xs font-semibold">
-                  {sharers.length} screen{sharers.length === 1 ? '' : 's'} shared
-                </p>
-                <span className="text-[10px] text-muted-foreground">click any card to pin to fullscreen</span>
+                {pinnedSharer ? (
+                  <>
+                    <Pin className="h-3.5 w-3.5 text-primary" />
+                    <p className="text-xs font-semibold truncate flex-1">
+                      {pinnedSharer.name}'s screen
+                      {pinnedSharer.isSelf && <span className="text-muted-foreground font-normal"> (you)</span>}
+                    </p>
+                    <button
+                      onClick={() => setPinned(null)}
+                      className="h-6 px-2 flex items-center gap-1 rounded-md bg-card hover:bg-muted text-xs"
+                      title="Back to grid"
+                    >
+                      <X className="h-3 w-3" /> Close
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs font-semibold">
+                      {sharers.length} screen{sharers.length === 1 ? '' : 's'} shared
+                    </p>
+                    <span className="text-[10px] text-muted-foreground">click any to pin</span>
+                  </>
+                )}
               </div>
-              <div className="p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {sharers.map(s => (
-                  <ScreenCard key={s.id} sharer={s} onPin={() => setPinned(s.id)} />
-                ))}
-              </div>
+
+              {pinnedSharer ? (
+                /* Inline 16:9 expanded view — replaces the grid in place */
+                <div className="p-3">
+                  <div className="relative bg-black rounded-xl overflow-hidden border border-primary/30 aspect-video w-full">
+                    {pinnedSharer.peer
+                      ? <PeerScreenView peer={pinnedSharer.peer} fullscreen />
+                      : pinnedSharer.stream
+                        ? <SelfScreenView stream={pinnedSharer.stream} fullscreen />
+                        : null}
+                    <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[11px] text-white bg-black/60 backdrop-blur flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+                      {pinnedSharer.name}{pinnedSharer.isSelf ? ' (you)' : ''}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Card grid */
+                <div className="p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {sharers.map(s => (
+                    <ScreenCard key={s.id} sharer={s} onPin={() => setPinned(s.id)} />
+                  ))}
+                </div>
+              )}
             </section>
           )}
 
@@ -193,50 +231,6 @@ export function HuddleStage() {
         </>
       )}
 
-      {/* ── Pinned screen modal — smaller, easy to close ──────────────── */}
-      <AnimatePresence>
-        {pinnedSharer && (
-          <>
-            {/* Backdrop — click to close */}
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setPinned(null)}
-              className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm"
-            />
-            {/* Modal */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }}
-              transition={{ duration: 0.16 }}
-              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[61] bg-card border border-border rounded-2xl overflow-hidden shadow-2xl flex flex-col"
-              style={{ width: 'min(960px, calc(100vw - 2rem))', height: 'min(640px, calc(100vh - 4rem))' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-card shrink-0">
-                <Pin className="h-3.5 w-3.5 text-primary shrink-0" />
-                <p className="text-sm font-semibold truncate flex-1">
-                  {pinnedSharer.name}'s screen
-                  {pinnedSharer.isSelf && <span className="text-muted-foreground font-normal"> (you)</span>}
-                </p>
-                <span className="hidden sm:inline text-[10px] text-muted-foreground">Esc to close</span>
-                <button
-                  onClick={() => setPinned(null)}
-                  className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
-                  title="Close (Esc)"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="flex-1 bg-black flex items-center justify-center min-h-0">
-                {pinnedSharer.peer
-                  ? <PeerScreenView peer={pinnedSharer.peer} fullscreen />
-                  : pinnedSharer.stream
-                    ? <SelfScreenView stream={pinnedSharer.stream} fullscreen />
-                    : null}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
     </section>
   );
 }
