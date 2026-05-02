@@ -102,12 +102,28 @@ export default function EmployeeDashboard() {
   const [saving, setSaving] = useState(false);
   const [viewPast, setViewPast] = useState(false);
 
-  // Tasks for today
-  const todayTasks = tasks.filter(t => t.dueDate && isToday(new Date(t.dueDate)));
-  const pendingToday = todayTasks.filter(t => t.status !== 'done').length;
-  const overdueTasks = tasks.filter(t => t.status !== 'done' && t.dueDate && isBefore(new Date(t.dueDate), startOfDay(new Date())));
-  const pastTasks = tasks.filter(t => t.dueDate && isBefore(new Date(t.dueDate), startOfDay(new Date())));
-  const dayLocked = !session && todayTasks.length < 3;
+  // Task buckets — split is OPEN vs DONE so nothing disappears.
+  //   • todayTasks   = every open task you might work on (status !== done).
+  //                    Sorted so today's due dates and overdue surface first.
+  //   • pastTasks    = completed history (status === done).
+  //   • overdueTasks = open + dueDate < today, used for the KPI card.
+  //   The previous strict `dueDate === today` filter silently dropped tasks
+  //   with no due date or future dates, which looked like data loss.
+  const todayStartLocal = startOfDay(new Date());
+  const isOverdueT = (t: any) => t.status !== 'done' && t.dueDate && isBefore(new Date(t.dueDate), todayStartLocal);
+  const todayTasks = tasks
+    .filter(t => t.status !== 'done')
+    .slice()
+    .sort((a, b) => {
+      // Overdue and "today" first, then no-due-date, then upcoming
+      const ad = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
+      const bd = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
+      return ad - bd;
+    });
+  const pendingToday = todayTasks.length;
+  const overdueTasks = tasks.filter(isOverdueT);
+  const pastTasks = tasks.filter(t => t.status === 'done');
+  const dayLocked = !session && tasks.filter(t => t.dueDate && isToday(new Date(t.dueDate))).length < 3;
 
   useEffect(() => {
     refresh();
@@ -194,10 +210,10 @@ export default function EmployeeDashboard() {
         {/* KPI strip — compact horizontal cards, scannable at a glance */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: "Today's Tasks",  value: todayTasks.length,    sub: `${todayTasks.filter(t => t.status === 'done').length} done`, color: 'text-primary',     accent: 'border-primary/20 bg-primary/5' },
-            { label: 'Done Total',     value: doneTasks,            sub: 'all time',                                                    color: 'text-green-500',   accent: 'border-green-500/20 bg-green-500/5' },
-            { label: 'Overdue',        value: overdueTasks.length,  sub: 'need attention',                                              color: 'text-red-500',     accent: 'border-red-500/20 bg-red-500/5' },
-            { label: 'Blocked',        value: blockedTasks,         sub: 'need help',                                                   color: 'text-amber-500',   accent: 'border-amber-500/20 bg-amber-500/5' },
+            { label: 'Open Tasks',  value: todayTasks.length,    sub: `${tasks.filter(t => t.dueDate && isToday(new Date(t.dueDate)) && t.status !== 'done').length} due today`, color: 'text-primary',  accent: 'border-primary/20 bg-primary/5' },
+            { label: 'Done',        value: doneTasks,            sub: 'all time',                                                                                                color: 'text-green-500', accent: 'border-green-500/20 bg-green-500/5' },
+            { label: 'Overdue',     value: overdueTasks.length,  sub: 'need attention',                                                                                          color: 'text-red-500',   accent: 'border-red-500/20 bg-red-500/5' },
+            { label: 'Blocked',     value: blockedTasks,         sub: 'need help',                                                                                               color: 'text-amber-500', accent: 'border-amber-500/20 bg-amber-500/5' },
           ].map(k => (
             <div key={k.label} className={`rounded-2xl border ${k.accent} p-3 flex items-center gap-3`}>
               <p className={`text-3xl font-black ${k.color} tabular-nums leading-none`}>{k.value}</p>
@@ -267,7 +283,8 @@ export default function EmployeeDashboard() {
               )}
             </AnimatePresence>
 
-            {/* Today / Past tabs */}
+            {/* Open / Done tabs — Open shows everything not finished so
+                no task ever disappears just because the date drifted. */}
             <div className="flex items-center gap-1 bg-muted/30 p-1 rounded-full w-fit">
               <button
                 onClick={() => setViewPast(false)}
@@ -275,7 +292,7 @@ export default function EmployeeDashboard() {
                   !viewPast ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                Today <span className="text-muted-foreground ml-0.5">{todayTasks.length}</span>
+                Open <span className="text-muted-foreground ml-0.5">{todayTasks.length}</span>
               </button>
               <button
                 onClick={() => setViewPast(true)}
@@ -283,10 +300,10 @@ export default function EmployeeDashboard() {
                   viewPast ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                Past <span className="text-muted-foreground ml-0.5">{pastTasks.length}</span>
+                Done <span className="text-muted-foreground ml-0.5">{pastTasks.length}</span>
               </button>
               {viewPast && (
-                <span className="ml-2 text-[10px] text-muted-foreground italic">view-only</span>
+                <span className="ml-2 text-[10px] text-muted-foreground italic">archive · view-only</span>
               )}
             </div>
 
@@ -298,14 +315,14 @@ export default function EmployeeDashboard() {
                 {!viewPast && todayTasks.length === 0 && (
                   <div className="bg-card border border-dashed border-border rounded-2xl py-12 flex flex-col items-center gap-2">
                     <Target className="h-8 w-8 text-muted-foreground/30" />
-                    <p className="text-sm text-muted-foreground">No tasks for today yet</p>
-                    <button onClick={() => setAddingTask(true)} className="text-xs text-primary hover:underline mt-1">+ Add your first task</button>
+                    <p className="text-sm text-muted-foreground">All caught up — no open tasks</p>
+                    <button onClick={() => setAddingTask(true)} className="text-xs text-primary hover:underline mt-1">+ Add a task</button>
                   </div>
                 )}
                 {viewPast && pastTasks.length === 0 && (
                   <div className="bg-card border border-dashed border-border rounded-2xl py-12 flex flex-col items-center gap-2">
                     <Calendar className="h-8 w-8 text-muted-foreground/30" />
-                    <p className="text-sm text-muted-foreground">No past tasks</p>
+                    <p className="text-sm text-muted-foreground">No completed tasks yet</p>
                   </div>
                 )}
 
