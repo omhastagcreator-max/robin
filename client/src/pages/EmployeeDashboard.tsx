@@ -16,6 +16,7 @@ import { useTasks } from '@/hooks/useTasks';
 import { SessionClockCard } from '@/components/shared/SessionClockCard';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 import { QuickActionsCard } from '@/components/shared/QuickActionsCard';
+import { WeeklyPlanner } from '@/components/shared/WeeklyPlanner';
 
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -380,44 +381,10 @@ export default function EmployeeDashboard() {
             )}
           </div>
 
-          {/* ─── Right rail — Today's schedule, reminders, team snapshot ─── */}
+          {/* ─── Right rail — Weekly planner, reminders, quick links ─── */}
           <aside className="space-y-3">
-            {/* Schedule / important items for today */}
-            <div className="bg-card border border-border rounded-2xl p-4">
-              <h3 className="font-semibold text-sm flex items-center gap-2 mb-3">
-                <Calendar className="h-4 w-4 text-primary" /> Today's schedule
-              </h3>
-              {todayTasks.length === 0 && overdueTasks.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-3 text-center">
-                  Nothing scheduled. Add a task to plan your day.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {overdueTasks.slice(0, 3).map(t => (
-                    <div key={t._id} className="flex items-start gap-2 px-2 py-1.5 rounded-lg bg-red-500/5 border border-red-500/20">
-                      <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate">{t.title}</p>
-                        <p className="text-[10px] text-red-500">
-                          overdue · was due {t.dueDate ? format(new Date(t.dueDate), 'MMM d') : ''}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                  {todayTasks.filter(t => t.status !== 'done').slice(0, 4).map(t => (
-                    <div key={t._id} className="flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-muted/30 transition-colors">
-                      <Clock className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate">{t.title}</p>
-                        <p className="text-[10px] text-muted-foreground capitalize">
-                          {t.priority} · {t.taskType || 'task'}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* Weekly planner — track every day this week + add reminders */}
+            <WeeklyPlanner tasks={tasks} />
 
             {/* Reminders / unread notifications */}
             {notifications.filter(n => !n.isRead).length > 0 && (

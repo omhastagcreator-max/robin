@@ -31,6 +31,7 @@ import seedRoutes         from './routes/seed';
 import credentialsRoutes  from './routes/credentials';
 import leavesRoutes       from './routes/leaves';
 import huddleRoutes       from './routes/huddle';
+import remindersRoutes    from './routes/reminders';
 
 const app = express();
 const httpServer = createServer(app);
@@ -218,6 +219,7 @@ app.use('/api/influencers',     influencerRoutes);
 app.use('/api/credentials',     credentialsRoutes);
 app.use('/api/leaves',          leavesRoutes);
 app.use('/api/huddle',          huddleRoutes);
+app.use('/api/reminders',       remindersRoutes);
 app.use('/api/seed',            seedRoutes);
 
 // ── 404 + Error handler ───────────────────────────────────────────────────────

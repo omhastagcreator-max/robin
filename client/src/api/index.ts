@@ -162,3 +162,13 @@ export const onLeaveToday      = () => api.get('/leaves/on-leave-today').then(r 
 
 // ── Huddle (LiveKit) ──────────────────────────────────────────────────────────
 export const getHuddleToken    = () => api.post('/huddle/token', {}).then(r => r.data);
+
+// ── Reminders / Weekly Planner ────────────────────────────────────────────────
+export const listMyReminders   = (params?: { from?: string; to?: string }) =>
+  api.get('/reminders/mine', { params }).then(r => r.data);
+export const createReminder    = (d: { title: string; scheduledFor: string; notes?: string }) =>
+  api.post('/reminders', d).then(r => r.data);
+export const updateReminder    = (id: string, d: Partial<{ title: string; scheduledFor: string; notes: string; status: 'pending' | 'done' }>) =>
+  api.put(`/reminders/${id}`, d).then(r => r.data);
+export const deleteReminder    = (id: string) =>
+  api.delete(`/reminders/${id}`).then(r => r.data);
