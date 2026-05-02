@@ -20,8 +20,11 @@ router.post('/token', requireRole('admin', 'employee', 'sales'), async (req: Aut
   try {
     const apiKey    = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
-    if (!apiKey || !apiSecret) {
-      res.status(500).json({ error: 'LiveKit not configured. Set LIVEKIT_API_KEY + LIVEKIT_API_SECRET on the server.' });
+    const livekitUrl = process.env.LIVEKIT_URL;
+    if (!apiKey || !apiSecret || !livekitUrl) {
+      res.status(500).json({
+        error: 'LiveKit not configured. Set LIVEKIT_URL + LIVEKIT_API_KEY + LIVEKIT_API_SECRET on the server (Render env).',
+      });
       return;
     }
 
@@ -49,7 +52,7 @@ router.post('/token', requireRole('admin', 'employee', 'sales'), async (req: Aut
     });
 
     const token = await at.toJwt();
-    res.json({ token, room: roomName, identity: u.id });
+    res.json({ token, url: livekitUrl, room: roomName, identity: u.id });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

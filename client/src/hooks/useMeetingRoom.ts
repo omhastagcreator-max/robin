@@ -10,16 +10,13 @@ import {
 } from 'livekit-client';
 import * as api from '@/api';
 
-const LIVEKIT_URL = (import.meta as any).env?.VITE_LIVEKIT_URL || '';
-
 const log = (...args: any[]) => console.log('[huddle]', ...args);
 
-// Make the env state observable from the browser console at load time —
-// users can also just type `import.meta.env.VITE_LIVEKIT_URL` to inspect.
-// eslint-disable-next-line no-console
-console.log('[huddle] env at load:', {
-  VITE_LIVEKIT_URL: LIVEKIT_URL || '(empty — set it on Vercel + redeploy without cache)',
-});
+// LiveKit URL is provided by the server alongside the JWT (see
+// /api/huddle/token). We deliberately don't read it from Vite env vars
+// because they're fragile across Vercel cache / build configs. The
+// server (Render) injects LIVEKIT_URL at runtime and returns it on
+// every token request.
 
 export interface MeetingParticipant {
   userId: string;
@@ -127,16 +124,12 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
     setError(null);
     setJoining(true);
     try {
-      if (!LIVEKIT_URL) {
-        throw new Error(
-          'Huddle not configured: VITE_LIVEKIT_URL is empty in the bundle. ' +
-          'On Vercel → Settings → Environment Variables, confirm the variable is named exactly VITE_LIVEKIT_URL ' +
-          '(VITE_ prefix is mandatory) and is enabled for Production. Then Deployments → Redeploy WITHOUT "Use existing Build Cache".'
-        );
-      }
       log('requesting JWT…');
-      const { token } = await api.getHuddleToken();
-      log('connecting to', LIVEKIT_URL);
+      const { token, url } = await api.getHuddleToken();
+      if (!url || !token) {
+        throw new Error('Server did not return a LiveKit URL or token. Set LIVEKIT_URL + LIVEKIT_API_KEY + LIVEKIT_API_SECRET on Render and redeploy the API.');
+      }
+      log('connecting to', url);
 
       const room = new Room({
         adaptiveStream: true,
@@ -183,7 +176,7 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
         }
       };
 
-      await room.connect(LIVEKIT_URL, token);
+      await room.connect(url, token);
       log('connected as', room.localParticipant.identity);
 
       // Hydrate existing remote participants (those who joined before us).
