@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
-import { Users, Plus, Activity, CheckCircle2, Mail, Phone, Loader2, UserCheck, BarChart2, Coffee, CalendarOff } from 'lucide-react';
+import { Users, Plus, Activity, CheckCircle2, Mail, Phone, Loader2, UserCheck, BarChart2, Coffee, CalendarOff, Trash2 } from 'lucide-react';
 import * as api from '@/api';
 import { toast } from 'sonner';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -80,6 +80,18 @@ export default function AdminEmployees() {
     await api.adminUpdateRole(id, role);
     setEmployees(prev => prev.map(e => e._id === id ? { ...e, role } : e));
     toast.success('Role updated');
+  };
+
+  const removeEmployee = async (emp: any) => {
+    const label = emp.name || emp.email;
+    if (!confirm(`Remove ${label}?\n\nTheir history is preserved but they won't be able to log in. This action can be reversed by re-creating the account.`)) return;
+    try {
+      await api.adminRemoveUser(emp._id);
+      setEmployees(prev => prev.filter(e => e._id !== emp._id));
+      toast.success(`${label} removed`);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Could not remove user');
+    }
   };
 
   return (
@@ -180,6 +192,13 @@ export default function AdminEmployees() {
                       className="text-[10px] text-muted-foreground hover:text-primary transition-colors px-1.5 py-1.5 rounded-lg hover:bg-muted"
                     >
                       Reset PW
+                    </button>
+                    <button
+                      onClick={() => removeEmployee(emp)}
+                      title="Remove employee"
+                      className="text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors p-1.5 rounded-lg"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </motion.div>
