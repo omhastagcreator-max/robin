@@ -99,11 +99,13 @@ export default function EmployeeDashboard() {
   const [addingTask, setAddingTask] = useState(false);
   const [newTask, setNewTask] = useState({ title: '', priority: 'medium', dueDate: '', taskType: 'dev', assignToId: '', projectId: '' });
   const [saving, setSaving] = useState(false);
+  const [viewPast, setViewPast] = useState(false);
 
   // Tasks for today
   const todayTasks = tasks.filter(t => t.dueDate && isToday(new Date(t.dueDate)));
   const pendingToday = todayTasks.filter(t => t.status !== 'done').length;
   const overdueTasks = tasks.filter(t => t.status !== 'done' && t.dueDate && isBefore(new Date(t.dueDate), startOfDay(new Date())));
+  const pastTasks = tasks.filter(t => t.dueDate && isBefore(new Date(t.dueDate), startOfDay(new Date())));
   const dayLocked = !session && todayTasks.length < 3;
 
   useEffect(() => {
@@ -263,111 +265,123 @@ export default function EmployeeDashboard() {
               )}
             </AnimatePresence>
 
-            {/* Task List */}
+            {/* Today / Past tabs */}
+            <div className="flex items-center gap-1 bg-muted/30 p-1 rounded-full w-fit">
+              <button
+                onClick={() => setViewPast(false)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  !viewPast ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Today <span className="text-muted-foreground ml-0.5">{todayTasks.length}</span>
+              </button>
+              <button
+                onClick={() => setViewPast(true)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  viewPast ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Past <span className="text-muted-foreground ml-0.5">{pastTasks.length}</span>
+              </button>
+              {viewPast && (
+                <span className="ml-2 text-[10px] text-muted-foreground italic">view-only</span>
+              )}
+            </div>
+
+            {/* Task card grid */}
             {tasksLoading ? (
               <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
             ) : (
-              <div className="space-y-6">
-                <div className="bg-card border border-border rounded-2xl divide-y divide-border/50 overflow-hidden max-h-[400px] overflow-y-auto">
-                  {tasks.length === 0 && (
-                    <div className="py-12 flex flex-col items-center gap-3">
-                      <Target className="h-8 w-8 text-muted-foreground/30" />
-                      <p className="text-sm text-muted-foreground">No tasks yet — add at least 3 to start your day</p>
-                    </div>
-                  )}
+              <>
+                {!viewPast && todayTasks.length === 0 && (
+                  <div className="bg-card border border-dashed border-border rounded-2xl py-12 flex flex-col items-center gap-2">
+                    <Target className="h-8 w-8 text-muted-foreground/30" />
+                    <p className="text-sm text-muted-foreground">No tasks for today yet</p>
+                    <button onClick={() => setAddingTask(true)} className="text-xs text-primary hover:underline mt-1">+ Add your first task</button>
+                  </div>
+                )}
+                {viewPast && pastTasks.length === 0 && (
+                  <div className="bg-card border border-dashed border-border rounded-2xl py-12 flex flex-col items-center gap-2">
+                    <Calendar className="h-8 w-8 text-muted-foreground/30" />
+                    <p className="text-sm text-muted-foreground">No past tasks</p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   <AnimatePresence initial={false}>
-                    {tasks.map(task => (
-                      <motion.div key={task._id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="flex items-start gap-3 px-4 py-3 hover:bg-muted/20 transition-colors group">
-                        {/* Status cycle button */}
-                        <button onClick={() => cycleStatus(task)} className="mt-0.5 shrink-0">
-                          <CheckCircle2 className={`h-4 w-4 transition-colors ${task.status === 'done' ? 'text-green-400' : 'text-muted-foreground/30 hover:text-green-400'}`} />
-                        </button>
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-medium ${task.status === 'done' ? 'line-through text-muted-foreground' : ''} truncate`}>{task.title}</p>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            {/* Status badge — clickable */}
-                            <select value={task.status}
-                              onChange={e => updateTask(task._id, { status: e.target.value as 'pending' | 'in_progress' | 'done' | 'blocked' })}
-                              onClick={e => e.stopPropagation()}
-                              className={`text-[10px] px-1.5 py-0.5 rounded font-medium border-0 cursor-pointer ${STATUS_COLORS[task.status]}`}
-                              style={{ background: 'transparent' }}>
-                              {STATUSES.map(s => <option key={s} value={s} className="bg-background text-foreground">{s.replace('_',' ')}</option>)}
-                            </select>
-                            <span className={`text-[10px] font-medium ${PRIORITY_COLORS[task.priority]}`}>{task.priority}</span>
-                            {task.taskType && <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded">{task.taskType}</span>}
+                    {(viewPast ? pastTasks : todayTasks).map(task => {
+                      const overdue = task.dueDate && isBefore(new Date(task.dueDate), startOfDay(new Date())) && task.status !== 'done';
+                      const accent =
+                        task.status === 'done'    ? 'border-green-500/30 bg-green-500/5' :
+                        task.status === 'blocked' ? 'border-red-500/30 bg-red-500/5' :
+                        overdue                   ? 'border-amber-500/30 bg-amber-500/5' :
+                                                    'border-border bg-card';
+                      return (
+                        <motion.div
+                          key={task._id}
+                          layout
+                          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                          className={`rounded-2xl border ${accent} p-3 flex flex-col gap-2.5 hover:shadow-md transition-shadow ${viewPast ? 'opacity-90' : ''}`}
+                        >
+                          {/* Title row */}
+                          <div className="flex items-start gap-2">
+                            <button
+                              onClick={() => !viewPast && cycleStatus(task)}
+                              disabled={viewPast}
+                              className="mt-0.5 shrink-0 disabled:cursor-default"
+                              title={viewPast ? 'Past tasks are view-only' : 'Cycle status'}
+                            >
+                              <CheckCircle2 className={`h-4 w-4 transition-colors ${
+                                task.status === 'done' ? 'text-green-500' :
+                                viewPast ? 'text-muted-foreground/40' :
+                                'text-muted-foreground/30 hover:text-green-500'
+                              }`} />
+                            </button>
+                            <p className={`text-sm font-semibold leading-snug flex-1 ${task.status === 'done' ? 'line-through text-muted-foreground' : ''}`}>
+                              {task.title}
+                            </p>
+                          </div>
+
+                          {/* Meta chips */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {viewPast ? (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${STATUS_COLORS[task.status]}`}>
+                                {task.status.replace('_', ' ')}
+                              </span>
+                            ) : (
+                              <select
+                                value={task.status}
+                                onChange={e => updateTask(task._id, { status: e.target.value as 'pending' | 'in_progress' | 'done' | 'blocked' })}
+                                onClick={e => e.stopPropagation()}
+                                className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border-0 cursor-pointer ${STATUS_COLORS[task.status]}`}
+                                style={{ background: 'transparent' }}
+                              >
+                                {STATUSES.map(s => <option key={s} value={s} className="bg-background text-foreground">{s.replace('_', ' ')}</option>)}
+                              </select>
+                            )}
+                            <span className={`text-[10px] font-semibold uppercase tracking-wide ${PRIORITY_COLORS[task.priority]}`}>
+                              {task.priority}
+                            </span>
+                            {task.taskType && (
+                              <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium">
+                                {task.taskType}
+                              </span>
+                            )}
                             {task.dueDate && (
-                              <span className={`text-[10px] flex items-center gap-0.5 ${isBefore(new Date(task.dueDate), startOfDay(new Date())) && task.status !== 'done' ? 'text-red-400' : 'text-muted-foreground'}`}>
+                              <span className={`text-[10px] flex items-center gap-0.5 ml-auto ${overdue ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
                                 <Calendar className="h-2.5 w-2.5" />{format(new Date(task.dueDate), 'MMM d')}
                               </span>
                             )}
                           </div>
-                        </div>
-                      </motion.div>
-                    ))}
+                        </motion.div>
+                      );
+                    })}
                   </AnimatePresence>
                 </div>
-                
-                {/* Client Ecosystem Panel */}
-                <div className="space-y-3 pt-2">
-                  <h2 className="font-semibold text-sm flex items-center gap-2">
-                    <Globe className="h-4 w-4 text-emerald-500" />
-                    Client Ecosystem & Delivery Tasks
-                    <span className="text-muted-foreground font-normal">({projects.length} Active Projects)</span>
-                  </h2>
-                  {projects.length === 0 ? (
-                    <div className="bg-card border border-border rounded-2xl py-8 flex flex-col items-center gap-3">
-                      <p className="text-sm text-muted-foreground">You are not assigned to any client projects.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {projects.map(p => {
-                        const client = allUsers.find(u => String(u._id) === String(p.clientId));
-                        const clientName = client?.name || client?.company || 'Unknown Client';
-                        
-                        return (
-                          <div key={p._id} className="bg-card border border-border/70 rounded-2xl p-4 space-y-3 relative overflow-hidden">
-                            <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500/80" />
-                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-border/50 pb-3">
-                               <div>
-                                 <h3 className="font-bold text-sm">{p.name} <span className="text-xs text-muted-foreground font-normal">({clientName})</span></h3>
-                                 <div className="flex gap-1.5 mt-1.5 flex-wrap">
-                                    {p.services?.map((s: string) => <span key={s} className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-1.5 py-0.5 rounded text-[10px] font-medium">{s}</span>)}
-                                 </div>
-                                 {p.servicesDescription && <p className="text-[11px] text-muted-foreground mt-2 bg-muted/30 p-2 rounded-lg italic">"{p.servicesDescription}"</p>}
-                               </div>
-                               <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-2 flex-shrink-0 py-1 rounded-full font-bold uppercase self-start">{p.status}</span>
-                            </div>
-                            <div className="divide-y divide-border/40">
-                               {tasks.filter(t => t.projectId === p._id).map(task => (
-                                  <div key={task._id} className="py-2 flex items-center justify-between group">
-                                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                                       <button onClick={() => cycleStatus(task)} className="mt-0.5 shrink-0">
-                                         <CheckCircle2 className={`h-4 w-4 transition-colors ${task.status === 'done' ? 'text-green-400' : 'text-muted-foreground/30 hover:text-green-400'}`} />
-                                       </button>
-                                       <p className={`text-xs font-medium ${task.status === 'done' ? 'line-through text-muted-foreground' : ''} truncate`}>{task.title}</p>
-                                    </div>
-                                    <select value={task.status}
-                                      onChange={e => updateTask(task._id, { status: e.target.value as 'pending' | 'in_progress' | 'done' | 'blocked' })}
-                                      className={`text-[10px] px-1.5 py-0.5 rounded font-medium border-0 cursor-pointer shrink-0 ${STATUS_COLORS[task.status]}`}>
-                                      {STATUSES.map(s => <option key={s} value={s} className="bg-background">{s.replace('_',' ')}</option>)}
-                                    </select>
-                                  </div>
-                               ))}
-                               {tasks.filter(t => t.projectId === p._id).length === 0 && (
-                                 <p className="text-xs text-muted-foreground py-2 text-center bg-muted/10 rounded-lg border border-dashed border-border/50">No tasks linked yet. Assign a task with this Project ID.</p>
-                               )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
+              </>
             )}
-          </div>
         </div>
+      </div>
     </AppLayout>
   );
 }
