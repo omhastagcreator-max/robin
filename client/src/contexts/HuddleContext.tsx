@@ -77,10 +77,9 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     }
   }, [meeting.joined, mode]);
 
-  // Auto-share screen the first time someone joins the huddle in a session.
-  // Browser shows the screen-picker; user can pick or cancel — either is fine.
-  // We track whether we've already auto-prompted to avoid re-firing on every
-  // remount (e.g. page navigation while the call is alive).
+  // Auto-share screen on join — only for employees and sales (the people
+  // expected to be "on the floor"). Admins/managers join to oversee, not
+  // to share their own screen by default; they can still toggle manually.
   const autoSharedThisJoinRef = useRef(false);
   useEffect(() => {
     if (!meeting.joined) {
@@ -89,14 +88,14 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     }
     if (autoSharedThisJoinRef.current) return;
     if (meeting.screenOn) { autoSharedThisJoinRef.current = true; return; }
+    // Admins are NOT auto-prompted — they're observers by default.
+    if (role === 'admin') { autoSharedThisJoinRef.current = true; return; }
     autoSharedThisJoinRef.current = true;
-    // Small delay so the user sees the join confirmation before the picker
-    // opens — feels less abrupt.
     const t = setTimeout(() => {
       try { meeting.toggleScreen(); } catch { /* user can still trigger manually */ }
     }, 600);
     return () => clearTimeout(t);
-  }, [meeting.joined, meeting.screenOn, meeting.toggleScreen]);
+  }, [meeting.joined, meeting.screenOn, meeting.toggleScreen, role]);
 
   const participantCount = meeting.peers.length + (meeting.joined ? 1 : 0);
 

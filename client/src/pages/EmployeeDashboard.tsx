@@ -92,7 +92,7 @@ function TeamRoleWidget({ team, tasks }: { team: string; tasks: any[] }) {
 export default function EmployeeDashboard() {
   const { user } = useAuth();
   const { session } = useSession();
-  const { tasks, loading: tasksLoading, refresh, createTask, updateTask } = useTasks();
+  const { tasks, loading: tasksLoading, refresh, createTask, updateTask, deleteTask } = useTasks();
 
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
@@ -401,7 +401,13 @@ export default function EmployeeDashboard() {
           {/* ─── Right rail — Weekly planner, reminders, quick links ─── */}
           <aside className="space-y-3">
             {/* Weekly planner — track every day this week + add reminders */}
-            <WeeklyPlanner tasks={tasks} />
+            <WeeklyPlanner
+              tasks={tasks}
+              onDeleteTask={async (id) => {
+                try { await deleteTask(id); toast.success('Task deleted'); }
+                catch { toast.error('Could not delete task'); }
+              }}
+            />
 
             {/* Reminders / unread notifications */}
             {notifications.filter(n => !n.isRead).length > 0 && (

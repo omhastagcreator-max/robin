@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2, X, Coffee, CalendarOff } from 'lucide-react';
+import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2, X, Coffee, CalendarOff, ClipboardCheck, KeyRound, ListTodo } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useWebRTCReceiver } from '@/hooks/useWebRTC';
 import { useAuth } from '@/contexts/AuthContext';
@@ -74,6 +74,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
   const socket = useSocket();
   const presence = useTeamPresence();
 
@@ -101,12 +102,14 @@ export default function AdminDashboard() {
 
   const loadStats = useCallback(async () => {
     try {
-      const [s, e] = await Promise.all([
+      const [s, e, leaves] = await Promise.all([
         api.getAdminStats().catch(() => null),
         api.adminEmployees().catch(() => []),
+        api.adminListLeaves({ status: 'pending' }).catch(() => []),
       ]);
       setStats(s);
       setEmployees(Array.isArray(e) ? e : []);
+      setPendingLeaveCount(Array.isArray(leaves) ? leaves.length : 0);
     } finally {
       setLoading(false);
     }
@@ -143,10 +146,18 @@ export default function AdminDashboard() {
   return (
     <AppLayout requiredRole="admin">
       <div className="max-w-6xl mx-auto space-y-6 page-transition-enter">
-        <div className="flex items-center justify-between">
+        {/* Manager hero — greeting + quick context */}
+        <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-            <p className="text-sm text-muted-foreground">Agency overview &amp; insights</p>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              Hi {user?.name?.split(' ')[0] || 'Manager'} 👋
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {presence.active.length} working
+              {presence.onBreak.length > 0 ? ` · ${presence.onBreak.length} on break` : ''}
+              {(presence.onLeave?.length || 0) > 0 ? ` · ${presence.onLeave?.length} on leave` : ''}
+              {pendingLeaveCount > 0 ? ` · ${pendingLeaveCount} approval${pendingLeaveCount === 1 ? '' : 's'} waiting on you` : ''}
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <HuddleQuickPill />
@@ -156,24 +167,108 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* KPI Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPICard label="Total Tasks" value={stats?.totalTasks ?? 0} icon={CheckCircle2} color="bg-blue-500/15" sub={`${pct}% completed`} />
-          <KPICard label="Overdue" value={stats?.overdueTasks ?? 0} icon={AlertTriangle} color="bg-red-500/15" sub="Need attention" />
-          <KPICard label="Active Projects" value={stats?.activeProjects ?? 0} icon={Briefcase} color="bg-violet-500/15" sub={`of ${stats?.totalProjects ?? 0} total`} />
-          <KPICard
-            label="Active Now"
-            value={presence.active.length}
-            icon={Activity}
-            color="bg-green-500/15"
-            sub={`${presence.onBreak.length} on break · ${presence.onLeave?.length || 0} on leave`}
-          />
+        {/* Manager KPI strip — emphasises decisions waiting on the manager */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <Link
+            to="/admin/leaves"
+            className={`rounded-2xl border p-4 flex items-center gap-3 transition-all ${
+              pendingLeaveCount > 0
+                ? 'border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15'
+                : 'border-border bg-card hover:bg-muted/30'
+            }`}
+          >
+            <div className={`h-11 w-11 rounded-xl flex items-center justify-center ${pendingLeaveCount > 0 ? 'bg-amber-500/20 text-amber-600' : 'bg-muted text-muted-foreground'}`}>
+              <ClipboardCheck className="h-5 w-5" />
+            </div>
+            <div>
+              <p className={`text-2xl font-black tabular-nums leading-none ${pendingLeaveCount > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                {pendingLeaveCount}
+              </p>
+              <p className="text-xs font-semibold mt-1">Approvals waiting</p>
+              <p className="text-[10px] text-muted-foreground">leave requests · click to review</p>
+            </div>
+          </Link>
+
+          <div className="rounded-2xl border border-green-500/20 bg-green-500/5 p-4 flex items-center gap-3">
+            <div className="h-11 w-11 rounded-xl bg-green-500/20 text-green-600 flex items-center justify-center">
+              <Activity className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-2xl font-black text-green-600 tabular-nums leading-none">{presence.active.length}</p>
+              <p className="text-xs font-semibold mt-1">Working now</p>
+              <p className="text-[10px] text-muted-foreground">
+                {presence.onBreak.length} break · {presence.onLeave?.length || 0} leave
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 flex items-center gap-3">
+            <div className="h-11 w-11 rounded-xl bg-red-500/20 text-red-500 flex items-center justify-center">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-2xl font-black text-red-500 tabular-nums leading-none">{stats?.overdueTasks ?? 0}</p>
+              <p className="text-xs font-semibold mt-1">Overdue tasks</p>
+              <p className="text-[10px] text-muted-foreground">across the agency</p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4 flex items-center gap-3">
+            <div className="h-11 w-11 rounded-xl bg-violet-500/20 text-violet-600 flex items-center justify-center">
+              <Briefcase className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-2xl font-black text-violet-600 tabular-nums leading-none">{stats?.activeProjects ?? 0}</p>
+              <p className="text-xs font-semibold mt-1">Active projects</p>
+              <p className="text-[10px] text-muted-foreground">{stats?.atRiskProjects?.length || 0} at risk · {pct}% tasks done</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Manager toolkit — one-click into each oversight area */}
+        <div className="bg-card border border-border rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Users className="h-4 w-4 text-primary" />
+            <h2 className="font-semibold text-sm">Manager toolkit</h2>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            <Link to="/admin/employees" className="flex flex-col items-start gap-1 p-3 rounded-xl border border-border hover:border-primary/40 hover:bg-primary/5 transition-colors">
+              <Users className="h-4 w-4 text-primary" />
+              <p className="text-xs font-semibold">Team</p>
+              <p className="text-[10px] text-muted-foreground">{employees.length} members</p>
+            </Link>
+            <Link to="/admin/projects" className="flex flex-col items-start gap-1 p-3 rounded-xl border border-border hover:border-primary/40 hover:bg-primary/5 transition-colors">
+              <Briefcase className="h-4 w-4 text-violet-500" />
+              <p className="text-xs font-semibold">Projects</p>
+              <p className="text-[10px] text-muted-foreground">{stats?.activeProjects ?? 0} active</p>
+            </Link>
+            <Link to="/admin/clients" className="flex flex-col items-start gap-1 p-3 rounded-xl border border-border hover:border-primary/40 hover:bg-primary/5 transition-colors">
+              <ListTodo className="h-4 w-4 text-blue-500" />
+              <p className="text-xs font-semibold">Clients</p>
+              <p className="text-[10px] text-muted-foreground">manage</p>
+            </Link>
+            <Link to="/admin/leaves" className="flex flex-col items-start gap-1 p-3 rounded-xl border border-border hover:border-primary/40 hover:bg-primary/5 transition-colors">
+              <CalendarOff className="h-4 w-4 text-amber-500" />
+              <p className="text-xs font-semibold">Leaves</p>
+              <p className="text-[10px] text-muted-foreground">{pendingLeaveCount} waiting</p>
+            </Link>
+            <Link to="/vault" className="flex flex-col items-start gap-1 p-3 rounded-xl border border-border hover:border-primary/40 hover:bg-primary/5 transition-colors">
+              <KeyRound className="h-4 w-4 text-green-500" />
+              <p className="text-xs font-semibold">Vault</p>
+              <p className="text-[10px] text-muted-foreground">audit log</p>
+            </Link>
+            <Link to="/admin/reports" className="flex flex-col items-start gap-1 p-3 rounded-xl border border-border hover:border-primary/40 hover:bg-primary/5 transition-colors">
+              <BarChart2 className="h-4 w-4 text-pink-500" />
+              <p className="text-xs font-semibold">Reports</p>
+              <p className="text-[10px] text-muted-foreground">org analytics</p>
+            </Link>
+          </div>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-4">
           {/* Task Completion Trend */}
           <div className="lg:col-span-2 bg-card border border-border rounded-2xl p-5">
-            <h2 className="font-semibold text-sm mb-4 flex items-center gap-2"><TrendingUp className="h-4 w-4 text-primary" /> Task Completion Trend</h2>
+            <h2 className="font-semibold text-sm mb-4 flex items-center gap-2"><TrendingUp className="h-4 w-4 text-primary" /> Task completion trend</h2>
             {stats?.taskTrend && stats.taskTrend.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={stats.taskTrend}>
@@ -189,33 +284,37 @@ export default function AdminDashboard() {
             )}
           </div>
 
-          {/* Employee Status */}
-          <div className="bg-card border border-border rounded-2xl overflow-hidden">
-            <div className="px-5 py-3 border-b border-border flex items-center gap-2">
+          {/* Team status — card grid (manager view, not the row list employees see) */}
+          <div className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col">
+            <div className="px-4 py-3 border-b border-border flex items-center gap-2">
               <Users className="h-4 w-4 text-primary" />
-              <h2 className="font-semibold text-sm">Team Status</h2>
+              <h2 className="font-semibold text-sm">Team status</h2>
+              <Link to="/admin/employees" className="ml-auto text-[11px] text-primary hover:underline flex items-center gap-0.5">
+                Manage <ArrowRight className="h-3 w-3" />
+              </Link>
             </div>
-            <div className="divide-y divide-border/50 max-h-64 overflow-y-auto">
+            <div className="p-3 grid grid-cols-2 gap-2 max-h-72 overflow-y-auto">
               {employees.slice(0, 8).map(e => {
                 const status = presence.statusOf(e._id);
+                const accent =
+                  status === 'active'    ? 'border-green-500/30 bg-green-500/5' :
+                  status === 'on_break'  ? 'border-amber-500/30 bg-amber-500/5' :
+                  status === 'on_leave'  ? 'border-purple-500/30 bg-purple-500/5' :
+                                            'border-border';
                 return (
-                  <div key={e._id} className="px-5 py-3 flex items-center gap-3">
-                    <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                  <div key={e._id} className={`rounded-xl border ${accent} p-2 flex flex-col items-center text-center gap-1`}>
+                    <div className="h-9 w-9 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
                       {(e.name || e.email || '?')[0].toUpperCase()}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate">{e.name || e.email}</p>
-                      <p className="text-[10px] text-muted-foreground capitalize">{e.team || 'No team'}</p>
-                    </div>
+                    <p className="text-[11px] font-semibold truncate w-full">{e.name?.split(' ')[0] || e.email}</p>
                     <PresenceBadge status={status} />
                   </div>
                 );
               })}
-              {employees.length === 0 && <p className="text-xs text-muted-foreground text-center py-8">No employees yet</p>}
+              {employees.length === 0 && (
+                <p className="col-span-full text-xs text-muted-foreground text-center py-8">No employees yet</p>
+              )}
             </div>
-            <Link to="/admin/employees" className="flex items-center justify-center gap-1 py-3 text-xs text-primary hover:text-primary/80 border-t border-border">
-              Manage all <ArrowRight className="h-3 w-3" />
-            </Link>
           </div>
         </div>
 

@@ -20,6 +20,9 @@ interface Reminder {
 interface Props {
   /** Tasks the user already has — surfaced in the planner alongside reminders. */
   tasks?: Array<{ _id: string; title: string; dueDate?: string; status: string }>;
+  /** Optional: lets the planner delete a task. If not provided, no × is shown
+   *  on task rows (read-only). */
+  onDeleteTask?: (taskId: string) => Promise<void> | void;
 }
 
 /**
@@ -29,7 +32,7 @@ interface Props {
  * lists the user's reminders + any tasks dueToday — single-click to mark
  * done, single-click to add a quick reminder for that day.
  */
-export function WeeklyPlanner({ tasks = [] }: Props) {
+export function WeeklyPlanner({ tasks = [], onDeleteTask }: Props) {
   const [weekAnchor, setWeekAnchor] = useState<Date>(new Date());
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -180,9 +183,22 @@ export function WeeklyPlanner({ tasks = [] }: Props) {
                 {hasItems && (
                   <div className="space-y-0.5">
                     {tasksDay.map(t => (
-                      <div key={'t-' + t._id} className="flex items-center gap-1.5 px-1.5 py-1 rounded text-xs">
+                      <div key={'t-' + t._id} className="group flex items-center gap-1.5 px-1.5 py-1 rounded hover:bg-muted/40 transition-colors text-xs">
                         <ListTodo className="h-3 w-3 text-blue-500 shrink-0" />
                         <p className={`flex-1 min-w-0 truncate ${t.status === 'done' ? 'line-through text-muted-foreground' : ''}`}>{t.title}</p>
+                        {onDeleteTask && (
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Delete task "${t.title}"?`)) return;
+                              try { await onDeleteTask(t._id); }
+                              catch { /* parent surfaces toast */ }
+                            }}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-red-500"
+                            title="Delete task"
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </button>
+                        )}
                       </div>
                     ))}
                     {remindersDay.map(r => (
