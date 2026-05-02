@@ -188,35 +188,26 @@ export default function EmployeeDashboard() {
           </div>
         )}
 
-        <div className="grid lg:grid-cols-3 gap-5">
-          {/* Left — Session Control + KPIs */}
-          <div className="space-y-4">
-            {/* Session Card (shared, used by all internal roles) */}
-            <SessionClockCard
-              dayLocked={dayLocked}
-              dayLockReason={`Add ${3 - todayTasks.length} more task${3 - todayTasks.length !== 1 ? 's' : ''} for today before clocking in`}
-              onLockedAttempt={() => setAddingTask(true)}
-            />
-
-            {/* KPI Cards */}
-            {[
-              { label: "Today's Tasks",  value: todayTasks.length, sub: `${todayTasks.filter(t => t.status === 'done').length} done`, color: 'text-primary' },
-              { label: 'Done Total',     value: doneTasks,         sub: 'all time',                                                   color: 'text-green-400' },
-              { label: 'Overdue',        value: overdueTasks.length, sub: 'need attention',                                           color: 'text-red-400' },
-              { label: 'Blocked',        value: blockedTasks,       sub: 'need help',                                                 color: 'text-amber-400' },
-            ].map(k => (
-              <div key={k.label} className="bg-card border border-border rounded-2xl px-4 py-3 flex items-center gap-3">
-                <p className={`text-2xl font-bold ${k.color}`}>{k.value}</p>
-                <div>
-                  <p className="text-xs font-medium">{k.label}</p>
-                  <p className="text-[10px] text-muted-foreground">{k.sub}</p>
-                </div>
+        {/* KPI strip — compact horizontal cards, scannable at a glance */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: "Today's Tasks",  value: todayTasks.length,    sub: `${todayTasks.filter(t => t.status === 'done').length} done`, color: 'text-primary',     accent: 'border-primary/20 bg-primary/5' },
+            { label: 'Done Total',     value: doneTasks,            sub: 'all time',                                                    color: 'text-green-500',   accent: 'border-green-500/20 bg-green-500/5' },
+            { label: 'Overdue',        value: overdueTasks.length,  sub: 'need attention',                                              color: 'text-red-500',     accent: 'border-red-500/20 bg-red-500/5' },
+            { label: 'Blocked',        value: blockedTasks,         sub: 'need help',                                                   color: 'text-amber-500',   accent: 'border-amber-500/20 bg-amber-500/5' },
+          ].map(k => (
+            <div key={k.label} className={`rounded-2xl border ${k.accent} p-3 flex items-center gap-3`}>
+              <p className={`text-3xl font-black ${k.color} tabular-nums leading-none`}>{k.value}</p>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold leading-tight">{k.label}</p>
+                <p className="text-[10px] text-muted-foreground leading-tight">{k.sub}</p>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
+        </div>
 
-          {/* Right — Task List */}
-          <div className="lg:col-span-2 space-y-3">
+        {/* Tasks — full width, cleaner rows */}
+        <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-sm">My Tasks <span className="text-muted-foreground font-normal">({tasks.length})</span></h2>
               <button onClick={() => setAddingTask(v => !v)}
@@ -310,9 +301,6 @@ export default function EmployeeDashboard() {
                                 <Calendar className="h-2.5 w-2.5" />{format(new Date(task.dueDate), 'MMM d')}
                               </span>
                             )}
-                            {task.assignedBy && task.assignedBy !== user?.id && (
-                              <span className="text-[10px] text-blue-400">↩ from teammate</span>
-                            )}
                           </div>
                         </div>
                       </motion.div>
@@ -380,7 +368,6 @@ export default function EmployeeDashboard() {
             )}
           </div>
         </div>
-      </div>
     </AppLayout>
   );
 }
