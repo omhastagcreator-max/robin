@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AccessToken } from 'livekit-server-sdk';
+import { AccessToken, TrackSource } from 'livekit-server-sdk';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
 
@@ -53,7 +53,13 @@ router.post('/token', requireRole('admin', 'employee', 'sales'), async (req: Aut
       canSubscribe: true,
       canPublishData: true,
       // No video publishing — we don't want cameras. Audio + screen only.
-      canPublishSources: ['microphone' as any, 'screen_share' as any, 'screen_share_audio' as any],
+      // Use the enum values from livekit-server-sdk; recent versions reject
+      // raw strings here ("Cannot convert TrackSource microphone to string").
+      canPublishSources: [
+        TrackSource.MICROPHONE,
+        TrackSource.SCREEN_SHARE,
+        TrackSource.SCREEN_SHARE_AUDIO,
+      ],
     });
 
     const token = await at.toJwt();
