@@ -1,65 +1,25 @@
-import { useCallback, useEffect, useState } from 'react';
 import { AppLayout } from '@/components/AppLayout';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   Coffee, Users, Loader2, Headphones, CalendarOff,
-  Monitor, MonitorOff, Eye,
 } from 'lucide-react';
 import { useTeamPresence, type TeamMember, type PresenceStatus } from '@/hooks/useTeamPresence';
-import { useScreenShare } from '@/contexts/ScreenShareContext';
-import { useWebRTCReceiver } from '@/hooks/useWebRTC';
 import { HuddleStage } from '@/components/shared/HuddleStage';
-import * as api from '@/api';
 
 /**
- * WorkRoom — the agency's universal Work Room.
+ * WorkRoom — the agency's universal workroom.
  *
- *   1. Live Huddle  → embedded Jitsi room (mic + screen + chat + raise hand,
- *                     NO camera). One room for the whole agency.
- *   2. Live Screens → legacy 1-to-many broadcast/watch grid (so admins can
- *                     keep an eye on a teammate's screen without joining
- *                     the huddle).
- *   3. Team status  → who's working / on break / on leave / off the clock,
- *                     with banners so people don't ping teammates on break.
+ *   1. HuddleStage — the live Meet-style huddle (audio + screen share,
+ *      no camera). All screen sharing happens here; anyone joining the
+ *      huddle can share and anyone can pin a teammate's screen to fullscreen.
+ *   2. Team roster — who's working, on break, on leave, off the clock.
  */
 export default function WorkRoom() {
-  const { user, role } = useAuth();
+  const { role } = useAuth();
   const isInternal = role === 'admin' || role === 'employee' || role === 'sales';
 
   const presence = useTeamPresence();
-
-  // ── Legacy 1-to-many broadcast flow (separate from huddle) ──────────────
-  const { isSharing, startSharing, stopSharing } = useScreenShare();
-  const { remoteStreams, connectingTo, viewScreen, stopViewing } = useWebRTCReceiver(user?.id || '');
-
-  const [screenSessions, setScreenSessions] = useState<any[]>([]);
-  const [loadingSessions, setLoadingSessions] = useState(true);
-  const [viewingUser, setViewingUser] = useState<string | null>(null);
-
-  const monitorVideoRef = useCallback((el: HTMLVideoElement | null) => {
-    if (el && viewingUser && remoteStreams[viewingUser]) el.srcObject = remoteStreams[viewingUser];
-  }, [remoteStreams, viewingUser]);
-
-  const loadSessions = async () => {
-    try {
-      const data = await api.listScreenSessions();
-      setScreenSessions(Array.isArray(data) ? data : []);
-    } finally { setLoadingSessions(false); }
-  };
-
-  useEffect(() => {
-    if (!isInternal) { setLoadingSessions(false); return; }
-    loadSessions();
-    const i = setInterval(loadSessions, 10000);
-    return () => clearInterval(i);
-  }, [isInternal]);
-
-  const handlePeek = (targetId: string) => {
-    if (viewingUser === targetId) { stopViewing(targetId); setViewingUser(null); return; }
-    setViewingUser(targetId);
-    viewScreen(targetId);
-  };
 
   return (
     <AppLayout>
@@ -118,119 +78,6 @@ export default function WorkRoom() {
 
         {/* ── FULL HUDDLE STAGE — Meet-style, in-page ───────────────────────── */}
         <HuddleStage />
-
-        {/* ── LIVE SCREENS — broadcast / monitor ──────────────────── */}
-        {isInternal && (
-          <section className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Monitor className="h-4 w-4 text-primary" />
-              <h2 className="font-semibold text-sm">Live screens</h2>
-              <span className="ml-auto text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                {screenSessions.filter(s => s.status === 'active').length} broadcasting
-              </span>
-            </div>
-
-            <div className={`bg-card border rounded-2xl p-4 flex items-center gap-3 flex-wrap transition-colors ${isSharing ? 'border-green-500/40' : 'border-border'}`}>
-              <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${isSharing ? 'bg-green-500/20' : 'bg-muted'}`}>
-                {isSharing
-                  ? <Monitor className="h-5 w-5 text-green-500" />
-                  : <MonitorOff className="h-5 w-5 text-muted-foreground" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm">
-                  {isSharing ? 'Your screen is broadcasting' : 'Broadcast your screen'}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {isSharing
-                    ? 'Admins and teammates can watch live without joining the huddle'
-                    : 'Make your screen visible to admin/teammates without joining the huddle'}
-                </p>
-              </div>
-              {isSharing ? (
-                <button onClick={stopSharing}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-500/15 text-red-400 border border-red-500/30 rounded-xl text-sm font-medium hover:bg-red-500/25 transition-all">
-                  <MonitorOff className="h-4 w-4" /> Stop broadcasting
-                </button>
-              ) : (
-                <button onClick={startSharing}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary border border-primary/30 rounded-xl text-sm font-medium hover:bg-primary/20 transition-all">
-                  <Monitor className="h-4 w-4" /> Start broadcast
-                </button>
-              )}
-            </div>
-
-            {loadingSessions ? (
-              <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
-            ) : screenSessions.filter(s => s.status === 'active').length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-6 bg-card border border-dashed border-border rounded-2xl">
-                Nobody is broadcasting their screen right now.
-              </p>
-            ) : (
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {screenSessions.filter(s => s.status === 'active').map(session => (
-                  <motion.div
-                    key={session._id || session.userId}
-                    initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                    className="bg-card border border-green-500/30 rounded-2xl p-4 space-y-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-xl bg-primary/20 flex items-center justify-center text-sm font-bold text-primary shrink-0">
-                        {(session.profile?.name || '?')[0].toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{session.profile?.name || session.userId}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {session.profile?.role && <span className="capitalize">{session.profile.role}</span>}
-                          {session.profile?.email && <> · {session.profile.email}</>}
-                        </p>
-                      </div>
-                      <span className="h-2.5 w-2.5 rounded-full bg-green-400 animate-pulse shrink-0" />
-                    </div>
-                    <button onClick={() => handlePeek(session.userId)}
-                      className={`w-full py-2 rounded-xl text-xs font-medium flex items-center justify-center gap-2 transition-all ${
-                        viewingUser === session.userId
-                          ? 'bg-red-500/15 text-red-400 border border-red-500/30'
-                          : 'bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25'
-                      }`}>
-                      {connectingTo[session.userId] && viewingUser === session.userId ? (
-                        <><Loader2 className="h-3 w-3 animate-spin" /> Connecting…</>
-                      ) : viewingUser === session.userId ? (
-                        <><MonitorOff className="h-3 w-3" /> Stop watching</>
-                      ) : (
-                        <><Eye className="h-3 w-3" /> Watch live</>
-                      )}
-                    </button>
-                  </motion.div>
-                ))}
-              </div>
-            )}
-
-            <AnimatePresence>
-              {viewingUser && remoteStreams[viewingUser] && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-                  className="bg-black rounded-2xl overflow-hidden border border-primary/30 shadow-2xl shadow-primary/10"
-                >
-                  <div className="flex items-center justify-between px-4 py-2.5 bg-card border-b border-primary/20">
-                    <div className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
-                      <p className="text-xs font-medium">
-                        Watching {screenSessions.find(s => s.userId === viewingUser)?.profile?.name || 'teammate'}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => { stopViewing(viewingUser); setViewingUser(null); }}
-                      className="text-xs text-muted-foreground hover:text-red-400"
-                    >
-                      Stop
-                    </button>
-                  </div>
-                  <video ref={monitorVideoRef} autoPlay playsInline className="w-full max-h-[60vh] object-contain bg-black" />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </section>
-        )}
 
         {/* ── TEAM ROSTER ─────────────────────────────────────────── */}
         {isInternal && (

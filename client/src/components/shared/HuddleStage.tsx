@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   Mic, MicOff, Monitor, MonitorOff, PhoneCall, PhoneOff, Coffee, CalendarOff, Headphones, Loader2, AlertTriangle,
+  Maximize2, X, Pin,
 } from 'lucide-react';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,27 +13,56 @@ import { RemoteAudio, useAudioLevel } from '@/components/shared/RemoteAudio';
 /**
  * Full-page Google-Meet-like huddle stage. Used INSIDE the WorkRoom page
  * as the primary interaction. Shares state with the persistent HuddleDock
- * via HuddleContext + the singleton useMeetingRoom — so joining here joins
- * the dock, leaving here leaves the dock, and screen shares are visible
- * everywhere consistently.
+ * via HuddleContext.
  *
  * Layout:
- *   • If anyone is sharing: large screen view at the top + tile strip below.
- *   • Otherwise: a tile grid filling the stage, Meet-style.
+ *   • Shared screens grid — one card per peer (or self) currently sharing.
+ *     Click a card to pin it to fullscreen; click again or press Esc to
+ *     return to the grid.
+ *   • Participants tile grid — Meet-style avatars + speaking indicators.
  *   • Bottom controls: Mic / Screen-share / Leave.
  */
 export function HuddleStage() {
   const { user } = useAuth();
-  // ALL huddle state from the single context-owned useMeetingRoom instance.
   const meeting = useHuddle();
   const { mode, join, leave } = meeting;
   const presence = useTeamPresence();
 
-  const handleLeave = () => leave();
+  // Pin state — which screen-share is currently maximised. `'self'` for the
+  // user's own share; otherwise a peer userId. null = grid view.
+  const [pinned, setPinned] = useState<string | null>(null);
 
-  // Whoever is sharing screen — only one main view at a time.
-  const sharingPeer = meeting.peers.find(p => p.screenOn);
-  const selfSharing = meeting.screenOn;
+  // ── Build the list of "who's sharing right now" ────────────────────────
+  const sharers: { id: string; name: string; isSelf: boolean; stream: MediaStream | null; peer?: PeerView }[] = [];
+  if (meeting.screenOn && meeting.localStream) {
+    sharers.push({
+      id: 'self',
+      name: user?.name || user?.email || 'You',
+      isSelf: true,
+      stream: meeting.localStream,
+    });
+  }
+  for (const p of meeting.peers) {
+    if (p.screenOn) {
+      sharers.push({ id: p.userId, name: p.name || 'Teammate', isSelf: false, stream: p.stream, peer: p });
+    }
+  }
+
+  // Auto-unpin if the pinned sharer stopped.
+  useEffect(() => {
+    if (pinned && !sharers.find(s => s.id === pinned)) setPinned(null);
+  }, [pinned, sharers.length]);
+
+  // Esc closes the pinned view.
+  useEffect(() => {
+    if (!pinned) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPinned(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pinned]);
+
+  const handleLeave = () => leave();
+  const pinnedSharer = pinned ? sharers.find(s => s.id === pinned) : null;
 
   return (
     <section className="bg-card border border-border rounded-2xl overflow-hidden">
@@ -45,7 +76,7 @@ export function HuddleStage() {
           </span>
         )}
         <span className="ml-auto text-[10px] text-muted-foreground">
-          mic + screen share · no camera · free forever
+          mic + screen share · no camera · click any screen to pin
         </span>
       </div>
 
@@ -95,19 +126,22 @@ export function HuddleStage() {
       {/* JOINED — Meet-style stage */}
       {meeting.joined && (
         <>
-          {/* Screen share area — ALWAYS shown when anyone is sharing */}
-          {(sharingPeer || selfSharing) && (
-            <div className="relative bg-black border-b border-border">
-              {sharingPeer
-                ? <PeerScreenView peer={sharingPeer} />
-                : selfSharing && meeting.localStream
-                  ? <SelfScreenView stream={meeting.localStream} />
-                  : null}
-              <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[11px] text-white bg-black/60 backdrop-blur flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
-                {sharingPeer ? `${sharingPeer.name || 'Teammate'} is sharing` : 'You are sharing'}
+          {/* SHARED SCREENS GRID */}
+          {sharers.length > 0 && (
+            <section className="border-b border-border">
+              <div className="px-4 py-2 flex items-center gap-2 bg-muted/20">
+                <Monitor className="h-3.5 w-3.5 text-primary" />
+                <p className="text-xs font-semibold">
+                  {sharers.length} screen{sharers.length === 1 ? '' : 's'} shared
+                </p>
+                <span className="text-[10px] text-muted-foreground">click any card to pin to fullscreen</span>
               </div>
-            </div>
+              <div className="p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {sharers.map(s => (
+                  <ScreenCard key={s.id} sharer={s} onPin={() => setPinned(s.id)} />
+                ))}
+              </div>
+            </section>
           )}
 
           {/* Participant tile grid */}
@@ -158,6 +192,38 @@ export function HuddleStage() {
           </div>
         </>
       )}
+
+      {/* ── Pinned-fullscreen overlay ──────────────────────────────────── */}
+      <AnimatePresence>
+        {pinnedSharer && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-sm flex flex-col"
+          >
+            <div className="flex items-center gap-2 px-4 py-3 bg-black/60 border-b border-white/10">
+              <Pin className="h-4 w-4 text-primary" />
+              <p className="text-sm font-semibold text-white truncate flex-1">
+                {pinnedSharer.name}'s screen
+                {pinnedSharer.isSelf && <span className="text-white/50 font-normal"> (you)</span>}
+              </p>
+              <span className="hidden sm:inline text-[11px] text-white/60">press Esc to close</span>
+              <button
+                onClick={() => setPinned(null)}
+                className="h-8 px-3 flex items-center gap-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs"
+              >
+                <X className="h-3.5 w-3.5" /> Close
+              </button>
+            </div>
+            <div className="flex-1 flex items-center justify-center">
+              {pinnedSharer.peer
+                ? <PeerScreenView peer={pinnedSharer.peer} fullscreen />
+                : pinnedSharer.stream
+                  ? <SelfScreenView stream={pinnedSharer.stream} fullscreen />
+                  : null}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }
@@ -178,6 +244,15 @@ function PresenceChip({ status }: { status: PresenceStatus }) {
   return null;
 }
 
+function PresenceTopRight({ status }: { status: PresenceStatus }) {
+  if (status !== 'on_break' && status !== 'on_leave') return null;
+  return (
+    <div className="absolute top-2 right-2">
+      <PresenceChip status={status} />
+    </div>
+  );
+}
+
 function SelfTile({
   name, audioOn, screenOn, stream, presenceStatus,
 }: {
@@ -187,8 +262,6 @@ function SelfTile({
   stream: MediaStream | null;
   presenceStatus: PresenceStatus;
 }) {
-  // Audio level: read off our own outbound stream so the user can see when
-  // they're "transmitting" (helps confirm the mic is working).
   const level = useAudioLevel(audioOn ? stream : null);
   const initial = (name || '?')[0].toUpperCase();
   return (
@@ -233,15 +306,6 @@ function PeerTile({ peer, presenceStatus }: { peer: PeerView; presenceStatus: Pr
   );
 }
 
-function PresenceTopRight({ status }: { status: PresenceStatus }) {
-  if (status !== 'on_break' && status !== 'on_leave') return null;
-  return (
-    <div className="absolute top-2 right-2">
-      <PresenceChip status={status} />
-    </div>
-  );
-}
-
 function AvatarWithRing({ initial, active }: { initial: string; active: boolean }) {
   return (
     <div className={`h-14 w-14 rounded-full flex items-center justify-center text-lg font-bold transition-all ${
@@ -252,18 +316,67 @@ function AvatarWithRing({ initial, active }: { initial: string; active: boolean 
   );
 }
 
-function PeerScreenView({ peer }: { peer: PeerView }) {
+// ─── Screen-share card + fullscreen views ─────────────────────────────────
+
+function ScreenCard({
+  sharer, onPin,
+}: {
+  sharer: { id: string; name: string; isSelf: boolean; stream: MediaStream | null; peer?: PeerView };
+  onPin: () => void;
+}) {
+  return (
+    <button
+      onClick={onPin}
+      className="group relative bg-black rounded-xl overflow-hidden aspect-video border border-primary/30 hover:border-primary/60 transition-all shadow-md"
+      title="Click to pin to fullscreen"
+    >
+      {sharer.peer
+        ? <PeerScreenView peer={sharer.peer} />
+        : sharer.stream
+          ? <SelfScreenView stream={sharer.stream} />
+          : null}
+      <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] text-white bg-black/60 backdrop-blur">
+        <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+        {sharer.name}{sharer.isSelf ? ' (you)' : ''}
+      </div>
+      <div className="absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-md text-[11px] bg-primary text-primary-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+        <Maximize2 className="h-3 w-3" /> Pin
+      </div>
+    </button>
+  );
+}
+
+function PeerScreenView({ peer, fullscreen = false }: { peer: PeerView; fullscreen?: boolean }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
     if (ref.current && peer.stream) ref.current.srcObject = peer.stream;
   }, [peer.stream]);
-  return <video ref={ref} autoPlay playsInline className="w-full max-h-[60vh] object-contain bg-black" />;
+  return (
+    <video
+      ref={ref}
+      autoPlay
+      playsInline
+      className={fullscreen
+        ? 'w-full h-full max-w-full max-h-full object-contain bg-black'
+        : 'w-full h-full object-cover bg-black'}
+    />
+  );
 }
 
-function SelfScreenView({ stream }: { stream: MediaStream }) {
+function SelfScreenView({ stream, fullscreen = false }: { stream: MediaStream; fullscreen?: boolean }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   useEffect(() => { if (ref.current) ref.current.srcObject = stream; }, [stream]);
-  return <video ref={ref} autoPlay playsInline muted className="w-full max-h-[60vh] object-contain bg-black" />;
+  return (
+    <video
+      ref={ref}
+      autoPlay
+      playsInline
+      muted
+      className={fullscreen
+        ? 'w-full h-full max-w-full max-h-full object-contain bg-black'
+        : 'w-full h-full object-cover bg-black'}
+    />
+  );
 }
 
 function ControlButton({
