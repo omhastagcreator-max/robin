@@ -229,6 +229,11 @@ connectDB().then(() => {
   httpServer.listen(PORT, () => {
     console.log(`[Robin] 🐦 API running on http://localhost:${PORT}`);
     console.log(`[Robin] 💬 Group Chat + WebRTC Socket.io ready`);
+    console.log(`[Robin] 🎙️ LiveKit env check:`, {
+      LIVEKIT_URL:        process.env.LIVEKIT_URL        ? 'set ✓' : 'MISSING ✗',
+      LIVEKIT_API_KEY:    process.env.LIVEKIT_API_KEY    ? 'set ✓' : 'MISSING ✗',
+      LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET ? 'set ✓' : 'MISSING ✗',
+    });
   });
 });
 

@@ -21,9 +21,14 @@ router.post('/token', requireRole('admin', 'employee', 'sales'), async (req: Aut
     const apiKey    = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
     const livekitUrl = process.env.LIVEKIT_URL;
-    if (!apiKey || !apiSecret || !livekitUrl) {
+
+    const missing: string[] = [];
+    if (!livekitUrl) missing.push('LIVEKIT_URL');
+    if (!apiKey)     missing.push('LIVEKIT_API_KEY');
+    if (!apiSecret)  missing.push('LIVEKIT_API_SECRET');
+    if (missing.length > 0) {
       res.status(500).json({
-        error: 'LiveKit not configured. Set LIVEKIT_URL + LIVEKIT_API_KEY + LIVEKIT_API_SECRET on the server (Render env).',
+        error: `Missing env on Render: ${missing.join(', ')}. Render → robin-api → Environment → add the missing variable(s), Save, wait for redeploy.`,
       });
       return;
     }
