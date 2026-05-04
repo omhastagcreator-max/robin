@@ -11,9 +11,9 @@ import * as api from '@/api';
 import { useSocket } from '@/hooks/useSocket';
 import { useScreenShare } from '@/contexts/ScreenShareContext';
 import { toast } from 'sonner';
-import { SessionMiniWidget } from '@/components/shared/SessionMiniWidget';
 import { CommandPalette } from '@/components/shared/CommandPalette';
 import { PresenceStrip } from '@/components/shared/PresenceStrip';
+import { SessionTopBar } from '@/components/shared/SessionTopBar';
 
 interface NavItem { to: string; label: string; icon: React.ElementType; roles?: string[]; team?: string; }
 
@@ -175,10 +175,8 @@ export function AppLayout({ children, requiredRole }: Props) {
         <kbd className="px-1.5 py-0.5 rounded bg-muted border border-border font-mono text-[10px]">⌘K</kbd>
       </button>
 
-      {/* Session mini-widget — visible across every page for employee/sales */}
-      <div className="px-1">
-        <SessionMiniWidget />
-      </div>
+      {/* Session controls now live in the top bar (SessionTopBar) so they
+          stay reachable on every screen size, including mobile. */}
 
       {/* User + Logout */}
       <div className="border-t border-border pt-3 mt-2">
@@ -246,6 +244,9 @@ export function AppLayout({ children, requiredRole }: Props) {
             </Link>
           )}
         </header>
+
+        {/* Sticky session controls — timer + start/break/end on every page */}
+        <SessionTopBar />
 
         {/* Persistent break / leave strip — visible on every page */}
         <PresenceStrip />
