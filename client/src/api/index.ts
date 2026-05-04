@@ -8,6 +8,17 @@ export const getMe        = ()                                 => api.get('/auth
 export const updateMe     = (data: Record<string, unknown>)   => api.put('/auth/me', data).then(r => r.data);
 export const changePassword = (data: Record<string, unknown>) => api.put('/auth/password', data).then(r => r.data);
 
+// ── Sessions: heartbeat ───────────────────────────────────────────────────────
+// Bump lastHeartbeatAt on the user's active session. Called every 60s while
+// the dashboard is open. If the browser closes, pings stop, and time stops.
+export const sessionHeartbeat = () => api.post('/sessions/heartbeat').then(r => r.data);
+
+// ── AI ────────────────────────────────────────────────────────────────────────
+// Get today's morning briefing. Pass refresh=true to bypass cache (admin only,
+// useful when iterating on prompts; backend ignores it for normal users).
+export const aiMorningBrief = (refresh = false) =>
+  api.get('/ai/morning-brief', { params: refresh ? { refresh: 1 } : {} }).then(r => r.data);
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export const getAdminStats        = ()   => api.get('/dashboard/stats').then(r => r.data);
 export const getAtRiskProjects    = ()   => api.get('/dashboard/at-risk').then(r => r.data);

@@ -52,6 +52,32 @@ export function useSession() {
     return () => clearInterval(i);
   }, [session?.status, session?._id]);
 
+  // ── Heartbeat ──────────────────────────────────────────────────────────────
+  // While a session is active or on break, ping the server every 60s so it
+  // knows the user is still around. When the tab closes, the interval stops
+  // and the server's clock pauses for this user (~90s grace later). When the
+  // tab is hidden in background (other tab focused), we keep pinging — that
+  // counts as "still here." But if the browser is fully closed, no ping.
+  useEffect(() => {
+    if (!session || session.status === 'ended') return;
+    let cancelled = false;
+
+    const ping = async () => {
+      if (cancelled) return;
+      try { await api.sessionHeartbeat(); }
+      catch { /* swallow — next interval will retry */ }
+    };
+
+    // Fire once immediately, then every 60s.
+    ping();
+    const i = setInterval(ping, 60_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(i);
+    };
+  }, [session?.status, session?._id]);
+
   const startSession = async () => {
     if (session) return;
     const data = await api.startSession();

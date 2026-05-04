@@ -32,6 +32,8 @@ import credentialsRoutes  from './routes/credentials';
 import leavesRoutes       from './routes/leaves';
 import huddleRoutes       from './routes/huddle';
 import remindersRoutes    from './routes/reminders';
+import aiRoutes           from './routes/ai';
+import { startDailyAutoCloseJob } from './jobs/dailyAutoClose';
 
 const app = express();
 const httpServer = createServer(app);
@@ -220,6 +222,7 @@ app.use('/api/credentials',     credentialsRoutes);
 app.use('/api/leaves',          leavesRoutes);
 app.use('/api/huddle',          huddleRoutes);
 app.use('/api/reminders',       remindersRoutes);
+app.use('/api/ai',              aiRoutes);
 app.use('/api/seed',            seedRoutes);
 
 // ── 404 + Error handler ───────────────────────────────────────────────────────
@@ -236,6 +239,9 @@ connectDB().then(() => {
       LIVEKIT_API_KEY:    process.env.LIVEKIT_API_KEY    ? 'set ✓' : 'MISSING ✗',
       LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET ? 'set ✓' : 'MISSING ✗',
     });
+
+    // Schedule daily auto-close of forgotten sessions (23:59 IST).
+    startDailyAutoCloseJob();
   });
 });
 

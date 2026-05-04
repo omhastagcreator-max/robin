@@ -17,6 +17,7 @@ import { SessionClockCard } from '@/components/shared/SessionClockCard';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 import { QuickActionsCard } from '@/components/shared/QuickActionsCard';
 import { WeeklyPlanner } from '@/components/shared/WeeklyPlanner';
+import { AIMorningBrief } from '@/components/dashboard/AIMorningBrief';
 
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -169,6 +170,9 @@ export default function EmployeeDashboard() {
           </div>
           <HuddleQuickPill />
         </div>
+
+        {/* AI Morning Brief — Claude-generated personalized briefing */}
+        <AIMorningBrief />
 
         {/* Quick actions — start your day in one click */}
         <QuickActionsCard />

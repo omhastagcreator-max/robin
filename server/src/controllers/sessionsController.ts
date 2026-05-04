@@ -36,9 +36,38 @@ export async function startSession(req: AuthRequest, res: Response): Promise<voi
     const orgId = await getOrgId(userId);
     const existing = await Session.findOne({ userId, status: { $in: ['active', 'on_break'] } });
     if (existing) { res.json(existing); return; }
-    const session = await Session.create({ userId, organizationId: orgId, startTime: new Date(), status: 'active' });
+    const now = new Date();
+    const session = await Session.create({
+      userId,
+      organizationId: orgId,
+      startTime: now,
+      status: 'active',
+      lastHeartbeatAt: now,         // first heartbeat = creation time
+    });
     await broadcastPresence(req, 'active');
     res.json(session);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * POST /api/sessions/heartbeat
+ *
+ * Client pings this once a minute while the user has the app open. Each
+ * ping bumps lastHeartbeatAt to "now" (server time). When the browser is
+ * closed, pings stop, and time stops accruing — that's the whole trick.
+ *
+ * Idempotent: any number of pings have the same effect as one. We use
+ * findOneAndUpdate with $set so two tabs racing don't cause issues.
+ */
+export async function heartbeat(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const session = await Session.findOneAndUpdate(
+      { userId: req.user!.id, status: { $in: ['active', 'on_break'] } },
+      { $set: { lastHeartbeatAt: new Date() } },
+      { new: true }
+    );
+    if (!session) { res.status(404).json({ error: 'No active session' }); return; }
+    res.json({ ok: true, lastHeartbeatAt: session.lastHeartbeatAt });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 

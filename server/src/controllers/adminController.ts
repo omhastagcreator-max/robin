@@ -7,6 +7,7 @@ import ProjectTask from '../models/ProjectTask';
 import ActivityLog from '../models/ActivityLog';
 import bcrypt from 'bcryptjs';
 import Organization from '../models/Organization';
+import { sessionTotals } from '../services/sessionTime';
 
 // GET /api/admin/employees
 export async function listEmployees(req: AuthRequest, res: Response): Promise<void> {
@@ -189,32 +190,15 @@ export async function getEmployeeReport(req: AuthRequest, res: Response): Promis
       ],
     }).lean();
 
+    // Use the shared sessionTime service so heartbeat-clamped time flows
+    // through reports too. A forgotten clock-out no longer adds phantom hours.
     let totalWorkedMs = 0;
     let totalBreakMs  = 0;
-
     for (const s of sessions) {
-      const startMs = new Date(s.startTime as Date).getTime();
-      const endMs   = s.endTime ? new Date(s.endTime as Date).getTime() : now;
-
-      // Clamp the worked window into the requested period
-      const clampedStart = Math.max(startMs, startDate.getTime());
-      const clampedEnd   = Math.min(endMs, now);
-      if (clampedEnd <= clampedStart) continue;
-
-      totalWorkedMs += (clampedEnd - clampedStart);
-
-      // Always re-derive breaks from breakEvents (breakTime is only finalised
-      // when a session ends, so live sessions report 0 there).
-      for (const b of (s.breakEvents || [])) {
-        if (!b.startedAt) continue;
-        const bStart = new Date(b.startedAt as Date).getTime();
-        const bEnd   = b.endedAt ? new Date(b.endedAt as Date).getTime() : now;
-        const cs = Math.max(bStart, startDate.getTime());
-        const ce = Math.min(bEnd,   now);
-        if (ce > cs) totalBreakMs += (ce - cs);
-      }
+      const t = sessionTotals(s as any, startDate.getTime(), now);
+      totalWorkedMs += t.workedMs;
+      totalBreakMs  += t.breakMs;
     }
-
     const activeMs = Math.max(0, totalWorkedMs - totalBreakMs);
 
     // ── Task completion stats ───────────────────────────────────────────────

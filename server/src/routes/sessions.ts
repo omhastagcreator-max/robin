@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
-import { startSession, startBreak, endBreak, endSession, getActiveSession, getSessionHistory, getPerformance, getTeamSessionStatus } from '../controllers/sessionsController';
+import { startSession, startBreak, endBreak, endSession, getActiveSession, getSessionHistory, getPerformance, getTeamSessionStatus, heartbeat } from '../controllers/sessionsController';
 
 const router = Router();
 router.use(authMiddleware);
@@ -10,6 +10,7 @@ router.post('/start',     requireRole('employee', 'sales'),          startSessio
 router.post('/break',     requireRole('employee', 'sales'),          startBreak);
 router.post('/break/end', requireRole('employee', 'sales'),          endBreak);
 router.post('/end',       requireRole('employee', 'sales'),          endSession);
+router.post('/heartbeat', requireRole('employee', 'sales'),          heartbeat);
 router.get('/active',     requireRole('employee', 'sales', 'admin'), getActiveSession);
 router.get('/history',    requireRole('employee', 'sales', 'admin'), getSessionHistory);
 router.get('/performance', requireRole('admin'),                     getPerformance);
