@@ -265,30 +265,50 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     }
   }, [meeting.joined, mode]);
 
-  // ── Auto-pop PiP when user leaves the Robin tab ────────────────────────
-  // The user is in a huddle and switches to another app/tab — we want
-  // the floating mini panel to be there. The Document PiP API requires
-  // user activation, but Chrome relaxes this for pages the user has
-  // recently interacted with, so we just *try* and silently swallow
-  // any rejection. Worst case: nothing happens, user can manually
-  // re-pop it from the dashboard.
+  // ── Aggressive PiP auto-reopen ────────────────────────────────────────
+  // Browser security rule: documentPictureInPicture.requestWindow() only
+  // works inside *transient user activation* — typically a click within the
+  // last ~5 seconds. So the obvious approach (open PiP on visibilitychange)
+  // fails the moment the user has been idle for more than 5s.
+  //
+  // The reliable workaround: treat ANY click/keydown inside Robin as fresh
+  // activation, and re-open PiP if it isn't already open. Net effect: while
+  // the user is using Robin, PiP gets re-opened on the very next interaction
+  // after any accidental close — and PiP windows persist when the parent
+  // tab loses focus, so once it's open it stays open while they work in
+  // another app.
+  //
+  // We still try visibilitychange + blur as a best-effort secondary trigger
+  // in case Chrome happens to allow it (sometimes it does, depending on
+  // recent activity); failures are silently swallowed.
   useEffect(() => {
     if (!pipSupported || !pipAutoEnabled) return;
     if (!meeting.joined) return;
 
+    let lastAttemptAt = 0;
+    const COOLDOWN_MS = 1500;
+
     const tryAutoPop = () => {
-      // Only when document is hidden (user tabbed away or minimised).
-      if (document.visibilityState !== 'hidden') return;
-      // Already open? Nothing to do.
-      if (pipWindowRef.current) return;
-      void openPiP();
+      if (pipWindowRef.current) return;          // already open
+      if (Date.now() - lastAttemptAt < COOLDOWN_MS) return; // throttle
+      lastAttemptAt = Date.now();
+      openPiP().catch(() => { /* browser declined — try again next click */ });
     };
 
-    document.addEventListener('visibilitychange', tryAutoPop);
-    window.addEventListener('blur', tryAutoPop);
+    // Capture-phase so we beat any stopPropagation downstream.
+    const onUserInteraction = () => tryAutoPop();
+    const onVis = () => { if (document.visibilityState === 'hidden') tryAutoPop(); };
+
+    document.addEventListener('click',   onUserInteraction, { capture: true });
+    document.addEventListener('keydown', onUserInteraction, { capture: true });
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('blur',      tryAutoPop);
+
     return () => {
-      document.removeEventListener('visibilitychange', tryAutoPop);
-      window.removeEventListener('blur', tryAutoPop);
+      document.removeEventListener('click',   onUserInteraction, { capture: true } as any);
+      document.removeEventListener('keydown', onUserInteraction, { capture: true } as any);
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('blur',      tryAutoPop);
     };
   }, [pipSupported, pipAutoEnabled, meeting.joined, openPiP]);
 
