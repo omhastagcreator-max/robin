@@ -13,6 +13,9 @@ export const changePassword = (data: Record<string, unknown>) => api.put('/auth/
 // the dashboard is open. If the browser closes, pings stop, and time stops.
 export const sessionHeartbeat = () => api.post('/sessions/heartbeat').then(r => r.data);
 
+// Toggle "On Call" do-not-disturb flag.
+export const setOnCall = (on: boolean) => api.post('/sessions/on-call', { on }).then(r => r.data);
+
 // ── Transcripts (huddle Web Speech API) ───────────────────────────────────────
 export const postTranscriptLines = (body: {
   roomId: string;

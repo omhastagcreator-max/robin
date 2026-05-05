@@ -28,6 +28,11 @@ const SessionSchema = new Schema({
   breakEvents:     [BreakEventSchema],
   lastHeartbeatAt: { type: Date },
   autoClosedAt:    { type: Date },
+  // ── On Call (independent of break) ────────────────────────────────────
+  // Whitelist for "do not disturb" — when set, the team UI shows an
+  // "On call" badge so colleagues know not to ping you. Doesn't pause the
+  // work timer (calls ARE work).
+  onCallSince:     { type: Date, default: null },
 }, { timestamps: { createdAt: 'createdAt', updatedAt: false } });
 
 // Speed up the cron query — find every still-open session in the org.

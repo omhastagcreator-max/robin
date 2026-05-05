@@ -331,6 +331,7 @@ export default function AdminDashboard() {
                   const peer = peerByUserId[e._id];
                   const liveStream = peer?.screenOn ? peer.stream : null;
                   const isBroadcasting = !!liveStream;
+                  const onCall = presence.isOnCall(e._id);
                   const accent =
                     isBroadcasting          ? 'border-green-500/40' :
                     status === 'active'     ? 'border-green-500/30' :
@@ -355,11 +356,17 @@ export default function AdminDashboard() {
                         </div>
                       )}
 
-                      {/* Bottom strip — name + presence */}
+                      {/* Bottom strip — name + presence (+ on-call) */}
                       <div className="absolute bottom-0 left-0 right-0 px-2 py-1 flex items-center gap-1.5 bg-gradient-to-t from-black/90 via-black/60 to-transparent">
                         <p className="text-[11px] font-semibold text-white truncate flex-1">
                           {e.name?.split(' ')[0] || e.email}
                         </p>
+                        {onCall && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-violet-500/85 text-white">
+                            <span className="h-1 w-1 rounded-full bg-white animate-pulse" />
+                            On call
+                          </span>
+                        )}
                         <PresenceBadge status={status} />
                       </div>
 

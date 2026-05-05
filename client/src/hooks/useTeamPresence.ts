@@ -27,6 +27,9 @@ export function useTeamPresence() {
   const socket = useSocket();
   const [members, setMembers] = useState<Record<string, TeamMember>>({});
   const [loading, setLoading] = useState(true);
+  // Set of userIds currently on a call. Tracked separately because On Call
+  // is independent of break/leave status — you can be Working AND On Call.
+  const [onCallSet, setOnCallSet] = useState<Set<string>>(new Set());
 
   // Initial fetch
   useEffect(() => {
@@ -65,7 +68,22 @@ export function useTeamPresence() {
       });
     };
     socket.on('presence:status', handler);
-    return () => { socket.off('presence:status', handler); };
+
+    // On-call toggle from any teammate
+    const onCallHandler = ({ userId, on }: { userId: string; on: boolean }) => {
+      setOnCallSet(prev => {
+        const next = new Set(prev);
+        if (on) next.add(userId);
+        else next.delete(userId);
+        return next;
+      });
+    };
+    socket.on('presence:on-call', onCallHandler);
+
+    return () => {
+      socket.off('presence:status', handler);
+      socket.off('presence:on-call', onCallHandler);
+    };
   }, [socket]);
 
   const list   = useMemo(() => Object.values(members), [members]);
@@ -76,6 +94,7 @@ export function useTeamPresence() {
 
   const statusOf = (userId: string): PresenceStatus =>
     members[userId]?.status || 'off_clock';
+  const isOnCall = (userId: string): boolean => onCallSet.has(userId);
 
-  return { loading, members, list, onBreak, onLeave, active, off, statusOf };
+  return { loading, members, list, onBreak, onLeave, active, off, statusOf, isOnCall, onCallSet };
 }

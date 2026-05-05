@@ -11,6 +11,7 @@ export interface SessionData {
   status: 'active' | 'on_break' | 'ended';
   breakEvents: { startedAt: string; endedAt?: string }[];
   createdAt: string;
+  onCallSince?: string | null;
 }
 
 /**
@@ -109,6 +110,20 @@ export function useSession() {
     setSession(null);
   };
 
+  // Toggle On Call. Optimistic update so the UI flips instantly; server
+  // event will reconcile if there's a mismatch.
+  const toggleOnCall = async () => {
+    if (!session) return;
+    const next = !session.onCallSince;
+    setSession(prev => prev ? { ...prev, onCallSince: next ? new Date().toISOString() : null } : prev);
+    try {
+      await api.setOnCall(next);
+    } catch {
+      // Revert on failure
+      setSession(prev => prev ? { ...prev, onCallSince: next ? null : new Date().toISOString() } : prev);
+    }
+  };
+
   // ── Derived live timers ──────────────────────────────────────────────────
   const currentBreakMs = useMemo(() => {
     if (!session || session.status !== 'on_break') return 0;
@@ -142,10 +157,12 @@ export function useSession() {
     startBreak,
     endBreak,
     endSession,
+    toggleOnCall,
     refreshSession: fetchActiveSession,
     // Convenience getters
     isActive:  session?.status === 'active',
     isOnBreak: session?.status === 'on_break',
+    isOnCall:  !!session?.onCallSince,
     // Live timers
     currentBreakMs,
     totalBreakMs,

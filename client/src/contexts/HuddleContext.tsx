@@ -96,14 +96,45 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     try {
       const w = await (window as any).documentPictureInPicture.requestWindow({
         width: 360,
-        height: 540,
+        height: 560,
       });
 
-      // Copy parent stylesheets so Tailwind classes render inside the PiP DOM.
+      // ── Loading splash so the window is never visually empty ──────────
+      // We paint this immediately, before React or styles arrive. Once
+      // React mounts and Tailwind kicks in, our content covers it.
+      w.document.title = 'Robin Huddle';
+      w.document.body.style.margin = '0';
+      w.document.body.innerHTML = `
+        <div id="robin-pip-splash" style="
+          position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+          gap:8px;background:#0a0a0a;color:#fff;font-family:system-ui,sans-serif;
+          font-size:13px;letter-spacing:.02em;z-index:1;">
+          <span style="display:inline-block;width:14px;height:14px;border-radius:50%;
+            border:2px solid rgba(255,255,255,.2);border-top-color:#fff;
+            animation:robin-pip-spin .8s linear infinite;"></span>
+          Loading Robin huddle…
+          <style>@keyframes robin-pip-spin { to { transform: rotate(360deg) } }</style>
+        </div>
+      `;
+
+      // ── Stylesheet copy strategy (belt + suspenders) ──────────────────
+      // 1) Modern path: adoptedStyleSheets — single shared sheet object,
+      //    much faster + survives DOM mutations. Chrome 99+, Edge 99+.
+      // 2) Fallback: clone every <style> tag's text content.
+      // 3) Cross-origin sheets we can't read get re-linked via <link>.
+      // 4) Copy <link rel="stylesheet"> tags directly (CDN fonts etc).
+      const adoptable: any[] = [];
       Array.from(document.styleSheets).forEach((sheet) => {
         try {
           const css = Array.from(sheet.cssRules || []).map((r: any) => r.cssText).join('\n');
-          if (css) {
+          if (!css) return;
+          // Try adoptedStyleSheets first
+          try {
+            // @ts-ignore — CSSStyleSheet constructor + replaceSync
+            const cs = new w.CSSStyleSheet();
+            cs.replaceSync(css);
+            adoptable.push(cs);
+          } catch {
             const styleEl = w.document.createElement('style');
             styleEl.textContent = css;
             w.document.head.appendChild(styleEl);
@@ -117,19 +148,50 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
           }
         }
       });
+      try {
+        if (adoptable.length) (w.document as any).adoptedStyleSheets = adoptable;
+      } catch { /* ignore */ }
 
-      const root = w.document.createElement('div');
-      root.id = 'robin-pip-root';
-      w.document.body.appendChild(root);
+      // Also clone any <link rel="stylesheet"> from the parent head (CDN fonts)
+      Array.from(document.querySelectorAll('link[rel="stylesheet"]')).forEach((node) => {
+        const link = w.document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = (node as HTMLLinkElement).href;
+        w.document.head.appendChild(link);
+      });
 
+      // Copy CSS variables from :root so dark/light theme tokens still resolve
+      const rootStyle = getComputedStyle(document.documentElement);
+      const rootDecls: string[] = [];
+      for (let i = 0; i < rootStyle.length; i += 1) {
+        const prop = rootStyle.item(i);
+        if (prop.startsWith('--')) {
+          rootDecls.push(`${prop}: ${rootStyle.getPropertyValue(prop)};`);
+        }
+      }
+      if (rootDecls.length) {
+        const varStyle = w.document.createElement('style');
+        varStyle.textContent = `:root, html, body { ${rootDecls.join(' ')} }`;
+        w.document.head.appendChild(varStyle);
+      }
+
+      // Inherit body theme from parent
       const cs = getComputedStyle(document.body);
       w.document.body.style.background = cs.background || '#0a0a0a';
       w.document.body.style.color = cs.color || '#fff';
-      w.document.body.style.margin = '0';
       w.document.body.style.fontFamily = cs.fontFamily;
-      w.document.title = 'Robin Huddle';
 
-      // The user closing the PiP window should reset state.
+      // Mount the React root container ABOVE the splash so when React paints,
+      // its content visually covers the splash. (We don't remove the splash —
+      // simpler, and the splash is never seen again once content paints.)
+      const root = w.document.createElement('div');
+      root.id = 'robin-pip-root';
+      root.style.position = 'fixed';
+      root.style.inset = '0';
+      root.style.zIndex = '10';
+      w.document.body.appendChild(root);
+
+      // Closing the PiP resets state.
       w.addEventListener('pagehide', () => {
         pipWindowRef.current = null;
         setPipContainer(null);

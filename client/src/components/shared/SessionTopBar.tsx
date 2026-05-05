@@ -1,4 +1,4 @@
-import { Clock, Coffee, Pause, Play, StopCircle, AlertTriangle, Sparkles } from 'lucide-react';
+import { Clock, Coffee, Pause, Play, StopCircle, AlertTriangle, Sparkles, Phone, PhoneOff } from 'lucide-react';
 import { useSession } from '@/hooks/useSession';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -39,8 +39,8 @@ const fmtMS = (ms: number) => {
 export function SessionTopBar() {
   const { role } = useAuth();
   const {
-    session, startSession, startBreak, endBreak, endSession,
-    workedMs, currentBreakMs, totalBreakMs,
+    session, startSession, startBreak, endBreak, endSession, toggleOnCall,
+    workedMs, currentBreakMs, totalBreakMs, isOnCall,
   } = useSession();
 
   // Only employees and sales clock in/out — admin/client see nothing.
@@ -68,6 +68,14 @@ export function SessionTopBar() {
     if (!confirm('End your day? You can clock back in tomorrow.')) return;
     try { await endSession(); toast.success("Day wrapped. See you tomorrow."); }
     catch (e: any) { toast.error(e?.response?.data?.error || "Couldn't end session"); }
+  };
+  const handleOnCall = async () => {
+    try {
+      await toggleOnCall();
+      toast(isOnCall ? "Off the call" : "On a call — teammates will see your DND badge");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || "Couldn't update on-call status");
+    }
   };
 
   // ── Visual state ────────────────────────────────────────────────────────
@@ -148,6 +156,18 @@ export function SessionTopBar() {
 
           {isActive && (
             <>
+              <button
+                onClick={handleOnCall}
+                className={`h-8 px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                  isOnCall
+                    ? 'bg-violet-500/20 text-violet-700 border-violet-500/40 hover:bg-violet-500/30'
+                    : 'bg-card text-foreground border-border hover:bg-muted'
+                }`}
+                title={isOnCall ? 'You are marked as on a call — click to clear' : 'Mark yourself on a call (do not disturb)'}
+              >
+                {isOnCall ? <PhoneOff className="h-3.5 w-3.5" /> : <Phone className="h-3.5 w-3.5" />}
+                <span className="hidden sm:inline">{isOnCall ? 'On call' : 'Call'}</span>
+              </button>
               <button
                 onClick={handleBreak}
                 className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-amber-500/15 text-amber-700 border border-amber-500/30 text-xs font-semibold hover:bg-amber-500/25 transition-colors"
