@@ -37,6 +37,17 @@ interface HuddleApi {
     lastError: string | null;
     linesPosted: number;
   };
+
+  // Document Picture-in-Picture (always-on-top floating mini panel)
+  pip: {
+    supported: boolean;
+    isOpen: boolean;
+    container: HTMLElement | null;
+    open: () => Promise<void>;
+    close: () => void;
+    autoEnabled: boolean;
+    setAutoEnabled: (on: boolean) => void;
+  };
 }
 
 const HuddleContext = createContext<HuddleApi | null>(null);
@@ -63,13 +74,98 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     roomId:   'agency-global',
   });
 
+  // ── Document Picture-in-Picture (PiP mini-panel) ────────────────────────
+  // We hold the PiP state HERE (not in HuddleMicPiP) because the open call
+  // needs "transient activation" — the click that triggers `join()` is the
+  // only moment we have permission to spawn the PiP window. So join() itself
+  // calls openPiP() synchronously when auto-pop is enabled.
+  const pipSupported = typeof window !== 'undefined' && 'documentPictureInPicture' in window;
+  const pipWindowRef = useRef<any>(null);
+  const [pipContainer, setPipContainer] = useState<HTMLElement | null>(null);
+  const [pipAutoEnabled, setPipAutoEnabledState] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    return localStorage.getItem('robin.huddle.autoPiP') !== 'false'; // default on
+  });
+  const setPipAutoEnabled = useCallback((on: boolean) => {
+    setPipAutoEnabledState(on);
+    localStorage.setItem('robin.huddle.autoPiP', on ? 'true' : 'false');
+  }, []);
+
+  const openPiP = useCallback(async () => {
+    if (!pipSupported || pipWindowRef.current) return;
+    try {
+      const w = await (window as any).documentPictureInPicture.requestWindow({
+        width: 360,
+        height: 540,
+      });
+
+      // Copy parent stylesheets so Tailwind classes render inside the PiP DOM.
+      Array.from(document.styleSheets).forEach((sheet) => {
+        try {
+          const css = Array.from(sheet.cssRules || []).map((r: any) => r.cssText).join('\n');
+          if (css) {
+            const styleEl = w.document.createElement('style');
+            styleEl.textContent = css;
+            w.document.head.appendChild(styleEl);
+          }
+        } catch {
+          if (sheet.href) {
+            const link = w.document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = sheet.href;
+            w.document.head.appendChild(link);
+          }
+        }
+      });
+
+      const root = w.document.createElement('div');
+      root.id = 'robin-pip-root';
+      w.document.body.appendChild(root);
+
+      const cs = getComputedStyle(document.body);
+      w.document.body.style.background = cs.background || '#0a0a0a';
+      w.document.body.style.color = cs.color || '#fff';
+      w.document.body.style.margin = '0';
+      w.document.body.style.fontFamily = cs.fontFamily;
+      w.document.title = 'Robin Huddle';
+
+      // The user closing the PiP window should reset state.
+      w.addEventListener('pagehide', () => {
+        pipWindowRef.current = null;
+        setPipContainer(null);
+      });
+
+      pipWindowRef.current = w;
+      setPipContainer(root);
+    } catch (e) {
+      console.warn('[huddle] PiP open failed', e);
+    }
+  }, [pipSupported]);
+
+  const closePiP = useCallback(() => {
+    try { pipWindowRef.current?.close(); } catch { /* ignore */ }
+    pipWindowRef.current = null;
+    setPipContainer(null);
+  }, []);
+
   // ── Wire mode <-> meeting lifecycle ─────────────────────────────────────
   // join() flips mode to 'joining' which triggers meeting.joinMeeting() below.
-  const join = useCallback(() => setMode(m => (m === 'idle' ? 'joining' : m)), []);
+  // It ALSO opens the PiP window if auto-pop is enabled — this MUST happen
+  // synchronously inside the click handler so the browser sees a valid user
+  // activation. (Open later in a useEffect → "Transient activation required".)
+  const join = useCallback(() => {
+    setMode(m => (m === 'idle' ? 'joining' : m));
+    if (pipAutoEnabled && pipSupported && !pipWindowRef.current) {
+      // Fire-and-forget; the click activation flows into requestWindow.
+      void openPiP();
+    }
+  }, [pipAutoEnabled, pipSupported, openPiP]);
+
   const leave = useCallback(() => {
     meeting.leaveMeeting();
     setMode('idle');
-  }, [meeting]);
+    closePiP();
+  }, [meeting, closePiP]);
   const collapse = useCallback(() => setMode(m => (m === 'expanded' ? 'collapsed' : m)), []);
   const expand   = useCallback(() => setMode(m => (m === 'collapsed' || m === 'joining' ? 'expanded' : m)), []);
 
@@ -139,6 +235,15 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
       lastError:    transcript.lastError,
       linesPosted:  transcript.linesPosted,
     },
+    pip: {
+      supported:    pipSupported,
+      isOpen:       !!pipContainer,
+      container:    pipContainer,
+      open:         openPiP,
+      close:        closePiP,
+      autoEnabled:  pipAutoEnabled,
+      setAutoEnabled: setPipAutoEnabled,
+    },
   }), [
     mode, join, leave, collapse, expand,
     meeting.joined, meeting.joining, meeting.peers, meeting.localStream,
@@ -146,6 +251,7 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     meeting.iceMeta, meeting.toggleAudio, meeting.toggleScreen,
     participantCount,
     transcript.supported, transcript.listening, transcript.lastError, transcript.linesPosted,
+    pipSupported, pipContainer, openPiP, closePiP, pipAutoEnabled, setPipAutoEnabled,
   ]);
 
   return <HuddleContext.Provider value={value}>{children}</HuddleContext.Provider>;
