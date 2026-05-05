@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useMeetingRoom, type PeerView } from '@/hooks/useMeetingRoom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useHuddleTranscription } from '@/hooks/useHuddleTranscription';
+import { HuddlePiPContent } from '@/components/shared/HuddlePiPContent';
 import type { IceSource } from '@/lib/iceServers';
 
 type HuddleMode = 'idle' | 'joining' | 'expanded' | 'collapsed';
@@ -199,6 +201,18 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
 
       pipWindowRef.current = w;
       setPipContainer(root);
+
+      // Splash auto-hide. The portal SHOULD paint over the splash via its
+      // higher z-index, but if anything goes wrong (LiveKit stall, render
+      // error, etc.) we don't want the user staring at "Loading…" forever.
+      // After 5s we hide the splash unconditionally — at worst they see
+      // their dark theme body until things recover.
+      setTimeout(() => {
+        try {
+          const splash = w.document.getElementById('robin-pip-splash');
+          if (splash) splash.style.display = 'none';
+        } catch { /* PiP may have been closed already */ }
+      }, 5000);
     } catch (e) {
       console.warn('[huddle] PiP open failed', e);
     }
@@ -316,7 +330,17 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     pipSupported, pipContainer, openPiP, closePiP, pipAutoEnabled, setPipAutoEnabled,
   ]);
 
-  return <HuddleContext.Provider value={value}>{children}</HuddleContext.Provider>;
+  return (
+    <HuddleContext.Provider value={value}>
+      {children}
+      {/* PiP portal lives at the provider level so the floating window has
+          content the moment it opens — independent of where in the React
+          tree the user happens to be. Was previously inside HuddleMicPiP
+          which is gated on huddle.joined, so a slow LiveKit handshake left
+          the PiP stuck on the loading splash. */}
+      {pipContainer && createPortal(<HuddlePiPContent />, pipContainer)}
+    </HuddleContext.Provider>
+  );
 }
 
 export function useHuddle(): HuddleApi {

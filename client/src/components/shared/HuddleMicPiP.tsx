@@ -1,23 +1,13 @@
-import { createPortal } from 'react-dom';
 import { PictureInPicture2, X } from 'lucide-react';
 import { useHuddle } from '@/contexts/HuddleContext';
-import { HuddlePiPContent } from '@/components/shared/HuddlePiPContent';
 
 /**
- * HuddleMicPiP
+ * HuddleMicPiP — the IN-PAGE button + auto-pop toggle.
  *
- * Two roles in one component:
- *  1. Render a "Pop out" button (when PiP is closed) and an "Auto" toggle
- *     so the user can disable the always-on-pop behaviour.
- *  2. When the PiP window IS open, render <HuddlePiPContent /> into it via
- *     a React portal. This is what makes the mini panel "magically" mirror
- *     the same Robin state — same audio toggle state, same chat, same
- *     screen list — without us managing two state trees.
- *
- * The actual `documentPictureInPicture.requestWindow` call happens inside
- * `huddle.join()` in HuddleContext, so the auto-pop fires within the user's
- * click activation window. This component just renders into whatever
- * window already exists.
+ * The actual portal that renders into the PiP window now lives in
+ * HuddleProvider so the floating window always has content the moment it
+ * opens. This component is just the small control surface inside the
+ * HuddleDashboardCard that shows "Pop out" / "auto" / "Close mini panel".
  */
 export function HuddleMicPiP() {
   const huddle = useHuddle();
@@ -69,9 +59,6 @@ export function HuddleMicPiP() {
           Mini panel open
         </button>
       )}
-
-      {/* The portal that renders the entire mini control panel into the PiP DOM */}
-      {huddle.pip.container && createPortal(<HuddlePiPContent />, huddle.pip.container)}
     </>
   );
 }

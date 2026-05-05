@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mic, MicOff, Monitor, MonitorOff, PhoneOff, ExternalLink, Phone, PhoneCall } from 'lucide-react';
+import { Loader2, Mic, MicOff, Monitor, MonitorOff, PhoneOff, ExternalLink, Phone, PhoneCall } from 'lucide-react';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSession } from '@/hooks/useSession';
@@ -40,6 +40,65 @@ export function HuddlePiPContent() {
     try { window.focus(); } catch {}
     navigate('/workroom');
   };
+
+  // Hide the splash on first paint — guarantees we never get stuck.
+  // useEffect runs after the DOM is committed, so by the time this runs
+  // our React content is already visible inside the PiP root container.
+  useEffect(() => {
+    try {
+      const splash = (window as any).documentPictureInPicture?.window?.document?.getElementById('robin-pip-splash');
+      if (splash) splash.style.display = 'none';
+    } catch { /* ignore */ }
+  }, []);
+
+  // Pre-join state — the user clicked Join, PiP opened immediately, but
+  // the LiveKit handshake isn't done yet. Show a friendly waiting screen
+  // instead of an empty panel.
+  if (!huddle.joined) {
+    return (
+      <div className="flex flex-col h-screen w-screen bg-background text-foreground items-center justify-center gap-3 p-6 text-center">
+        {huddle.joining ? (
+          <>
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <p className="text-sm font-semibold">Connecting to the huddle…</p>
+            <p className="text-[11px] text-muted-foreground max-w-xs">
+              Allow microphone access if your browser asks. This panel will fill with screens, mic and chat once you're in.
+            </p>
+          </>
+        ) : huddle.meetingError ? (
+          <>
+            <p className="text-sm font-semibold text-red-500">Couldn't connect</p>
+            <p className="text-[11px] text-muted-foreground max-w-xs">{huddle.meetingError}</p>
+            <button
+              onClick={huddle.join}
+              className="mt-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90"
+            >
+              Try again
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-semibold">Not in the huddle</p>
+            <p className="text-[11px] text-muted-foreground max-w-xs">
+              Click below to join, or close this floating panel.
+            </p>
+            <button
+              onClick={huddle.join}
+              className="mt-1 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90"
+            >
+              Join huddle
+            </button>
+          </>
+        )}
+        <button
+          onClick={huddle.pip.close}
+          className="mt-2 text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          Close mini panel
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen w-screen bg-background text-foreground">
