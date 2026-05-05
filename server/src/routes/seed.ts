@@ -16,9 +16,107 @@ import ProjectUpdate from '../models/ProjectUpdate';
 import Session from '../models/Session';
 import LeadNote from '../models/LeadNote';
 import Influencer from '../models/Influencer';
+import ProjectGoal from '../models/ProjectGoal';
+import ScreenSession from '../models/ScreenSession';
+import ClientAlert from '../models/ClientAlert';
+import ClientQuery from '../models/ClientQuery';
+import AdReport from '../models/AdReport';
+import ActivityLog from '../models/ActivityLog';
+import Notification from '../models/Notification';
+import ChatMessage from '../models/ChatMessage';
+import ClientCredential from '../models/ClientCredential';
+import LeaveApplication from '../models/LeaveApplication';
+import Reminder from '../models/Reminder';
+import AIBrief from '../models/AIBrief';
 
 const router = Router();
 const hash = (p: string) => bcrypt.hash(p, 10);
+
+/**
+ * POST /api/seed/clear
+ *
+ * Wipes all OPERATIONAL data (tasks, projects, leads, sessions, vault,
+ * leaves, reminders, AI briefs, ad reports, etc.) so the workspace is
+ * fresh — but keeps the user accounts, the organisation, and any
+ * profile/role settings intact. Login keeps working, employees stay
+ * listed; their data just resets.
+ *
+ * Use after seeding demo data, or before handing the app over to a
+ * real client team. Admin-only.
+ */
+router.post('/clear', authMiddleware, async (req: AuthRequest, res: Response) => {
+  if (req.user?.role !== 'admin') {
+    res.status(403).json({ error: 'Admin only' });
+    return;
+  }
+  try {
+    // Models we deliberately KEEP: User, Organization, UserProfile, UserRole
+    // (they hold identity, auth, and org membership we don't want to lose).
+    const results = await Promise.all([
+      Project.deleteMany({}),
+      ProjectTask.deleteMany({}),
+      ProjectGoal.deleteMany({}),
+      ProjectUpdate.deleteMany({}),
+      Lead.deleteMany({}),
+      LeadNote.deleteMany({}),
+      Deal.deleteMany({}),
+      Metric.deleteMany({}),
+      ClientTransaction.deleteMany({}),
+      ClientAlert.deleteMany({}),
+      ClientQuery.deleteMany({}),
+      AdReport.deleteMany({}),
+      Session.deleteMany({}),
+      ScreenSession.deleteMany({}),
+      Influencer.deleteMany({}),
+      ActivityLog.deleteMany({}),
+      Notification.deleteMany({}),
+      ChatMessage.deleteMany({}),
+      ClientCredential.deleteMany({}),
+      LeaveApplication.deleteMany({}),
+      Reminder.deleteMany({}),
+      AIBrief.deleteMany({}),
+    ]);
+
+    // Map back to a friendly summary so the caller can see what was wiped.
+    const counts = {
+      projects:           results[0].deletedCount,
+      tasks:              results[1].deletedCount,
+      goals:              results[2].deletedCount,
+      projectUpdates:     results[3].deletedCount,
+      leads:              results[4].deletedCount,
+      leadNotes:          results[5].deletedCount,
+      deals:              results[6].deletedCount,
+      metrics:            results[7].deletedCount,
+      clientTransactions: results[8].deletedCount,
+      clientAlerts:       results[9].deletedCount,
+      clientQueries:      results[10].deletedCount,
+      adReports:          results[11].deletedCount,
+      sessions:           results[12].deletedCount,
+      screenSessions:     results[13].deletedCount,
+      influencers:        results[14].deletedCount,
+      activityLogs:       results[15].deletedCount,
+      notifications:      results[16].deletedCount,
+      chatMessages:       results[17].deletedCount,
+      vaultCredentials:   results[18].deletedCount,
+      leaveApplications:  results[19].deletedCount,
+      reminders:          results[20].deletedCount,
+      aiBriefs:           results[21].deletedCount,
+    };
+
+    const totalCleared = Object.values(counts).reduce((sum, n) => sum + (n || 0), 0);
+    const remainingUsers = await User.countDocuments();
+
+    res.json({
+      ok: true,
+      message: 'Operational data cleared. Users + organisation preserved.',
+      cleared: counts,
+      totalCleared,
+      preserved: { users: remainingUsers },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Only admin can call this — full reseed of the connected database
 router.post('/reseed', authMiddleware, async (req: AuthRequest, res: Response) => {
