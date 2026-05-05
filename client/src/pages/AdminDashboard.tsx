@@ -10,6 +10,7 @@ import { useSocket } from '@/hooks/useSocket';
 import { useTeamPresence, type PresenceStatus } from '@/hooks/useTeamPresence';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
+import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
 import { VaultAuditPanel } from '@/components/admin/VaultAuditPanel';
 import * as api from '@/api';
 import { FullPageSpinner } from '@/components/shared/Spinner';
@@ -61,6 +62,7 @@ export default function AdminDashboard() {
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
   const [pinnedScreenUser, setPinnedScreenUser] = useState<string | null>(null);
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
+  const [viewAllOpen, setViewAllOpen] = useState(false);
   const socket = useSocket();
   const presence = useTeamPresence();
 
@@ -93,6 +95,14 @@ export default function AdminDashboard() {
   useEffect(() => {
     loadStats();
   }, [loadStats]);
+
+  // Esc closes the view-all overlay.
+  useEffect(() => {
+    if (!viewAllOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setViewAllOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [viewAllOpen]);
 
   useEffect(() => {
     if (!socket) return;
@@ -145,6 +155,9 @@ export default function AdminDashboard() {
             </Link>
           </div>
         </div>
+
+        {/* Huddle quick join — admin sees who's in and can drop in instantly */}
+        <HuddleDashboardCard />
 
         {/* Manager KPI strip — emphasises decisions waiting on the manager */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -277,9 +290,20 @@ export default function AdminDashboard() {
                   <X className="h-3 w-3" /> Close
                 </button>
               ) : (
-                <Link to="/admin/employees" className="ml-auto text-[11px] text-primary hover:underline flex items-center gap-0.5">
-                  Manage <ArrowRight className="h-3 w-3" />
-                </Link>
+                <div className="ml-auto flex items-center gap-2">
+                  {/* "View all" — opens a fullscreen overlay grid so admin
+                      can spot-check everyone in one glance. */}
+                  <button
+                    onClick={() => setViewAllOpen(true)}
+                    className="h-6 px-2 flex items-center gap-1 rounded-md bg-primary/10 text-primary text-[11px] font-semibold hover:bg-primary/20 transition-colors"
+                    title="Expand all live screens"
+                  >
+                    <Monitor className="h-3 w-3" /> View all
+                  </button>
+                  <Link to="/admin/employees" className="text-[11px] text-primary hover:underline flex items-center gap-0.5">
+                    Manage <ArrowRight className="h-3 w-3" />
+                  </Link>
+                </div>
               )}
             </div>
 
@@ -295,14 +319,14 @@ export default function AdminDashboard() {
                 </div>
               </div>
             ) : (
-              <div className="p-2 grid grid-cols-3 gap-1.5 max-h-80 overflow-y-auto">
+              <div className="p-3 grid grid-cols-2 gap-2.5 max-h-[520px] overflow-y-auto">
                 {!huddle.joined && (
                   <div className="col-span-full mb-1 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-700 flex items-center gap-2">
                     <Video className="h-3.5 w-3.5" />
                     Join the huddle to see live screens. Tap the headphones in the corner.
                   </div>
                 )}
-                {employees.slice(0, 18).map(e => {
+                {employees.slice(0, 12).map(e => {
                   const status = presence.statusOf(e._id);
                   const peer = peerByUserId[e._id];
                   const liveStream = peer?.screenOn ? peer.stream : null;
@@ -419,6 +443,69 @@ export default function AdminDashboard() {
         {/* Vault Audit Log — admin-only feed of who saw which credentials */}
         <VaultAuditPanel limit={15} />
       </div>
+
+      {/* ── View-all-screens fullscreen overlay ─────────────────────────── */}
+      {viewAllOpen && (
+        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex flex-col">
+          <div className="flex items-center gap-3 px-6 py-4 border-b border-white/10 text-white">
+            <Monitor className="h-4 w-4" />
+            <h3 className="font-semibold text-sm">Live employee screens</h3>
+            {!huddle.joined && (
+              <span className="text-[11px] text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-md">
+                Join the huddle to subscribe to live screens
+              </span>
+            )}
+            <span className="ml-auto text-[11px] text-white/60">
+              {Object.values(peerByUserId).filter(p => p?.screenOn).length} broadcasting · press Esc to close
+            </span>
+            <button
+              onClick={() => setViewAllOpen(false)}
+              className="h-8 px-3 flex items-center gap-1.5 rounded-md bg-white/10 hover:bg-white/20 text-xs font-semibold"
+            >
+              <X className="h-3.5 w-3.5" /> Close
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {employees.map(e => {
+                const peer = peerByUserId[e._id];
+                const isLive = !!peer?.screenOn;
+                return (
+                  <div
+                    key={e._id}
+                    className={`relative rounded-xl overflow-hidden aspect-video border ${
+                      isLive ? 'border-green-500/40' : 'border-white/10'
+                    } bg-black`}
+                  >
+                    {isLive ? (
+                      <LiveTile stream={peer.stream} />
+                    ) : (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-white/40 gap-2">
+                        <div className="h-12 w-12 rounded-full bg-white/10 flex items-center justify-center text-lg font-bold">
+                          {(e.name || e.email || '?')[0].toUpperCase()}
+                        </div>
+                        <p className="text-xs">{e.name || e.email}</p>
+                        <p className="text-[10px] uppercase tracking-wide">Not sharing</p>
+                      </div>
+                    )}
+                    <div className="absolute bottom-0 left-0 right-0 px-3 py-2 bg-gradient-to-t from-black/90 to-transparent flex items-center gap-2">
+                      <p className="text-xs font-semibold text-white truncate flex-1">{e.name?.split(' ')[0] || e.email}</p>
+                      {isLive && (
+                        <span className="text-[10px] font-bold text-white bg-red-500/90 px-1.5 py-0.5 rounded flex items-center gap-1">
+                          <span className="h-1 w-1 rounded-full bg-white animate-pulse" /> LIVE
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {employees.length === 0 && (
+              <p className="text-white/50 text-sm text-center py-12">No employees to monitor.</p>
+            )}
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }

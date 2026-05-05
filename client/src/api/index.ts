@@ -13,6 +13,16 @@ export const changePassword = (data: Record<string, unknown>) => api.put('/auth/
 // the dashboard is open. If the browser closes, pings stop, and time stops.
 export const sessionHeartbeat = () => api.post('/sessions/heartbeat').then(r => r.data);
 
+// ── Transcripts (huddle Web Speech API) ───────────────────────────────────────
+export const postTranscriptLines = (body: {
+  roomId: string;
+  lines: Array<{ text: string; confidence?: number; startedAt: string; endedAt?: string }>;
+  language?: string;
+}) => api.post('/transcripts/lines', body).then(r => r.data);
+
+export const listTranscripts = (params?: { date?: string; userId?: string }) =>
+  api.get('/transcripts', { params }).then(r => r.data);
+
 // ── AI ────────────────────────────────────────────────────────────────────────
 // Get today's morning briefing. Pass refresh=true to bypass cache (admin only,
 // useful when iterating on prompts; backend ignores it for normal users).

@@ -18,6 +18,7 @@ import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 import { QuickActionsCard } from '@/components/shared/QuickActionsCard';
 import { WeeklyPlanner } from '@/components/shared/WeeklyPlanner';
 import { AIMorningBrief } from '@/components/dashboard/AIMorningBrief';
+import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
 
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -173,6 +174,9 @@ export default function EmployeeDashboard() {
 
         {/* AI Morning Brief — Claude-generated personalized briefing */}
         <AIMorningBrief />
+
+        {/* Huddle entry point — one click to join voice + screen room */}
+        <HuddleDashboardCard />
 
         {/* Quick actions — start your day in one click */}
         <QuickActionsCard />

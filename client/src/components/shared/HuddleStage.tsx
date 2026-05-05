@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { PeerView } from '@/hooks/useMeetingRoom';
 import { useTeamPresence, type PresenceStatus } from '@/hooks/useTeamPresence';
 import { RemoteAudio, useAudioLevel } from '@/components/shared/RemoteAudio';
+import { HuddlePingChat } from '@/components/shared/HuddlePingChat';
 
 /**
  * Full-page Google-Meet-like huddle stage. Used INSIDE the WorkRoom page
@@ -201,6 +202,11 @@ export function HuddleStage() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Inline ping chat — quick async messages without interrupting the talker */}
+          <div className="px-3 py-3 border-t border-border bg-muted/10">
+            <HuddlePingChat />
           </div>
 
           {/* Controls */}

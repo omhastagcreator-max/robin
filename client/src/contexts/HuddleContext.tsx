@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
 import { useMeetingRoom, type PeerView } from '@/hooks/useMeetingRoom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useHuddleTranscription } from '@/hooks/useHuddleTranscription';
 import type { IceSource } from '@/lib/iceServers';
 
 type HuddleMode = 'idle' | 'joining' | 'expanded' | 'collapsed';
@@ -28,6 +29,14 @@ interface HuddleApi {
   // Meeting actions
   toggleAudio: () => void;
   toggleScreen: () => void;
+
+  // AI scribe state
+  scribe: {
+    supported: boolean;
+    listening: boolean;
+    lastError: string | null;
+    linesPosted: number;
+  };
 }
 
 const HuddleContext = createContext<HuddleApi | null>(null);
@@ -99,6 +108,17 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
 
   const participantCount = meeting.peers.length + (meeting.joined ? 1 : 0);
 
+  // ── AI Scribe ──────────────────────────────────────────────────────────
+  // Browser Web Speech API listens to the user's mic while they're in the
+  // huddle, transcribes their speech for free, and posts batched lines to
+  // the server. End-of-day cron uses these to extract action items.
+  // Currently OFF — flip `enabled` to `meeting.joined` to turn the agent on.
+  const transcript = useHuddleTranscription({
+    enabled: false,
+    roomId:  'agency-global',
+    language: 'en-IN',
+  });
+
   const value = useMemo<HuddleApi>(() => ({
     mode, join, leave, collapse, expand,
     joined:        meeting.joined,
@@ -113,12 +133,19 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     participantCount,
     toggleAudio:   meeting.toggleAudio,
     toggleScreen:  meeting.toggleScreen,
+    scribe: {
+      supported:    transcript.supported,
+      listening:    transcript.listening,
+      lastError:    transcript.lastError,
+      linesPosted:  transcript.linesPosted,
+    },
   }), [
     mode, join, leave, collapse, expand,
     meeting.joined, meeting.joining, meeting.peers, meeting.localStream,
     meeting.audioOn, meeting.screenOn, meeting.error, meeting.networkBlocked,
     meeting.iceMeta, meeting.toggleAudio, meeting.toggleScreen,
     participantCount,
+    transcript.supported, transcript.listening, transcript.lastError, transcript.linesPosted,
   ]);
 
   return <HuddleContext.Provider value={value}>{children}</HuddleContext.Provider>;
