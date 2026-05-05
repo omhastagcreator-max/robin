@@ -52,39 +52,40 @@ export async function startSession(req: AuthRequest, res: Response): Promise<voi
 /**
  * POST /api/sessions/on-call
  *
- * Toggle the "On Call" do-not-disturb flag on the user's active session.
- * Body: { on: boolean }. We track `onCallSince` so the UI can show how
- * long they've been on the call (and so we can audit later if needed).
+ * Toggle the "On Call" do-not-disturb flag. Stored on the User (not Session)
+ * because admins don't clock in but still want to mark themselves as
+ * on a call. Body: { on: boolean }. Broadcasts presence:on-call so every
+ * teammate's UI updates instantly.
  *
- * On Call is INDEPENDENT of break/work status — calls ARE work, so we
- * don't touch session.status. We just flip a flag and broadcast it.
+ * On Call is INDEPENDENT of break/work status — calls ARE work — so we
+ * don't touch session.status here at all.
  */
 export async function setOnCall(req: AuthRequest, res: Response): Promise<void> {
   try {
     const userId = req.user!.id;
     const on = !!req.body?.on;
+    const now = on ? new Date() : null;
 
-    const session = await Session.findOneAndUpdate(
-      { userId, status: { $in: ['active', 'on_break'] } },
-      { $set: { onCallSince: on ? new Date() : null } },
+    const u = await User.findByIdAndUpdate(
+      userId,
+      { $set: { onCallSince: now } },
       { new: true }
-    );
-    if (!session) { res.status(404).json({ error: 'No active session — clock in first' }); return; }
+    ).select('name email role organizationId onCallSince');
+    if (!u) { res.status(404).json({ error: 'User not found' }); return; }
 
     // Broadcast to the org so other people's UIs update instantly.
     const io = req.app.get('io');
     if (io) {
-      const u = await User.findById(userId).select('name email role organizationId');
       io.emit('presence:on-call', {
         userId,
-        name: u?.name || u?.email,
-        organizationId: u?.organizationId,
+        name: u.name || u.email,
+        organizationId: u.organizationId,
         on,
-        since: session.onCallSince,
+        since: u.onCallSince,
       });
     }
 
-    res.json({ ok: true, onCallSince: session.onCallSince });
+    res.json({ ok: true, onCallSince: u.onCallSince });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 

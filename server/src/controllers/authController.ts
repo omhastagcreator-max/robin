@@ -116,7 +116,7 @@ export async function getMe(req: any, res: Response): Promise<void> {
   try {
     const user = await User.findById(req.user.id);
     if (!user) { res.status(404).json({ error: 'User not found' }); return; }
-    res.json({ user: { _id: user._id, email: user.email, name: user.name, role: user.role, team: user.team, avatarUrl: user.avatarUrl } });
+    res.json({ user: { _id: user._id, email: user.email, name: user.name, role: user.role, team: user.team, avatarUrl: user.avatarUrl, onCallSince: user.onCallSince } });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 

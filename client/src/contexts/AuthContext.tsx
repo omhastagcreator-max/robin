@@ -9,6 +9,7 @@ interface RobinUser {
   team?: string;
   avatarUrl?: string;
   organizationId?: string;
+  onCallSince?: string | null;
 }
 
 interface AuthContextValue {

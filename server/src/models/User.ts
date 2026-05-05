@@ -18,6 +18,7 @@ export interface IUser extends Document {
   organizationId?: mongoose.Types.ObjectId;
   department?: string;
   isActive: boolean;
+  onCallSince?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -37,6 +38,9 @@ const UserSchema = new Schema<IUser>(
     department:     { type: String, default: '' },
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization' },
     isActive:       { type: Boolean, default: true },
+    // On Call do-not-disturb — independent of clock-in state so admins
+    // (who don't have Sessions) can flip it too.
+    onCallSince:    { type: Date, default: null },
   },
   { timestamps: true }
 );

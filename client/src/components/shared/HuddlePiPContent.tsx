@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Loader2, Mic, MicOff, Monitor, MonitorOff, PhoneOff, ExternalLink, Phone, PhoneCall } from 'lucide-react';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useSession } from '@/hooks/useSession';
+import { useOnCall } from '@/hooks/useOnCall';
 import type { PeerView } from '@/hooks/useMeetingRoom';
 import { HuddlePingChat } from '@/components/shared/HuddlePingChat';
 
@@ -32,7 +32,7 @@ export function HuddlePiPContent() {
   const huddle = useHuddle();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { isOnCall, toggleOnCall, session } = useSession();
+  const { isOnCall, toggle: toggleOnCall } = useOnCall();
 
   const screenSharers = huddle.peers.filter(p => p.screenOn);
 
@@ -131,20 +131,18 @@ export function HuddlePiPContent() {
           >
             {huddle.screenOn ? <MonitorOff className="h-3.5 w-3.5" /> : <Monitor className="h-3.5 w-3.5" />}
           </button>
-          {/* On Call toggle — only meaningful when clocked in */}
-          {session && (
-            <button
-              onClick={() => toggleOnCall()}
-              className={`h-8 w-8 rounded-md flex items-center justify-center border transition-colors ${
-                isOnCall
-                  ? 'bg-violet-500/20 text-violet-700 border-violet-500/40 hover:bg-violet-500/30'
-                  : 'bg-card text-muted-foreground border-border hover:bg-muted'
-              }`}
-              title={isOnCall ? 'On a call (click to clear)' : 'Mark on a call (DND)'}
-            >
-              {isOnCall ? <PhoneCall className="h-3.5 w-3.5" /> : <Phone className="h-3.5 w-3.5" />}
-            </button>
-          )}
+          {/* On Call toggle — works for any role (User-level flag) */}
+          <button
+            onClick={() => toggleOnCall()}
+            className={`h-8 w-8 rounded-md flex items-center justify-center border transition-colors ${
+              isOnCall
+                ? 'bg-violet-500/20 text-violet-700 border-violet-500/40 hover:bg-violet-500/30'
+                : 'bg-card text-muted-foreground border-border hover:bg-muted'
+            }`}
+            title={isOnCall ? 'On a call (click to clear)' : 'Mark on a call (DND)'}
+          >
+            {isOnCall ? <PhoneCall className="h-3.5 w-3.5" /> : <Phone className="h-3.5 w-3.5" />}
+          </button>
           <button
             onClick={handleOpenWorkroom}
             className="h-8 px-2 rounded-md flex items-center gap-1 bg-card text-foreground border border-border hover:bg-muted text-[10px] font-semibold transition-colors"

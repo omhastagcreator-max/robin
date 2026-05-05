@@ -1,5 +1,6 @@
 import { Clock, Coffee, Pause, Play, StopCircle, AlertTriangle, Sparkles, Phone, PhoneOff } from 'lucide-react';
 import { useSession } from '@/hooks/useSession';
+import { useOnCall } from '@/hooks/useOnCall';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 
@@ -39,9 +40,10 @@ const fmtMS = (ms: number) => {
 export function SessionTopBar() {
   const { role } = useAuth();
   const {
-    session, startSession, startBreak, endBreak, endSession, toggleOnCall,
-    workedMs, currentBreakMs, totalBreakMs, isOnCall,
+    session, startSession, startBreak, endBreak, endSession,
+    workedMs, currentBreakMs, totalBreakMs,
   } = useSession();
+  const { isOnCall, toggle: toggleOnCall } = useOnCall();
 
   // Only employees and sales clock in/out — admin/client see nothing.
   if (!['employee', 'sales'].includes(role)) return null;

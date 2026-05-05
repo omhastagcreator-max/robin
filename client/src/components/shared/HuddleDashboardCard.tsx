@@ -1,5 +1,6 @@
-import { Headphones, PhoneCall, PhoneOff, Mic, MicOff, Monitor, MonitorOff, Users } from 'lucide-react';
+import { Headphones, PhoneCall, PhoneOff, Mic, MicOff, Monitor, MonitorOff, Users, Phone } from 'lucide-react';
 import { useHuddle } from '@/contexts/HuddleContext';
+import { useOnCall } from '@/hooks/useOnCall';
 import { HuddleMicPiP } from '@/components/shared/HuddleMicPiP';
 
 /**
@@ -20,6 +21,7 @@ import { HuddleMicPiP } from '@/components/shared/HuddleMicPiP';
  */
 export function HuddleDashboardCard() {
   const huddle = useHuddle();
+  const { isOnCall, toggle: toggleOnCall } = useOnCall();
 
   const tone = huddle.joined
     ? 'border-green-500/30 bg-green-500/5'
@@ -51,6 +53,20 @@ export function HuddleDashboardCard() {
 
         {/* Actions */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {/* On Call toggle — works for every role, independent of huddle */}
+          <button
+            onClick={toggleOnCall}
+            className={`h-9 px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+              isOnCall
+                ? 'bg-violet-500/20 text-violet-700 border-violet-500/40 hover:bg-violet-500/30'
+                : 'bg-card text-foreground border-border hover:bg-muted'
+            }`}
+            title={isOnCall ? 'You are marked on a call — click to clear' : 'Mark yourself on a call (do not disturb)'}
+          >
+            <Phone className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{isOnCall ? 'On call' : 'Call'}</span>
+          </button>
+
           {!huddle.joined && !huddle.joining && (
             <button
               onClick={huddle.join}

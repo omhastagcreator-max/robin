@@ -11,7 +11,7 @@ router.post('/break',     requireRole('employee', 'sales'),          startBreak)
 router.post('/break/end', requireRole('employee', 'sales'),          endBreak);
 router.post('/end',       requireRole('employee', 'sales'),          endSession);
 router.post('/heartbeat', requireRole('employee', 'sales'),          heartbeat);
-router.post('/on-call',   requireRole('employee', 'sales'),          setOnCall);
+router.post('/on-call',   requireRole('admin', 'employee', 'sales'), setOnCall);
 router.get('/active',     requireRole('employee', 'sales', 'admin'), getActiveSession);
 router.get('/history',    requireRole('employee', 'sales', 'admin'), getSessionHistory);
 router.get('/performance', requireRole('admin'),                     getPerformance);

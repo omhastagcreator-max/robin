@@ -95,6 +95,11 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
 
   const openPiP = useCallback(async () => {
     if (!pipSupported || pipWindowRef.current) return;
+    // Synchronous lock — claim the slot BEFORE the async request returns so
+    // a second rapid call (e.g. double click on Join, or visibilitychange
+    // racing the join click) can't spawn a duplicate PiP window. We replace
+    // the placeholder with the real window on success, or null on failure.
+    pipWindowRef.current = 'pending' as any;
     try {
       const w = await (window as any).documentPictureInPicture.requestWindow({
         width: 360,
@@ -214,6 +219,8 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
         } catch { /* PiP may have been closed already */ }
       }, 5000);
     } catch (e) {
+      // Release the lock on failure so a future click can try again.
+      pipWindowRef.current = null;
       console.warn('[huddle] PiP open failed', e);
     }
   }, [pipSupported]);
@@ -257,6 +264,33 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
       setMode('expanded');
     }
   }, [meeting.joined, mode]);
+
+  // ── Auto-pop PiP when user leaves the Robin tab ────────────────────────
+  // The user is in a huddle and switches to another app/tab — we want
+  // the floating mini panel to be there. The Document PiP API requires
+  // user activation, but Chrome relaxes this for pages the user has
+  // recently interacted with, so we just *try* and silently swallow
+  // any rejection. Worst case: nothing happens, user can manually
+  // re-pop it from the dashboard.
+  useEffect(() => {
+    if (!pipSupported || !pipAutoEnabled) return;
+    if (!meeting.joined) return;
+
+    const tryAutoPop = () => {
+      // Only when document is hidden (user tabbed away or minimised).
+      if (document.visibilityState !== 'hidden') return;
+      // Already open? Nothing to do.
+      if (pipWindowRef.current) return;
+      void openPiP();
+    };
+
+    document.addEventListener('visibilitychange', tryAutoPop);
+    window.addEventListener('blur', tryAutoPop);
+    return () => {
+      document.removeEventListener('visibilitychange', tryAutoPop);
+      window.removeEventListener('blur', tryAutoPop);
+    };
+  }, [pipSupported, pipAutoEnabled, meeting.joined, openPiP]);
 
   // Auto-share screen on join — only for employees and sales (the people
   // expected to be "on the floor"). Admins/managers join to oversee, not
