@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react';
  *     mobile Chrome. We use offscreen positioning so the element is in
  *     the layout but invisible.
  */
-export function RemoteAudio({ stream, volume = 1 }: { stream: MediaStream | null; volume?: number }) {
+export function RemoteAudio({ stream, volume = 1, muted = false }: { stream: MediaStream | null; volume?: number; muted?: boolean }) {
   const ref = useRef<HTMLAudioElement | null>(null);
   const [blocked, setBlocked] = useState(false);
 
@@ -19,6 +19,7 @@ export function RemoteAudio({ stream, volume = 1 }: { stream: MediaStream | null
     if (!el || !stream) return;
     el.srcObject = stream;
     el.volume = volume;
+    el.muted = muted;
 
     const tryPlay = () => {
       el.play().then(() => setBlocked(false))
@@ -30,7 +31,7 @@ export function RemoteAudio({ stream, volume = 1 }: { stream: MediaStream | null
     const onUserGesture = () => { tryPlay(); };
     window.addEventListener('click', onUserGesture, { once: true });
     return () => window.removeEventListener('click', onUserGesture);
-  }, [stream, volume]);
+  }, [stream, volume, muted]);
 
   return (
     <>
@@ -42,7 +43,7 @@ export function RemoteAudio({ stream, volume = 1 }: { stream: MediaStream | null
         // absolute positioning instead so the element stays in the layout.
         style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
       />
-      {blocked && (
+      {blocked && !muted && (
         <span className="absolute top-1 right-1 text-[9px] bg-amber-500/80 text-white px-1.5 py-0.5 rounded">
           tap to hear
         </span>

@@ -32,6 +32,11 @@ interface HuddleApi {
   toggleAudio: () => void;
   toggleScreen: () => void;
 
+  // "Deafen" — mute incoming huddle audio without leaving. Useful when
+  // you're in a different meeting in another tab.
+  deafened: boolean;
+  toggleDeafen: () => void;
+
   // AI scribe state
   scribe: {
     supported: boolean;
@@ -81,6 +86,20 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
   // needs "transient activation" — the click that triggers `join()` is the
   // only moment we have permission to spawn the PiP window. So join() itself
   // calls openPiP() synchronously when auto-pop is enabled.
+  // Deafen — mute incoming huddle audio. Persisted so toggling carries
+  // across page navigations (e.g., dashboard → workroom).
+  const [deafened, setDeafened] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('robin.huddle.deafened') === 'true';
+  });
+  const toggleDeafen = useCallback(() => {
+    setDeafened(prev => {
+      const next = !prev;
+      localStorage.setItem('robin.huddle.deafened', next ? 'true' : 'false');
+      return next;
+    });
+  }, []);
+
   const pipSupported = typeof window !== 'undefined' && 'documentPictureInPicture' in window;
   const pipWindowRef = useRef<any>(null);
   const [pipContainer, setPipContainer] = useState<HTMLElement | null>(null);
@@ -359,6 +378,8 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     participantCount,
     toggleAudio:   meeting.toggleAudio,
     toggleScreen:  meeting.toggleScreen,
+    deafened,
+    toggleDeafen,
     scribe: {
       supported:    transcript.supported,
       listening:    transcript.listening,
@@ -382,6 +403,7 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     participantCount,
     transcript.supported, transcript.listening, transcript.lastError, transcript.linesPosted,
     pipSupported, pipContainer, openPiP, closePiP, pipAutoEnabled, setPipAutoEnabled,
+    deafened, toggleDeafen,
   ]);
 
   return (

@@ -122,28 +122,6 @@ export default function AdminDashboard() {
     setOpenMenuFor(null);
   };
 
-  const [resetting, setResetting] = useState(false);
-  const handleResetWorkspace = async () => {
-    if (!confirm(
-      'Wipe ALL operational data?\n\n' +
-      '✅ KEEP: users (login still works), organizations, profiles\n' +
-      '❌ DELETE: tasks, projects, clients, leads, sessions (clock-ins),\n' +
-      '            vault credentials, chat, leaves, reminders, AI briefs.\n\n' +
-      'This cannot be undone. Continue?'
-    )) return;
-    setResetting(true);
-    try {
-      const res = await api.clearWorkspaceData();
-      const total = res?.totalCleared ?? 0;
-      toast.success(`Workspace cleared — ${total} records wiped, ${res?.preserved?.users ?? 0} users kept.`);
-      // Re-fetch dashboard so cards go empty.
-      await loadStats();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.error || 'Reset failed — see console');
-    } finally {
-      setResetting(false);
-    }
-  };
 
   // Pinned screen reference — uses the LiveKit peer's stream.
   const pinnedRef = (el: HTMLVideoElement | null) => {
@@ -472,31 +450,6 @@ export default function AdminDashboard() {
 
         {/* Vault Audit Log — admin-only feed of who saw which credentials */}
         <VaultAuditPanel limit={15} />
-
-        {/* Danger zone — workspace reset */}
-        <div className="rounded-2xl border border-red-500/25 bg-red-500/5 p-4">
-          <div className="flex items-start gap-3 flex-wrap">
-            <div className="h-10 w-10 rounded-xl bg-red-500/15 flex items-center justify-center shrink-0">
-              <Trash2 className="h-5 w-5 text-red-500" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold">Danger zone — reset workspace</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
-                Wipes all tasks, projects, clients, leads, sessions, vault credentials,
-                leaves, reminders, AI briefs and chat history. <span className="text-foreground font-semibold">User accounts stay intact</span> —
-                everyone can still log in, employees stay listed.
-              </p>
-            </div>
-            <button
-              onClick={handleResetWorkspace}
-              disabled={resetting}
-              className="h-9 px-3.5 flex items-center gap-1.5 rounded-lg bg-red-500 text-white text-xs font-semibold hover:bg-red-600 disabled:opacity-60 shadow-sm transition-colors"
-            >
-              {resetting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-              {resetting ? 'Wiping…' : 'Reset workspace'}
-            </button>
-          </div>
-        </div>
       </div>
 
       {/* ── View-all-screens fullscreen overlay ─────────────────────────── */}

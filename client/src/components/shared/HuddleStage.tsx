@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Mic, MicOff, Monitor, MonitorOff, PhoneCall, PhoneOff, Coffee, CalendarOff, Headphones, Loader2, AlertTriangle,
-  Maximize2, X, Pin,
+  Maximize2, X, Pin, Volume2, VolumeX,
 } from 'lucide-react';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -199,6 +199,7 @@ export function HuddleStage() {
                   peer={p}
                   presenceStatus={presence.statusOf(p.userId)}
                   onCall={presence.isOnCall(p.userId)}
+                  deafened={meeting.deafened}
                 />
               ))}
               {meeting.peers.length === 0 && (
@@ -223,6 +224,15 @@ export function HuddleStage() {
               onClick={meeting.toggleAudio}
               tone={meeting.audioOn ? 'good' : 'danger'}
               label={meeting.audioOn ? 'Mute' : 'Unmute'}
+            />
+            {/* Deafen — mute everyone else's audio without leaving the room */}
+            <ControlButton
+              on={!meeting.deafened}
+              onIcon={Volume2}
+              offIcon={VolumeX}
+              onClick={meeting.toggleDeafen}
+              tone={meeting.deafened ? 'danger' : 'neutral'}
+              label={meeting.deafened ? 'Hear team' : 'Mute team audio'}
             />
             <ControlButton
               on={meeting.screenOn}
@@ -304,13 +314,13 @@ function SelfTile({
   );
 }
 
-function PeerTile({ peer, presenceStatus, onCall }: { peer: PeerView; presenceStatus: PresenceStatus; onCall?: boolean }) {
+function PeerTile({ peer, presenceStatus, onCall, deafened }: { peer: PeerView; presenceStatus: PresenceStatus; onCall?: boolean; deafened?: boolean }) {
   const level = useAudioLevel(peer.audioOn ? peer.stream : null);
   const initial = (peer.name || '?')[0].toUpperCase();
   return (
     <div className={`relative bg-muted/30 border rounded-xl p-2 flex items-center gap-2.5 ${onCall ? 'border-violet-500/40' : 'border-border'}`}>
       <PresenceTopRight status={presenceStatus} />
-      <RemoteAudio stream={peer.stream} />
+      <RemoteAudio stream={peer.stream} muted={deafened} />
       <AvatarWithRing initial={initial} active={peer.audioOn && level > 0.05} />
       <div className="flex-1 min-w-0">
         <p className="text-xs font-semibold truncate flex items-center gap-1.5">

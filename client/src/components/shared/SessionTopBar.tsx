@@ -45,8 +45,8 @@ export function SessionTopBar() {
   } = useSession();
   const { isOnCall, toggle: toggleOnCall } = useOnCall();
 
-  // Only employees and sales clock in/out — admin/client see nothing.
-  if (!['employee', 'sales'].includes(role)) return null;
+  // Internal staff (admin/employee/sales) all clock in. Clients don't.
+  if (!['admin', 'employee', 'sales'].includes(role)) return null;
 
   const isActive  = session?.status === 'active';
   const isOnBreak = session?.status === 'on_break';

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, Mic, MicOff, Monitor, MonitorOff, PhoneOff, ExternalLink, Phone, PhoneCall } from 'lucide-react';
+import { Loader2, Mic, MicOff, Monitor, MonitorOff, PhoneOff, ExternalLink, Phone, PhoneCall, Volume2, VolumeX } from 'lucide-react';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOnCall } from '@/hooks/useOnCall';
@@ -119,6 +119,17 @@ export function HuddlePiPContent() {
             title={huddle.audioOn ? 'Mute' : 'Unmute'}
           >
             {huddle.audioOn ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            onClick={huddle.toggleDeafen}
+            className={`h-8 w-8 rounded-md flex items-center justify-center border transition-colors ${
+              huddle.deafened
+                ? 'bg-red-500/15 text-red-600 border-red-500/30 hover:bg-red-500/25'
+                : 'bg-card text-muted-foreground border-border hover:bg-muted'
+            }`}
+            title={huddle.deafened ? 'Hear team again' : 'Mute team audio (deafen)'}
+          >
+            {huddle.deafened ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
           </button>
           <button
             onClick={huddle.toggleScreen}
