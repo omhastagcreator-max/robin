@@ -208,11 +208,14 @@ export function HuddlePiPContent() {
 function PiPScreenTile({ peer }: { peer: PeerView }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
-    if (ref.current && peer.stream) ref.current.srcObject = peer.stream;
+    if (ref.current && peer.stream) {
+      ref.current.srcObject = peer.stream;
+      ref.current.muted = true;          // voice flows through LiveKit audio tracks, not this video
+    }
   }, [peer.stream]);
   return (
     <div className="relative bg-black rounded-md overflow-hidden aspect-video">
-      <video ref={ref} autoPlay playsInline className="w-full h-full object-contain" />
+      <video ref={ref} autoPlay playsInline muted className="w-full h-full object-contain" />
       <div className="absolute bottom-1 left-1 right-1 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-sm">
         <span className="h-1 w-1 rounded-full bg-green-400 animate-pulse" />
         <span className="text-[10px] font-semibold text-white truncate">{peer.name || 'Teammate'}</span>

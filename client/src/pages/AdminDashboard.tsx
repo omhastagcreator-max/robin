@@ -44,8 +44,18 @@ function KPICard({ label, value, sub, icon: Icon, color }: { label: string; valu
 /** Compact live-screen tile used inside team-status cards. */
 function LiveTile({ stream }: { stream: MediaStream }) {
   const ref = useRef<HTMLVideoElement | null>(null);
-  useEffect(() => { if (ref.current) ref.current.srcObject = stream; }, [stream]);
-  return <video ref={ref} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />;
+  // Default-muted: even before the global Deafen pass mutes us, a
+  // freshly-mounted <video> that auto-plays a peer stream would briefly
+  // emit audio. Starting muted prevents that flash. Admin still SEES the
+  // screen — they just don't hear the audio embedded in the screen-share
+  // (which would normally be system audio anyway).
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.srcObject = stream;
+      ref.current.muted = true;
+    }
+  }, [stream]);
+  return <video ref={ref} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />;
 }
 
 function PresenceBadge({ status }: { status: PresenceStatus }) {

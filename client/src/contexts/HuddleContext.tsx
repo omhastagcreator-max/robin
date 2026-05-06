@@ -109,21 +109,25 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     meeting.setRemoteAudioVolume(deafened ? 0 : 1);
   }, [deafened, meeting.setRemoteAudioVolume, meeting.joined]);
 
-  // ── Whole-tab mute ─────────────────────────────────────────────────────
-  // "Deafen" on the LiveKit tracks only kills huddle voice. The user's
-  // ask is broader: silence the entire Robin tab (notifications, any
-  // embedded video/audio, anything that might play). We do it the cheap
-  // and reliable way: walk every <audio> and <video> in the document and
-  // set .muted, then watch the DOM with a MutationObserver so new
-  // elements (e.g., LiveKit attaches more) get muted as they appear.
+  // ── Whole-tab mute (bulletproof) ───────────────────────────────────────
+  // Earlier versions used a MutationObserver scoped to document.body. Two
+  // sources of audio leaked past it: LiveKit's auto-attached elements
+  // sometimes mount outside <body>, and React re-renders of components
+  // like LiveTile/<video> can replace nodes faster than the observer
+  // fires. The fix is three-pronged:
   //
-  // To avoid trampling a user's manual choices, we remember which
-  // elements WE flipped and only restore those when deafen is turned off.
+  //   1. Walk the WHOLE document (documentElement, not just body).
+  //   2. MutationObserver on documentElement covers new mounts.
+  //   3. setInterval re-applies every 500ms to catch anything that gets
+  //      un-muted by a re-render or by a library setting muted=false.
+  //
+  // We track elements WE muted via WeakSet so on undeafen we only
+  // restore what we changed — won't unmute videos the user had muted
+  // before (e.g., a chat embed they manually silenced).
   useEffect(() => {
     if (!deafened) return;
+
     const ours = new WeakSet<HTMLMediaElement>();
-    // Track originals so we can restore exactly. WeakSet means we don't
-    // hold elements alive past their natural lifetime.
 
     const muteAll = () => {
       document.querySelectorAll<HTMLMediaElement>('audio, video').forEach((el) => {
@@ -135,14 +139,17 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     };
     muteAll();
 
-    // Catch newly-added media elements (e.g., LiveKit attaching audio
-    // for a peer who joined after we deafened, or a YouTube embed).
-    const observer = new MutationObserver(() => muteAll());
-    observer.observe(document.body, { childList: true, subtree: true });
+    // Watch the entire document tree, not just <body>.
+    const observer = new MutationObserver(muteAll);
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+
+    // Periodic safety net for any element a re-render un-mutes.
+    const interval = setInterval(muteAll, 500);
 
     return () => {
       observer.disconnect();
-      // Restore: unmute only what we touched.
+      clearInterval(interval);
+      // Restore: only unmute elements we muted.
       document.querySelectorAll<HTMLMediaElement>('audio, video').forEach((el) => {
         if (ours.has(el)) {
           try { el.muted = false; } catch { /* ignore */ }
