@@ -8,6 +8,12 @@ export const getMe        = ()                                 => api.get('/auth
 export const updateMe     = (data: Record<string, unknown>)   => api.put('/auth/me', data).then(r => r.data);
 export const changePassword = (data: Record<string, unknown>) => api.put('/auth/password', data).then(r => r.data);
 
+// ── Admin: workspace reset ────────────────────────────────────────────────────
+// Wipes operational data (tasks, projects, leads, sessions, vault, leaves,
+// reminders, AI briefs, etc.) while keeping users + organizations.
+// Admin-only route on the server.
+export const clearWorkspaceData = () => api.post('/seed/clear').then(r => r.data);
+
 // ── Sessions: heartbeat ───────────────────────────────────────────────────────
 // Bump lastHeartbeatAt on the user's active session. Called every 60s while
 // the dashboard is open. If the browser closes, pings stop, and time stops.
