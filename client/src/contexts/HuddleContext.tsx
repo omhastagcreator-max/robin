@@ -109,6 +109,48 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     meeting.setRemoteAudioVolume(deafened ? 0 : 1);
   }, [deafened, meeting.setRemoteAudioVolume, meeting.joined]);
 
+  // ── Whole-tab mute ─────────────────────────────────────────────────────
+  // "Deafen" on the LiveKit tracks only kills huddle voice. The user's
+  // ask is broader: silence the entire Robin tab (notifications, any
+  // embedded video/audio, anything that might play). We do it the cheap
+  // and reliable way: walk every <audio> and <video> in the document and
+  // set .muted, then watch the DOM with a MutationObserver so new
+  // elements (e.g., LiveKit attaches more) get muted as they appear.
+  //
+  // To avoid trampling a user's manual choices, we remember which
+  // elements WE flipped and only restore those when deafen is turned off.
+  useEffect(() => {
+    if (!deafened) return;
+    const ours = new WeakSet<HTMLMediaElement>();
+    // Track originals so we can restore exactly. WeakSet means we don't
+    // hold elements alive past their natural lifetime.
+
+    const muteAll = () => {
+      document.querySelectorAll<HTMLMediaElement>('audio, video').forEach((el) => {
+        if (!el.muted) {
+          el.muted = true;
+          ours.add(el);
+        }
+      });
+    };
+    muteAll();
+
+    // Catch newly-added media elements (e.g., LiveKit attaching audio
+    // for a peer who joined after we deafened, or a YouTube embed).
+    const observer = new MutationObserver(() => muteAll());
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+      // Restore: unmute only what we touched.
+      document.querySelectorAll<HTMLMediaElement>('audio, video').forEach((el) => {
+        if (ours.has(el)) {
+          try { el.muted = false; } catch { /* ignore */ }
+        }
+      });
+    };
+  }, [deafened]);
+
   const pipSupported = typeof window !== 'undefined' && 'documentPictureInPicture' in window;
   const pipWindowRef = useRef<any>(null);
   const [pipContainer, setPipContainer] = useState<HTMLElement | null>(null);
