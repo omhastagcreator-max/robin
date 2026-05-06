@@ -1,0 +1,99 @@
+/* =============================================================
+   Reviews — storefront styles (loaded by app-embed.liquid)
+   File: /extensions/reviews-widget/assets/app-embed.css
+   ============================================================= */
+
+/* ===== Star Badge ===== */
+.evo-star-badge{
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  color:#111; margin: 6px 0 12px; line-height:1.2;
+}
+.evo-sb__row{ display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.evo-sb__star{ display:inline-flex; }
+.evo-sb__avg{ font-weight:700; font-size:15px; color:#111; }
+.evo-sb__divider{ color:#D1D5DB; font-weight:300; margin:0 2px; }
+.evo-sb__verified{ display:inline-flex; }
+.evo-sb__count{ font-weight:600; font-size:14px; color:#16A34A; }
+.evo-sb__viewers{ display:inline-flex; align-items:center; gap:6px; margin-top:6px; font-size:12.5px; color:#6B7280; }
+.evo-sb__eye{ display:inline-flex; }
+.evo-sb__viewers [data-evo-viewers]{ font-weight:600; color:#374151; }
+
+/* ===== Review Grid ===== */
+.evo-rw{
+  font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;
+  color:#111827; max-width:1200px; margin:48px auto; padding:0 16px;
+}
+.evo-rw__header{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+.evo-rw__summary{ display:flex; align-items:center; gap:16px; }
+.evo-rw__avg{ font-size:42px; font-weight:800; line-height:1; color:#111827; }
+.evo-rw__sumright{ display:flex; flex-direction:column; gap:4px; }
+.evo-rw__stars{ display:inline-flex; gap:2px; } .evo-rw__stars svg{ width:20px; height:20px; }
+.evo-rw__total{ font-size:13px; color:#6B7280; }
+
+.evo-rw__actions{ display:flex; gap:10px; align-items:center; }
+.evo-rw__btn{
+  background:#fff; border:1.5px solid #111827; color:#111827;
+  border-radius:8px; padding:9px 16px; font-weight:600; font-size:14px;
+  cursor:pointer; transition:transform .08s ease, background .15s ease;
+}
+.evo-rw__btn:hover{ background:#111827; color:#fff; }
+.evo-rw__btn--primary{ background:#111827; color:#fff; }
+.evo-rw__icon-btn{
+  width:38px; height:38px; border:1.5px solid #111827; background:#fff; border-radius:8px;
+  display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
+}
+.evo-rw__icon-btn:hover{ background:#F3F4F6; }
+.evo-rw__divider{ border:0; border-top:1px solid #E5E7EB; margin:18px 0 24px; }
+
+.evo-rw__grid{ display:grid; grid-template-columns: repeat(4, 1fr); gap:16px; }
+@media (max-width:1024px){ .evo-rw__grid{ grid-template-columns: repeat(2, 1fr); } }
+@media (max-width:600px){  .evo-rw__grid{ grid-template-columns: 1fr; } }
+
+.evo-rw__card{
+  background:#fff; border:1px solid #E5E7EB; border-radius:12px; padding:16px;
+  box-shadow:0 1px 2px rgba(17,24,39,.04), 0 1px 3px rgba(17,24,39,.04);
+  display:flex; flex-direction:column; gap:10px;
+}
+.evo-rw__card-top{ display:flex; align-items:center; justify-content:space-between; }
+.evo-rw__card-stars{ display:inline-flex; gap:1px; } .evo-rw__card-stars svg{ width:14px; height:14px; }
+.evo-rw__card-date{ font-size:11.5px; color:#9CA3AF; }
+.evo-rw__card-author{ display:flex; align-items:center; gap:10px; }
+.evo-rw__avatar{
+  width:36px; height:36px; border-radius:50%; background:#E5E7EB; color:#374151;
+  font-weight:700; font-size:13px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+}
+.evo-rw__author-name{ font-weight:700; font-size:14px; color:#111827; }
+.evo-rw__verified{ display:inline-flex; align-items:center; gap:4px; font-size:11.5px; color:#374151; margin-top:2px; }
+.evo-rw__verified svg{ width:12px; height:12px; }
+.evo-rw__card-content{ font-size:13.5px; line-height:1.5; color:#374151; margin:0; }
+
+.evo-rw__imgs{ display:flex; gap:6px; flex-wrap:wrap; }
+.evo-rw__imgs img{ width:56px; height:56px; object-fit:cover; border-radius:6px; border:1px solid #E5E7EB; }
+
+.evo-rw__pager{ display:flex; justify-content:center; gap:6px; margin-top:28px; flex-wrap:wrap; }
+.evo-rw__pager button{
+  min-width:36px; height:36px; border-radius:8px; border:1px solid #E5E7EB; background:#fff;
+  color:#111827; font-weight:600; font-size:13px; cursor:pointer; padding:0 10px;
+}
+.evo-rw__pager button[aria-current="true"]{ background:#111827; color:#fff; border-color:#111827; }
+.evo-rw__pager button[disabled]{ opacity:.4; cursor:not-allowed; }
+
+.evo-rw__empty{ grid-column: 1 / -1; text-align:center; padding:32px; color:#6B7280; font-size:14px; }
+
+.evo-rw__modal{ position:fixed; inset:0; background:rgba(17,24,39,.55); display:flex; align-items:center; justify-content:center; z-index:9999; }
+.evo-rw__modal[hidden]{ display:none; }
+.evo-rw__modal-card{
+  background:#fff; border-radius:14px; padding:24px; width:min(440px, 92vw);
+  position:relative; box-shadow:0 20px 40px rgba(0,0,0,.2);
+}
+.evo-rw__modal-card h3{ margin:0 0 14px; font-size:18px; }
+.evo-rw__modal-card label{ display:block; font-size:13px; font-weight:600; margin-bottom:10px; color:#374151; }
+.evo-rw__modal-card input, .evo-rw__modal-card select, .evo-rw__modal-card textarea{
+  width:100%; margin-top:4px; padding:9px 12px; border:1px solid #D1D5DB; border-radius:8px;
+  font:inherit; color:#111827; background:#fff;
+}
+.evo-rw__modal-close{
+  position:absolute; top:8px; right:12px; width:30px; height:30px; border-radius:50%;
+  background:transparent; border:0; font-size:22px; cursor:pointer; color:#6B7280;
+}
+.evo-rw__form-msg{ font-size:13px; margin-top:8px; min-height:18px; }

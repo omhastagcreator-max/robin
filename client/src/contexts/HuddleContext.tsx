@@ -100,6 +100,15 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Push the deafened flag through to LiveKit's auto-attached audio
+  // elements via track.setVolume(0). Without this, only our own
+  // RemoteAudio element was muted while LiveKit's internal one kept
+  // playing — the user heard everyone anyway.
+  useEffect(() => {
+    if (!meeting.setRemoteAudioVolume) return;
+    meeting.setRemoteAudioVolume(deafened ? 0 : 1);
+  }, [deafened, meeting.setRemoteAudioVolume, meeting.joined]);
+
   const pipSupported = typeof window !== 'undefined' && 'documentPictureInPicture' in window;
   const pipWindowRef = useRef<any>(null);
   const [pipContainer, setPipContainer] = useState<HTMLElement | null>(null);

@@ -58,6 +58,10 @@ interface UseMeetingRoomOptions {
  */
 export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
   const roomRef = useRef<Room | null>(null);
+  // Remote-audio output volume (0..1). Driven by the deafen toggle.
+  // We keep it in a ref because TrackSubscribed handlers need the latest
+  // value without re-creating themselves on every render.
+  const remoteVolumeRef = useRef<number>(1);
 
   const [joined, setJoined]       = useState(false);
   const [joining, setJoining]     = useState(false);
@@ -66,6 +70,30 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
   const [peers, setPeers]         = useState<Record<string, PeerView>>({});
   const [error, setError]         = useState<string | null>(null);
   const [networkBlocked, setNetworkBlocked] = useState(false);
+
+  /**
+   * Apply a volume level (0..1) to every currently subscribed remote audio
+   * track in the room. Call this when toggling deafen, or pass a value to
+   * apply right now without changing the ref.
+   *
+   * LiveKit's RemoteAudioTrack.setVolume() controls the volume of the
+   * <audio> element it auto-attaches to the document. setting 0 silences
+   * the participant on this client without unsubscribing — they still see
+   * us connected, we still receive the data, we just don't play it.
+   */
+  const setRemoteAudioVolume = useCallback((volume: number) => {
+    remoteVolumeRef.current = volume;
+    const room = roomRef.current;
+    if (!room) return;
+    room.remoteParticipants.forEach((p) => {
+      p.audioTrackPublications.forEach((pub) => {
+        const track: any = pub.track;
+        if (track && typeof track.setVolume === 'function') {
+          try { track.setVolume(volume); } catch { /* ignore */ }
+        }
+      });
+    });
+  }, []);
   // The user's OWN screen-share stream while they're presenting (so the
   // self-screen-preview tile in HuddleStage has something to render).
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -143,7 +171,13 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
       room
         .on(RoomEvent.ParticipantConnected,    onParticipantChange)
         .on(RoomEvent.ParticipantDisconnected, p => dropPeer(p.identity))
-        .on(RoomEvent.TrackSubscribed,         (_t, _pub, p) => refreshPeer(p))
+        .on(RoomEvent.TrackSubscribed, (track: any, _pub, p) => {
+          // Apply the current deafen volume to newly subscribed audio.
+          if (track && typeof track.setVolume === 'function' && (track.kind === 'audio' || track.source === Track.Source.Microphone)) {
+            try { track.setVolume(remoteVolumeRef.current); } catch { /* ignore */ }
+          }
+          refreshPeer(p);
+        })
         .on(RoomEvent.TrackUnsubscribed,       (_t, _pub, p) => refreshPeer(p))
         .on(RoomEvent.TrackMuted,              (_pub, p) => p.isLocal ? null : refreshPeer(p as RemoteParticipant))
         .on(RoomEvent.TrackUnmuted,            (_pub, p) => p.isLocal ? null : refreshPeer(p as RemoteParticipant))
@@ -182,6 +216,9 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
       // Hydrate existing remote participants (those who joined before us).
       room.remoteParticipants.forEach(refreshPeer);
       syncLocal(room.localParticipant);
+
+      // Apply current deafen state to existing tracks.
+      setRemoteAudioVolume(remoteVolumeRef.current);
 
       setJoined(true);
     } catch (e: any) {
@@ -247,6 +284,7 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
     leaveMeeting,
     toggleAudio,
     toggleScreen,
+    setRemoteAudioVolume,
   };
 }
 
