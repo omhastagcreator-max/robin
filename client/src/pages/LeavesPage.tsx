@@ -32,10 +32,23 @@ const STATUS_META: Record<LeaveApp['status'], { label: string; color: string; ic
   cancelled: { label: 'Cancelled',      color: 'bg-muted text-muted-foreground border-border',         icon: X },
 };
 
-function dateKey(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x.toISOString();
+/**
+ * Build a YYYY-MM-DD string from a Date's LOCAL components.
+ *
+ * Why we don't use toISOString(): that converts to UTC. A user picking
+ * "May 12" in IST gets a Date whose local time is May 12 00:00 IST. As
+ * UTC, that's May 11 18:30. .toISOString() returns "2026-05-11T...",
+ * which then makes the server save the leave as May 11. Classic
+ * off-by-one.
+ *
+ * By taking the local year/month/day components instead, "May 12" stays
+ * May 12 regardless of the user's timezone.
+ */
+function dateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 export default function LeavesPage() {
@@ -81,7 +94,7 @@ export default function LeavesPage() {
     try {
       await api.createLeave({
         days: sortedSelected.map(d => ({
-          date: d.toISOString(),
+          date: dateKey(d),                       // "2026-05-12" — timezone-safe
           reason: reasons[dateKey(d)].trim(),
         })),
       });

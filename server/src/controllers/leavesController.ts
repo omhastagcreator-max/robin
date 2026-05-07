@@ -15,10 +15,60 @@ function isWeekendBoth(days: { date: Date }[]): boolean {
   return dows.has(0) && dows.has(6); // contains both Sunday and Saturday
 }
 
-function startOfDayUtc(d: Date): Date {
-  const x = new Date(d);
-  x.setUTCHours(0, 0, 0, 0);
-  return x;
+/**
+ * Normalise an incoming date input to NOON UTC of the IST-interpreted day.
+ *
+ * The bug we're killing: the client used to send `d.toISOString()` which
+ * converts IST local midnight (May 12 00:00 IST) to UTC (May 11 18:30Z).
+ * The old `startOfDayUtc` then zeroed UTC hours and stored May 11 — a
+ * day earlier than the user picked.
+ *
+ * The fix:
+ *   1. Accept either "YYYY-MM-DD" (preferred — timezone-free) or full ISO
+ *      strings / Dates (back-compat with old clients).
+ *   2. Convert to IST and extract the calendar day (year, month, date).
+ *   3. Store as NOON UTC of that day. Noon UTC is the same calendar day
+ *      in every timezone from UTC-12 to UTC+12, so display logic ("show
+ *      May 12") works regardless of where the viewer is.
+ */
+function normaliseToIstDay(input: unknown): Date {
+  let y: number, m: number, d: number;
+
+  if (typeof input === 'string') {
+    const ymd = input.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (ymd) {
+      y = +ymd[1]; m = +ymd[2] - 1; d = +ymd[3];
+    } else {
+      const parsed = new Date(input);
+      if (isNaN(parsed.getTime())) throw new Error(`Invalid date: ${input}`);
+      const ist = new Date(parsed.getTime() + 330 * 60_000); // shift to IST
+      y = ist.getUTCFullYear(); m = ist.getUTCMonth(); d = ist.getUTCDate();
+    }
+  } else if (input instanceof Date) {
+    const ist = new Date(input.getTime() + 330 * 60_000);
+    y = ist.getUTCFullYear(); m = ist.getUTCMonth(); d = ist.getUTCDate();
+  } else {
+    throw new Error('Date required');
+  }
+
+  return new Date(Date.UTC(y, m, d, 12, 0, 0));
+}
+
+/** IST "today" window expressed as UTC bounds — for queries against
+ *  noon-UTC dates we now store. */
+function istTodayWindow(): { start: Date; end: Date } {
+  const nowIst = new Date(Date.now() + 330 * 60_000);
+  const y = nowIst.getUTCFullYear();
+  const m = nowIst.getUTCMonth();
+  const d = nowIst.getUTCDate();
+  // IST midnight today/tomorrow expressed in UTC:
+  //   IST 00:00 = UTC of previous day 18:30, but for matching noon-UTC
+  //   stored dates we just need any 24h window containing noon UTC of
+  //   today's IST date. Easiest: [noonUtc - 13h, noonUtc + 13h).
+  const noonUtc = new Date(Date.UTC(y, m, d, 12, 0, 0));
+  const start = new Date(noonUtc.getTime() - 13 * 3600_000);
+  const end   = new Date(noonUtc.getTime() + 13 * 3600_000);
+  return { start, end };
 }
 
 // POST /api/leaves
@@ -43,7 +93,7 @@ export async function createLeave(req: AuthRequest, res: Response): Promise<void
         res.status(400).json({ error: 'Each day needs a reason' });
         return;
       }
-      const d = startOfDayUtc(new Date(raw.date));
+      const d = normaliseToIstDay(raw.date);
       const key = d.toISOString();
       if (seen.has(key)) continue; // de-dupe duplicate clicks
       seen.add(key);
@@ -153,11 +203,10 @@ export async function approveLeave(req: AuthRequest, res: Response): Promise<voi
 
       // If today is among the approved days, push an immediate presence update
       // so the "on leave" badge appears across the org in real time.
-      const today = new Date(); today.setUTCHours(0, 0, 0, 0);
-      const tomorrow = new Date(today); tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+      const { start, end } = istTodayWindow();
       const coversToday = doc.days.some((d: any) => {
         const t = new Date(d.date).getTime();
-        return t >= today.getTime() && t < tomorrow.getTime();
+        return t >= start.getTime() && t < end.getTime();
       });
       if (coversToday) {
         const u = await User.findById(doc.userId).select('name email role');
@@ -228,14 +277,12 @@ export async function cancelLeave(req: AuthRequest, res: Response): Promise<void
 export async function onLeaveToday(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await getOrgId(req.user!.id);
-    const todayStart = startOfDayUtc(new Date());
-    const todayEnd   = new Date(todayStart);
-    todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
+    const { start, end } = istTodayWindow();
 
     const list = await LeaveApplication.find({
       organizationId: orgId,
       status: 'approved',
-      'days.date': { $gte: todayStart, $lt: todayEnd },
+      'days.date': { $gte: start, $lt: end },
     }).lean();
 
     const userIds = Array.from(new Set(list.map(l => l.userId)));

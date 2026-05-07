@@ -213,17 +213,24 @@ export async function getTeamSessionStatus(req: AuthRequest, res: Response): Pro
       statusByUser.set(String(s.userId), s.status as any);
     }
 
-    // Pull approved leaves covering today — those users get 'on_leave' which
-    // takes priority over session status (an on-leave employee shouldn't be
-    // shown as "Working" even if their session is technically still open).
-    const todayStart = new Date();
-    todayStart.setUTCHours(0, 0, 0, 0);
-    const todayEnd = new Date(todayStart);
-    todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
+    // Pull approved leaves covering today (in IST) — those users get
+    // 'on_leave' which takes priority over session status. We compare
+    // against a 26h window centred on noon UTC of today's IST date so
+    // it matches our noon-UTC-stored leave dates regardless of where
+    // the server happens to be (Render is UTC).
+    const nowIst = new Date(Date.now() + 330 * 60_000);
+    const noonUtcToday = new Date(Date.UTC(
+      nowIst.getUTCFullYear(),
+      nowIst.getUTCMonth(),
+      nowIst.getUTCDate(),
+      12, 0, 0,
+    ));
+    const istWindowStart = new Date(noonUtcToday.getTime() - 13 * 3600_000);
+    const istWindowEnd   = new Date(noonUtcToday.getTime() + 13 * 3600_000);
     const onLeave = await LeaveApplication.find({
       organizationId: orgId,
       status: 'approved',
-      'days.date': { $gte: todayStart, $lt: todayEnd },
+      'days.date': { $gte: istWindowStart, $lt: istWindowEnd },
     }).select('userId').lean();
     const onLeaveSet = new Set(onLeave.map(l => String(l.userId)));
 
