@@ -3,6 +3,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CalendarOff, Loader2, Check, X, Filter, Clock, CheckCircle2, XCircle,
+  ClipboardList, BarChart3, Calendar,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import * as api from '@/api';
@@ -30,6 +31,26 @@ const STATUS_META = {
 
 type Status = keyof typeof STATUS_META;
 
+interface SummaryRow {
+  userId: string;
+  name?: string;
+  email?: string;
+  role?: string;
+  team?: string;
+  approvedThisMonth: number;
+  approvedThisYear: number;
+  pendingCount: number;
+  lastLeaveDate: string | null;
+}
+
+interface SummaryPayload {
+  monthLabel: string;
+  yearLabel: string;
+  rows: SummaryRow[];
+}
+
+type Tab = 'approvals' | 'report';
+
 export default function AdminLeaves() {
   const [list, setList] = useState<AdminLeave[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +58,11 @@ export default function AdminLeaves() {
   const [acting, setActing] = useState<string | null>(null);
   const [rejectFor, setRejectFor] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
+  const [tab, setTab] = useState<Tab>('approvals');
+
+  // Per-employee leave aggregates (loaded only when Report tab is opened).
+  const [summary, setSummary] = useState<SummaryPayload | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
 
   const reload = async () => {
     setLoading(true);
@@ -46,7 +72,20 @@ export default function AdminLeaves() {
     } finally { setLoading(false); }
   };
 
+  const loadSummary = async () => {
+    setSummaryLoading(true);
+    try {
+      const data = await api.adminLeavesSummary();
+      setSummary(data);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Could not load summary');
+    } finally { setSummaryLoading(false); }
+  };
+
   useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    if (tab === 'report' && !summary) loadSummary();
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => {
     if (filter === 'all') return list;
@@ -85,12 +124,38 @@ export default function AdminLeaves() {
       <div className="max-w-5xl mx-auto space-y-5 page-transition-enter">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <CalendarOff className="h-6 w-6 text-primary" /> Leave Approvals
+            <CalendarOff className="h-6 w-6 text-primary" /> Leaves
           </h1>
           <p className="text-sm text-muted-foreground">
-            Review pending leave applications and respond. Approving notifies the requester instantly.
+            Review pending applications, or switch to Report for per-employee usage.
           </p>
         </div>
+
+        {/* Tab toggle */}
+        <div className="bg-card border border-border rounded-2xl p-1 inline-flex items-center gap-1">
+          <button
+            onClick={() => setTab('approvals')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+              tab === 'approvals' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'
+            }`}
+          >
+            <ClipboardList className="h-3.5 w-3.5" /> Approvals
+            <span className="opacity-60">· {counts.pending}</span>
+          </button>
+          <button
+            onClick={() => setTab('report')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+              tab === 'report' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'
+            }`}
+          >
+            <BarChart3 className="h-3.5 w-3.5" /> Report
+          </button>
+        </div>
+
+        {tab === 'report' ? (
+          <SummaryReport data={summary} loading={summaryLoading} onRefresh={loadSummary} />
+        ) : (
+          <>
 
         {/* Filter chips */}
         <div className="bg-card border border-border rounded-2xl p-2 flex items-center gap-1 flex-wrap">
@@ -222,7 +287,108 @@ export default function AdminLeaves() {
             </AnimatePresence>
           </div>
         )}
+          </>
+        )}
       </div>
     </AppLayout>
+  );
+}
+
+// ─── Per-employee summary report ─────────────────────────────────────────
+
+function SummaryReport({ data, loading, onRefresh }: { data: SummaryPayload | null; loading: boolean; onRefresh: () => void }) {
+  if (loading && !data) {
+    return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+  }
+  if (!data) return null;
+
+  const totalThisMonth = data.rows.reduce((s, r) => s + r.approvedThisMonth, 0);
+  const totalThisYear  = data.rows.reduce((s, r) => s + r.approvedThisYear,  0);
+  const totalPending   = data.rows.reduce((s, r) => s + r.pendingCount,      0);
+
+  return (
+    <div className="space-y-3">
+      {/* Summary KPIs */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-card border border-border rounded-2xl p-4">
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{data.monthLabel}</p>
+          <p className="text-2xl font-bold mt-1">{totalThisMonth}</p>
+          <p className="text-[11px] text-muted-foreground">days approved this month</p>
+        </div>
+        <div className="bg-card border border-border rounded-2xl p-4">
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{data.yearLabel}</p>
+          <p className="text-2xl font-bold mt-1">{totalThisYear}</p>
+          <p className="text-[11px] text-muted-foreground">days approved this year</p>
+        </div>
+        <div className="bg-card border border-amber-500/30 bg-amber-500/5 rounded-2xl p-4">
+          <p className="text-[11px] text-amber-700 uppercase tracking-wide">Pending</p>
+          <p className="text-2xl font-bold mt-1 text-amber-700">{totalPending}</p>
+          <p className="text-[11px] text-muted-foreground">applications waiting on you</p>
+        </div>
+      </div>
+
+      {/* Per-employee table */}
+      <div className="bg-card border border-border rounded-2xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+          <Calendar className="h-4 w-4 text-primary" />
+          <h2 className="font-semibold text-sm">Per-employee leave usage</h2>
+          <button
+            onClick={onRefresh}
+            className="ml-auto text-[11px] text-primary hover:underline"
+          >
+            Refresh
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-muted/40 text-muted-foreground">
+              <tr>
+                <th className="text-left px-4 py-2 font-medium">Employee</th>
+                <th className="text-left px-3 py-2 font-medium">Role</th>
+                <th className="text-left px-3 py-2 font-medium">Team</th>
+                <th className="text-right px-3 py-2 font-medium">{data.monthLabel}</th>
+                <th className="text-right px-3 py-2 font-medium">{data.yearLabel}</th>
+                <th className="text-right px-3 py-2 font-medium">Pending</th>
+                <th className="text-left px-3 py-2 font-medium">Last leave</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/40">
+              {data.rows.map(r => (
+                <tr key={r.userId} className="hover:bg-muted/30">
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 rounded-full bg-primary/15 text-primary flex items-center justify-center text-xs font-bold shrink-0">
+                        {(r.name || r.email || '?')[0].toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold truncate">{r.name || r.email}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{r.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-muted-foreground capitalize">{r.role || '—'}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground capitalize">{r.team || '—'}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums font-semibold">{r.approvedThisMonth}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums font-semibold">{r.approvedThisYear}</td>
+                  <td className="px-3 py-2.5 text-right">
+                    {r.pendingCount > 0 ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-600 border border-amber-500/30">
+                        {r.pendingCount} waiting
+                      </span>
+                    ) : <span className="text-muted-foreground">—</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-muted-foreground">
+                    {r.lastLeaveDate ? format(new Date(r.lastLeaveDate), 'dd MMM yyyy') : '—'}
+                  </td>
+                </tr>
+              ))}
+              {data.rows.length === 0 && (
+                <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">No employees found.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }

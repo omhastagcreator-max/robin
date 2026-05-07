@@ -169,6 +169,96 @@ export async function listAdminLeaves(req: AuthRequest, res: Response): Promise<
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
+/**
+ * GET /api/leaves/admin/summary
+ *
+ * Per-employee leave aggregates for the org. Returns one row per active
+ * employee/sales user including admins, with:
+ *   - approvedThisMonth: count of approved leave days falling in this
+ *                        IST calendar month
+ *   - approvedThisYear:  same, for this IST calendar year
+ *   - pendingCount:      number of pending applications they've submitted
+ *   - lastLeaveDate:     most recent approved leave day (any time)
+ *
+ * Admin uses this to track usage at a glance — who's leaning on leave,
+ * who hasn't taken any yet, who has applications waiting on review.
+ */
+export async function leavesSummary(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    // Compute IST month/year boundaries (noon UTC of the first day).
+    const nowIst = new Date(Date.now() + 330 * 60_000);
+    const y = nowIst.getUTCFullYear();
+    const m = nowIst.getUTCMonth();
+    const monthStart = new Date(Date.UTC(y, m,     1, 0, 0, 0));
+    const monthEnd   = new Date(Date.UTC(y, m + 1, 1, 0, 0, 0));
+    const yearStart  = new Date(Date.UTC(y, 0,     1, 0, 0, 0));
+    const yearEnd    = new Date(Date.UTC(y + 1, 0, 1, 0, 0, 0));
+
+    // Pull every internal staff member in the org.
+    const staff = await User.find({
+      organizationId: orgId,
+      role: { $in: ['admin', 'employee', 'sales'] },
+      isActive: true,
+    }).select('_id name email role team').lean();
+
+    // Pull every leave application for this org, then aggregate in-memory.
+    // (For 50-100 employees and a few hundred leaves a year, this is fine.
+    // If it ever grows, switch to a Mongo aggregation pipeline.)
+    const allLeaves = await LeaveApplication.find({
+      organizationId: orgId,
+    }).select('userId status days createdAt').lean();
+
+    const summary = staff.map(u => {
+      const uid = String(u._id);
+      const userLeaves = allLeaves.filter(l => l.userId === uid);
+
+      let approvedThisMonth = 0;
+      let approvedThisYear  = 0;
+      let lastLeaveDate: Date | null = null;
+      let pendingCount = 0;
+
+      for (const leave of userLeaves) {
+        if (leave.status === 'pending') pendingCount += 1;
+        if (leave.status !== 'approved') continue;
+        for (const d of leave.days || []) {
+          const t = new Date(d.date);
+          if (t >= monthStart && t < monthEnd) approvedThisMonth += 1;
+          if (t >= yearStart  && t < yearEnd)  approvedThisYear  += 1;
+          if (!lastLeaveDate || t > lastLeaveDate) lastLeaveDate = t;
+        }
+      }
+
+      return {
+        userId: uid,
+        name:   u.name,
+        email:  u.email,
+        role:   u.role,
+        team:   u.team,
+        approvedThisMonth,
+        approvedThisYear,
+        pendingCount,
+        lastLeaveDate,
+      };
+    });
+
+    // Sort: most approvedThisMonth first, ties broken by year, then name.
+    summary.sort((a, b) =>
+      (b.approvedThisMonth - a.approvedThisMonth) ||
+      (b.approvedThisYear  - a.approvedThisYear)  ||
+      (a.name || '').localeCompare(b.name || '')
+    );
+
+    res.json({
+      monthLabel: nowIst.toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }),
+      yearLabel:  String(y),
+      rows: summary,
+    });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
 // PUT /api/leaves/:id/approve
 export async function approveLeave(req: AuthRequest, res: Response): Promise<void> {
   try {
