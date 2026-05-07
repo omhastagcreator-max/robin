@@ -4,7 +4,9 @@ import { motion } from 'framer-motion';
 import {
   TrendingUp, IndianRupee, Eye, MousePointerClick, Target, AlertCircle,
   Loader2, RefreshCw, BarChart3, ChevronDown, Check, X, Lock,
+  Share2, Copy, MessageCircle, Mail,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { format } from 'date-fns';
 import * as api from '@/api';
@@ -75,6 +77,7 @@ export default function MetaAdsReport() {
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   // Effective date window from preset
   const window = useMemo(() => {
@@ -144,13 +147,22 @@ export default function MetaAdsReport() {
               Live data from Meta Marketing API. Pick an account and a window.
             </p>
           </div>
-          <button
-            onClick={() => { setRefreshing(true); setAccountId(a => a); /* trigger effect */ }}
-            disabled={refreshing}
-            className="h-9 px-3 flex items-center gap-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-semibold disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShareOpen(true)}
+              disabled={!accountId}
+              className="h-9 px-3 flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold disabled:opacity-50 shadow-sm"
+            >
+              <Share2 className="h-3.5 w-3.5" /> Share with client
+            </button>
+            <button
+              onClick={() => { setRefreshing(true); setAccountId(a => a); /* trigger effect */ }}
+              disabled={refreshing}
+              className="h-9 px-3 flex items-center gap-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-semibold disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
+            </button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -326,7 +338,178 @@ export default function MetaAdsReport() {
           </div>
         )}
       </div>
+
+      {/* Share modal — generates a public link for the current report */}
+      {shareOpen && (
+        <ShareReportModal
+          adAccountId={accountId}
+          accountName={accounts.find(a => a.id === accountId)?.name || ''}
+          window={window}
+          preset={preset}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
     </AppLayout>
+  );
+}
+
+// ── Share modal ─────────────────────────────────────────────────────────
+
+function ShareReportModal({ adAccountId, accountName, window: w, preset, onClose }: {
+  adAccountId: string;
+  accountName: string;
+  window: { from: string; to: string };
+  preset: Preset;
+  onClose: () => void;
+}) {
+  const [creating, setCreating] = useState(false);
+  const [link, setLink]   = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [ttl, setTtl]     = useState<number>(14);
+  const [label, setLabel] = useState<string>(accountName);
+  const [note, setNote]   = useState<string>('');
+
+  // Esc closes
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    globalThis.addEventListener('keydown', onKey);
+    return () => globalThis.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const generate = async () => {
+    setCreating(true);
+    try {
+      const useRange = preset === 'custom';
+      const res = await api.metaCreateShare({
+        adAccountId,
+        datePreset: useRange ? undefined : (preset === 'yesterday' ? 'yesterday' : preset === 'last_7d' ? 'last_7d' : 'last_30d'),
+        fromDate: useRange ? w.from : undefined,
+        toDate:   useRange ? w.to   : undefined,
+        clientLabel: label,
+        note,
+        expiresInDays: ttl,
+      });
+      setLink(res.url);
+      setExpiresAt(res.expiresAt);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Could not create share link');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const copy = async () => {
+    if (!link) return;
+    try { await navigator.clipboard.writeText(link); toast.success('Link copied to clipboard'); }
+    catch { toast.error('Could not copy — select the link manually'); }
+  };
+
+  const shareWhatsApp = () => {
+    if (!link) return;
+    const message = `Hi ${label || 'team'} 👋\n\nHere's your Meta Ads report from Robin:\n${link}\n\nLink valid until ${new Date(expiresAt!).toLocaleDateString('en-IN')}.`;
+    globalThis.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  const shareEmail = () => {
+    if (!link) return;
+    const subject = `Meta Ads Report — ${label || 'your account'}`;
+    const body = `Hi,%0D%0A%0D%0AHere's your Meta Ads report from Robin:%0D%0A${encodeURIComponent(link)}%0D%0A%0D%0ALink valid until ${new Date(expiresAt!).toLocaleDateString('en-IN')}.%0D%0A%0D%0AThanks.`;
+    globalThis.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${body}`, '_blank');
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start gap-3">
+          <div className="h-10 w-10 rounded-xl bg-primary/15 flex items-center justify-center">
+            <Share2 className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-base">Share with client</h3>
+            <p className="text-xs text-muted-foreground">Generate a public link — your client can view this report without a Robin account.</p>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+        </div>
+
+        {!link ? (
+          <>
+            <div className="space-y-3 text-sm">
+              <div>
+                <label className="text-[10px] uppercase font-semibold text-muted-foreground">Client label (shown to client)</label>
+                <input
+                  value={label}
+                  onChange={e => setLabel(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  placeholder="e.g., Acme Corp"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase font-semibold text-muted-foreground">Internal note (optional, private)</label>
+                <input
+                  value={note}
+                  onChange={e => setNote(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  placeholder="Anything you want to remember"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase font-semibold text-muted-foreground">Link valid for</label>
+                <select
+                  value={ttl}
+                  onChange={e => setTtl(Number(e.target.value))}
+                  className="w-full mt-1 px-3 py-2 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={90}>90 days</option>
+                </select>
+              </div>
+              <div className="rounded-lg bg-muted/30 p-3 text-[11px] text-muted-foreground">
+                <div><strong className="text-foreground">Account:</strong> {accountName}</div>
+                <div><strong className="text-foreground">Window:</strong> {preset === 'custom' ? `${w.from} → ${w.to}` : preset.replace('_', ' ')}</div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button onClick={onClose} className="px-3 py-2 rounded-lg text-sm hover:bg-muted">Cancel</button>
+              <button
+                onClick={generate}
+                disabled={creating}
+                className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Share2 className="h-3.5 w-3.5" />}
+                Generate link
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="space-y-3">
+              <div className="rounded-lg bg-muted/30 p-3 text-[11px] text-muted-foreground">
+                Link valid until <strong className="text-foreground">{new Date(expiresAt!).toLocaleDateString('en-IN')}</strong>
+              </div>
+              <div className="flex items-center gap-2 bg-background border border-input rounded-lg p-2">
+                <code className="flex-1 text-[11px] truncate">{link}</code>
+                <button onClick={copy} className="h-7 px-2 flex items-center gap-1 rounded bg-primary/15 text-primary hover:bg-primary/25 text-xs font-semibold">
+                  <Copy className="h-3 w-3" /> Copy
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={shareWhatsApp} className="h-10 flex items-center justify-center gap-1.5 rounded-lg bg-green-500/15 text-green-700 border border-green-500/30 hover:bg-green-500/25 text-sm font-semibold">
+                  <MessageCircle className="h-4 w-4" /> WhatsApp
+                </button>
+                <button onClick={shareEmail} className="h-10 flex items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 text-blue-700 border border-blue-500/30 hover:bg-blue-500/25 text-sm font-semibold">
+                  <Mail className="h-4 w-4" /> Email
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-end pt-1">
+              <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm hover:bg-muted">Done</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

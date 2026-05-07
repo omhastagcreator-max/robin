@@ -8,6 +8,7 @@ import ActivityLog from '../models/ActivityLog';
 import bcrypt from 'bcryptjs';
 import Organization from '../models/Organization';
 import { sessionTotals, effectiveEndMs } from '../services/sessionTime';
+import * as meta from '../services/metaAdsService';
 
 // GET /api/admin/employees
 export async function listEmployees(req: AuthRequest, res: Response): Promise<void> {
@@ -118,6 +119,69 @@ export async function resetUserPassword(req: AuthRequest, res: Response): Promis
     user.passwordHash = newPassword;
     await user.save();
     res.json({ message: 'Password reset', newPassword });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * POST /api/admin/meta/clients/bulk
+ *
+ * For each Meta ad account the agency has access to, ensure a
+ * corresponding Robin Client user exists (role='client', team=''),
+ * linked via metaAdAccountId. Skips any account that already has a
+ * client mapped to it.
+ *
+ * Placeholder email is generated (e.g., "client.scent-diffuser@robin.local")
+ * so the user record is valid; admin can edit to the real email later
+ * from /admin/clients. Password hash is a random unguessable string —
+ * client gets in via SSO/OAuth or admin reset, not by typing a password.
+ */
+export async function bulkCreateMetaClients(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    if (!meta.isConfigured()) { res.status(503).json({ error: 'Meta Ads not configured on server' }); return; }
+    const orgId = (await User.findById(req.user!.id).select('organizationId'))?.organizationId;
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    const accounts = await meta.listAdAccounts();
+    const results = {
+      created: [] as Array<{ adAccountId: string; name: string; userId: string }>,
+      skipped: [] as Array<{ adAccountId: string; name: string; reason: string }>,
+    };
+
+    for (const acc of accounts) {
+      // Already linked?
+      const existing = await User.findOne({ metaAdAccountId: acc.id });
+      if (existing) {
+        results.skipped.push({ adAccountId: acc.id, name: acc.name, reason: `already linked to ${existing.email}` });
+        continue;
+      }
+
+      // Slugify the account name for the placeholder email
+      const slug = (acc.name || acc.id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'client';
+      const email = `client.${slug}.${acc.id.replace('act_', '')}@robin.local`;
+
+      // Random unguessable password — admin will reset / share email-link login later
+      const randomPw = Math.random().toString(36) + Math.random().toString(36);
+
+      try {
+        const user = await User.create({
+          email,
+          name: acc.name || acc.id,
+          role: 'client',
+          organizationId: orgId,
+          metaAdAccountId: acc.id,
+          passwordHash: randomPw, // pre-save hook bcrypts it
+        });
+        results.created.push({ adAccountId: acc.id, name: acc.name, userId: String(user._id) });
+      } catch (e: any) {
+        results.skipped.push({ adAccountId: acc.id, name: acc.name, reason: e?.message || 'create failed' });
+      }
+    }
+
+    res.json({
+      ok: true,
+      summary: `Created ${results.created.length}, skipped ${results.skipped.length}.`,
+      ...results,
+    });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 

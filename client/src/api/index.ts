@@ -199,6 +199,20 @@ export const metaAdsRange      = (params: { adAccountId?: string; from: string; 
 export const metaAdsCampaigns  = (params: { adAccountId?: string; from?: string; to?: string; datePreset?: string }) =>
   api.get('/ads/meta/campaigns', { params }).then(r => r.data);
 
+// Sharing
+export const metaCreateShare   = (body: { adAccountId: string; datePreset?: string; fromDate?: string; toDate?: string; clientUserId?: string; clientLabel?: string; note?: string; expiresInDays?: number; }) =>
+  api.post('/ads/meta/share', body).then(r => r.data);
+export const metaListShares    = (adAccountId?: string) =>
+  api.get('/ads/meta/shares', { params: adAccountId ? { adAccountId } : {} }).then(r => r.data);
+export const metaRevokeShare   = (id: string) =>
+  api.delete(`/ads/meta/share/${id}`).then(r => r.data);
+// Public — no auth required, raw axios call to a path that bypasses the bearer
+export const metaViewShare     = (token: string) =>
+  api.get(`/share/meta/${token}`).then(r => r.data);
+
+// Bulk create clients from ad accounts
+export const adminBulkCreateMetaClients = () => api.post('/admin/meta/clients/bulk').then(r => r.data);
+
 // ── Huddle (LiveKit) ──────────────────────────────────────────────────────────
 export const getHuddleToken    = () => api.post('/huddle/token', {}).then(r => r.data);
 

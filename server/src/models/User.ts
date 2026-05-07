@@ -41,6 +41,9 @@ const UserSchema = new Schema<IUser>(
     // On Call do-not-disturb — independent of clock-in state so admins
     // (who don't have Sessions) can flip it too.
     onCallSince:    { type: Date, default: null },
+    // For client users — the Meta ad account they own. Used to map
+    // /ads/meta share links to the right client.
+    metaAdAccountId: { type: String, default: null, index: true },
   },
   { timestamps: true }
 );

@@ -27,6 +27,7 @@ const LeavesPage        = lazy(() => import('@/pages/LeavesPage'));
 const AdminLeaves       = lazy(() => import('@/pages/AdminLeaves'));
 const AdminAttendance   = lazy(() => import('@/pages/AdminAttendance'));
 const MetaAdsReport     = lazy(() => import('@/pages/MetaAdsReport'));
+const MetaShareView     = lazy(() => import('@/pages/MetaShareView'));
 
 function RootRedirect() {
   const { user, role, loading } = useAuth();
@@ -46,6 +47,8 @@ function AppRoutes() {
         {/* Public */}
         <Route path="/login"            element={<E><Login /></E>} />
         <Route path="/update-password"  element={<E><UpdatePassword /></E>} />
+        {/* Public read-only Meta Ads share — no Robin login required */}
+        <Route path="/share/meta/:token" element={<E><MetaShareView /></E>} />
 
         {/* Root */}
         <Route path="/"                 element={<RootRedirect />} />
