@@ -235,6 +235,53 @@ export default function MetaAdsReport() {
           </div>
         )}
 
+        {/* Daily breakdown table — Date / Spend / Sales / CPR / ROAS in one view */}
+        {daily.length > 0 && (
+          <div className="bg-card border border-border rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-border">
+              <h2 className="font-semibold text-sm">Daily summary · {daily.length} day{daily.length === 1 ? '' : 's'}</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/40 text-muted-foreground">
+                  <tr>
+                    <th className="text-left px-4 py-2 font-medium">Date</th>
+                    <th className="text-right px-3 py-2 font-medium">Ad Spend</th>
+                    <th className="text-right px-3 py-2 font-medium">Sales</th>
+                    <th className="text-right px-3 py-2 font-medium" title="Cost Per Result (spend ÷ sales)">CPR</th>
+                    <th className="text-right px-3 py-2 font-medium" title="Return On Ad Spend (revenue ÷ spend)">ROAS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40">
+                  {[...daily].sort((a, b) => b.dateStart.localeCompare(a.dateStart)).map(d => (
+                    <tr key={d.dateStart} className="hover:bg-muted/30">
+                      <td className="px-4 py-2.5 font-medium tabular-nums">{format(new Date(d.dateStart), 'EEE, dd MMM yyyy')}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold">{fmtINR(d.spend)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">{fmtNum(d.conversions)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">{d.conversions > 0 ? fmtINR(d.costPerConversion) : <span className="text-muted-foreground">—</span>}</td>
+                      <td className={`px-3 py-2.5 text-right tabular-nums font-semibold ${d.roas >= 2 ? 'text-green-600' : d.roas >= 1 ? 'text-amber-600' : d.roas > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
+                        {d.roas > 0 ? `${d.roas.toFixed(2)}x` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                  {/* Footer row — totals across selected window */}
+                  {totals && (
+                    <tr className="bg-muted/30 font-bold">
+                      <td className="px-4 py-2.5">Total ({daily.length}d)</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">{fmtINR(totals.spend)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">{fmtNum(totals.conversions)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">{totals.conversions > 0 ? fmtINR(totals.costPerConversion) : '—'}</td>
+                      <td className={`px-3 py-2.5 text-right tabular-nums ${totals.roas >= 2 ? 'text-green-600' : totals.roas >= 1 ? 'text-amber-600' : totals.roas > 0 ? 'text-red-600' : ''}`}>
+                        {totals.roas > 0 ? `${totals.roas.toFixed(2)}x` : '—'}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* Per-campaign table */}
         {campaigns.length > 0 && (
           <div className="bg-card border border-border rounded-2xl overflow-hidden">

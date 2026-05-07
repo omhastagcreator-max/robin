@@ -332,6 +332,93 @@ export async function getEmployeeReport(req: AuthRequest, res: Response): Promis
       t.dueDate && new Date(t.dueDate).getTime() < now
     ).length;
 
+    // ── Attendance: per-day clock-in/out + averages over last 30 days ─────
+    // We pull a wider window (30 days) for the *averages* so they're
+    // statistically meaningful, but the per-day list is scoped to the
+    // current report period.
+    const periodSessions = sessions
+      .filter(s => s.startTime)
+      .map(s => ({
+        _id: s._id,
+        startTime: s.startTime,
+        endTime: s.endTime || null,
+        status: s.status,
+        autoClosedAt: s.autoClosedAt || null,
+      }))
+      .sort((a, b) => new Date(a.startTime as any).getTime() - new Date(b.startTime as any).getTime());
+
+    // Group per IST date — for each date, take the FIRST start and LAST end.
+    const byDate = new Map<string, { firstStart: Date; lastEnd: Date | null; count: number }>();
+    const istDateKey = (d: Date) => {
+      const ist = new Date(d.getTime() + 330 * 60_000);
+      return ist.toISOString().slice(0, 10);
+    };
+    for (const s of periodSessions) {
+      const key = istDateKey(new Date(s.startTime as any));
+      const slot = byDate.get(key);
+      const start = new Date(s.startTime as any);
+      const end = s.endTime ? new Date(s.endTime as any) : null;
+      if (!slot) {
+        byDate.set(key, { firstStart: start, lastEnd: end, count: 1 });
+      } else {
+        if (start < slot.firstStart) slot.firstStart = start;
+        if (end && (!slot.lastEnd || end > slot.lastEnd)) slot.lastEnd = end;
+        slot.count += 1;
+      }
+    }
+    const dailyAttendance = Array.from(byDate.entries())
+      .map(([dateKey, v]) => ({
+        date: dateKey,
+        firstStart: v.firstStart,
+        lastEnd: v.lastEnd,
+        sessionCount: v.count,
+      }))
+      .sort((a, b) => b.date.localeCompare(a.date)); // newest first
+
+    // Compute typical start / end of day. Use the last 30 days of CLOSED
+    // sessions (so we don't include incomplete days). Convert to "minutes
+    // since IST midnight" for averaging, then format as HH:MM.
+    const thirtyDaysAgo = new Date(now - 30 * 86400_000);
+    const recentClosed = await Session.find({
+      userId: id,
+      startTime: { $gte: thirtyDaysAgo },
+    }).select('startTime endTime').lean();
+
+    const minutesIst = (d: Date) => {
+      const ist = new Date(d.getTime() + 330 * 60_000);
+      return ist.getUTCHours() * 60 + ist.getUTCMinutes();
+    };
+    const startMins: number[] = [];
+    const endMins: number[] = [];
+    // Group recent sessions per date and take first start / last end per day
+    const recentByDate = new Map<string, { first: Date; last: Date | null }>();
+    for (const s of recentClosed) {
+      const start = new Date(s.startTime as any);
+      const k = istDateKey(start);
+      const slot = recentByDate.get(k);
+      const end = s.endTime ? new Date(s.endTime as any) : null;
+      if (!slot) recentByDate.set(k, { first: start, last: end });
+      else {
+        if (start < slot.first) slot.first = start;
+        if (end && (!slot.last || end > slot.last)) slot.last = end;
+      }
+    }
+    for (const v of recentByDate.values()) {
+      startMins.push(minutesIst(v.first));
+      if (v.last) endMins.push(minutesIst(v.last));
+    }
+    const avg = (arr: number[]) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+    const fmtHM = (m: number | null) => {
+      if (m === null) return null;
+      const h = Math.floor(m / 60);
+      const mm = String(m % 60).padStart(2, '0');
+      const period = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      return `${h12}:${mm} ${period}`;
+    };
+    const avgStartMin = avg(startMins);
+    const avgEndMin   = avg(endMins);
+
     res.json({
       period,
       startDate,
@@ -361,6 +448,15 @@ export async function getEmployeeReport(req: AuthRequest, res: Response): Promis
         completed: completedTasks,
         ongoing:   ongoingTasks,
         touched:   tasksTouchedInPeriod,
+      },
+      attendance: {
+        // Averages over the LAST 30 DAYS — separate window from the
+        // report period so they're statistically stable.
+        usualStartTime: fmtHM(avgStartMin),  // e.g. "9:42 AM"
+        usualEndTime:   fmtHM(avgEndMin),    // e.g. "6:15 PM"
+        sampleSize:     recentByDate.size,    // how many days the avg is based on
+        // Per-day attendance for the REPORT PERIOD only.
+        days: dailyAttendance,
       },
     });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }

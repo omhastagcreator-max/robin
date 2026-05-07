@@ -52,6 +52,17 @@ interface ReportPayload {
     ongoing: any[];
     touched: any[];
   };
+  attendance?: {
+    usualStartTime: string | null;
+    usualEndTime: string | null;
+    sampleSize: number;
+    days: Array<{
+      date: string;          // YYYY-MM-DD
+      firstStart: string;    // ISO
+      lastEnd: string | null; // ISO or null
+      sessionCount: number;
+    }>;
+  };
 }
 
 function formatDuration(ms: number): { value: string; unit: string } {
@@ -394,6 +405,11 @@ export function EmployeeReportModal({ open, employee, onClose }: Props) {
                     )}
                   </section>
 
+                  {/* Attendance — typical start/end + per-day timestamps */}
+                  {report.attendance && (
+                    <AttendancePanel attendance={report.attendance} />
+                  )}
+
                   {/* Task completion summary — brief info */}
                   {report.completion && (
                     <CompletionSummary completion={report.completion} />
@@ -451,6 +467,79 @@ export function EmployeeReportModal({ open, employee, onClose }: Props) {
         </>
       )}
     </AnimatePresence>
+  );
+}
+
+function AttendancePanel({ attendance }: { attendance: NonNullable<ReportPayload['attendance']> }) {
+  const fmtTime = (iso: string | null) => {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleTimeString('en-IN', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+    });
+  };
+  const fmtDay = (yyyymmdd: string) => {
+    const [y, m, d] = yyyymmdd.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-IN', {
+      weekday: 'short', day: '2-digit', month: 'short',
+    });
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="h-11 w-11 rounded-xl bg-cyan-500/15 flex items-center justify-center">
+          <Clock className="h-5 w-5 text-cyan-500" />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-semibold">Attendance pattern</p>
+          <p className="text-[11px] text-muted-foreground">
+            Typical day shape from the last {attendance.sampleSize || 0} day{attendance.sampleSize === 1 ? '' : 's'}
+          </p>
+        </div>
+      </div>
+
+      {/* Average start / end */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-xl border border-border bg-muted/20 p-3">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">Usually starts</p>
+          <p className="text-2xl font-bold tabular-nums leading-none mt-1">
+            {attendance.usualStartTime || <span className="text-muted-foreground text-base font-normal">no data</span>}
+          </p>
+        </div>
+        <div className="rounded-xl border border-border bg-muted/20 p-3">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">Usually ends</p>
+          <p className="text-2xl font-bold tabular-nums leading-none mt-1">
+            {attendance.usualEndTime || <span className="text-muted-foreground text-base font-normal">no data</span>}
+          </p>
+        </div>
+      </div>
+
+      {/* Per-day timestamps for the report period */}
+      {attendance.days.length > 0 ? (
+        <div className="border border-border/60 rounded-xl overflow-hidden">
+          <div className="px-3 py-2 bg-muted/30 text-[10px] uppercase tracking-wide font-semibold text-muted-foreground grid grid-cols-12 gap-2">
+            <span className="col-span-5">Date</span>
+            <span className="col-span-3">Clocked in</span>
+            <span className="col-span-3">Clocked out</span>
+            <span className="col-span-1 text-right"># sess.</span>
+          </div>
+          <div className="divide-y divide-border/40 max-h-64 overflow-y-auto">
+            {attendance.days.map(d => (
+              <div key={d.date} className="px-3 py-2 grid grid-cols-12 gap-2 text-xs items-center">
+                <span className="col-span-5 font-medium">{fmtDay(d.date)}</span>
+                <span className="col-span-3 tabular-nums">{fmtTime(d.firstStart)}</span>
+                <span className="col-span-3 tabular-nums">
+                  {d.lastEnd ? fmtTime(d.lastEnd) : <span className="text-amber-600 text-[11px]">still active</span>}
+                </span>
+                <span className="col-span-1 text-right text-muted-foreground tabular-nums">{d.sessionCount}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="text-[11px] text-muted-foreground italic">No clock-in days in this period.</p>
+      )}
+    </div>
   );
 }
 
