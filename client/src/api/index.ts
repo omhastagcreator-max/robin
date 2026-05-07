@@ -185,6 +185,7 @@ export const rejectLeave       = (id: string, note?: string) =>
   api.put(`/leaves/${id}/reject`, { note }).then(r => r.data);
 export const onLeaveToday      = () => api.get('/leaves/on-leave-today').then(r => r.data);
 export const adminLeavesSummary = () => api.get('/leaves/admin/summary').then(r => r.data);
+export const adminAttendance    = (date?: string) => api.get('/admin/attendance', { params: date ? { date } : {} }).then(r => r.data);
 
 // ── Huddle (LiveKit) ──────────────────────────────────────────────────────────
 export const getHuddleToken    = () => api.post('/huddle/token', {}).then(r => r.data);

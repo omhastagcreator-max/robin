@@ -255,6 +255,11 @@ export default function AdminDashboard() {
               <p className="text-xs font-semibold">Leaves</p>
               <p className="text-[10px] text-muted-foreground">{pendingLeaveCount} waiting</p>
             </Link>
+            <Link to="/admin/attendance" className="flex flex-col items-start gap-1 p-3 rounded-xl border border-border hover:border-primary/40 hover:bg-primary/5 transition-colors">
+              <Clock className="h-4 w-4 text-cyan-500" />
+              <p className="text-xs font-semibold">Attendance</p>
+              <p className="text-[10px] text-muted-foreground">clock in/out</p>
+            </Link>
             <Link to="/vault" className="flex flex-col items-start gap-1 p-3 rounded-xl border border-border hover:border-primary/40 hover:bg-primary/5 transition-colors">
               <KeyRound className="h-4 w-4 text-green-500" />
               <p className="text-xs font-semibold">Vault</p>

@@ -25,6 +25,7 @@ const ProfilePage       = lazy(() => import('@/pages/ProfilePage'));
 const ClientVault       = lazy(() => import('@/pages/ClientVault'));
 const LeavesPage        = lazy(() => import('@/pages/LeavesPage'));
 const AdminLeaves       = lazy(() => import('@/pages/AdminLeaves'));
+const AdminAttendance   = lazy(() => import('@/pages/AdminAttendance'));
 
 function RootRedirect() {
   const { user, role, loading } = useAuth();
@@ -65,6 +66,7 @@ function AppRoutes() {
         <Route path="/admin/clients"    element={<E><AdminClients /></E>} />
         <Route path="/admin/reports"    element={<E><AdminReports /></E>} />
         <Route path="/admin/leaves"     element={<E><AdminLeaves /></E>} />
+        <Route path="/admin/attendance" element={<E><AdminAttendance /></E>} />
 
         {/* Client */}
         <Route path="/client"           element={<E><ClientDashboard /></E>} />

@@ -7,7 +7,7 @@ import ProjectTask from '../models/ProjectTask';
 import ActivityLog from '../models/ActivityLog';
 import bcrypt from 'bcryptjs';
 import Organization from '../models/Organization';
-import { sessionTotals } from '../services/sessionTime';
+import { sessionTotals, effectiveEndMs } from '../services/sessionTime';
 
 // GET /api/admin/employees
 export async function listEmployees(req: AuthRequest, res: Response): Promise<void> {
@@ -118,6 +118,115 @@ export async function resetUserPassword(req: AuthRequest, res: Response): Promis
     user.passwordHash = newPassword;
     await user.save();
     res.json({ message: 'Password reset', newPassword });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+// GET /api/admin/attendance?date=YYYY-MM-DD
+//
+// Daily attendance report: every internal staff member with their
+// session timestamps for the chosen IST date. Lets admin see at a
+// glance who clocked in when, who's still active, who got auto-closed
+// for forgetting to clock out.
+export async function getAttendance(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    // Pull org from current admin
+    const adminUser = await User.findById(req.user!.id).select('organizationId');
+    const orgId = adminUser?.organizationId;
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    // IST date window. Default = today in IST.
+    const dateStr = (req.query.date as string) || (() => {
+      const ist = new Date(Date.now() + 330 * 60_000);
+      return ist.toISOString().slice(0, 10);
+    })();
+    const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) { res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD' }); return; }
+    const [, y, mo, d] = m.map(Number) as unknown as number[];
+    // IST midnight start of that day, expressed in UTC = -5:30h from IST
+    const dayStartIstUtc = new Date(Date.UTC(y, mo - 1, d, 0, 0, 0) - 330 * 60_000);
+    const dayEndIstUtc   = new Date(dayStartIstUtc.getTime() + 24 * 3600 * 1000);
+    const now = Date.now();
+
+    // Pull every internal staff member.
+    const staff = await User.find({
+      organizationId: orgId,
+      role: { $in: ['admin', 'employee', 'sales'] },
+      isActive: true,
+    }).select('_id name email role team avatarUrl').sort({ name: 1 }).lean();
+
+    // Pull all sessions that overlap that IST day.
+    const sessions = await Session.find({
+      organizationId: orgId,
+      $or: [
+        { startTime: { $gte: dayStartIstUtc, $lt: dayEndIstUtc } },           // started in-day
+        { endTime:   { $gte: dayStartIstUtc, $lt: dayEndIstUtc } },           // ended in-day
+        { startTime: { $lt: dayStartIstUtc }, endTime:   { $gte: dayEndIstUtc } }, // spanned
+        { startTime: { $lt: dayStartIstUtc }, status: { $in: ['active', 'on_break'] } }, // still open
+      ],
+    }).sort({ startTime: 1 }).lean();
+
+    // Group + summarise per user.
+    const byUser = staff.map((u: any) => {
+      const uid = String(u._id);
+      const userSessions = sessions.filter(s => String(s.userId) === uid);
+
+      // Compute time totals clamped to the IST day window.
+      let totalWorkedMs = 0;
+      let totalBreakMs  = 0;
+      const sessionRows = userSessions.map(s => {
+        const t = sessionTotals(s as any, dayStartIstUtc.getTime(), Math.min(dayEndIstUtc.getTime(), now));
+        totalWorkedMs += t.workedMs;
+        totalBreakMs  += t.breakMs;
+        const effEnd = effectiveEndMs(s as any, now);
+        return {
+          _id: s._id,
+          startTime: s.startTime,
+          endTime:   s.endTime || null,
+          effectiveEnd: new Date(effEnd),
+          status:    s.status,
+          autoClosedAt: s.autoClosedAt || null,
+          lastHeartbeatAt: s.lastHeartbeatAt || null,
+          breakEvents: s.breakEvents || [],
+          workedMs: t.workedMs,
+          breakMs:  t.breakMs,
+          activeMs: t.activeMs,
+        };
+      });
+      const totalActiveMs = Math.max(0, totalWorkedMs - totalBreakMs);
+
+      // Friendly aggregates for the row.
+      const firstClockIn = userSessions.length ? userSessions[0].startTime : null;
+      const lastSession  = userSessions[userSessions.length - 1];
+      const lastClockOut = lastSession?.endTime || null;
+      const isStillActive = userSessions.some(s => s.status === 'active' || s.status === 'on_break');
+
+      return {
+        user: {
+          _id: u._id,
+          name: u.name,
+          email: u.email,
+          role: u.role,
+          team: u.team,
+          avatarUrl: u.avatarUrl,
+        },
+        firstClockIn,
+        lastClockOut,
+        isStillActive,
+        sessionCount: userSessions.length,
+        totalWorkedMs,
+        totalActiveMs,
+        totalBreakMs,
+        sessions: sessionRows,
+      };
+    });
+
+    res.json({
+      date: dateStr,
+      now: new Date(now),
+      windowStart: dayStartIstUtc,
+      windowEnd:   dayEndIstUtc,
+      rows: byUser,
+    });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
