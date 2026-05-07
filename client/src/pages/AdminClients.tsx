@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Building2, Briefcase, Plus, X, Loader2, Trophy,
   Eye, EyeOff, Users, ArrowRight, CheckCircle2, Mail,
-  Phone, Copy, RefreshCw, IndianRupee, UserPlus, Star
+  Phone, Copy, RefreshCw, IndianRupee, UserPlus, Star,
+  Wand2,
 } from 'lucide-react';
 import * as api from '@/api';
 import { toast } from 'sonner';
@@ -198,10 +199,13 @@ export default function AdminClients() {
             <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
             <p className="text-sm text-gray-500">{clients.length} active client accounts</p>
           </div>
-          <button onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 shadow-sm">
-            <Plus className="h-4 w-4" /> Add Client
-          </button>
+          <div className="flex items-center gap-2">
+            <BulkCreateMetaClientsButton onDone={() => load()} />
+            <button onClick={() => setShowCreate(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 shadow-sm">
+              <Plus className="h-4 w-4" /> Add Client
+            </button>
+          </div>
         </div>
 
         {/* ── Won Leads awaiting conversion ─────────────────────────── */}
@@ -325,5 +329,41 @@ export default function AdminClients() {
         </AnimatePresence>
       </div>
     </AppLayout>
+  );
+}
+
+/**
+ * BulkCreateMetaClientsButton — one-click create of Robin Client users
+ * for every Meta ad account the agency has access to. Each new client
+ * is linked via metaAdAccountId so share links can target them.
+ *
+ * Skips accounts already linked to a client. Placeholder emails get
+ * generated; admin edits to real ones from this same page later.
+ */
+function BulkCreateMetaClientsButton({ onDone }: { onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    if (!confirm("Create one Robin Client account per Meta ad account?\n\nPlaceholder emails will be assigned (e.g., client.scent-diffuser@robin.local) — you can edit them to real client emails afterwards.\n\nAccounts already linked are skipped.")) return;
+    setBusy(true);
+    try {
+      const res = await api.adminBulkCreateMetaClients();
+      toast.success(res.summary || `Created ${res.created?.length || 0} clients`, { duration: 6000 });
+      onDone();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Bulk create failed');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <button
+      onClick={run}
+      disabled={busy}
+      className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold disabled:opacity-50"
+      title="Create a Robin Client user for every ad account in your Meta Business Manager"
+    >
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+      {busy ? 'Creating…' : 'Import from Meta'}
+    </button>
   );
 }

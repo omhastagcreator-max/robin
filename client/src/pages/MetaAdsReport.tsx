@@ -80,7 +80,7 @@ export default function MetaAdsReport() {
   const [shareOpen, setShareOpen] = useState(false);
 
   // Effective date window from preset
-  const window = useMemo(() => {
+  const dateWindow = useMemo(() => {
     if (preset === 'yesterday') return { from: yesterdayKey(),   to: yesterdayKey() };
     if (preset === 'last_7d')   return { from: isoDaysAgo(7),    to: yesterdayKey() };
     if (preset === 'last_30d')  return { from: isoDaysAgo(30),   to: yesterdayKey() };
@@ -117,9 +117,9 @@ export default function MetaAdsReport() {
       setError(null);
       try {
         const [rangeRes, dailyRes, campsRes] = await Promise.all([
-          api.metaAdsRange({ adAccountId: accountId, from: window.from, to: window.to, daily: false }),
-          api.metaAdsRange({ adAccountId: accountId, from: window.from, to: window.to, daily: true  }),
-          api.metaAdsCampaigns({ adAccountId: accountId, from: window.from, to: window.to }),
+          api.metaAdsRange({ adAccountId: accountId, from: dateWindow.from, to: dateWindow.to, daily: false }),
+          api.metaAdsRange({ adAccountId: accountId, from: dateWindow.from, to: dateWindow.to, daily: true  }),
+          api.metaAdsCampaigns({ adAccountId: accountId, from: dateWindow.from, to: dateWindow.to }),
         ]);
         if (cancelled) return;
         setTotals(rangeRes.metrics || null);
@@ -133,7 +133,7 @@ export default function MetaAdsReport() {
       }
     })();
     return () => { cancelled = true; };
-  }, [accountId, window.from, window.to]);
+  }, [accountId, dateWindow.from, dateWindow.to]);
 
   return (
     <AppLayout>
@@ -195,7 +195,7 @@ export default function MetaAdsReport() {
           )}
 
           <div className="ml-auto text-[11px] text-muted-foreground">
-            {window.from} → {window.to}
+            {dateWindow.from} → {dateWindow.to}
           </div>
         </div>
 
@@ -344,7 +344,7 @@ export default function MetaAdsReport() {
         <ShareReportModal
           adAccountId={accountId}
           accountName={accounts.find(a => a.id === accountId)?.name || ''}
-          window={window}
+          dateWindow={dateWindow}
           preset={preset}
           onClose={() => setShareOpen(false)}
         />
@@ -355,10 +355,10 @@ export default function MetaAdsReport() {
 
 // ── Share modal ─────────────────────────────────────────────────────────
 
-function ShareReportModal({ adAccountId, accountName, window: w, preset, onClose }: {
+function ShareReportModal({ adAccountId, accountName, dateWindow: w, preset, onClose }: {
   adAccountId: string;
   accountName: string;
-  window: { from: string; to: string };
+  dateWindow: { from: string; to: string };
   preset: Preset;
   onClose: () => void;
 }) {
@@ -372,8 +372,8 @@ function ShareReportModal({ adAccountId, accountName, window: w, preset, onClose
   // Esc closes
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    globalThis.addEventListener('keydown', onKey);
-    return () => globalThis.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
   const generate = async () => {
@@ -407,14 +407,14 @@ function ShareReportModal({ adAccountId, accountName, window: w, preset, onClose
   const shareWhatsApp = () => {
     if (!link) return;
     const message = `Hi ${label || 'team'} 👋\n\nHere's your Meta Ads report from Robin:\n${link}\n\nLink valid until ${new Date(expiresAt!).toLocaleDateString('en-IN')}.`;
-    globalThis.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
   };
 
   const shareEmail = () => {
     if (!link) return;
     const subject = `Meta Ads Report — ${label || 'your account'}`;
     const body = `Hi,%0D%0A%0D%0AHere's your Meta Ads report from Robin:%0D%0A${encodeURIComponent(link)}%0D%0A%0D%0ALink valid until ${new Date(expiresAt!).toLocaleDateString('en-IN')}.%0D%0A%0D%0AThanks.`;
-    globalThis.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${body}`, '_blank');
+    window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${body}`, '_blank');
   };
 
   return (
