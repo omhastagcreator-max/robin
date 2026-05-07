@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { createPortal } from 'react-dom';
 import { useMeetingRoom, type PeerView } from '@/hooks/useMeetingRoom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSocket } from '@/hooks/useSocket';
 import { useHuddleTranscription } from '@/hooks/useHuddleTranscription';
 import { HuddlePiPContent } from '@/components/shared/HuddlePiPContent';
 import type { IceSource } from '@/lib/iceServers';
@@ -71,6 +72,7 @@ const HuddleContext = createContext<HuddleApi | null>(null);
  */
 export function HuddleProvider({ children }: { children: ReactNode }) {
   const { user, role } = useAuth();
+  const socket = useSocket();
   const [mode, setMode] = useState<HuddleMode>('idle');
 
   // The ONE useMeetingRoom instance for the whole app.
@@ -108,6 +110,14 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     if (!meeting.setRemoteAudioVolume) return;
     meeting.setRemoteAudioVolume(deafened ? 0 : 1);
   }, [deafened, meeting.setRemoteAudioVolume, meeting.joined]);
+
+  // Broadcast deafen state so other teammates' UI shows a "muted you"
+  // badge — they stop yelling someone's name when they're muted.
+  // Server relays this to everyone but us via presence:deafened.
+  useEffect(() => {
+    if (!socket) return;
+    socket.emit('presence:deafen', { on: deafened });
+  }, [deafened, socket]);
 
   // ── Whole-tab mute (bulletproof) ───────────────────────────────────────
   // Earlier versions used a MutationObserver scoped to document.body. Two

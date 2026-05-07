@@ -170,9 +170,30 @@ io.on('connection', (socket) => {
     });
   });
 
+  // ── Deafen broadcast — let the team know who's muted everyone ───────────
+  // When a teammate clicks "Mute team audio", others see a badge on their
+  // tile so we don't keep shouting at someone who can't hear us.
+  // Ephemeral — not persisted; clears when the user disconnects below.
+  socket.on('presence:deafen', ({ on }: { on: boolean }) => {
+    if (!userId) return;
+    // Broadcast to everyone except the toggling user.
+    socket.broadcast.emit('presence:deafened', {
+      userId,
+      name: userName || 'Unknown',
+      on: !!on,
+    });
+  });
+
   socket.on('disconnect', () => {
     onlineUsers.delete(socket.id);
     io.emit('presence:update', Array.from(onlineUsers.values()));
+    // Clear any deafen badge so it doesn't linger after the user leaves.
+    if (userId) {
+      const stillConnected = Array.from(onlineUsers.values()).some(u => u.userId === userId);
+      if (!stillConnected) {
+        socket.broadcast.emit('presence:deafened', { userId, on: false });
+      }
+    }
 
     // Drop user from any meeting rooms they were in (only if no other tabs of
     // theirs are still connected — checked via the presence map by userId).

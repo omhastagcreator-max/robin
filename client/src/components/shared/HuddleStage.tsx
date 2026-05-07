@@ -200,6 +200,7 @@ export function HuddleStage() {
                   presenceStatus={presence.statusOf(p.userId)}
                   onCall={presence.isOnCall(p.userId)}
                   deafened={meeting.deafened}
+                  hasMutedYou={presence.isDeafened(p.userId)}
                 />
               ))}
               {meeting.peers.length === 0 && (
@@ -314,20 +315,28 @@ function SelfTile({
   );
 }
 
-function PeerTile({ peer, presenceStatus, onCall, deafened }: { peer: PeerView; presenceStatus: PresenceStatus; onCall?: boolean; deafened?: boolean }) {
+function PeerTile({ peer, presenceStatus, onCall, deafened, hasMutedYou }: { peer: PeerView; presenceStatus: PresenceStatus; onCall?: boolean; deafened?: boolean; hasMutedYou?: boolean }) {
   const level = useAudioLevel(peer.audioOn ? peer.stream : null);
   const initial = (peer.name || '?')[0].toUpperCase();
   return (
-    <div className={`relative bg-muted/30 border rounded-xl p-2 flex items-center gap-2.5 ${onCall ? 'border-violet-500/40' : 'border-border'}`}>
+    <div className={`relative bg-muted/30 border rounded-xl p-2 flex items-center gap-2.5 ${onCall ? 'border-violet-500/40' : hasMutedYou ? 'border-amber-500/40' : 'border-border'}`}>
       <PresenceTopRight status={presenceStatus} />
       <RemoteAudio stream={peer.stream} muted={deafened} />
       <AvatarWithRing initial={initial} active={peer.audioOn && level > 0.05} />
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-semibold truncate flex items-center gap-1.5">
+        <p className="text-xs font-semibold truncate flex items-center gap-1.5 flex-wrap">
           {peer.name || 'Teammate'}
           {onCall && (
             <span className="inline-flex items-center gap-0.5 px-1 py-0 rounded-full text-[8px] font-bold bg-violet-500/20 text-violet-700 border border-violet-500/30">
               On call
+            </span>
+          )}
+          {hasMutedYou && (
+            <span
+              className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full text-[8px] font-bold bg-amber-500/20 text-amber-700 border border-amber-500/30"
+              title="They've muted the team audio — they can't hear anyone right now"
+            >
+              <VolumeX className="h-2.5 w-2.5" /> Muted you
             </span>
           )}
         </p>

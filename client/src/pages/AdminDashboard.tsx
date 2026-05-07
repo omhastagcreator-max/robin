@@ -3,7 +3,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2, X, Coffee, CalendarOff, ClipboardCheck, KeyRound, ListTodo, Pin, MoreVertical, Trash2 } from 'lucide-react';
+import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2, X, Coffee, CalendarOff, ClipboardCheck, KeyRound, ListTodo, Pin, MoreVertical, Trash2, VolumeX } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSocket } from '@/hooks/useSocket';
@@ -343,6 +343,7 @@ export default function AdminDashboard() {
                   const liveStream = peer?.screenOn ? peer.stream : null;
                   const isBroadcasting = !!liveStream;
                   const onCall = presence.isOnCall(e._id);
+                  const muted = presence.isDeafened(e._id);
                   const accent =
                     isBroadcasting          ? 'border-green-500/40' :
                     status === 'active'     ? 'border-green-500/30' :
@@ -367,11 +368,19 @@ export default function AdminDashboard() {
                         </div>
                       )}
 
-                      {/* Bottom strip — name + presence (+ on-call) */}
+                      {/* Bottom strip — name + presence (+ on-call + muted) */}
                       <div className="absolute bottom-0 left-0 right-0 px-2 py-1 flex items-center gap-1.5 bg-gradient-to-t from-black/90 via-black/60 to-transparent">
                         <p className="text-[11px] font-semibold text-white truncate flex-1">
                           {e.name?.split(' ')[0] || e.email}
                         </p>
+                        {muted && (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-amber-500/85 text-white"
+                            title="Has muted team audio — won't hear pings"
+                          >
+                            <VolumeX className="h-2.5 w-2.5" /> Muted
+                          </span>
+                        )}
                         {onCall && (
                           <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-violet-500/85 text-white">
                             <span className="h-1 w-1 rounded-full bg-white animate-pulse" />

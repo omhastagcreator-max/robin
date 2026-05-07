@@ -30,6 +30,9 @@ export function useTeamPresence() {
   // Set of userIds currently on a call. Tracked separately because On Call
   // is independent of break/leave status — you can be Working AND On Call.
   const [onCallSet, setOnCallSet] = useState<Set<string>>(new Set());
+  // Set of userIds who have muted the team audio (deafened). Ephemeral —
+  // server clears this on disconnect, no DB persistence.
+  const [deafenedSet, setDeafenedSet] = useState<Set<string>>(new Set());
 
   // Initial fetch
   useEffect(() => {
@@ -80,9 +83,21 @@ export function useTeamPresence() {
     };
     socket.on('presence:on-call', onCallHandler);
 
+    // Deafened toggle — someone muted the team audio
+    const deafenedHandler = ({ userId, on }: { userId: string; on: boolean }) => {
+      setDeafenedSet(prev => {
+        const next = new Set(prev);
+        if (on) next.add(userId);
+        else next.delete(userId);
+        return next;
+      });
+    };
+    socket.on('presence:deafened', deafenedHandler);
+
     return () => {
       socket.off('presence:status', handler);
       socket.off('presence:on-call', onCallHandler);
+      socket.off('presence:deafened', deafenedHandler);
     };
   }, [socket]);
 
@@ -95,6 +110,7 @@ export function useTeamPresence() {
   const statusOf = (userId: string): PresenceStatus =>
     members[userId]?.status || 'off_clock';
   const isOnCall = (userId: string): boolean => onCallSet.has(userId);
+  const isDeafened = (userId: string): boolean => deafenedSet.has(userId);
 
-  return { loading, members, list, onBreak, onLeave, active, off, statusOf, isOnCall, onCallSet };
+  return { loading, members, list, onBreak, onLeave, active, off, statusOf, isOnCall, onCallSet, isDeafened, deafenedSet };
 }
