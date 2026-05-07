@@ -3,6 +3,32 @@ import Session from '../models/Session';
 import { effectiveEndMs } from '../services/sessionTime';
 
 /**
+ * Close a single open session using its effectiveEnd as the official endTime.
+ * Shared by both the daily 23:59 IST cleanup and the every-10-min idle sweep.
+ */
+export async function closeSession(s: any, nowMs: number): Promise<void> {
+  const endMs = effectiveEndMs(s, nowMs);
+
+  let breakMs = 0;
+  for (const b of (s.breakEvents || []) as any[]) {
+    if (!b.startedAt) continue;
+    const bs = new Date(b.startedAt).getTime();
+    const be = b.endedAt ? new Date(b.endedAt).getTime() : endMs;
+    if (be > bs) breakMs += (be - bs);
+  }
+
+  s.status = 'ended';
+  s.endTime = new Date(endMs);
+  s.breakTime = Math.round(breakMs / 60_000);
+  s.autoClosedAt = new Date(nowMs);
+
+  const lastBreak = (s.breakEvents || [])[((s.breakEvents || []).length - 1)];
+  if (lastBreak && !lastBreak.endedAt) lastBreak.endedAt = new Date(endMs);
+
+  await s.save();
+}
+
+/**
  * Daily auto-close job.
  *
  * What it does:
@@ -37,28 +63,7 @@ async function runOnce(reason: 'cron' | 'manual' = 'cron') {
 
   let closed = 0;
   for (const s of open) {
-    const endMs = effectiveEndMs(s as any, now);
-
-    // Recompute breakTime for the closed-out session so reports show a
-    // sane number even for forgotten clock-outs.
-    let breakMs = 0;
-    for (const b of (s.breakEvents || []) as any[]) {
-      if (!b.startedAt) continue;
-      const bs = new Date(b.startedAt).getTime();
-      const be = b.endedAt ? new Date(b.endedAt).getTime() : endMs;
-      if (be > bs) breakMs += (be - bs);
-    }
-
-    s.status = 'ended';
-    s.endTime = new Date(endMs);
-    s.breakTime = Math.round(breakMs / 60_000);
-    s.autoClosedAt = new Date(now);
-
-    // If a break was open, close it at endMs too so totals reconcile.
-    const lastBreak = (s.breakEvents || [])[((s.breakEvents || []).length - 1)];
-    if (lastBreak && !lastBreak.endedAt) lastBreak.endedAt = new Date(endMs);
-
-    await s.save();
+    await closeSession(s, now);
     closed += 1;
   }
 

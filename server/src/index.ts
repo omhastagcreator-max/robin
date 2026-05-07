@@ -35,6 +35,7 @@ import remindersRoutes    from './routes/reminders';
 import aiRoutes           from './routes/ai';
 import transcriptsRoutes  from './routes/transcripts';
 import { startDailyAutoCloseJob } from './jobs/dailyAutoClose';
+import { startIdleAutoCloseJob } from './jobs/idleAutoClose';
 
 const app = express();
 const httpServer = createServer(app);
@@ -244,6 +245,9 @@ connectDB().then(() => {
 
     // Schedule daily auto-close of forgotten sessions (23:59 IST).
     startDailyAutoCloseJob();
+    // End-of-business sweep at 18:00 IST — closes any session whose
+    // last heartbeat is older than 10 hours.
+    startIdleAutoCloseJob();
   });
 });
 
