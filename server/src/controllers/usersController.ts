@@ -57,12 +57,26 @@ export async function getUserById(req: AuthRequest, res: Response): Promise<void
 }
 
 // PUT /api/users/:id  (admin only)
+//
+// Now also accepts `teams: string[]` and `roles: string[]` so admin can
+// assign an employee to multiple teams (e.g., ads + influencer) or grant
+// secondary roles. Primary `team` and `role` stay as the canonical
+// values; the arrays are additive on top.
 export async function updateUser(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const { name, role, team, phone, isActive } = req.body;
+    const { name, role, team, teams, roles, phone, isActive } = req.body;
+    const update: Record<string, any> = {};
+    if (name)                  update.name = name;
+    if (role)                  update.role = role;
+    if (team !== undefined)    update.team = team;
+    if (Array.isArray(teams))  update.teams = Array.from(new Set(teams.filter(Boolean)));
+    if (Array.isArray(roles))  update.roles = Array.from(new Set(roles.filter(Boolean)));
+    if (phone !== undefined)   update.phone = phone;
+    if (isActive !== undefined) update.isActive = isActive;
+
     const user = await User.findByIdAndUpdate(
       req.params.id,
-      { $set: { ...(name && { name }), ...(role && { role }), ...(team !== undefined && { team }), ...(phone !== undefined && { phone }), ...(isActive !== undefined && { isActive }) } },
+      { $set: update },
       { new: true }
     ).select('-passwordHash');
     if (!user) { res.status(404).json({ error: 'User not found' }); return; }

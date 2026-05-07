@@ -82,6 +82,20 @@ export default function AdminEmployees() {
     toast.success('Role updated');
   };
 
+  // Team chip toggle — adds/removes a team from the user's teams[] array.
+  // Primary `team` is preserved; this just updates the secondary set.
+  const toggleTeam = async (emp: any, team: string) => {
+    const current: string[] = Array.isArray(emp.teams) ? emp.teams : [];
+    const next = current.includes(team) ? current.filter(t => t !== team) : [...current, team];
+    try {
+      await api.adminUpdateUser(emp._id, { teams: next });
+      setEmployees(prev => prev.map(e => e._id === emp._id ? { ...e, teams: next } : e));
+      toast.success(`Teams updated for ${emp.name || emp.email}`);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Could not update teams');
+    }
+  };
+
   const removeEmployee = async (emp: any) => {
     const label = emp.name || emp.email;
     if (!confirm(`Remove ${label}?\n\nTheir history is preserved but they won't be able to log in. This action can be reversed by re-creating the account.`)) return;
@@ -168,6 +182,31 @@ export default function AdminEmployees() {
                       <CheckCircle2 className="h-3 w-3" />
                       {emp.tasksDoneToday || 0} done today
                     </span>
+                  </div>
+
+                  {/* Multi-team assignment — click to toggle a team. Empty
+                      array = primary team only. Useful for multi-skill
+                      employees (e.g., does both ads + influencer). */}
+                  <div className="flex items-center gap-1 flex-wrap text-[10px]">
+                    <span className="text-muted-foreground">Also on:</span>
+                    {(['ads', 'influencer', 'dev', 'content', 'sales'] as const).map(t => {
+                      if (t === emp.team) return null;          // hide primary team — already shown above
+                      const active = (emp.teams || []).includes(t);
+                      return (
+                        <button
+                          key={t}
+                          onClick={() => toggleTeam(emp, t)}
+                          className={`px-1.5 py-0.5 rounded font-semibold transition-colors capitalize ${
+                            active
+                              ? 'bg-primary/20 text-primary border border-primary/30'
+                              : 'bg-muted/50 text-muted-foreground border border-transparent hover:bg-muted'
+                          }`}
+                          title={active ? `Remove from ${t} team` : `Add to ${t} team`}
+                        >
+                          {active ? '✓ ' : '+ '}{t}
+                        </button>
+                      );
+                    })}
                   </div>
 
                   {/* Actions row */}

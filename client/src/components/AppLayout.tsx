@@ -6,6 +6,7 @@ import {
   Bird, LayoutDashboard, ListTodo, Video, Bell, User, LogOut,
   Briefcase, Users, Building2, BarChart2, TrendingUp, Menu, X,
   MessageSquare, Monitor, MonitorOff, KeyRound, CalendarOff, Clock,
+  BarChart3,
 } from 'lucide-react';
 import * as api from '@/api';
 import { useSocket } from '@/hooks/useSocket';
@@ -42,6 +43,10 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/chat',             label: 'Group Chat',      icon: MessageSquare,  roles: ['admin', 'employee', 'sales'] },
   // Influencer Sheet — only for influencer team
   { to: '/influencers',      label: 'Influencer Sheet', icon: Users,         roles: ['employee'], team: 'influencer' },
+  // Meta Ads — admin always; employees on ads team. Multi-team is also
+  // honoured (we expose teams[] in the user payload).
+  { to: '/ads/meta',         label: 'Meta Ads',     icon: BarChart3,        roles: ['admin'] },
+  { to: '/ads/meta',         label: 'Meta Ads',     icon: BarChart3,        roles: ['employee'], team: 'ads' },
   // Bottom nav
   { to: '/notifications',    label: 'Notifications', icon: Bell },
   { to: '/profile',          label: 'Profile',      icon: User },
@@ -114,7 +119,10 @@ export function AppLayout({ children, requiredRole }: Props) {
 
   const visibleNav = NAV_ITEMS.filter(item => {
     if (item.roles && !item.roles.includes(role)) return false;
-    if (item.team  && item.team !== user?.team)   return false;
+    if (item.team) {
+      const userTeams = [user?.team, ...((user as any)?.teams || [])].filter(Boolean);
+      if (!userTeams.includes(item.team)) return false;
+    }
     return true;
   });
 

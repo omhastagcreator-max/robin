@@ -11,6 +11,7 @@ import { useTeamPresence, type PresenceStatus } from '@/hooks/useTeamPresence';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
+import { MetaAdsCard } from '@/components/dashboard/MetaAdsCard';
 import { VaultAuditPanel } from '@/components/admin/VaultAuditPanel';
 import * as api from '@/api';
 import { FullPageSpinner } from '@/components/shared/Spinner';
@@ -169,6 +170,9 @@ export default function AdminDashboard() {
 
         {/* Huddle quick join — admin sees who's in and can drop in instantly */}
         <HuddleDashboardCard />
+
+        {/* Meta Ads daily snapshot for admin */}
+        <MetaAdsCard />
 
         {/* Manager KPI strip — emphasises decisions waiting on the manager */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

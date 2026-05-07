@@ -34,6 +34,7 @@ import huddleRoutes       from './routes/huddle';
 import remindersRoutes    from './routes/reminders';
 import aiRoutes           from './routes/ai';
 import transcriptsRoutes  from './routes/transcripts';
+import metaAdsRoutes      from './routes/metaAds';
 import { startDailyAutoCloseJob } from './jobs/dailyAutoClose';
 import { startIdleAutoCloseJob } from './jobs/idleAutoClose';
 
@@ -247,6 +248,7 @@ app.use('/api/huddle',          huddleRoutes);
 app.use('/api/reminders',       remindersRoutes);
 app.use('/api/ai',              aiRoutes);
 app.use('/api/transcripts',     transcriptsRoutes);
+app.use('/api/ads/meta',        metaAdsRoutes);
 app.use('/api/seed',            seedRoutes);
 
 // ── 404 + Error handler ───────────────────────────────────────────────────────

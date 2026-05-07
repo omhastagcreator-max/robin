@@ -131,6 +131,9 @@ export const adminClients    = ()                                         => api
 export const adminActivity   = (params?: Record<string, unknown>)        => api.get('/admin/activity', { params }).then(r => r.data);
 export const adminInvite     = (d: Record<string, unknown>)              => api.post('/admin/invite', d).then(r => r.data);
 export const adminUpdateRole = (id: string, role: string)                => api.put(`/admin/users/${id}/role`, { role }).then(r => r.data);
+// Multi-team / multi-role assignment — admin-only via /api/users/:id (existing route)
+export const adminUpdateUser = (id: string, patch: { team?: string; teams?: string[]; roles?: string[] }) =>
+  api.put(`/users/${id}`, patch).then(r => r.data);
 export const adminResetPass  = (id: string, newPassword?: string)        => api.put(`/admin/users/${id}/reset-password`, { newPassword }).then(r => r.data);
 export const adminRemoveUser = (id: string)                              => api.delete(`/admin/users/${id}`).then(r => r.data);
 export const adminEmployeeReport = (employeeId: string, period: 'daily' | 'weekly' | 'monthly' = 'daily') =>
@@ -186,6 +189,14 @@ export const rejectLeave       = (id: string, note?: string) =>
 export const onLeaveToday      = () => api.get('/leaves/on-leave-today').then(r => r.data);
 export const adminLeavesSummary = () => api.get('/leaves/admin/summary').then(r => r.data);
 export const adminAttendance    = (date?: string) => api.get('/admin/attendance', { params: date ? { date } : {} }).then(r => r.data);
+
+// ── Meta Ads ──────────────────────────────────────────────────────────────────
+export const metaAdsAccounts   = () => api.get('/ads/meta/accounts').then(r => r.data);
+export const metaAdsYesterday  = (adAccountId?: string) => api.get('/ads/meta/yesterday', { params: adAccountId ? { adAccountId } : {} }).then(r => r.data);
+export const metaAdsRange      = (params: { adAccountId?: string; from: string; to: string; daily?: boolean }) =>
+  api.get('/ads/meta/range', { params: { ...params, daily: params.daily ? 1 : 0 } }).then(r => r.data);
+export const metaAdsCampaigns  = (params: { adAccountId?: string; from?: string; to?: string; datePreset?: string }) =>
+  api.get('/ads/meta/campaigns', { params }).then(r => r.data);
 
 // ── Huddle (LiveKit) ──────────────────────────────────────────────────────────
 export const getHuddleToken    = () => api.post('/huddle/token', {}).then(r => r.data);

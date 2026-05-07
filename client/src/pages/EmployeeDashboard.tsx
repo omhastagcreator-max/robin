@@ -18,6 +18,7 @@ import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 import { QuickActionsCard } from '@/components/shared/QuickActionsCard';
 import { WeeklyPlanner } from '@/components/shared/WeeklyPlanner';
 import { AIMorningBrief } from '@/components/dashboard/AIMorningBrief';
+import { MetaAdsCard } from '@/components/dashboard/MetaAdsCard';
 import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
 
 
@@ -177,6 +178,9 @@ export default function EmployeeDashboard() {
 
         {/* Huddle entry point — one click to join voice + screen room */}
         <HuddleDashboardCard />
+
+        {/* Meta Ads daily report — only renders for ads-team / admin */}
+        <MetaAdsCard />
 
         {/* Quick actions — start your day in one click */}
         <QuickActionsCard />
