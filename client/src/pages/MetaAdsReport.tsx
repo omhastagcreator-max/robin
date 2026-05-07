@@ -3,7 +3,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
 import {
   TrendingUp, IndianRupee, Eye, MousePointerClick, Target, AlertCircle,
-  Loader2, RefreshCw, BarChart3, ChevronDown,
+  Loader2, RefreshCw, BarChart3, ChevronDown, Check, X, Lock,
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { format } from 'date-fns';
@@ -17,7 +17,14 @@ import * as api from '@/api';
  * spend chart + per-campaign breakdown table.
  */
 
-interface AdAccount { id: string; name: string; currency?: string; }
+interface AdAccount {
+  id: string;
+  name: string;
+  currency?: string;
+  status?: 'live' | 'idle' | 'no_access' | 'error';  // populated by health endpoint
+  recentSpend?: number;
+  errorMessage?: string;
+}
 
 interface Metrics {
   dateStart: string;
@@ -77,17 +84,24 @@ export default function MetaAdsReport() {
     return { from, to };
   }, [preset, from, to]);
 
-  // Load list of accounts on mount
+  // Load list of accounts (fast) + health probe (slower, parallel) on mount.
   useEffect(() => {
     (async () => {
       try {
-        const data = await api.metaAdsAccounts();
-        setAccounts(data.accounts);
-        setAccountId(data.defaultAccountId || data.accounts[0]?.id || '');
+        // First the fast list so the dropdown populates immediately
+        const fast = await api.metaAdsAccounts();
+        setAccounts(fast.accounts);
+        setAccountId(fast.defaultAccountId || fast.accounts[0]?.id || '');
       } catch (e: any) {
         setError(e?.response?.data?.error || 'Could not load accounts');
         setLoading(false);
+        return;
       }
+      // Then the health probe — replaces the list with status-tagged version
+      try {
+        const health = await api.metaAdsAccountsHealth();
+        setAccounts(health.accounts);
+      } catch { /* health is best-effort; no fallback UI needed */ }
     })();
   }, []);
 
@@ -141,21 +155,10 @@ export default function MetaAdsReport() {
 
         {/* Filters */}
         <div className="bg-card border border-border rounded-2xl p-4 flex items-end gap-3 flex-wrap">
-          <label className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1">
             <span className="text-[10px] uppercase font-semibold text-muted-foreground">Ad account</span>
-            <div className="relative">
-              <select
-                value={accountId}
-                onChange={e => setAccountId(e.target.value)}
-                className="bg-background border border-input rounded-lg pl-3 pr-8 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring appearance-none min-w-[220px]"
-              >
-                {accounts.map(a => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
-              <ChevronDown className="h-3.5 w-3.5 absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-            </div>
-          </label>
+            <AccountPicker accounts={accounts} value={accountId} onChange={setAccountId} />
+          </div>
 
           <div className="flex items-center gap-1 bg-muted/40 rounded-lg p-1">
             {(['yesterday', 'last_7d', 'last_30d', 'custom'] as Preset[]).map(p => (
@@ -325,6 +328,90 @@ export default function MetaAdsReport() {
       </div>
     </AppLayout>
   );
+}
+
+/**
+ * AccountPicker — custom dropdown that shows a status indicator next to
+ * each account: green check (live, has spend last 7d), grey X (idle, no
+ * recent spend), red lock (no_access — token doesn't have permission).
+ *
+ * Why custom (not native <select>): native option elements don't render
+ * SVG icons, can't be styled per-row. A small popover gives us total
+ * control. Closes on click-outside or Esc.
+ */
+function AccountPicker({ accounts, value, onChange }: { accounts: AdAccount[]; value: string; onChange: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const selected = accounts.find(a => a.id === value);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  // Group accounts: live first, then idle, then no-access
+  const sorted = [...accounts].sort((a, b) => {
+    const order = (s?: string) => s === 'live' ? 0 : s === 'idle' ? 1 : s === 'no_access' ? 2 : 3;
+    const da = order(a.status) - order(b.status);
+    if (da !== 0) return da;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  const liveCount     = accounts.filter(a => a.status === 'live').length;
+  const idleCount     = accounts.filter(a => a.status === 'idle').length;
+  const noAccessCount = accounts.filter(a => a.status === 'no_access').length;
+
+  return (
+    <div className="relative min-w-[260px]">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full bg-background border border-input rounded-lg pl-3 pr-8 py-1.5 text-sm flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-ring"
+      >
+        <StatusIcon status={selected?.status} />
+        <span className="truncate flex-1 text-left">{selected?.name || 'Select an account'}</span>
+        <ChevronDown className="h-3.5 w-3.5 absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-card border border-border rounded-lg shadow-xl max-h-80 overflow-y-auto min-w-[320px]">
+            <div className="px-3 py-2 border-b border-border bg-muted/30 flex items-center gap-3 text-[10px] font-semibold">
+              <span className="flex items-center gap-1 text-green-600"><Check className="h-3 w-3" /> {liveCount} live</span>
+              <span className="flex items-center gap-1 text-muted-foreground"><X className="h-3 w-3" /> {idleCount} idle</span>
+              {noAccessCount > 0 && <span className="flex items-center gap-1 text-red-500"><Lock className="h-3 w-3" /> {noAccessCount} no access</span>}
+            </div>
+            {sorted.map(a => (
+              <button
+                key={a.id}
+                onClick={() => { onChange(a.id); setOpen(false); }}
+                className={`w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-muted/40 text-left ${a.id === value ? 'bg-primary/10' : ''}`}
+                disabled={a.status === 'no_access'}
+                title={a.status === 'no_access' ? a.errorMessage : undefined}
+              >
+                <StatusIcon status={a.status} />
+                <span className="truncate flex-1">{a.name}</span>
+                {a.recentSpend !== undefined && a.recentSpend > 0 && (
+                  <span className="text-[10px] text-muted-foreground tabular-nums">₹{a.recentSpend.toLocaleString('en-IN', { maximumFractionDigits: 0 })}/7d</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatusIcon({ status }: { status?: string }) {
+  if (status === 'live')      return <span className="h-4 w-4 rounded-full bg-green-500/20 text-green-600 flex items-center justify-center shrink-0"><Check className="h-2.5 w-2.5" /></span>;
+  if (status === 'idle')      return <span className="h-4 w-4 rounded-full bg-muted text-muted-foreground flex items-center justify-center shrink-0"><X className="h-2.5 w-2.5" /></span>;
+  if (status === 'no_access') return <span className="h-4 w-4 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center shrink-0"><Lock className="h-2.5 w-2.5" /></span>;
+  if (status === 'error')     return <span className="h-4 w-4 rounded-full bg-amber-500/20 text-amber-600 flex items-center justify-center shrink-0"><AlertCircle className="h-2.5 w-2.5" /></span>;
+  // unknown / loading
+  return <span className="h-4 w-4 rounded-full bg-muted/50 shrink-0" />;
 }
 
 function Kpi({ icon: Icon, label, value, sub, accent }: { icon: any; label: string; value: string; sub?: string; accent?: 'green' | 'amber' | 'red' }) {

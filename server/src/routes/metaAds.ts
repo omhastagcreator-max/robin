@@ -1,6 +1,6 @@
 import { Router, Response, NextFunction } from 'express';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
-import { listAccounts, getYesterday, getRange, getCampaigns } from '../controllers/metaAdsController';
+import { listAccounts, listAccountsHealth, getYesterday, getRange, getCampaigns } from '../controllers/metaAdsController';
 
 const router = Router();
 router.use(authMiddleware);
@@ -21,7 +21,9 @@ function requireMetaAccess(req: AuthRequest, res: Response, next: NextFunction):
   const u = req.user;
   if (!u) { res.status(401).json({ error: 'Not authenticated' }); return; }
 
-  const eligibleTeams = (process.env.META_ELIGIBLE_TEAMS || 'ads').split(',').map(s => s.trim()).filter(Boolean);
+  // Both 'meta' (Meta Ads specific) and 'ads' (broader ads team) grant access.
+  // Override via env if you need a different scheme.
+  const eligibleTeams = (process.env.META_ELIGIBLE_TEAMS || 'meta,ads').split(',').map(s => s.trim()).filter(Boolean);
 
   const isAdmin       = u.role === 'admin' || (u.roles || []).includes('admin');
   const onMetaTeam    = !!u.team && eligibleTeams.includes(u.team);
@@ -33,7 +35,8 @@ function requireMetaAccess(req: AuthRequest, res: Response, next: NextFunction):
 
 router.use(requireMetaAccess);
 
-router.get('/accounts',  listAccounts);
+router.get('/accounts',         listAccounts);
+router.get('/accounts/health',  listAccountsHealth);
 router.get('/yesterday', getYesterday);
 router.get('/range',     getRange);
 router.get('/campaigns', getCampaigns);

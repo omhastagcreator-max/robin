@@ -45,6 +45,36 @@ export async function listAccounts(req: AuthRequest, res: Response): Promise<voi
   }
 }
 
+/**
+ * GET /api/ads/meta/accounts/health
+ *
+ * Same list as /accounts but each account also includes a status —
+ * 'live' (has spend last 7d), 'idle' (no recent spend), 'no_access'
+ * (permissions error), 'error' (other API failure). Cached 5 min
+ * because it does N parallel API calls.
+ */
+const HEALTH_TTL_MS = 5 * 60_000;
+let healthCache: { at: number; data: any } | null = null;
+export async function listAccountsHealth(req: AuthRequest, res: Response): Promise<void> {
+  if (!ensureConfigured(res)) return;
+  try {
+    if (healthCache && Date.now() - healthCache.at < HEALTH_TTL_MS) {
+      res.json(healthCache.data);
+      return;
+    }
+    const accounts = await meta.getAccountsHealth();
+    const payload = {
+      defaultAccountId: process.env.META_DEFAULT_AD_ACCOUNT_ID || accounts[0]?.id || null,
+      accounts,
+      checkedAt: new Date(),
+    };
+    healthCache = { at: Date.now(), data: payload };
+    res.json(payload);
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+}
+
 /** GET /api/ads/meta/yesterday?adAccountId=act_... */
 export async function getYesterday(req: AuthRequest, res: Response): Promise<void> {
   if (!ensureConfigured(res)) return;

@@ -163,6 +163,50 @@ export async function getInsightsDaily(opts: {
   return (res.data || []).map(parseInsights);
 }
 
+/**
+ * Account health check — returns each account's last-7d spend so the UI
+ * can show a green tick / red cross next to each in the dropdown.
+ *
+ * We hit /insights for every account in PARALLEL via Promise.allSettled so
+ * a permissions error on one account doesn't break the whole call.
+ *
+ * Status taxonomy:
+ *   - 'live'         — has spend in last 7 days
+ *   - 'idle'         — visible to us, no spend last 7 days (paused/old)
+ *   - 'no_access'    — Meta returned a permissions error for this account
+ *   - 'error'        — any other API failure
+ */
+export type AccountHealth = AdAccountInfo & {
+  recentSpend: number;
+  status: 'live' | 'idle' | 'no_access' | 'error';
+  errorMessage?: string;
+};
+
+export async function getAccountsHealth(): Promise<AccountHealth[]> {
+  const accounts = await listAdAccounts();
+
+  const probes = accounts.map(async (a): Promise<AccountHealth> => {
+    try {
+      const insights = await getInsights({ adAccountId: a.id, datePreset: 'last_7d' });
+      const recentSpend = insights?.spend || 0;
+      return { ...a, recentSpend, status: recentSpend > 0 ? 'live' : 'idle' };
+    } catch (e) {
+      const msg = (e as Error).message || '';
+      // Permissions errors typically include "permission" or code 100/200
+      const isPerm = /permission|code 100|code 200|code 10\b/i.test(msg);
+      return {
+        ...a,
+        recentSpend: 0,
+        status: isPerm ? 'no_access' : 'error',
+        errorMessage: msg,
+      };
+    }
+  });
+
+  const results = await Promise.all(probes);
+  return results;
+}
+
 /** Per-campaign breakdown for a given account + window — for the drill-down page. */
 export async function getCampaignBreakdown(opts: {
   adAccountId: string;

@@ -186,10 +186,12 @@ export default function AdminEmployees() {
 
                   {/* Multi-team assignment — click to toggle a team. Empty
                       array = primary team only. Useful for multi-skill
-                      employees (e.g., does both ads + influencer). */}
+                      employees (e.g., does both ads + influencer).
+                      'meta' grants Meta Ads report access without needing
+                      to put them on the broader 'ads' team. */}
                   <div className="flex items-center gap-1 flex-wrap text-[10px]">
                     <span className="text-muted-foreground">Also on:</span>
-                    {(['ads', 'influencer', 'dev', 'content', 'sales'] as const).map(t => {
+                    {(['meta', 'ads', 'influencer', 'dev', 'content', 'sales'] as const).map(t => {
                       if (t === emp.team) return null;          // hide primary team — already shown above
                       const active = (emp.teams || []).includes(t);
                       return (

@@ -16,7 +16,7 @@ import { CommandPalette } from '@/components/shared/CommandPalette';
 import { PresenceStrip } from '@/components/shared/PresenceStrip';
 import { SessionTopBar } from '@/components/shared/SessionTopBar';
 
-interface NavItem { to: string; label: string; icon: React.ElementType; roles?: string[]; team?: string; }
+interface NavItem { to: string; label: string; icon: React.ElementType; roles?: string[]; team?: string; anyTeam?: string[]; }
 
 const NAV_ITEMS: NavItem[] = [
   // Role dashboards
@@ -43,10 +43,10 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/chat',             label: 'Group Chat',      icon: MessageSquare,  roles: ['admin', 'employee', 'sales'] },
   // Influencer Sheet — only for influencer team
   { to: '/influencers',      label: 'Influencer Sheet', icon: Users,         roles: ['employee'], team: 'influencer' },
-  // Meta Ads — admin always; employees on ads team. Multi-team is also
-  // honoured (we expose teams[] in the user payload).
+  // Meta Ads — admin always; OR any employee/sales whose primary team or
+  // teams[] includes 'meta' or 'ads'. Single nav entry, multi-team aware.
   { to: '/ads/meta',         label: 'Meta Ads',     icon: BarChart3,        roles: ['admin'] },
-  { to: '/ads/meta',         label: 'Meta Ads',     icon: BarChart3,        roles: ['employee'], team: 'ads' },
+  { to: '/ads/meta',         label: 'Meta Ads',     icon: BarChart3,        roles: ['employee', 'sales'], anyTeam: ['meta', 'ads'] },
   // Bottom nav
   { to: '/notifications',    label: 'Notifications', icon: Bell },
   { to: '/profile',          label: 'Profile',      icon: User },
@@ -122,6 +122,10 @@ export function AppLayout({ children, requiredRole }: Props) {
     if (item.team) {
       const userTeams = [user?.team, ...((user as any)?.teams || [])].filter(Boolean);
       if (!userTeams.includes(item.team)) return false;
+    }
+    if (item.anyTeam) {
+      const userTeams = [user?.team, ...((user as any)?.teams || [])].filter(Boolean);
+      if (!item.anyTeam.some(t => userTeams.includes(t))) return false;
     }
     return true;
   });
