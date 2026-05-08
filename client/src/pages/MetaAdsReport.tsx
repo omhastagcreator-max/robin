@@ -542,7 +542,11 @@ function ShareReportModal({ adAccountId, accountName, dateWindow: w, preset, onC
               </div>
               <div className="rounded-lg bg-muted/30 p-3 text-[11px] text-muted-foreground">
                 <div><strong className="text-foreground">Account:</strong> {accountName}</div>
-                <div><strong className="text-foreground">Window:</strong> {preset === 'custom' ? `${w.from} → ${w.to}` : preset.replace('_', ' ')}</div>
+                <div><strong className="text-foreground">Window:</strong> {
+                  shareRange === 'custom' ? `${customFrom} → ${customTo}` :
+                  shareRange === 'last_14d' ? 'Last 14 days' :
+                  String(shareRange || '').replace(/_/g, ' ')
+                }</div>
               </div>
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">
@@ -741,13 +745,17 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function RankingPill({ label, value }: { label: string; value: string }) {
+function RankingPill({ label, value }: { label: string; value?: string | null }) {
+  // Meta sometimes omits these fields (account hasn't reached volume
+  // threshold yet, or reporting is stale). Treat null/undefined as 'unknown'
+  // so we never call .replace() on a missing value.
+  const v = value || 'unknown';
   const tone =
-    value === 'above_average' ? 'bg-green-500/15 text-green-700 border-green-500/30' :
-    value === 'average'       ? 'bg-amber-500/15 text-amber-700 border-amber-500/30' :
-    value === 'below_average' ? 'bg-red-500/15 text-red-700 border-red-500/30'    :
-                                'bg-muted text-muted-foreground border-border';
-  const display = value === 'unknown' ? 'no data' : value.replace(/_/g, ' ');
+    v === 'above_average' ? 'bg-green-500/15 text-green-700 border-green-500/30' :
+    v === 'average'       ? 'bg-amber-500/15 text-amber-700 border-amber-500/30' :
+    v === 'below_average' ? 'bg-red-500/15 text-red-700 border-red-500/30'    :
+                            'bg-muted text-muted-foreground border-border';
+  const display = v === 'unknown' ? 'no data' : v.replace(/_/g, ' ');
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${tone}`}>
       {label}: <span className="capitalize">{display}</span>
