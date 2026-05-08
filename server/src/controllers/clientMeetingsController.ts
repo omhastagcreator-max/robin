@@ -132,12 +132,18 @@ export async function listMyClientMeetings(req: AuthRequest, res: Response): Pro
 }
 
 // ── Authed: end a meeting ───────────────────────────────────────────────
+//
+// Any internal staff member in the same organisation can end a client
+// meeting (same model as hosting). The agency tool isn't a personal silo —
+// if a teammate notices a forgotten/zombie meeting they should be able to
+// shut it down without paging the original host.
 export async function endClientMeeting(req: AuthRequest, res: Response): Promise<void> {
   try {
     const m = await ClientMeeting.findOne({ slug: req.params.slug });
     if (!m) { res.status(404).json({ error: 'Not found' }); return; }
-    if (String(m.hostUserId) !== req.user!.id && req.user!.role !== 'admin') {
-      res.status(403).json({ error: 'Only the host can end this meeting' });
+    const userOrgId = (await User.findById(req.user!.id).select('organizationId'))?.organizationId;
+    if (String(m.organizationId) !== String(userOrgId)) {
+      res.status(403).json({ error: 'You are not in this meeting\'s organization' });
       return;
     }
     if (m.status === 'ended' || m.status === 'expired') {
@@ -146,7 +152,9 @@ export async function endClientMeeting(req: AuthRequest, res: Response): Promise
     }
     m.status = 'ended';
     m.endedAt = new Date();
-    m.endReason = 'host_ended';
+    // Track who actually ended it — useful when auditing zombie cleanup.
+    m.endReason = String(m.hostUserId) === req.user!.id ? 'host_ended' : 'teammate_ended';
+    (m as any).endedByUserId = req.user!.id;
     await m.save();
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }

@@ -37,8 +37,9 @@ const ClientMeetingSchema = new Schema({
   maxDurationMinutes: { type: Number, default: 120 }, // 2 hours
   expiresAt:          { type: Date, required: true }, // hard cap; default = createdAt + 24h
   startedAt:          { type: Date },                  // first guest join
-  endedAt:            { type: Date },                  // host clicked End
-  endReason:          { type: String, enum: ['host_ended', 'expired', 'duration_reached', 'admin_revoked'] },
+  endedAt:            { type: Date },                  // host or teammate clicked End
+  endReason:          { type: String, enum: ['host_ended', 'teammate_ended', 'expired', 'duration_reached', 'admin_revoked'] },
+  endedByUserId:      { type: String },                 // who actually ended it
 
   // Audit — every guest who joined
   guestJoins: [{
