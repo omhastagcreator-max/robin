@@ -69,6 +69,40 @@ export async function createClientMeeting(req: AuthRequest, res: Response): Prom
   }
 }
 
+// ── Authed: list every active client meeting in the org ───────────────
+// Lets any teammate find an in-progress call and drop in.
+export async function listActiveClientMeetings(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const u = await User.findById(req.user!.id).select('organizationId');
+    const orgId = u?.organizationId;
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const list = await ClientMeeting.find({
+      organizationId: orgId,
+      status: { $in: ['scheduled', 'active'] },
+      expiresAt: { $gt: new Date() },
+    }).sort({ createdAt: -1 }).lean();
+
+    // Hydrate host name so the UI can render "Hosted by Om"
+    const hostIds = Array.from(new Set(list.map(m => String((m as any).hostUserId))));
+    const hosts = await User.find({ _id: { $in: hostIds } }).select('_id name email').lean();
+    const hostMap = new Map(hosts.map(h => [String(h._id), h.name || h.email]));
+
+    res.json(list.map(m => ({
+      _id: m._id,
+      slug: (m as any).slug,
+      clientName: (m as any).clientName,
+      hostUserId: (m as any).hostUserId,
+      hostName: hostMap.get(String((m as any).hostUserId)) || 'Unknown',
+      status: m.status,
+      startedAt: (m as any).startedAt,
+      maxDurationMinutes: (m as any).maxDurationMinutes,
+      expiresAt: (m as any).expiresAt,
+      url: buildJoinUrl((m as any).slug),
+      guestCount: ((m as any).guestJoins || []).length,
+    })));
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
 // ── Authed: list my client meetings ─────────────────────────────────────
 export async function listMyClientMeetings(req: AuthRequest, res: Response): Promise<void> {
   try {
@@ -120,13 +154,20 @@ export async function extendClientMeeting(req: AuthRequest, res: Response): Prom
 }
 
 // ── Authed: host gets a LiveKit token for their room ────────────────────
+//
+// "Host" is org-scoped, not creator-scoped. Any internal staff member
+// (admin/employee/sales) in the same organisation as the meeting can
+// join as a co-host. This is the right model for an agency tool —
+// account manager + ad specialist + dev should all be able to drop
+// into a client call without re-creating the meeting.
 export async function getHostToken(req: AuthRequest, res: Response): Promise<void> {
   try {
     if (!ensureLivekitConfigured(res)) return;
     const m = await ClientMeeting.findOne({ slug: req.params.slug });
     if (!m) { res.status(404).json({ error: 'Not found' }); return; }
-    if (String(m.hostUserId) !== req.user!.id) {
-      res.status(403).json({ error: 'Only the host can get a host token' });
+    const userOrgId = (await User.findById(req.user!.id).select('organizationId'))?.organizationId;
+    if (String(m.organizationId) !== String(userOrgId)) {
+      res.status(403).json({ error: 'You are not in this meeting\'s organization' });
       return;
     }
     if (m.status === 'ended' || m.status === 'expired') {

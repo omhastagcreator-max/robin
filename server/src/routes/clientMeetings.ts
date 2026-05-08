@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
 import {
-  createClientMeeting, listMyClientMeetings, endClientMeeting, extendClientMeeting,
+  createClientMeeting, listMyClientMeetings, listActiveClientMeetings,
+  endClientMeeting, extendClientMeeting,
   getHostToken, publicMeetingInfo, getGuestToken,
 } from '../controllers/clientMeetingsController';
 
@@ -18,6 +19,7 @@ const internal = requireRole('admin', 'employee', 'sales');
 
 authedClientMeetingsRouter.post('/',                       internal, createClientMeeting);
 authedClientMeetingsRouter.get('/mine',                    internal, listMyClientMeetings);
+authedClientMeetingsRouter.get('/active',                  internal, listActiveClientMeetings);
 authedClientMeetingsRouter.put('/:slug/end',               internal, endClientMeeting);
 authedClientMeetingsRouter.put('/:slug/extend',            internal, extendClientMeeting);
 authedClientMeetingsRouter.post('/:slug/host-token',       internal, getHostToken);

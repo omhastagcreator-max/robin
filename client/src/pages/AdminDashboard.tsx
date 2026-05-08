@@ -13,6 +13,7 @@ import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
 import { MetaAdsCard } from '@/components/dashboard/MetaAdsCard';
 import { TodayMeetingsStrip } from '@/components/dashboard/TodayMeetingsStrip';
+import { ActiveClientMeetingsCard } from '@/components/dashboard/ActiveClientMeetingsCard';
 import { VaultAuditPanel } from '@/components/admin/VaultAuditPanel';
 import * as api from '@/api';
 import { FullPageSpinner } from '@/components/shared/Spinner';
@@ -171,6 +172,9 @@ export default function AdminDashboard() {
 
         {/* Today's meetings — hidden when admin has no meetings */}
         <TodayMeetingsStrip />
+
+        {/* Active client meetings — admin can hop into any live prospect call */}
+        <ActiveClientMeetingsCard />
 
         {/* Huddle quick join — admin sees who's in and can drop in instantly */}
         <HuddleDashboardCard />

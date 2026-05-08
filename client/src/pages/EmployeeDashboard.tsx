@@ -20,6 +20,7 @@ import { WeeklyPlanner } from '@/components/shared/WeeklyPlanner';
 import { AIMorningBrief } from '@/components/dashboard/AIMorningBrief';
 import { MetaAdsCard } from '@/components/dashboard/MetaAdsCard';
 import { TodayMeetingsStrip } from '@/components/dashboard/TodayMeetingsStrip';
+import { ActiveClientMeetingsCard } from '@/components/dashboard/ActiveClientMeetingsCard';
 import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
 
 
@@ -179,6 +180,9 @@ export default function EmployeeDashboard() {
 
         {/* Today's meetings — only renders if user has any scheduled */}
         <TodayMeetingsStrip />
+
+        {/* Active client meetings — anyone on the team can drop in */}
+        <ActiveClientMeetingsCard />
 
         {/* Huddle entry point — one click to join voice + screen room */}
         <HuddleDashboardCard />

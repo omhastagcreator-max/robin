@@ -236,6 +236,7 @@ export const meetingsFindFree = (params: { date?: string; duration?: number; use
 export const clientMeetingsCreate = (body: { clientName?: string; note?: string; durationMinutes?: number }) =>
   api.post('/client-meetings', body).then(r => r.data);
 export const clientMeetingsMine   = () => api.get('/client-meetings/mine').then(r => r.data);
+export const clientMeetingsActive = () => api.get('/client-meetings/active').then(r => r.data);
 export const clientMeetingsEnd    = (slug: string) => api.put(`/client-meetings/${slug}/end`).then(r => r.data);
 export const clientMeetingsExtend = (slug: string) => api.put(`/client-meetings/${slug}/extend`).then(r => r.data);
 export const clientMeetingsHostToken = (slug: string) =>
