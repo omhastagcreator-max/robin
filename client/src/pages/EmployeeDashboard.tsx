@@ -21,7 +21,6 @@ import { AIMorningBrief } from '@/components/dashboard/AIMorningBrief';
 import { MetaAdsCard } from '@/components/dashboard/MetaAdsCard';
 import { TodayMeetingsStrip } from '@/components/dashboard/TodayMeetingsStrip';
 import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
-import { StartClientMeetingButton } from '@/components/shared/StartClientMeetingButton';
 
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -172,10 +171,7 @@ export default function EmployeeDashboard() {
             <h1 className="text-2xl font-bold">Good {new Date().getHours() < 12 ? 'morning' : 'afternoon'}, {user?.name?.split(' ')[0] || 'there'} 👋</h1>
             <p className="text-sm text-muted-foreground">{format(new Date(), 'EEEE, dd MMMM yyyy')}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <StartClientMeetingButton />
-            <HuddleQuickPill />
-          </div>
+          <HuddleQuickPill />
         </div>
 
         {/* AI Morning Brief — Claude-generated personalized briefing */}

@@ -15,6 +15,8 @@ import { toast } from 'sonner';
 import { CommandPalette } from '@/components/shared/CommandPalette';
 import { PresenceStrip } from '@/components/shared/PresenceStrip';
 import { SessionTopBar } from '@/components/shared/SessionTopBar';
+import { ScheduleMeetingButton } from '@/components/shared/ScheduleMeetingButton';
+import { StartClientMeetingButton } from '@/components/shared/StartClientMeetingButton';
 
 interface NavItem { to: string; label: string; icon: React.ElementType; roles?: string[]; team?: string; anyTeam?: string[]; }
 
@@ -179,6 +181,17 @@ export function AppLayout({ children, requiredRole }: Props) {
       <nav className="flex-1 space-y-0.5 overflow-y-auto">
         {visibleNav.map(item => <NavLink key={item.to} item={item} />)}
       </nav>
+
+      {/* Quick actions — meeting shortcuts available from every page */}
+      {['admin', 'employee', 'sales'].includes(role) && (
+        <div className="space-y-1.5 mb-2 px-1">
+          <p className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground px-2">Quick actions</p>
+          <div className="flex flex-col gap-1">
+            <ScheduleMeetingButton />
+            <StartClientMeetingButton />
+          </div>
+        </div>
+      )}
 
       {/* Quick keyboard shortcut hint — clickable for mouse users, also opens via Cmd/Ctrl-K */}
       <button

@@ -13,7 +13,6 @@ import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
 import { MetaAdsCard } from '@/components/dashboard/MetaAdsCard';
 import { TodayMeetingsStrip } from '@/components/dashboard/TodayMeetingsStrip';
-import { StartClientMeetingButton } from '@/components/shared/StartClientMeetingButton';
 import { VaultAuditPanel } from '@/components/admin/VaultAuditPanel';
 import * as api from '@/api';
 import { FullPageSpinner } from '@/components/shared/Spinner';
@@ -163,7 +162,6 @@ export default function AdminDashboard() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <StartClientMeetingButton />
             <HuddleQuickPill />
             <Link to="/admin/reports" className="flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors">
               Full report <ArrowRight className="h-4 w-4" />
