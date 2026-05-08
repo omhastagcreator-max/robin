@@ -12,7 +12,6 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { SessionClockCard } from '@/components/shared/SessionClockCard';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
-import { QuickActionsCard } from '@/components/shared/QuickActionsCard';
 
 // ── Stage Config ──────────────────────────────────────────────────────────────
 const PIPELINE_STAGES = [
@@ -308,9 +307,6 @@ export default function SalesDashboard() {
             </button>
           </div>
         </div>
-
-        {/* Quick actions — start your day in one click */}
-        <QuickActionsCard />
 
         {/* Clock-in (Start Day / Break / End Day) */}
         <SessionClockCard />

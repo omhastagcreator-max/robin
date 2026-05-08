@@ -130,7 +130,6 @@ function AppRoutes() {
 
 import { ScreenShareProvider } from '@/contexts/ScreenShareContext';
 import { HuddleProvider } from '@/contexts/HuddleContext';
-import { HuddleDock } from '@/components/shared/HuddleDock';
 import { BreakOverlay } from '@/components/shared/BreakOverlay';
 
 export default function App() {
@@ -152,9 +151,6 @@ export default function App() {
         <ScreenShareProvider>
           <HuddleProvider>
             <AppRoutes />
-            {/* Persistent huddle dock — sits above page navigation so the
-                call survives route changes. */}
-            <HuddleDock />
             {/* Top-most break overlay — freezes the UI while user is on break. */}
             <BreakOverlay />
             <Toaster position="top-right" richColors expand />

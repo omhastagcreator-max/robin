@@ -15,7 +15,6 @@ import { useSession } from '@/hooks/useSession';
 import { useTasks } from '@/hooks/useTasks';
 import { SessionClockCard } from '@/components/shared/SessionClockCard';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
-import { QuickActionsCard } from '@/components/shared/QuickActionsCard';
 import { WeeklyPlanner } from '@/components/shared/WeeklyPlanner';
 import { AIMorningBrief } from '@/components/dashboard/AIMorningBrief';
 import { MetaAdsCard } from '@/components/dashboard/MetaAdsCard';
@@ -190,9 +189,6 @@ export default function EmployeeDashboard() {
 
         {/* Meta Ads daily report — only renders for ads-team / admin */}
         <MetaAdsCard />
-
-        {/* Quick actions — start your day in one click */}
-        <QuickActionsCard />
 
         {/* Team/role specific widget */}
         {user?.team && <TeamRoleWidget team={user.team} tasks={tasks} />}
