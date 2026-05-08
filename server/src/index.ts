@@ -227,6 +227,12 @@ app.get('/health', (_req, res) => {
 });
 
 // ── API Routes ────────────────────────────────────────────────────────────────
+// PUBLIC ROUTERS FIRST. Any router mounted at the bare '/api' prefix that has
+// global auth middleware would otherwise gate every /api/* request. Mounting
+// public routers first means Express finds them before any catch-all auth.
+app.use('/api', publicMetaShareRouter);        // GET /api/share/meta/:token
+app.use('/api', publicClientMeetingsRouter);   // GET/POST /api/meet/:slug
+
 app.use('/api/auth',            authRoutes);
 app.use('/api/dashboard',       dashboardRoutes);
 app.use('/api/users',           usersRoutes);
@@ -253,10 +259,8 @@ app.use('/api/reminders',       remindersRoutes);
 app.use('/api/ai',              aiRoutes);
 app.use('/api/transcripts',     transcriptsRoutes);
 app.use('/api/ads/meta',        metaAdsRoutes);    // includes /share, /shares (authed)
-app.use('/api',                 publicMetaShareRouter); // GET /share/meta/:token (public)
 app.use('/api/meetings',        meetingsRoutes);
 app.use('/api/client-meetings', clientMeetingsRoutes);  // host endpoints
-app.use('/api',                 publicClientMeetingsRouter); // GET/POST /meet/:slug (public)
 app.use('/api/seed',            seedRoutes);
 
 // ── 404 + Error handler ───────────────────────────────────────────────────────
