@@ -29,6 +29,8 @@ const AdminAttendance   = lazy(() => import('@/pages/AdminAttendance'));
 const MetaAdsReport     = lazy(() => import('@/pages/MetaAdsReport'));
 const MetaShareView     = lazy(() => import('@/pages/MetaShareView'));
 const TeamCalendar      = lazy(() => import('@/pages/TeamCalendar'));
+const MeetGuest         = lazy(() => import('@/pages/MeetGuest'));
+const MeetHost          = lazy(() => import('@/pages/MeetHost'));
 
 function RootRedirect() {
   const { user, role, loading } = useAuth();
@@ -50,6 +52,8 @@ function AppRoutes() {
         <Route path="/update-password"  element={<E><UpdatePassword /></E>} />
         {/* Public read-only Meta Ads share — no Robin login required */}
         <Route path="/share/meta/:token" element={<E><MetaShareView /></E>} />
+        {/* Public guest meeting page — no Robin login required */}
+        <Route path="/meet/:slug"        element={<E><MeetGuest /></E>} />
 
         {/* Root */}
         <Route path="/"                 element={<RootRedirect />} />
@@ -74,6 +78,7 @@ function AppRoutes() {
         <Route path="/admin/attendance" element={<E><AdminAttendance /></E>} />
         <Route path="/ads/meta"         element={<E><MetaAdsReport /></E>} />
         <Route path="/team/calendar"    element={<E><TeamCalendar /></E>} />
+        <Route path="/meet/host/:slug"  element={<E><MeetHost /></E>} />
 
         {/* Client */}
         <Route path="/client"           element={<E><ClientDashboard /></E>} />

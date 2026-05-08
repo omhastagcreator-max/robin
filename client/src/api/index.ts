@@ -232,6 +232,20 @@ export const meetingsFindFree = (params: { date?: string; duration?: number; use
     params: { date: params.date, duration: params.duration, users: params.users.join(',') },
   }).then(r => r.data);
 
+// ── Client meetings (instant external prospect calls) ──────────────────────
+export const clientMeetingsCreate = (body: { clientName?: string; note?: string; durationMinutes?: number }) =>
+  api.post('/client-meetings', body).then(r => r.data);
+export const clientMeetingsMine   = () => api.get('/client-meetings/mine').then(r => r.data);
+export const clientMeetingsEnd    = (slug: string) => api.put(`/client-meetings/${slug}/end`).then(r => r.data);
+export const clientMeetingsExtend = (slug: string) => api.put(`/client-meetings/${slug}/extend`).then(r => r.data);
+export const clientMeetingsHostToken = (slug: string) =>
+  api.post(`/client-meetings/${slug}/host-token`).then(r => r.data);
+// Public — guest endpoints. Don't require auth, just hit the path.
+export const clientMeetingsPublicInfo = (slug: string) =>
+  api.get(`/meet/${slug}`).then(r => r.data);
+export const clientMeetingsGuestToken = (slug: string, name: string) =>
+  api.post(`/meet/${slug}/guest-token`, { name }).then(r => r.data);
+
 // ── Huddle (LiveKit) ──────────────────────────────────────────────────────────
 export const getHuddleToken    = () => api.post('/huddle/token', {}).then(r => r.data);
 

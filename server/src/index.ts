@@ -37,6 +37,8 @@ import transcriptsRoutes  from './routes/transcripts';
 import metaAdsRoutes      from './routes/metaAds';
 import { publicMetaShareRouter } from './routes/metaSharing';
 import meetingsRoutes     from './routes/meetings';
+import clientMeetingsRoutes, { publicClientMeetingsRouter } from './routes/clientMeetings';
+import { startClientMeetingExpiryJob } from './jobs/clientMeetingExpiry';
 import { startDailyAutoCloseJob } from './jobs/dailyAutoClose';
 import { startIdleAutoCloseJob } from './jobs/idleAutoClose';
 
@@ -253,6 +255,8 @@ app.use('/api/transcripts',     transcriptsRoutes);
 app.use('/api/ads/meta',        metaAdsRoutes);    // includes /share, /shares (authed)
 app.use('/api',                 publicMetaShareRouter); // GET /share/meta/:token (public)
 app.use('/api/meetings',        meetingsRoutes);
+app.use('/api/client-meetings', clientMeetingsRoutes);  // host endpoints
+app.use('/api',                 publicClientMeetingsRouter); // GET/POST /meet/:slug (public)
 app.use('/api/seed',            seedRoutes);
 
 // ── 404 + Error handler ───────────────────────────────────────────────────────
@@ -275,6 +279,9 @@ connectDB().then(() => {
     // End-of-business sweep at 18:00 IST — closes any session whose
     // last heartbeat is older than 10 hours.
     startIdleAutoCloseJob();
+
+    // Auto-expire client meetings past their duration / expiresAt.
+    startClientMeetingExpiryJob();
   });
 });
 
