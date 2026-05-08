@@ -1,6 +1,9 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import mongoSanitize from 'express-mongo-sanitize';
 import { createServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
 import { connectDB } from './config/db';
@@ -63,8 +66,49 @@ const corsOrigin = (origin: string | undefined, cb: (e: Error | null, allow?: bo
   cb(new Error(`CORS: origin ${origin} not allowed`));
 };
 
+// On Render / Vercel / any reverse proxy, the real client IP is in the
+// X-Forwarded-For header. We trust ONE hop (Render's proxy) so
+// express-rate-limit sees the real IP and doesn't throttle everyone
+// globally because they all appear to come from the load balancer.
+app.set('trust proxy', 1);
+
 app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json({ limit: '50mb' }));
+
+// ── Security middleware ─────────────────────────────────────────────────────
+//
+// helmet sets a sensible default of HTTP security headers — HSTS, no-sniff,
+// frame-ancestors, etc. We disable contentSecurityPolicy because we serve
+// the API only (the SPA on Vercel sets its own CSP) and the default CSP
+// would block legitimate cross-origin XHRs from the React app.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+
+// express-mongo-sanitize strips any keys starting with '$' or containing '.'
+// from req.body / req.params / req.query. Defends against NoSQL injection
+// payloads like { "email": { "$ne": null } } that could bypass auth checks.
+app.use(mongoSanitize({ allowDots: false, replaceWith: '_' }));
+
+// Brute-force protection on auth endpoints. 10 attempts per 15 min per IP —
+// lenient enough for legitimate users with autofill mistakes, tight enough
+// to make password guessing infeasible.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+  skipSuccessfulRequests: true, // a successful login resets your bucket — only failed attempts count
+});
+
+// Looser limiter for everything else — guards against accidental loops
+// or scrapers without throttling normal use. 300 req/min per IP.
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, slow down.' },
+});
 
 
 // ── Socket.io ────────────────────────────────────────────────────────────────
@@ -261,6 +305,15 @@ app.get('/health', (_req, res) => {
 // public routers first means Express finds them before any catch-all auth.
 app.use('/api', publicMetaShareRouter);        // GET /api/share/meta/:token
 app.use('/api', publicClientMeetingsRouter);   // GET/POST /api/meet/:slug
+
+// Tight brute-force gate on the auth endpoints. Mounted BEFORE authRoutes so
+// it intercepts /api/auth/login and /api/auth/register specifically.
+app.use('/api/auth/login',    authLimiter);
+app.use('/api/auth/register', authLimiter);
+app.use('/api/auth/google',   authLimiter);
+
+// Looser per-IP throttle on everything else — saves us from runaway clients.
+app.use('/api', generalLimiter);
 
 app.use('/api/auth',            authRoutes);
 app.use('/api/dashboard',       dashboardRoutes);
