@@ -43,6 +43,40 @@ const E = ({ children }: { children: React.ReactNode }) => (
   <PageErrorBoundary>{children}</PageErrorBoundary>
 );
 
+/**
+ * White-label guard. The meeting subdomain (meeting.hastagcreator.com)
+ * serves the same Vercel build but must NEVER expose the Robin app shell
+ * to a prospect. This component is mounted as the Routes wrapper when on
+ * the meeting host — it ONLY allows the public /meet/:slug page; every
+ * other path 404s to a neutral "Meeting not found" rather than redirecting
+ * to /login (which would reveal Robin).
+ */
+const MEETING_HOSTS = ['meeting.hastagcreator.com'];
+const isMeetingHost = () =>
+  typeof window !== 'undefined' && MEETING_HOSTS.includes(window.location.hostname);
+
+function MeetingOnlyRoutes() {
+  return (
+    <Suspense fallback={<FullPageSpinner />}>
+      <Routes>
+        <Route path="/meet/:slug" element={<E><MeetGuest /></E>} />
+        <Route path="*" element={<MeetingNotFound />} />
+      </Routes>
+    </Suspense>
+  );
+}
+
+function MeetingNotFound() {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center p-6">
+      <div className="max-w-md text-center space-y-2">
+        <h1 className="text-lg font-bold">Meeting not found</h1>
+        <p className="text-sm text-muted-foreground">Ask the host to send you a fresh link.</p>
+      </div>
+    </div>
+  );
+}
+
 function AppRoutes() {
   return (
     <Suspense fallback={<FullPageSpinner />}>
@@ -100,6 +134,18 @@ import { HuddleDock } from '@/components/shared/HuddleDock';
 import { BreakOverlay } from '@/components/shared/BreakOverlay';
 
 export default function App() {
+  // White-label: on meeting.hastagcreator.com, render ONLY the public guest
+  // page. No AuthProvider, no Robin chrome, no huddle dock — just the
+  // agency-branded meet UI. This is what protects Robin from leaking.
+  if (isMeetingHost()) {
+    return (
+      <BrowserRouter>
+        <MeetingOnlyRoutes />
+        <Toaster position="top-right" richColors expand />
+      </BrowserRouter>
+    );
+  }
+
   return (
     <BrowserRouter>
       <AuthProvider>

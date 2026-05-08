@@ -298,7 +298,7 @@ function Header({ agencyLabel, live, participantCount }: { agencyLabel: string; 
 function Footer() {
   return (
     <footer className="border-t border-border py-2 text-center text-[10px] text-muted-foreground">
-      Powered by Robin · Read-only secure meeting link
+      Secure meeting link · Read-only
     </footer>
   );
 }

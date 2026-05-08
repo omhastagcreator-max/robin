@@ -17,9 +17,23 @@ import Organization from '../models/Organization';
 
 const HUDDLE_ROOM_PREFIX = 'robin-clientmeet-';
 
+/**
+ * Build the PUBLIC URL we hand to a prospect. Use the dedicated meeting
+ * subdomain (meeting.hastagcreator.com) when configured so the client never
+ * sees the Robin domain. Falls back to FRONTEND_URL for dev.
+ */
 function buildJoinUrl(slug: string): string {
-  const front = process.env.FRONTEND_URL || 'https://robin.hastagcreator.com';
-  return `${front.replace(/\/$/, '')}/meet/${slug}`;
+  const meetingHost =
+    process.env.MEETING_PUBLIC_URL ||
+    process.env.FRONTEND_URL ||
+    'https://meeting.hastagcreator.com';
+  return `${meetingHost.replace(/\/$/, '')}/meet/${slug}`;
+}
+
+/** HOST URL stays on the Robin domain — only employees use it. */
+function buildHostUrl(slug: string): string {
+  const robinHost = process.env.FRONTEND_URL || 'https://robin.hastagcreator.com';
+  return `${robinHost.replace(/\/$/, '')}/meet/host/${slug}`;
 }
 
 function ensureLivekitConfigured(res: Response): boolean {
@@ -59,8 +73,8 @@ export async function createClientMeeting(req: AuthRequest, res: Response): Prom
     res.status(201).json({
       _id: doc._id,
       slug: doc.slug,
-      url: buildJoinUrl(doc.slug),
-      hostUrl: `${(process.env.FRONTEND_URL || 'https://robin.hastagcreator.com').replace(/\/$/, '')}/meet/host/${doc.slug}`,
+      url:     buildJoinUrl(doc.slug),
+      hostUrl: buildHostUrl(doc.slug),
       expiresAt: doc.expiresAt,
       maxDurationMinutes: doc.maxDurationMinutes,
     });

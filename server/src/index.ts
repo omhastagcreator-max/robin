@@ -53,11 +53,13 @@ const corsOrigin = (origin: string | undefined, cb: (e: Error | null, allow?: bo
   if (/^http:\/\/localhost:\d+$/.test(origin)) return cb(null, true);
   // Vercel preview + production
   if (/\.vercel\.app$/.test(origin)) return cb(null, true);
-  // Custom production domain
-  if (/^https?:\/\/(robin\.)?hastagcreator\.com$/.test(origin)) return cb(null, true);
+  // Production domains — robin.hastagcreator.com (employee app) and
+  // meeting.hastagcreator.com (white-labeled client meet page).
+  if (/^https?:\/\/(robin|meeting)\.hastagcreator\.com$/.test(origin)) return cb(null, true);
   if (/\.hastagcreator\.com$/.test(origin)) return cb(null, true);
-  // Explicit FRONTEND_URL env var
-  if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) return cb(null, true);
+  // Explicit env vars
+  if (process.env.FRONTEND_URL        && origin === process.env.FRONTEND_URL)        return cb(null, true);
+  if (process.env.MEETING_PUBLIC_URL  && origin === process.env.MEETING_PUBLIC_URL)  return cb(null, true);
   cb(new Error(`CORS: origin ${origin} not allowed`));
 };
 
