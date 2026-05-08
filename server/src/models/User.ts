@@ -19,6 +19,7 @@ export interface IUser extends Document {
   department?: string;
   isActive: boolean;
   onCallSince?: Date | null;
+  metaAdAccountId?: string | null;   // for client users — links them to one Meta ad account
   createdAt: Date;
   updatedAt: Date;
 }
@@ -50,7 +51,9 @@ const UserSchema = new Schema<IUser>(
 
 // Auto-hash passwordHash if it was set/modified to a plain (non-bcrypt) value.
 // Bcrypt hashes always start with "$2a$", "$2b$", or "$2y$" and are 60 chars.
-UserSchema.pre('save', async function (next) {
+// `this: IUser` annotation needed because Mongoose's pre-save inference
+// otherwise treats fields with `select: false` as possibly absent.
+UserSchema.pre('save', async function (this: IUser, next) {
   if (!this.isModified('passwordHash')) return next();
   const v = this.passwordHash;
   if (!v) return next();
