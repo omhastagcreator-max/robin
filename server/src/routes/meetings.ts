@@ -7,7 +7,9 @@ import {
 
 const router = Router();
 router.use(authMiddleware);
-const internal = requireRole('admin', 'employee', 'sales');
+// Any internal staff member can use the calendar — the role list intentionally
+// errs broad. Clients are excluded; everyone else inside the agency is in.
+const internal = requireRole('admin', 'employee', 'sales', 'meta', 'manager');
 
 router.get('/day',          internal, listDay);
 router.get('/mine',         internal, listMine);

@@ -29,10 +29,20 @@ export function HuddleDock() {
   const location = useLocation();
   const onWorkRoom = location.pathname.startsWith('/workroom');
 
+  // PUBLIC ROUTES — guests viewing a shared Meta report or a client meeting
+  // link must NEVER see the huddle dock, even if they happen to have a Robin
+  // token in localStorage (e.g., the agency owner testing their own share
+  // link while logged in). The dock would expose internal call infrastructure
+  // and break the white-label illusion.
+  const isPublicRoute =
+    location.pathname.startsWith('/share/') ||
+    location.pathname.startsWith('/meet/');  // /meet/:slug guest page
+
   // ALL huddle state comes from the single context-owned useMeetingRoom.
   const huddle = useHuddle();
   const { mode, join, leave, collapse, expand, participantCount } = huddle;
 
+  if (isPublicRoute) return null;
   if (!internal) return null;
   // On the WorkRoom page, the full HuddleStage is the primary UI — hide
   // the dock so we don't show two huddle interfaces side-by-side.

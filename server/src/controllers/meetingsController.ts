@@ -123,7 +123,11 @@ export async function listMine(req: AuthRequest, res: Response): Promise<void> {
 export async function createMeeting(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await getOrgId(req.user!.id);
-    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    if (!orgId) {
+      console.warn('[meetings] createMeeting blocked — user has no organizationId', { userId: req.user!.id });
+      res.status(400).json({ error: 'Your account is not linked to an organization. Ask the admin to set this up.' });
+      return;
+    }
 
     const { title, description, type, link, startTime, endTime, attendees, visibility } = req.body || {};
     if (!title || !startTime || !endTime) {
@@ -132,6 +136,10 @@ export async function createMeeting(req: AuthRequest, res: Response): Promise<vo
     }
     const start = new Date(startTime);
     const end   = new Date(endTime);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      res.status(400).json({ error: 'startTime and endTime must be valid ISO timestamps' });
+      return;
+    }
     if (!(start.getTime() < end.getTime())) {
       res.status(400).json({ error: 'endTime must be after startTime' });
       return;
@@ -166,7 +174,10 @@ export async function createMeeting(req: AuthRequest, res: Response): Promise<vo
     if (io) io.emit('meetings:changed', { date: start.toISOString().slice(0, 10) });
 
     res.status(201).json({ meeting: doc, conflicts: conflictUserIds });
-  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+  } catch (err) {
+    console.error('[meetings] createMeeting failed', err);
+    res.status(500).json({ error: (err as Error).message || 'Could not create meeting' });
+  }
 }
 
 /** PUT /api/meetings/:id — update. Only the host can edit. */
