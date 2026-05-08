@@ -99,7 +99,7 @@ function isoDaysAgo(days: number): string {
 function todayKey(): string { return isoDaysAgo(0); }
 function yesterdayKey(): string { return isoDaysAgo(1); }
 
-type Preset = 'yesterday' | 'last_7d' | 'last_30d' | 'custom';
+type Preset = 'today' | 'yesterday' | 'last_7d' | 'last_30d' | 'custom';
 
 export default function MetaAdsReport() {
   const [accounts, setAccounts]   = useState<AdAccount[]>([]);
@@ -117,11 +117,14 @@ export default function MetaAdsReport() {
   const [refreshing, setRefreshing] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
 
-  // Effective date window from preset
+  // Effective date window from preset.
+  // last_7d / last_30d include TODAY so the running spend is always visible.
+  // (Meta surfaces in-day stats with a 5–15 min lag.)
   const dateWindow = useMemo(() => {
+    if (preset === 'today')     return { from: todayKey(),       to: todayKey() };
     if (preset === 'yesterday') return { from: yesterdayKey(),   to: yesterdayKey() };
-    if (preset === 'last_7d')   return { from: isoDaysAgo(7),    to: yesterdayKey() };
-    if (preset === 'last_30d')  return { from: isoDaysAgo(30),   to: yesterdayKey() };
+    if (preset === 'last_7d')   return { from: isoDaysAgo(6),    to: todayKey() };  // 7 days incl. today
+    if (preset === 'last_30d')  return { from: isoDaysAgo(29),   to: todayKey() };  // 30 days incl. today
     return { from, to };
   }, [preset, from, to]);
 
@@ -146,12 +149,13 @@ export default function MetaAdsReport() {
     })();
   }, []);
 
-  // Fetch report whenever account or window changes
+  // Fetch report whenever account or window changes.
+  // If the window includes today, auto-refresh every 60s for live in-day stats.
   useEffect(() => {
     if (!accountId) return;
     let cancelled = false;
-    (async () => {
-      setLoading(true);
+    const load = async (silent = false) => {
+      if (!silent) setLoading(true);
       setError(null);
       try {
         const [rangeRes, dailyRes, campsRes] = await Promise.all([
@@ -170,8 +174,11 @@ export default function MetaAdsReport() {
       } finally {
         if (!cancelled) { setLoading(false); setRefreshing(false); }
       }
-    })();
-    return () => { cancelled = true; };
+    };
+    load();
+    const includesToday = dateWindow.to >= todayKey();
+    const interval = includesToday ? setInterval(() => load(true), 60_000) : null;
+    return () => { cancelled = true; if (interval) clearInterval(interval); };
   }, [accountId, dateWindow.from, dateWindow.to]);
 
   return (
@@ -212,7 +219,7 @@ export default function MetaAdsReport() {
           </div>
 
           <div className="flex items-center gap-1 bg-muted/40 rounded-lg p-1">
-            {(['yesterday', 'last_7d', 'last_30d', 'custom'] as Preset[]).map(p => (
+            {(['today', 'yesterday', 'last_7d', 'last_30d', 'custom'] as Preset[]).map(p => (
               <button
                 key={p}
                 onClick={() => setPreset(p)}
@@ -220,7 +227,7 @@ export default function MetaAdsReport() {
                   preset === p ? 'bg-background shadow-sm' : 'text-muted-foreground hover:bg-background/50'
                 }`}
               >
-                {p === 'last_7d' ? 'Last 7d' : p === 'last_30d' ? 'Last 30d' : p === 'yesterday' ? 'Yesterday' : 'Custom'}
+                {p === 'today' ? 'Today' : p === 'last_7d' ? 'Last 7d' : p === 'last_30d' ? 'Last 30d' : p === 'yesterday' ? 'Yesterday' : 'Custom'}
               </button>
             ))}
           </div>

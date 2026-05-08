@@ -37,28 +37,37 @@ const fmtNum = (n?: number | null) => safe(n).toLocaleString('en-IN');
 const fmtINR = (n?: number | null) => `₹${safe(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const fmtPct = (n?: number | null) => `${safe(n).toFixed(2)}%`;
 
+type Window = 'today' | 'yesterday';
+
 export function MetaAdsCard() {
-  const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [view, setView] = useState<Window>('today');
+  const [today, setToday] = useState<Metrics | null>(null);
+  const [yesterday, setYesterday] = useState<Metrics | null>(null);
   const [accountName, setAccountName] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
+  const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
 
+  // Pull both today + yesterday so the toggle is instant. Today auto-refreshes
+  // every 60s — Meta surfaces in-day stats with a small lag (5–15 min).
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const load = async () => {
       try {
-        // Fetch default account name + yesterday metrics in parallel
-        const [accounts, yest] = await Promise.all([
+        const [accounts, todayRes, yestRes] = await Promise.all([
           api.metaAdsAccounts().catch(() => null),
-          api.metaAdsYesterday(),
+          api.metaAdsToday().catch(() => null),
+          api.metaAdsYesterday().catch(() => null),
         ]);
         if (cancelled) return;
         if (accounts) {
           const def = accounts.accounts.find((a: any) => a.id === accounts.defaultAccountId);
           setAccountName(def?.name || '');
         }
-        setMetrics(yest.metrics);
+        setToday(todayRes?.metrics ?? null);
+        setYesterday(yestRes?.metrics ?? null);
+        setRefreshedAt(new Date());
       } catch (e: any) {
         if (cancelled) return;
         const status = e?.response?.status;
@@ -67,9 +76,13 @@ export function MetaAdsCard() {
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
-    return () => { cancelled = true; };
+    };
+    load();
+    const interval = setInterval(load, 60_000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, []);
+
+  const metrics = view === 'today' ? today : yesterday;
 
   // Don't render anything if user doesn't have access (cleaner than showing
   // a "you can't see this" card on every dashboard for non-ads users).
@@ -81,20 +94,49 @@ export function MetaAdsCard() {
       animate={{ opacity: 1, y: 0 }}
       className="rounded-2xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent p-5"
     >
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
         <div className="h-9 w-9 rounded-xl bg-blue-500/15 flex items-center justify-center">
           <Sparkles className="h-4 w-4 text-blue-500" />
         </div>
-        <div>
-          <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Meta Ads · Yesterday</p>
-          <p className="text-[11px] text-muted-foreground">{accountName || 'Default account'}</p>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide flex items-center gap-1.5">
+            Meta Ads
+            {view === 'today' && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0 rounded bg-red-500/15 text-red-600 text-[9px] font-bold">
+                <span className="h-1 w-1 rounded-full bg-red-500 animate-pulse" /> LIVE
+              </span>
+            )}
+          </p>
+          <p className="text-[11px] text-muted-foreground truncate">
+            {accountName || 'Default account'}
+            {refreshedAt && view === 'today' && (
+              <span className="ml-1.5 text-muted-foreground/70">· refreshed {refreshedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+            )}
+          </p>
         </div>
-        <Link
-          to="/ads/meta"
-          className="ml-auto text-[11px] text-primary flex items-center gap-0.5 hover:underline"
-        >
-          Full report <ArrowRight className="h-3 w-3" />
-        </Link>
+        <div className="ml-auto flex items-center gap-2">
+          {/* Today / Yesterday toggle */}
+          <div className="inline-flex items-center bg-background/60 border border-blue-500/20 rounded-full p-0.5 text-[11px] font-semibold">
+            <button
+              onClick={() => setView('today')}
+              className={`px-2.5 py-0.5 rounded-full transition-colors ${view === 'today' ? 'bg-blue-500 text-white' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Today
+            </button>
+            <button
+              onClick={() => setView('yesterday')}
+              className={`px-2.5 py-0.5 rounded-full transition-colors ${view === 'yesterday' ? 'bg-blue-500 text-white' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Yesterday
+            </button>
+          </div>
+          <Link
+            to="/ads/meta"
+            className="text-[11px] text-primary flex items-center gap-0.5 hover:underline"
+          >
+            Full report <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
       </div>
 
       {loading && (
@@ -117,7 +159,9 @@ export function MetaAdsCard() {
 
       {!loading && !error && !metrics && (
         <p className="text-sm text-muted-foreground py-4 text-center">
-          No spend yesterday on this account. Try a different account from the full report.
+          {view === 'today'
+            ? 'No spend yet today on this account. Numbers appear once campaigns start delivering.'
+            : 'No spend yesterday on this account. Try a different account from the full report.'}
         </p>
       )}
 

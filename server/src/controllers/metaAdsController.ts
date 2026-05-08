@@ -93,6 +93,36 @@ export async function getYesterday(req: AuthRequest, res: Response): Promise<voi
   }
 }
 
+/**
+ * GET /api/ads/meta/today?adAccountId=act_...
+ *
+ * Returns the running stats for the CURRENT day. Meta's API exposes this
+ * via date_preset=today; numbers update every few minutes throughout the
+ * day. We keep the cache short (30s) because users want to see live spend.
+ */
+const TODAY_TTL_MS = 30_000;
+const todayCache = new Map<string, { at: number; data: any }>();
+function cachedToday<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const hit = todayCache.get(key);
+  if (hit && Date.now() - hit.at < TODAY_TTL_MS) return Promise.resolve(hit.data as T);
+  return fn().then(data => { todayCache.set(key, { at: Date.now(), data }); return data; });
+}
+
+export async function getToday(req: AuthRequest, res: Response): Promise<void> {
+  if (!ensureConfigured(res)) return;
+  try {
+    const adAccountId = (req.query.adAccountId as string) || process.env.META_DEFAULT_AD_ACCOUNT_ID;
+    if (!adAccountId) { res.status(400).json({ error: 'adAccountId required' }); return; }
+    const [data, dailyBudget] = await Promise.all([
+      cachedToday(`today:${adAccountId}`, () => meta.getInsights({ adAccountId, datePreset: 'today' })),
+      cached(`budget:${adAccountId}`,     () => meta.getActiveDailyBudget(adAccountId).catch(() => 0)),
+    ]);
+    res.json({ adAccountId, metrics: data, dailyBudget, freshAt: new Date().toISOString() });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+}
+
 /** GET /api/ads/meta/range?adAccountId=...&from=YYYY-MM-DD&to=YYYY-MM-DD&daily=1 */
 export async function getRange(req: AuthRequest, res: Response): Promise<void> {
   if (!ensureConfigured(res)) return;
