@@ -1,6 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { listAccounts, listAccountsHealth, getYesterday, getRange, getCampaigns } from '../controllers/metaAdsController';
+import { createShare, listShares, revokeShare } from '../controllers/metaSharingController';
 
 const router = Router();
 router.use(authMiddleware);
@@ -37,8 +38,15 @@ router.use(requireMetaAccess);
 
 router.get('/accounts',         listAccounts);
 router.get('/accounts/health',  listAccountsHealth);
-router.get('/yesterday', getYesterday);
-router.get('/range',     getRange);
-router.get('/campaigns', getCampaigns);
+router.get('/yesterday',        getYesterday);
+router.get('/range',            getRange);
+router.get('/campaigns',        getCampaigns);
+
+// Sharing — same router so /share lives next to the rest of /ads/meta
+// (avoids any Express sub-router fall-through quirks when two routers
+//  share a prefix).
+router.post('/share',           createShare);
+router.get('/shares',           listShares);
+router.delete('/share/:id',     revokeShare);
 
 export default router;
