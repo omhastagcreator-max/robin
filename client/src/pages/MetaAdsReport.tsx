@@ -5,6 +5,7 @@ import {
   TrendingUp, IndianRupee, Eye, MousePointerClick, Target, AlertCircle,
   Loader2, RefreshCw, BarChart3, ChevronDown, Check, X, Lock,
   Share2, Copy, MessageCircle, Mail,
+  ExternalLink, ShoppingCart, CreditCard, FileSearch, Heart, PlayCircle, Users as UsersIcon, Award,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
@@ -33,22 +34,54 @@ interface Metrics {
   dateStop: string;
   spend: number;
   impressions: number;
-  clicks: number;
-  ctr: number;
-  cpm: number;
-  cpc: number;
   reach: number;
   frequency: number;
+  cpm: number;
+  clicks: number;
+  ctr: number;
+  cpc: number;
+  inlineLinkClicks: number;
+  outboundClicks: number;
+  outboundCtr: number;
+  costPerOutboundClick: number;
+  uniqueClicks: number;
+  uniqueCtr: number;
+  landingPageViews: number;
+  costPerLandingPageView: number;
+  pageEngagements: number;
+  postEngagements: number;
+  videoViews: number;
+  videoThruplays: number;
+  videoP50: number;
+  videoP75: number;
+  videoP100: number;
+  costPerThruplay: number;
+  viewContent: number;
+  addPaymentInfo: number;
+  addToCart: number;
+  initiateCheckout: number;
+  purchases: number;
+  leads: number;
+  costPerAddPaymentInfo: number;
+  costPerAddToCart: number;
+  costPerInitiateCheckout: number;
+  costPerPurchase: number;
+  costPerLead: number;
   conversions: number;
   conversionValue: number;
   costPerConversion: number;
   roas: number;
+  qualityRanking: string;
+  engagementRateRanking: string;
+  conversionRateRanking: string;
 }
 
 interface Campaign extends Metrics {
   campaignId: string;
   campaignName: string;
 }
+
+// `dailyBudget` field comes back from the server alongside `metrics`
 
 const fmtINR = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const fmtNum = (n: number) => n.toLocaleString('en-IN');
@@ -72,6 +105,7 @@ export default function MetaAdsReport() {
   const [to, setTo]               = useState<string>(yesterdayKey());
 
   const [totals, setTotals]       = useState<Metrics | null>(null);
+  const [dailyBudget, setDailyBudget] = useState<number>(0);
   const [daily, setDaily]         = useState<Metrics[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -123,6 +157,7 @@ export default function MetaAdsReport() {
         ]);
         if (cancelled) return;
         setTotals(rangeRes.metrics || null);
+        setDailyBudget(Number(rangeRes.dailyBudget) || 0);
         setDaily(dailyRes.daily || []);
         setCampaigns(campsRes.campaigns || []);
       } catch (e: any) {
@@ -210,18 +245,11 @@ export default function MetaAdsReport() {
           </div>
         )}
 
-        {/* Headline KPIs */}
+        {/* Headline KPIs grouped by funnel stage */}
         {loading && !totals ? (
           <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-blue-500" /></div>
         ) : totals ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <Kpi icon={IndianRupee}       label="Spend"        value={fmtINR(totals.spend)} />
-            <Kpi icon={Eye}               label="Impressions"  value={fmtNum(totals.impressions)} />
-            <Kpi icon={MousePointerClick} label="Clicks"       value={fmtNum(totals.clicks)} sub={`CTR ${fmtPct(totals.ctr)}`} />
-            <Kpi icon={Target}            label="Conversions"  value={fmtNum(totals.conversions)} sub={totals.conversions > 0 ? `${fmtINR(totals.costPerConversion)} / conv` : ''} />
-            <Kpi icon={TrendingUp}        label="ROAS"         value={totals.roas > 0 ? `${totals.roas.toFixed(2)}x` : '—'} accent={totals.roas >= 2 ? 'green' : totals.roas >= 1 ? 'amber' : totals.roas > 0 ? 'red' : undefined} />
-            <Kpi icon={IndianRupee}       label="Avg CPC"      value={totals.cpc > 0 ? fmtINR(totals.cpc) : '—'} sub={totals.cpm > 0 ? `CPM ${fmtINR(totals.cpm)}` : ''} />
-          </div>
+          <FunnelKpis totals={totals} dailyBudget={dailyBudget} />
         ) : (
           <p className="text-sm text-muted-foreground py-8 text-center bg-card border border-border rounded-2xl">
             No data for this account in the selected window.
@@ -595,6 +623,89 @@ function StatusIcon({ status }: { status?: string }) {
   if (status === 'error')     return <span className="h-4 w-4 rounded-full bg-amber-500/20 text-amber-600 flex items-center justify-center shrink-0"><AlertCircle className="h-2.5 w-2.5" /></span>;
   // unknown / loading
   return <span className="h-4 w-4 rounded-full bg-muted/50 shrink-0" />;
+}
+
+/**
+ * FunnelKpis — exact metric set the agency cares about, in three rows.
+ *
+ *   Cost & reach: Cost per result · Frequency · Daily budget · Amount spent · Impressions · CPM
+ *   Engagement:   CTR · Avg CPC
+ *   E-com funnel: Add Payment Info · Add to Cart · Checkout Initiated · Direct Website Purchases · ROAS
+ *
+ * Plus a row of Meta's three "quality rankings" (only shown when Meta
+ * has assigned them — typically requires recent meaningful spend).
+ */
+function FunnelKpis({ totals, dailyBudget }: { totals: Metrics; dailyBudget: number }) {
+  const cpr = totals.costPerConversion;
+
+  return (
+    <div className="space-y-3">
+      {/* Quality rankings */}
+      {(totals.qualityRanking !== 'unknown' || totals.engagementRateRanking !== 'unknown' || totals.conversionRateRanking !== 'unknown') && (
+        <div className="bg-card border border-border rounded-2xl px-4 py-3 flex items-center gap-3 flex-wrap">
+          <Award className="h-4 w-4 text-amber-500" />
+          <span className="text-[11px] uppercase font-semibold tracking-wide text-muted-foreground">Meta quality rankings</span>
+          <RankingPill label="Quality" value={totals.qualityRanking} />
+          <RankingPill label="Engagement" value={totals.engagementRateRanking} />
+          <RankingPill label="Conversion rate" value={totals.conversionRateRanking} />
+        </div>
+      )}
+
+      {/* Cost & reach */}
+      <Section title="Cost & reach">
+        <Kpi icon={Target}        label="Cost per result" value={cpr > 0 ? fmtINR(cpr) : '—'} sub="result = configured conv." />
+        <Kpi icon={UsersIcon}     label="Frequency"       value={totals.frequency > 0 ? totals.frequency.toFixed(2) : '—'} sub="avg views/person" />
+        <Kpi icon={IndianRupee}   label="Daily budget"    value={dailyBudget > 0 ? fmtINR(dailyBudget) : '—'} sub="active campaigns" />
+        <Kpi icon={IndianRupee}   label="Amount spent"    value={fmtINR(totals.spend)} />
+        <Kpi icon={Eye}           label="Impressions"     value={fmtNum(totals.impressions)} sub={totals.reach > 0 ? `Reach ${fmtNum(totals.reach)}` : ''} />
+        <Kpi icon={IndianRupee}   label="CPM"             value={totals.cpm > 0 ? fmtINR(totals.cpm) : '—'} sub="cost per 1000" />
+      </Section>
+
+      {/* Engagement */}
+      <Section title="Engagement">
+        <Kpi icon={MousePointerClick} label="CTR"     value={fmtPct(totals.ctr)} sub={totals.outboundCtr > 0 ? `Outbound ${fmtPct(totals.outboundCtr)}` : ''} />
+        <Kpi icon={IndianRupee}       label="Avg CPC" value={totals.cpc > 0 ? fmtINR(totals.cpc) : '—'} sub={totals.costPerOutboundClick > 0 ? `Outbound ${fmtINR(totals.costPerOutboundClick)}` : ''} />
+        <Kpi icon={ExternalLink}      label="Outbound clicks" value={fmtNum(totals.outboundClicks)} />
+        <Kpi icon={FileSearch}        label="Landing page views" value={fmtNum(totals.landingPageViews)} sub={totals.landingPageViews > 0 ? `${fmtINR(totals.costPerLandingPageView)} / LPV` : ''} />
+      </Section>
+
+      {/* E-commerce funnel */}
+      <Section title="Funnel & ROAS">
+        <Kpi icon={CreditCard}   label="Add payment info"   value={fmtNum(totals.addPaymentInfo)}    sub={totals.addPaymentInfo > 0 ? `${fmtINR(totals.costPerAddPaymentInfo)} / APInf` : ''} />
+        <Kpi icon={ShoppingCart} label="Add to cart"        value={fmtNum(totals.addToCart)}         sub={totals.addToCart > 0 ? `${fmtINR(totals.costPerAddToCart)} / ATC` : ''} />
+        <Kpi icon={CreditCard}   label="Checkout initiated" value={fmtNum(totals.initiateCheckout)}  sub={totals.initiateCheckout > 0 ? `${fmtINR(totals.costPerInitiateCheckout)} / IC` : ''} />
+        <Kpi icon={Target}       label="Website purchases"  value={fmtNum(totals.purchases)}         sub={totals.purchases > 0 ? `${fmtINR(totals.costPerPurchase)} / sale` : ''} />
+        <Kpi icon={Target}       label="Leads"              value={fmtNum(totals.leads)}             sub={totals.leads > 0 ? `${fmtINR(totals.costPerLead)} / lead` : ''} />
+        <Kpi icon={TrendingUp}   label="ROAS"               value={totals.roas > 0 ? `${totals.roas.toFixed(2)}x` : '—'}
+             accent={totals.roas >= 2 ? 'green' : totals.roas >= 1 ? 'amber' : totals.roas > 0 ? 'red' : undefined} />
+      </Section>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground px-1">{title}</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function RankingPill({ label, value }: { label: string; value: string }) {
+  const tone =
+    value === 'above_average' ? 'bg-green-500/15 text-green-700 border-green-500/30' :
+    value === 'average'       ? 'bg-amber-500/15 text-amber-700 border-amber-500/30' :
+    value === 'below_average' ? 'bg-red-500/15 text-red-700 border-red-500/30'    :
+                                'bg-muted text-muted-foreground border-border';
+  const display = value === 'unknown' ? 'no data' : value.replace(/_/g, ' ');
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${tone}`}>
+      {label}: <span className="capitalize">{display}</span>
+    </span>
+  );
 }
 
 function Kpi({ icon: Icon, label, value, sub, accent }: { icon: any; label: string; value: string; sub?: string; accent?: 'green' | 'amber' | 'red' }) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Bird, BarChart3, IndianRupee, Eye, MousePointerClick, Target, TrendingUp, Loader2, AlertCircle } from 'lucide-react';
+import { Bird, BarChart3, IndianRupee, Eye, MousePointerClick, Target, TrendingUp, Loader2, AlertCircle, ExternalLink, ShoppingCart, CreditCard, FileSearch, PlayCircle, Users as UsersIcon, Award } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { format } from 'date-fns';
 import * as api from '@/api';
@@ -21,16 +21,39 @@ interface Metrics {
   dateStop: string;
   spend: number;
   impressions: number;
-  clicks: number;
-  ctr: number;
-  cpm: number;
-  cpc: number;
   reach: number;
   frequency: number;
+  cpm: number;
+  clicks: number;
+  ctr: number;
+  cpc: number;
+  outboundClicks: number;
+  outboundCtr: number;
+  costPerOutboundClick: number;
+  landingPageViews: number;
+  costPerLandingPageView: number;
+  videoViews: number;
+  videoThruplays: number;
+  videoP100: number;
+  costPerThruplay: number;
+  viewContent: number;
+  addPaymentInfo: number;
+  addToCart: number;
+  initiateCheckout: number;
+  purchases: number;
+  leads: number;
+  costPerAddPaymentInfo: number;
+  costPerAddToCart: number;
+  costPerInitiateCheckout: number;
+  costPerPurchase: number;
+  costPerLead: number;
   conversions: number;
   conversionValue: number;
   costPerConversion: number;
   roas: number;
+  qualityRanking: string;
+  engagementRateRanking: string;
+  conversionRateRanking: string;
 }
 interface Campaign extends Metrics {
   campaignId: string;
@@ -121,16 +144,36 @@ export default function MetaShareView() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-6 space-y-5">
-        {/* Headline KPIs */}
+        {/* Headline KPIs — same set as the internal report */}
         {totals ? (
-          <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <Kpi icon={IndianRupee}       label="Spend"        value={fmtINR(totals.spend)} />
-            <Kpi icon={Eye}               label="Impressions"  value={fmtNum(totals.impressions)} />
-            <Kpi icon={MousePointerClick} label="Clicks"       value={fmtNum(totals.clicks)} sub={`CTR ${fmtPct(totals.ctr)}`} />
-            <Kpi icon={Target}            label="Sales"        value={fmtNum(totals.conversions)} sub={totals.conversions > 0 ? `${fmtINR(totals.costPerConversion)} / sale` : ''} />
-            <Kpi icon={TrendingUp}        label="ROAS"         value={totals.roas > 0 ? `${totals.roas.toFixed(2)}x` : '—'} accent={totals.roas >= 2 ? 'green' : totals.roas >= 1 ? 'amber' : totals.roas > 0 ? 'red' : undefined} />
-            <Kpi icon={IndianRupee}       label="Avg CPC"      value={totals.cpc > 0 ? fmtINR(totals.cpc) : '—'} sub={totals.cpm > 0 ? `CPM ${fmtINR(totals.cpm)}` : ''} />
-          </section>
+          <>
+            {/* Cost & reach */}
+            <section className="space-y-1">
+              <p className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground px-1">Cost & reach</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <Kpi icon={Target}      label="Cost per result" value={totals.costPerConversion > 0 ? fmtINR(totals.costPerConversion) : '—'} />
+                <Kpi icon={UsersIcon}   label="Frequency"       value={totals.frequency > 0 ? totals.frequency.toFixed(2) : '—'} />
+                <Kpi icon={IndianRupee} label="Amount spent"    value={fmtINR(totals.spend)} />
+                <Kpi icon={Eye}         label="Impressions"     value={fmtNum(totals.impressions)} />
+                <Kpi icon={IndianRupee} label="CPM"             value={totals.cpm > 0 ? fmtINR(totals.cpm) : '—'} />
+                <Kpi icon={MousePointerClick} label="CTR"       value={fmtPct(totals.ctr)} />
+              </div>
+            </section>
+
+            {/* Funnel */}
+            <section className="space-y-1">
+              <p className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground px-1">Funnel & ROAS</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <Kpi icon={IndianRupee}  label="Avg CPC"            value={totals.cpc > 0 ? fmtINR(totals.cpc) : '—'} />
+                <Kpi icon={CreditCard}   label="Add payment info"   value={fmtNum(totals.addPaymentInfo)}   sub={totals.addPaymentInfo > 0 ? `${fmtINR(totals.costPerAddPaymentInfo)} ea` : ''} />
+                <Kpi icon={ShoppingCart} label="Add to cart"        value={fmtNum(totals.addToCart)}        sub={totals.addToCart > 0 ? `${fmtINR(totals.costPerAddToCart)} ea` : ''} />
+                <Kpi icon={CreditCard}   label="Checkout initiated" value={fmtNum(totals.initiateCheckout)} sub={totals.initiateCheckout > 0 ? `${fmtINR(totals.costPerInitiateCheckout)} ea` : ''} />
+                <Kpi icon={Target}       label="Website purchases"  value={fmtNum(totals.purchases)}        sub={totals.purchases > 0 ? `${fmtINR(totals.costPerPurchase)} / sale` : ''} />
+                <Kpi icon={TrendingUp}   label="ROAS"               value={totals.roas > 0 ? `${totals.roas.toFixed(2)}x` : '—'}
+                      accent={totals.roas >= 2 ? 'green' : totals.roas >= 1 ? 'amber' : totals.roas > 0 ? 'red' : undefined} />
+              </div>
+            </section>
+          </>
         ) : (
           <p className="text-center text-sm text-muted-foreground py-8 bg-card border border-border rounded-2xl">
             No spend data for this window.

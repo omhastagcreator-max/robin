@@ -82,10 +82,12 @@ export async function getYesterday(req: AuthRequest, res: Response): Promise<voi
     const adAccountId = (req.query.adAccountId as string) || process.env.META_DEFAULT_AD_ACCOUNT_ID;
     if (!adAccountId) { res.status(400).json({ error: 'adAccountId required' }); return; }
 
-    const data = await cached(`yest:${adAccountId}`, () =>
-      meta.getInsights({ adAccountId, datePreset: 'yesterday' })
-    );
-    res.json({ adAccountId, metrics: data });
+    // Fetch yesterday metrics + current daily budget in parallel.
+    const [data, dailyBudget] = await Promise.all([
+      cached(`yest:${adAccountId}`,   () => meta.getInsights({ adAccountId, datePreset: 'yesterday' })),
+      cached(`budget:${adAccountId}`, () => meta.getActiveDailyBudget(adAccountId).catch(() => 0)),
+    ]);
+    res.json({ adAccountId, metrics: data, dailyBudget });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   }
@@ -109,8 +111,11 @@ export async function getRange(req: AuthRequest, res: Response): Promise<void> {
       const data = await cached(key, () => meta.getInsightsDaily({ adAccountId, timeRange: { since: from, until: to } }));
       res.json({ adAccountId, daily: data });
     } else {
-      const data = await cached(key, () => meta.getInsights({ adAccountId, timeRange: { since: from, until: to } }));
-      res.json({ adAccountId, metrics: data });
+      const [data, dailyBudget] = await Promise.all([
+        cached(key, () => meta.getInsights({ adAccountId, timeRange: { since: from, until: to } })),
+        cached(`budget:${adAccountId}`, () => meta.getActiveDailyBudget(adAccountId).catch(() => 0)),
+      ]);
+      res.json({ adAccountId, metrics: data, dailyBudget });
     }
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });

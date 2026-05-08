@@ -24,6 +24,8 @@ export function isConfigured(): boolean {
   return !!(env('META_USER_TOKEN') && env('META_APP_ID') && env('META_APP_SECRET'));
 }
 
+interface ActionEntry { action_type: string; value: string }
+
 interface InsightsResponse {
   spend?: string;
   impressions?: string;
@@ -33,8 +35,29 @@ interface InsightsResponse {
   cpc?: string;
   reach?: string;
   frequency?: string;
-  actions?: Array<{ action_type: string; value: string }>;
-  action_values?: Array<{ action_type: string; value: string }>;
+  // Click breakdown
+  inline_link_clicks?: string;
+  outbound_clicks?: ActionEntry[];
+  outbound_clicks_ctr?: ActionEntry[];
+  cost_per_inline_link_click?: string;
+  cost_per_outbound_click?: ActionEntry[];
+  unique_clicks?: string;
+  unique_ctr?: string;
+  // Video
+  video_play_actions?: ActionEntry[];                    // 3-sec plays
+  video_thruplay_watched_actions?: ActionEntry[];        // 15-sec / 97% (whichever is shorter)
+  video_p50_watched_actions?: ActionEntry[];
+  video_p75_watched_actions?: ActionEntry[];
+  video_p100_watched_actions?: ActionEntry[];
+  cost_per_thruplay?: ActionEntry[];
+  // Quality rankings — 'above_average', 'average', 'below_average', 'unknown'
+  quality_ranking?: string;
+  engagement_rate_ranking?: string;
+  conversion_rate_ranking?: string;
+  // Funnel actions
+  actions?: ActionEntry[];
+  action_values?: ActionEntry[];
+  cost_per_action_type?: ActionEntry[];
   date_start?: string;
   date_stop?: string;
 }
@@ -42,19 +65,63 @@ interface InsightsResponse {
 export interface MetaAdsMetrics {
   dateStart: string;
   dateStop: string;
+
+  // Core spend + reach
   spend: number;
   impressions: number;
-  clicks: number;
-  ctr: number;          // percent (Meta returns as percentage already)
-  cpm: number;          // cost per 1000 impressions
-  cpc: number;          // cost per click
   reach: number;
   frequency: number;
-  conversions: number;       // count of the configured conversion action
-  conversionValue: number;   // revenue from those conversions
-  costPerConversion: number; // spend / conversions, 0 if no conversions
-  roas: number;              // conversionValue / spend, 0 if no spend
-  raw: InsightsResponse;     // keep around for debugging / future fields
+  cpm: number;
+
+  // Clicks (multiple flavours — outbound is the most useful)
+  clicks: number;                  // total clicks (incl. likes, profile, etc.)
+  ctr: number;                     // total CTR
+  cpc: number;                     // cost per total click
+  inlineLinkClicks: number;        // clicks on the destination link only
+  outboundClicks: number;          // clicks that LEFT Meta to your site
+  outboundCtr: number;
+  costPerOutboundClick: number;
+  uniqueClicks: number;            // distinct people who clicked
+  uniqueCtr: number;
+
+  // Landing page reality check — people who waited for the page to load
+  landingPageViews: number;
+  costPerLandingPageView: number;
+
+  // Funnel actions (e-commerce / lead gen)
+  pageEngagements: number;         // likes + comments + shares + clicks on page
+  postEngagements: number;
+  videoViews: number;              // 3-second plays
+  videoThruplays: number;
+  videoP50: number;
+  videoP75: number;
+  videoP100: number;
+  costPerThruplay: number;
+
+  viewContent: number;             // pixel: ViewContent
+  addPaymentInfo: number;          // pixel: AddPaymentInfo
+  addToCart: number;
+  initiateCheckout: number;
+  purchases: number;
+  leads: number;
+  costPerAddPaymentInfo: number;
+  costPerAddToCart: number;
+  costPerInitiateCheckout: number;
+  costPerPurchase: number;
+  costPerLead: number;
+
+  // Headline conversion (the action_type chosen by env)
+  conversions: number;
+  conversionValue: number;
+  costPerConversion: number;
+  roas: number;
+
+  // Quality scores (only for accounts with enough volume)
+  qualityRanking: string;          // 'above_average' | 'average' | 'below_average' | 'unknown'
+  engagementRateRanking: string;
+  conversionRateRanking: string;
+
+  raw: InsightsResponse;
 }
 
 export interface AdAccountInfo {
@@ -135,7 +202,18 @@ export async function getInsights(opts: {
   timeRange?: { since: string; until: string };
 }): Promise<MetaAdsMetrics | null> {
   const params: Record<string, string> = {
-    fields: 'spend,impressions,clicks,ctr,cpm,cpc,reach,frequency,actions,action_values,date_start,date_stop',
+    fields: [
+      'spend','impressions','clicks','ctr','cpm','cpc','reach','frequency',
+      'inline_link_clicks','outbound_clicks','outbound_clicks_ctr',
+      'cost_per_inline_link_click','cost_per_outbound_click',
+      'unique_clicks','unique_ctr',
+      'video_play_actions','video_thruplay_watched_actions',
+      'video_p50_watched_actions','video_p75_watched_actions','video_p100_watched_actions',
+      'cost_per_thruplay',
+      'quality_ranking','engagement_rate_ranking','conversion_rate_ranking',
+      'actions','action_values','cost_per_action_type',
+      'date_start','date_stop',
+    ].join(','),
   };
   if (opts.timeRange) {
     params.time_range = JSON.stringify(opts.timeRange);
@@ -155,12 +233,45 @@ export async function getInsightsDaily(opts: {
   timeRange: { since: string; until: string };
 }): Promise<MetaAdsMetrics[]> {
   const params: Record<string, string> = {
-    fields: 'spend,impressions,clicks,ctr,cpm,cpc,reach,frequency,actions,action_values,date_start,date_stop',
+    fields: [
+      'spend','impressions','clicks','ctr','cpm','cpc','reach','frequency',
+      'inline_link_clicks','outbound_clicks','outbound_clicks_ctr',
+      'cost_per_inline_link_click','cost_per_outbound_click',
+      'unique_clicks','unique_ctr',
+      'video_play_actions','video_thruplay_watched_actions',
+      'video_p50_watched_actions','video_p75_watched_actions','video_p100_watched_actions',
+      'cost_per_thruplay',
+      'quality_ranking','engagement_rate_ranking','conversion_rate_ranking',
+      'actions','action_values','cost_per_action_type',
+      'date_start','date_stop',
+    ].join(','),
     time_range: JSON.stringify(opts.timeRange),
     time_increment: '1', // 1 = daily
   };
   const res = await graphGet<{ data: InsightsResponse[] }>(`/${opts.adAccountId}/insights`, params);
   return (res.data || []).map(parseInsights);
+}
+
+/**
+ * Sum of daily budgets across active campaigns for an ad account.
+ * Returns 0 if no campaigns are active. Meta returns budgets in the
+ * account's currency minor unit (paise/cents), so we divide by 100.
+ *
+ * NOTE: this is a "what's CURRENTLY budgeted per day" — different from
+ * "what was spent today". Useful for dashboards that want to show
+ * pacing (spend vs budget).
+ */
+export async function getActiveDailyBudget(adAccountId: string): Promise<number> {
+  const res = await graphGet<{ data: any[] }>(`/${adAccountId}/campaigns`, {
+    fields: 'daily_budget,lifetime_budget,status,effective_status',
+    limit: '200',
+  });
+  let totalDaily = 0;
+  for (const c of res.data || []) {
+    if (c.effective_status !== 'ACTIVE') continue;
+    if (c.daily_budget) totalDaily += Number(c.daily_budget) / 100;
+  }
+  return totalDaily;
 }
 
 /**
@@ -214,7 +325,15 @@ export async function getCampaignBreakdown(opts: {
   timeRange?: { since: string; until: string };
 }): Promise<Array<MetaAdsMetrics & { campaignId: string; campaignName: string }>> {
   const params: Record<string, string> = {
-    fields: 'campaign_id,campaign_name,spend,impressions,clicks,ctr,cpm,cpc,reach,frequency,actions,action_values',
+    fields: [
+      'campaign_id','campaign_name',
+      'spend','impressions','clicks','ctr','cpm','cpc','reach','frequency',
+      'inline_link_clicks','outbound_clicks','outbound_clicks_ctr',
+      'unique_clicks','unique_ctr',
+      'video_play_actions','video_thruplay_watched_actions','video_p50_watched_actions','video_p100_watched_actions',
+      'quality_ranking','engagement_rate_ranking','conversion_rate_ranking',
+      'actions','action_values',
+    ].join(','),
     level: 'campaign',
   };
   if (opts.timeRange) params.time_range = JSON.stringify(opts.timeRange);
@@ -230,32 +349,127 @@ export async function getCampaignBreakdown(opts: {
 
 // ── Parsing ──────────────────────────────────────────────────────────────
 
+// Helper — sum every numeric value in an action-array, or filter by type.
+function sumActions(arr: ActionEntry[] | undefined, typeFilter?: (t: string) => boolean): number {
+  if (!arr) return 0;
+  return arr.reduce((s, a) => {
+    if (typeFilter && !typeFilter(a.action_type)) return s;
+    const n = Number(a.value);
+    return s + (isFinite(n) ? n : 0);
+  }, 0);
+}
+function findAction(arr: ActionEntry[] | undefined, type: string): number {
+  const e = (arr || []).find(a => a.action_type === type);
+  return e ? Number(e.value) || 0 : 0;
+}
+// Match either the bare action OR the offsite_conversion variant of the same.
+// Meta returns BOTH "purchase" and "offsite_conversion.fb_pixel_purchase" for
+// the same event sometimes; offsite_conversion is more accurate (pixel-fired).
+function findActionByVariants(arr: ActionEntry[] | undefined, ...types: string[]): number {
+  for (const t of types) {
+    const v = findAction(arr, t);
+    if (v > 0) return v;
+  }
+  return 0;
+}
+
 function parseInsights(r: InsightsResponse): MetaAdsMetrics {
   const num = (s?: string) => (s ? Number(s) : 0);
   const wanted = conversionActionType();
 
-  // Pull the configured conversion action's count + value.
-  const conversionAction = (r.actions || []).find(a => a.action_type === wanted);
-  const conversionValueAction = (r.action_values || []).find(a => a.action_type === wanted);
-  const conversions = conversionAction ? num(conversionAction.value) : 0;
-  const conversionValue = conversionValueAction ? num(conversionValueAction.value) : 0;
+  // Configured conversion action
+  const conversions      = findAction(r.actions, wanted);
+  const conversionValue  = findAction(r.action_values, wanted);
+
+  // Outbound clicks — Meta returns as an action-array with type 'outbound_click'.
+  const outboundClicks   = sumActions(r.outbound_clicks, t => t === 'outbound_click');
+  const outboundCtrEntry = (r.outbound_clicks_ctr || []).find(a => a.action_type === 'outbound_click');
+  const outboundCtr      = outboundCtrEntry ? Number(outboundCtrEntry.value) || 0 : 0;
+  const costPerOutboundClickEntry = (r.cost_per_outbound_click || []).find(a => a.action_type === 'outbound_click');
+  const costPerOutboundClick = costPerOutboundClickEntry ? Number(costPerOutboundClickEntry.value) || 0 : 0;
+
+  // Funnel events — pixel-prefixed variants are more reliable
+  const landingPageViews   = findActionByVariants(r.actions, 'landing_page_view');
+  const viewContent        = findActionByVariants(r.actions, 'offsite_conversion.fb_pixel_view_content', 'view_content');
+  const addPaymentInfo     = findActionByVariants(r.actions, 'offsite_conversion.fb_pixel_add_payment_info', 'add_payment_info');
+  const addToCart          = findActionByVariants(r.actions, 'offsite_conversion.fb_pixel_add_to_cart', 'add_to_cart');
+  const initiateCheckout   = findActionByVariants(r.actions, 'offsite_conversion.fb_pixel_initiate_checkout', 'initiate_checkout');
+  const purchases          = findActionByVariants(r.actions, 'offsite_conversion.fb_pixel_purchase', 'purchase');
+  const leads              = findActionByVariants(r.actions, 'lead', 'offsite_conversion.fb_pixel_lead');
+  const pageEngagements    = findAction(r.actions, 'page_engagement');
+  const postEngagements    = findAction(r.actions, 'post_engagement');
+
+  // Cost per action — pull from cost_per_action_type when available
+  const costPerLandingPageView  = findActionByVariants(r.cost_per_action_type, 'landing_page_view');
+  const costPerAddPaymentInfo   = findActionByVariants(r.cost_per_action_type, 'offsite_conversion.fb_pixel_add_payment_info', 'add_payment_info');
+  const costPerAddToCart        = findActionByVariants(r.cost_per_action_type, 'offsite_conversion.fb_pixel_add_to_cart', 'add_to_cart');
+  const costPerInitiateCheckout = findActionByVariants(r.cost_per_action_type, 'offsite_conversion.fb_pixel_initiate_checkout', 'initiate_checkout');
+  const costPerPurchase         = findActionByVariants(r.cost_per_action_type, 'offsite_conversion.fb_pixel_purchase', 'purchase');
+  const costPerLead             = findActionByVariants(r.cost_per_action_type, 'lead');
+
+  // Video
+  const videoViews     = sumActions(r.video_play_actions, t => t === 'video_view');
+  const videoThruplays = sumActions(r.video_thruplay_watched_actions, t => t === 'video_view');
+  const videoP50       = sumActions(r.video_p50_watched_actions, t => t === 'video_view');
+  const videoP75       = sumActions(r.video_p75_watched_actions, t => t === 'video_view');
+  const videoP100      = sumActions(r.video_p100_watched_actions, t => t === 'video_view');
+  const costPerThruplayEntry = (r.cost_per_thruplay || []).find(a => a.action_type === 'video_view');
+  const costPerThruplay      = costPerThruplayEntry ? Number(costPerThruplayEntry.value) || 0 : 0;
 
   const spend = num(r.spend);
   return {
     dateStart: r.date_start || '',
     dateStop:  r.date_stop  || '',
+
     spend,
     impressions: num(r.impressions),
-    clicks: num(r.clicks),
-    ctr:    num(r.ctr),
-    cpm:    num(r.cpm),
-    cpc:    num(r.cpc),
-    reach:  num(r.reach),
-    frequency: num(r.frequency),
+    reach:       num(r.reach),
+    frequency:   num(r.frequency),
+    cpm:         num(r.cpm),
+
+    clicks:           num(r.clicks),
+    ctr:              num(r.ctr),
+    cpc:              num(r.cpc),
+    inlineLinkClicks: num(r.inline_link_clicks),
+    outboundClicks,
+    outboundCtr,
+    costPerOutboundClick,
+    uniqueClicks: num(r.unique_clicks),
+    uniqueCtr:    num(r.unique_ctr),
+
+    landingPageViews,
+    costPerLandingPageView,
+
+    pageEngagements,
+    postEngagements,
+    videoViews,
+    videoThruplays,
+    videoP50,
+    videoP75,
+    videoP100,
+    costPerThruplay,
+
+    viewContent,
+    addPaymentInfo,
+    addToCart,
+    initiateCheckout,
+    purchases,
+    leads,
+    costPerAddPaymentInfo,
+    costPerAddToCart,
+    costPerInitiateCheckout,
+    costPerPurchase,
+    costPerLead,
+
     conversions,
     conversionValue,
     costPerConversion: conversions > 0 ? spend / conversions : 0,
     roas:              spend > 0 ? conversionValue / spend : 0,
+
+    qualityRanking:        r.quality_ranking || 'unknown',
+    engagementRateRanking: r.engagement_rate_ranking || 'unknown',
+    conversionRateRanking: r.conversion_rate_ranking || 'unknown',
+
     raw: r,
   };
 }
