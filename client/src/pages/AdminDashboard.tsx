@@ -3,7 +3,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2, X, Coffee, CalendarOff, ClipboardCheck, KeyRound, ListTodo, Pin, MoreVertical, Trash2, VolumeX } from 'lucide-react';
+import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2, X, Coffee, CalendarOff, ClipboardCheck, KeyRound, ListTodo, Pin, MoreVertical, Trash2, VolumeX, Calendar } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSocket } from '@/hooks/useSocket';
@@ -12,6 +12,7 @@ import { useHuddle } from '@/contexts/HuddleContext';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
 import { MetaAdsCard } from '@/components/dashboard/MetaAdsCard';
+import { TodayMeetingsStrip } from '@/components/dashboard/TodayMeetingsStrip';
 import { VaultAuditPanel } from '@/components/admin/VaultAuditPanel';
 import * as api from '@/api';
 import { FullPageSpinner } from '@/components/shared/Spinner';
@@ -167,6 +168,9 @@ export default function AdminDashboard() {
             </Link>
           </div>
         </div>
+
+        {/* Today's meetings — hidden when admin has no meetings */}
+        <TodayMeetingsStrip />
 
         {/* Huddle quick join — admin sees who's in and can drop in instantly */}
         <HuddleDashboardCard />
@@ -353,6 +357,10 @@ export default function AdminDashboard() {
                   const isBroadcasting = !!liveStream;
                   const onCall = presence.isOnCall(e._id);
                   const muted = presence.isDeafened(e._id);
+                  const inMeetingUntil = presence.meetingEndsAt(e._id);
+                  const meetingTime = inMeetingUntil
+                    ? new Date(inMeetingUntil).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+                    : null;
                   const accent =
                     isBroadcasting          ? 'border-green-500/40' :
                     status === 'active'     ? 'border-green-500/30' :
@@ -377,11 +385,19 @@ export default function AdminDashboard() {
                         </div>
                       )}
 
-                      {/* Bottom strip — name + presence (+ on-call + muted) */}
+                      {/* Bottom strip — name + presence (+ on-call + muted + meeting) */}
                       <div className="absolute bottom-0 left-0 right-0 px-2 py-1 flex items-center gap-1.5 bg-gradient-to-t from-black/90 via-black/60 to-transparent">
                         <p className="text-[11px] font-semibold text-white truncate flex-1">
                           {e.name?.split(' ')[0] || e.email}
                         </p>
+                        {inMeetingUntil && (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-blue-500/85 text-white"
+                            title={`In a scheduled meeting until ${meetingTime}`}
+                          >
+                            <Calendar className="h-2.5 w-2.5" /> until {meetingTime}
+                          </span>
+                        )}
                         {muted && (
                           <span
                             className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-amber-500/85 text-white"

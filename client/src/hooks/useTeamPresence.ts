@@ -33,6 +33,10 @@ export function useTeamPresence() {
   // Set of userIds who have muted the team audio (deafened). Ephemeral —
   // server clears this on disconnect, no DB persistence.
   const [deafenedSet, setDeafenedSet] = useState<Set<string>>(new Set());
+  // Map of userId → meeting end time, for users currently in a scheduled
+  // meeting. Drives the passive "In meeting · until 3:30" badge on tiles
+  // throughout the app. Polled every 60s + refreshed on meetings:changed.
+  const [inMeetingMap, setInMeetingMap] = useState<Record<string, { endTime: string; type: string }>>({});
 
   // Initial fetch
   useEffect(() => {
@@ -101,6 +105,37 @@ export function useTeamPresence() {
     };
   }, [socket]);
 
+  // ── In-meeting polling + live refresh ───────────────────────────────────
+  // We don't get a socket event when a scheduled meeting "starts" — we just
+  // know what's on the calendar. Poll every 60s so badges flip on time.
+  // Also refetch on meetings:changed so a freshly-created meeting flips
+  // the host's badge instantly without waiting for the next tick.
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const data = await api.meetingsNow();
+        if (cancelled) return;
+        const m: Record<string, { endTime: string; type: string }> = {};
+        for (const u of (data.users || [])) {
+          m[u.userId] = { endTime: u.endTime, type: u.type };
+        }
+        setInMeetingMap(m);
+      } catch { /* ignore — bad network is harmless */ }
+    };
+    refresh();
+    const i = setInterval(refresh, 60_000);
+
+    let off: (() => void) | undefined;
+    if (socket) {
+      const onChange = () => refresh();
+      socket.on('meetings:changed', onChange);
+      off = () => socket.off('meetings:changed', onChange);
+    }
+
+    return () => { cancelled = true; clearInterval(i); off?.(); };
+  }, [socket]);
+
   const list   = useMemo(() => Object.values(members), [members]);
   const onBreak = useMemo(() => list.filter(m => m.status === 'on_break'),  [list]);
   const onLeave = useMemo(() => list.filter(m => m.status === 'on_leave'),  [list]);
@@ -111,6 +146,13 @@ export function useTeamPresence() {
     members[userId]?.status || 'off_clock';
   const isOnCall = (userId: string): boolean => onCallSet.has(userId);
   const isDeafened = (userId: string): boolean => deafenedSet.has(userId);
+  const isInMeeting = (userId: string): boolean => !!inMeetingMap[userId];
+  const meetingEndsAt = (userId: string): Date | null =>
+    inMeetingMap[userId] ? new Date(inMeetingMap[userId].endTime) : null;
 
-  return { loading, members, list, onBreak, onLeave, active, off, statusOf, isOnCall, onCallSet, isDeafened, deafenedSet };
+  return {
+    loading, members, list, onBreak, onLeave, active, off,
+    statusOf, isOnCall, onCallSet, isDeafened, deafenedSet,
+    isInMeeting, meetingEndsAt, inMeetingMap,
+  };
 }

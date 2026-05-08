@@ -19,6 +19,7 @@ import { QuickActionsCard } from '@/components/shared/QuickActionsCard';
 import { WeeklyPlanner } from '@/components/shared/WeeklyPlanner';
 import { AIMorningBrief } from '@/components/dashboard/AIMorningBrief';
 import { MetaAdsCard } from '@/components/dashboard/MetaAdsCard';
+import { TodayMeetingsStrip } from '@/components/dashboard/TodayMeetingsStrip';
 import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
 
 
@@ -175,6 +176,9 @@ export default function EmployeeDashboard() {
 
         {/* AI Morning Brief — Claude-generated personalized briefing */}
         <AIMorningBrief />
+
+        {/* Today's meetings — only renders if user has any scheduled */}
+        <TodayMeetingsStrip />
 
         {/* Huddle entry point — one click to join voice + screen room */}
         <HuddleDashboardCard />

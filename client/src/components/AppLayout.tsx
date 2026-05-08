@@ -6,7 +6,7 @@ import {
   Bird, LayoutDashboard, ListTodo, Video, Bell, User, LogOut,
   Briefcase, Users, Building2, BarChart2, TrendingUp, Menu, X,
   MessageSquare, Monitor, MonitorOff, KeyRound, CalendarOff, Clock,
-  BarChart3,
+  BarChart3, Calendar,
 } from 'lucide-react';
 import * as api from '@/api';
 import { useSocket } from '@/hooks/useSocket';
@@ -37,6 +37,8 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/leaves',           label: 'My Leaves',    icon: CalendarOff,     roles: ['employee', 'sales'] },
   // Work room
   { to: '/workroom',         label: 'Work Room',    icon: Video,           roles: ['admin', 'employee', 'sales'] },
+  // Shared team calendar — busy/free visibility for everyone
+  { to: '/team/calendar',    label: 'Team Calendar', icon: Calendar,       roles: ['admin', 'employee', 'sales'] },
   // Client credential vault
   { to: '/vault',            label: 'Client Vault', icon: KeyRound,        roles: ['admin', 'employee', 'sales'] },
   // Group Chat — ALL internal roles

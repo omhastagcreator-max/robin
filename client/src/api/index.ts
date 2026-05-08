@@ -213,6 +213,25 @@ export const metaViewShare     = (token: string) =>
 // Bulk create clients from ad accounts
 export const adminBulkCreateMetaClients = () => api.post('/admin/meta/clients/bulk').then(r => r.data);
 
+// ── Meetings (team calendar) ────────────────────────────────────────────────
+export const meetingsDay     = (date?: string) =>
+  api.get('/meetings/day', { params: date ? { date } : {} }).then(r => r.data);
+export const meetingsMine    = (params?: { from?: string; to?: string }) =>
+  api.get('/meetings/mine', { params }).then(r => r.data);
+export const meetingsCreate  = (body: {
+  title: string; description?: string; type?: string; link?: string;
+  startTime: string; endTime: string; attendees?: string[]; visibility?: 'public' | 'private';
+}) => api.post('/meetings', body).then(r => r.data);
+export const meetingsUpdate  = (id: string, body: Record<string, any>) =>
+  api.put(`/meetings/${id}`, body).then(r => r.data);
+export const meetingsDelete  = (id: string) =>
+  api.delete(`/meetings/${id}`).then(r => r.data);
+export const meetingsNow      = () => api.get('/meetings/now').then(r => r.data);
+export const meetingsFindFree = (params: { date?: string; duration?: number; users: string[] }) =>
+  api.get('/meetings/find-free', {
+    params: { date: params.date, duration: params.duration, users: params.users.join(',') },
+  }).then(r => r.data);
+
 // ── Huddle (LiveKit) ──────────────────────────────────────────────────────────
 export const getHuddleToken    = () => api.post('/huddle/token', {}).then(r => r.data);
 

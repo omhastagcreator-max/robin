@@ -28,6 +28,7 @@ const AdminLeaves       = lazy(() => import('@/pages/AdminLeaves'));
 const AdminAttendance   = lazy(() => import('@/pages/AdminAttendance'));
 const MetaAdsReport     = lazy(() => import('@/pages/MetaAdsReport'));
 const MetaShareView     = lazy(() => import('@/pages/MetaShareView'));
+const TeamCalendar      = lazy(() => import('@/pages/TeamCalendar'));
 
 function RootRedirect() {
   const { user, role, loading } = useAuth();
@@ -72,6 +73,7 @@ function AppRoutes() {
         <Route path="/admin/leaves"     element={<E><AdminLeaves /></E>} />
         <Route path="/admin/attendance" element={<E><AdminAttendance /></E>} />
         <Route path="/ads/meta"         element={<E><MetaAdsReport /></E>} />
+        <Route path="/team/calendar"    element={<E><TeamCalendar /></E>} />
 
         {/* Client */}
         <Route path="/client"           element={<E><ClientDashboard /></E>} />

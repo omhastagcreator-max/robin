@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Mic, MicOff, Monitor, MonitorOff, PhoneCall, PhoneOff, Coffee, CalendarOff, Headphones, Loader2, AlertTriangle,
-  Maximize2, X, Pin, Volume2, VolumeX,
+  Maximize2, X, Pin, Volume2, VolumeX, Calendar,
 } from 'lucide-react';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -201,6 +201,7 @@ export function HuddleStage() {
                   onCall={presence.isOnCall(p.userId)}
                   deafened={meeting.deafened}
                   hasMutedYou={presence.isDeafened(p.userId)}
+                  inMeetingUntil={presence.meetingEndsAt(p.userId)}
                 />
               ))}
               {meeting.peers.length === 0 && (
@@ -315,17 +316,33 @@ function SelfTile({
   );
 }
 
-function PeerTile({ peer, presenceStatus, onCall, deafened, hasMutedYou }: { peer: PeerView; presenceStatus: PresenceStatus; onCall?: boolean; deafened?: boolean; hasMutedYou?: boolean }) {
+function PeerTile({ peer, presenceStatus, onCall, deafened, hasMutedYou, inMeetingUntil }: { peer: PeerView; presenceStatus: PresenceStatus; onCall?: boolean; deafened?: boolean; hasMutedYou?: boolean; inMeetingUntil?: Date | null }) {
   const level = useAudioLevel(peer.audioOn ? peer.stream : null);
   const initial = (peer.name || '?')[0].toUpperCase();
+  const meetingTimeStr = inMeetingUntil
+    ? new Date(inMeetingUntil).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+    : null;
   return (
-    <div className={`relative bg-muted/30 border rounded-xl p-2 flex items-center gap-2.5 ${onCall ? 'border-violet-500/40' : hasMutedYou ? 'border-amber-500/40' : 'border-border'}`}>
+    <div className={`relative bg-muted/30 border rounded-xl p-2 flex items-center gap-2.5 ${
+      inMeetingUntil ? 'border-blue-500/40' :
+      onCall         ? 'border-violet-500/40' :
+      hasMutedYou    ? 'border-amber-500/40' :
+                       'border-border'
+    }`}>
       <PresenceTopRight status={presenceStatus} />
       <RemoteAudio stream={peer.stream} muted={deafened} />
       <AvatarWithRing initial={initial} active={peer.audioOn && level > 0.05} />
       <div className="flex-1 min-w-0">
         <p className="text-xs font-semibold truncate flex items-center gap-1.5 flex-wrap">
           {peer.name || 'Teammate'}
+          {inMeetingUntil && (
+            <span
+              className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full text-[8px] font-bold bg-blue-500/20 text-blue-700 border border-blue-500/30"
+              title={`In a scheduled meeting until ${meetingTimeStr}`}
+            >
+              <Calendar className="h-2.5 w-2.5" /> In meeting · until {meetingTimeStr}
+            </span>
+          )}
           {onCall && (
             <span className="inline-flex items-center gap-0.5 px-1 py-0 rounded-full text-[8px] font-bold bg-violet-500/20 text-violet-700 border border-violet-500/30">
               On call
