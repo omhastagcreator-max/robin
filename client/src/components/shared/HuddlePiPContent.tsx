@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useOnCall } from '@/hooks/useOnCall';
 import type { PeerView } from '@/hooks/useMeetingRoom';
 import { HuddlePingChat } from '@/components/shared/HuddlePingChat';
+import { MicConfirmButton } from '@/components/shared/MicConfirmButton';
 
 /**
  * HuddlePiPContent — what gets rendered INSIDE the floating Document
@@ -109,17 +110,8 @@ export function HuddlePiPContent() {
           Huddle · {huddle.participantCount}
         </span>
         <div className="ml-auto flex items-center gap-1">
-          <button
-            onClick={huddle.toggleAudio}
-            className={`h-8 w-8 rounded-md flex items-center justify-center border transition-colors ${
-              huddle.audioOn
-                ? 'bg-green-500/15 text-green-700 border-green-500/30 hover:bg-green-500/25'
-                : 'bg-red-500/15 text-red-600 border-red-500/30 hover:bg-red-500/25'
-            }`}
-            title={huddle.audioOn ? 'Mute' : 'Unmute'}
-          >
-            {huddle.audioOn ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
-          </button>
+          {/* Mic — two-click confirm to prevent stray clicks in PiP window */}
+          <MicConfirmButton audioOn={huddle.audioOn} onToggle={huddle.toggleAudio} variant="pip" />
           <button
             onClick={huddle.toggleDeafen}
             className={`h-8 w-8 rounded-md flex items-center justify-center border transition-colors ${

@@ -10,6 +10,7 @@ import type { PeerView } from '@/hooks/useMeetingRoom';
 import { useTeamPresence, type PresenceStatus } from '@/hooks/useTeamPresence';
 import { RemoteAudio, useAudioLevel } from '@/components/shared/RemoteAudio';
 import { HuddlePingChat } from '@/components/shared/HuddlePingChat';
+import { MicConfirmButton } from '@/components/shared/MicConfirmButton';
 
 /**
  * Full-page Google-Meet-like huddle stage. Used INSIDE the WorkRoom page
@@ -219,14 +220,8 @@ export function HuddleStage() {
 
           {/* Controls */}
           <div className="flex items-center justify-center gap-2 px-3 py-3 border-t border-border bg-card/50">
-            <ControlButton
-              on={meeting.audioOn}
-              onIcon={Mic}
-              offIcon={MicOff}
-              onClick={meeting.toggleAudio}
-              tone={meeting.audioOn ? 'good' : 'danger'}
-              label={meeting.audioOn ? 'Mute' : 'Unmute'}
-            />
+            {/* Mic — two-click confirm to prevent accidental flips during a call */}
+            <MicConfirmButton audioOn={meeting.audioOn} onToggle={meeting.toggleAudio} variant="label" />
             {/* Deafen — mute everyone else's audio without leaving the room */}
             <ControlButton
               on={!meeting.deafened}

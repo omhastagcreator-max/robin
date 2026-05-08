@@ -164,8 +164,11 @@ export default function GroupChat() {
                           <div className={`px-3 py-2 rounded-2xl text-sm ${isMine ? 'bg-primary text-primary-foreground rounded-br-sm' : 'bg-muted/60 text-foreground rounded-bl-sm'}`}>
                             {msg.content}
                           </div>
-                          <p className={`text-[9px] text-muted-foreground ${isMine ? 'text-right' : ''}`}>
-                            {format(date, 'h:mm a')}
+                          <p
+                            className={`text-[9px] text-muted-foreground ${isMine ? 'text-right' : ''}`}
+                            title={date.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+                          >
+                            {format(date, 'h:mm a')} · {format(date, 'd MMM')}
                           </p>
                         </div>
                       </motion.div>

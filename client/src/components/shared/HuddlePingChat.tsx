@@ -25,6 +25,25 @@ import * as api from '@/api';
 const ROOM = 'agency-global';
 const HISTORY_LIMIT = 8;
 
+/**
+ * Format a message's createdAt timestamp.
+ * Shows "now" for the last 60s, "Xm ago" for the last hour, then HH:MM
+ * (24h, IST). Same data backs the tooltip for full date+time.
+ */
+const fmtRelative = (iso?: string): string => {
+  if (!iso) return '';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return 'now';
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m`;
+  return new Date(iso).toLocaleTimeString('en-IN', {
+    hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+  });
+};
+const fmtFull = (iso?: string): string => {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+};
+
 export function HuddlePingChat() {
   const socket = useSocket();
   const { user } = useAuth();
@@ -32,7 +51,14 @@ export function HuddlePingChat() {
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState('');
   const [unread, setUnread] = useState(0);
+  const [, setNow] = useState(0);  // forces relative timestamps to re-render every 30s
   const listRef = useRef<HTMLDivElement | null>(null);
+
+  // Tick relative timestamps ("now" → "1m" → "2m") without spamming renders.
+  useEffect(() => {
+    const i = setInterval(() => setNow(n => n + 1), 30_000);
+    return () => clearInterval(i);
+  }, []);
 
   // Load last few messages on mount.
   useEffect(() => {
@@ -107,11 +133,17 @@ export function HuddlePingChat() {
               messages.map(m => {
                 const mine = m.senderId === user?.id;
                 return (
-                  <div key={m._id || `${m.senderId}-${m.createdAt}`} className="flex gap-2">
+                  <div key={m._id || `${m.senderId}-${m.createdAt}`} className="flex gap-2 items-baseline">
                     <span className={`text-[10px] font-bold uppercase tracking-wide shrink-0 ${mine ? 'text-primary' : 'text-foreground/70'}`}>
                       {(m.senderName || 'Unknown').split(' ')[0]}:
                     </span>
-                    <span className="text-foreground/90 break-words">{m.content}</span>
+                    <span className="text-foreground/90 break-words flex-1 min-w-0">{m.content}</span>
+                    <span
+                      className="text-[9px] text-muted-foreground/70 tabular-nums shrink-0"
+                      title={fmtFull(m.createdAt)}
+                    >
+                      {fmtRelative(m.createdAt)}
+                    </span>
                   </div>
                 );
               })
