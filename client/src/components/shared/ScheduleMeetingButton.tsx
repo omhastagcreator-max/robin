@@ -132,6 +132,8 @@ function ScheduleModal({ onClose }: { onClose: () => void }) {
       } else {
         toast.success('Meeting scheduled');
       }
+      // Tell any dashboard widgets to refresh themselves immediately
+      window.dispatchEvent(new Event('meetings:changed'));
       onClose();
     } catch (e: any) {
       toast.error(e?.response?.data?.error || 'Could not create meeting');

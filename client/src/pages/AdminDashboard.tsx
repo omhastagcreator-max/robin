@@ -14,6 +14,7 @@ import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
 import { MetaAdsCard } from '@/components/dashboard/MetaAdsCard';
 import { TodayMeetingsStrip } from '@/components/dashboard/TodayMeetingsStrip';
 import { ActiveClientMeetingsCard } from '@/components/dashboard/ActiveClientMeetingsCard';
+import { ScheduleMeetingsSection } from '@/components/dashboard/ScheduleMeetingsSection';
 import { VaultAuditPanel } from '@/components/admin/VaultAuditPanel';
 import * as api from '@/api';
 import { FullPageSpinner } from '@/components/shared/Spinner';
@@ -498,6 +499,9 @@ export default function AdminDashboard() {
 
         {/* Vault Audit Log — admin-only feed of who saw which credentials */}
         <VaultAuditPanel limit={15} />
+
+        {/* Schedule your meetings — quick-create + glanceable upcoming list */}
+        <ScheduleMeetingsSection />
       </div>
 
       {/* ── View-all-screens fullscreen overlay ─────────────────────────── */}

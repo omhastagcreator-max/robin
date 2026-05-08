@@ -21,6 +21,7 @@ import { AIMorningBrief } from '@/components/dashboard/AIMorningBrief';
 import { MetaAdsCard } from '@/components/dashboard/MetaAdsCard';
 import { TodayMeetingsStrip } from '@/components/dashboard/TodayMeetingsStrip';
 import { ActiveClientMeetingsCard } from '@/components/dashboard/ActiveClientMeetingsCard';
+import { ScheduleMeetingsSection } from '@/components/dashboard/ScheduleMeetingsSection';
 import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
 
 
@@ -478,6 +479,10 @@ export default function EmployeeDashboard() {
             </div>
           </aside>
         </div>
+
+        {/* Schedule your meetings — sits below daily tasks, full width.
+            Quick-create buttons + glanceable list of upcoming meetings. */}
+        <ScheduleMeetingsSection />
       </div>
     </AppLayout>
   );

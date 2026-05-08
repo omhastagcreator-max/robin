@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Mic, MicOff, Monitor, MonitorOff, PhoneOff, Loader2, AlertCircle,
-  Users as UsersIcon, Bird,
+  Users as UsersIcon, Bird, Maximize2, Minimize2,
 } from 'lucide-react';
 import {
   Room, RoomEvent, Track, RemoteParticipant, RemoteTrackPublication, ConnectionState,
@@ -342,15 +342,36 @@ function RemoteAudio({ stream }: { stream: MediaStream }) {
 }
 
 function ScreenView({ name, stream }: { name: string; stream: MediaStream }) {
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const ref = useRef<HTMLVideoElement | null>(null);
+  const [isFs, setIsFs] = useState(false);
   useEffect(() => { if (ref.current) ref.current.srcObject = stream; }, [stream]);
+  useEffect(() => {
+    const onChange = () => setIsFs(document.fullscreenElement === wrapRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  const toggleFs = async () => {
+    const el = wrapRef.current; if (!el) return;
+    try {
+      if (!document.fullscreenElement) await el.requestFullscreen();
+      else await document.exitFullscreen();
+    } catch { /* user gesture / unsupported */ }
+  };
   return (
-    <div className="relative bg-black rounded-xl overflow-hidden aspect-video border border-border">
+    <div ref={wrapRef} className={`relative bg-black rounded-xl overflow-hidden border border-border group ${isFs ? '' : 'aspect-video'}`}>
       <video ref={ref} autoPlay playsInline muted className="w-full h-full object-contain" />
       <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/70 text-white text-[11px] font-semibold flex items-center gap-1.5">
         <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
         {name}
       </div>
+      <button
+        onClick={toggleFs}
+        title={isFs ? 'Exit full screen' : 'Full screen'}
+        className="absolute top-2 right-2 h-8 w-8 rounded-lg bg-black/60 hover:bg-black/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+      >
+        {isFs ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+      </button>
     </div>
   );
 }
