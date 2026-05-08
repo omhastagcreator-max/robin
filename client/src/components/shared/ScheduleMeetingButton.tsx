@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CalendarPlus, Loader2, X, Lock, Globe } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -139,8 +140,10 @@ function ScheduleModal({ onClose }: { onClose: () => void }) {
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+  // Render via portal at document.body so the modal escapes the
+  // sidebar's stacking context and covers the whole viewport.
+  return createPortal(
+    <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-5 space-y-3" onClick={e => e.stopPropagation()}>
         <div className="flex items-start gap-3">
           <div className="h-10 w-10 rounded-xl bg-primary/15 flex items-center justify-center">
@@ -279,7 +282,8 @@ function ScheduleModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

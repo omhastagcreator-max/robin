@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { UserPlus, Loader2, X, Copy, MessageCircle, Mail, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
@@ -72,8 +73,8 @@ export function StartClientMeetingButton() {
         <UserPlus className="h-3.5 w-3.5" /> Start client meeting
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => { setOpen(false); reset(); }}>
+      {open && createPortal(
+        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-center justify-center p-4" onClick={() => { setOpen(false); reset(); }}>
           <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full p-5 space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-start gap-3">
               <div className="h-10 w-10 rounded-xl bg-primary/15 flex items-center justify-center">
@@ -152,7 +153,8 @@ export function StartClientMeetingButton() {
               </>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
