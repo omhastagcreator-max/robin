@@ -12,8 +12,15 @@ export function useSocket(): Socket | null {
     if (!user?.id) return;
     if (!_socket || !_socket.connected) {
       const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:4002';
+      // Coerce missing name/role to safe strings — otherwise they get serialised
+      // as the literal "undefined" in the query string and show up as
+      // "undefined Undefined" in the chat sidebar.
       _socket = io(SOCKET_URL, {
-        query: { userId: user.id, userName: user.name, userRole: user.role },
+        query: {
+          userId:   user.id,
+          userName: user.name || user.email || 'Unknown',
+          userRole: user.role || 'employee',
+        },
         transports: ['websocket', 'polling'],
         withCredentials: true,
       });

@@ -72,8 +72,26 @@ const io = new SocketServer(httpServer, {
   cors: { origin: corsOrigin, credentials: true },
 });
 
-// Online users tracker
+// Online users tracker — keyed by socket.id (raw connections).
+// We deduplicate by userId at emit time so multiple tabs / reconnects don't
+// show the same user multiple times in the chat sidebar.
 const onlineUsers = new Map<string, { userId: string; name: string; role: string }>();
+
+/**
+ * Build the deduplicated online list. One entry per userId regardless of
+ * how many tabs / sockets that user has open. Filters out garbage entries
+ * that came from clients connecting without proper auth (e.g., literal
+ * string "undefined" coming through the query string).
+ */
+function buildOnlinePresence() {
+  const byUser = new Map<string, { userId: string; name: string; role: string }>();
+  for (const info of onlineUsers.values()) {
+    if (!info.userId || info.userId === 'undefined' || info.userId === 'null') continue;
+    if (!byUser.has(info.userId)) byUser.set(info.userId, info);
+  }
+  return Array.from(byUser.values());
+}
+function emitPresence() { io.emit('presence:update', buildOnlinePresence()); }
 
 // Meeting room participant tracker:
 //   roomId -> Map<userId, { name, role }>
@@ -92,10 +110,19 @@ io.on('connection', (socket) => {
   const userName = socket.handshake.query.userName as string;
   const userRole = socket.handshake.query.userRole as string;
 
-  if (userId) {
+  // Ignore sockets that arrive without a real userId (public meet pages,
+  // accidental connections, etc.) — they'd otherwise show as "undefined"
+  // entries in the online list.
+  const validUser = userId && userId !== 'undefined' && userId !== 'null';
+
+  if (validUser) {
     socket.join(`user:${userId}`);
-    onlineUsers.set(socket.id, { userId, name: userName || 'Unknown', role: userRole || 'employee' });
-    io.emit('presence:update', Array.from(onlineUsers.values()));
+    onlineUsers.set(socket.id, {
+      userId,
+      name: userName && userName !== 'undefined' ? userName : 'Unknown',
+      role: userRole && userRole !== 'undefined' ? userRole : 'employee',
+    });
+    emitPresence();
   }
 
   // ── WebRTC Screen Share ──────────────────────────────────────────────────
@@ -193,7 +220,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     onlineUsers.delete(socket.id);
-    io.emit('presence:update', Array.from(onlineUsers.values()));
+    emitPresence();
     // Clear any deafen badge so it doesn't linger after the user leaves.
     if (userId) {
       const stillConnected = Array.from(onlineUsers.values()).some(u => u.userId === userId);
