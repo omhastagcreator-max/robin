@@ -72,9 +72,12 @@ interface Payload {
   campaigns: Campaign[];
 }
 
-const fmtINR = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-const fmtNum = (n: number) => n.toLocaleString('en-IN');
-const fmtPct = (n: number) => `${n.toFixed(2)}%`;
+// Defensive — undefined/null/NaN → 0. Server may omit fields when Meta
+// returns no data for that metric.
+const safe = (n: any): number => (Number.isFinite(Number(n)) ? Number(n) : 0);
+const fmtINR = (n?: number | null) => `₹${safe(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const fmtNum = (n?: number | null) => safe(n).toLocaleString('en-IN');
+const fmtPct = (n?: number | null) => `${safe(n).toFixed(2)}%`;
 
 export default function MetaShareView() {
   const { token } = useParams();

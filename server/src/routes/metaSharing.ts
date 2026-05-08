@@ -18,10 +18,8 @@ publicMetaShareRouter.get('/share/meta/:token', viewShare);
 
 export const authedMetaShareRouter = Router();
 authedMetaShareRouter.use(authMiddleware);
-// We re-use requireMetaAccess from the main metaAds router.
-// Importing it here would cause a circular dep, so we import inline:
-import('./metaAds').then(() => { /* warm import to ensure middleware exists */ });
-// Cleanest: re-declare the gate locally — small duplication, no cycle.
+// Inline meta-access gate (duplicated from routes/metaAds to avoid a
+// circular import; tiny code repetition, big reliability win).
 authedMetaShareRouter.use((req: any, res, next) => {
   const u = req.user;
   if (!u) return res.status(401).json({ error: 'Not authenticated' });

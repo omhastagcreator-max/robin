@@ -83,9 +83,13 @@ interface Campaign extends Metrics {
 
 // `dailyBudget` field comes back from the server alongside `metrics`
 
-const fmtINR = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-const fmtNum = (n: number) => n.toLocaleString('en-IN');
-const fmtPct = (n: number) => `${n.toFixed(2)}%`;
+// Defensive formatters — accept undefined / null / NaN and treat as 0.
+// Server occasionally returns missing fields (newly added metrics on an
+// older deploy, or Meta omits a metric the account hasn't fired yet).
+const safe = (n: any): number => (Number.isFinite(Number(n)) ? Number(n) : 0);
+const fmtINR = (n?: number | null) => `₹${safe(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const fmtNum = (n?: number | null) => safe(n).toLocaleString('en-IN');
+const fmtPct = (n?: number | null) => `${safe(n).toFixed(2)}%`;
 
 function isoDaysAgo(days: number): string {
   const d = new Date(Date.now() - days * 86400_000);
@@ -396,6 +400,13 @@ function ShareReportModal({ adAccountId, accountName, dateWindow: w, preset, onC
   const [ttl, setTtl]     = useState<number>(14);
   const [label, setLabel] = useState<string>(accountName);
   const [note, setNote]   = useState<string>('');
+  // Independent date selection in the modal — defaults to whatever the
+  // page has open, but admin can pick a different window for the share.
+  const [shareRange, setShareRange] = useState<'yesterday' | 'last_7d' | 'last_14d' | 'last_30d' | 'this_month' | 'custom'>(
+    preset === 'custom' ? 'custom' : (preset as any)
+  );
+  const [customFrom, setCustomFrom] = useState(w.from);
+  const [customTo,   setCustomTo]   = useState(w.to);
 
   // Esc closes
   useEffect(() => {
@@ -407,12 +418,17 @@ function ShareReportModal({ adAccountId, accountName, dateWindow: w, preset, onC
   const generate = async () => {
     setCreating(true);
     try {
-      const useRange = preset === 'custom';
+      const useCustom = shareRange === 'custom';
+      // last_14d isn't a Meta preset — convert to an explicit range
+      const useExplicitFor14 = shareRange === 'last_14d';
+      const explicitFrom = useExplicitFor14 ? isoDaysAgo(14) : customFrom;
+      const explicitTo   = useExplicitFor14 ? yesterdayKey() : customTo;
+
       const res = await api.metaCreateShare({
         adAccountId,
-        datePreset: useRange ? undefined : (preset === 'yesterday' ? 'yesterday' : preset === 'last_7d' ? 'last_7d' : 'last_30d'),
-        fromDate: useRange ? w.from : undefined,
-        toDate:   useRange ? w.to   : undefined,
+        datePreset:  useCustom || useExplicitFor14 ? undefined : shareRange,
+        fromDate:    useCustom ? customFrom : (useExplicitFor14 ? explicitFrom : undefined),
+        toDate:      useCustom ? customTo   : (useExplicitFor14 ? explicitTo   : undefined),
         clientLabel: label,
         note,
         expiresInDays: ttl,
@@ -479,6 +495,37 @@ function ShareReportModal({ adAccountId, accountName, dateWindow: w, preset, onC
                   className="w-full mt-1 px-3 py-2 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="Anything you want to remember"
                 />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase font-semibold text-muted-foreground">Report window (which days the client sees)</label>
+                <div className="mt-1 flex flex-wrap gap-1 bg-muted/40 rounded-lg p-1">
+                  {([
+                    ['yesterday',  'Yesterday'],
+                    ['last_7d',    'Last 7d'],
+                    ['last_14d',   'Last 14d'],
+                    ['last_30d',   'Last 30d'],
+                    ['this_month', 'This month'],
+                    ['custom',     'Custom'],
+                  ] as const).map(([k, label]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setShareRange(k)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                        shareRange === k ? 'bg-background shadow-sm' : 'text-muted-foreground hover:bg-background/50'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {shareRange === 'custom' && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <input type="date" value={customFrom} max={todayKey()} onChange={e => setCustomFrom(e.target.value)} className="bg-background border border-input rounded-lg px-2.5 py-1.5 text-xs" />
+                    <span className="text-muted-foreground text-xs">→</span>
+                    <input type="date" value={customTo}   max={todayKey()} onChange={e => setCustomTo(e.target.value)}   className="bg-background border border-input rounded-lg px-2.5 py-1.5 text-xs" />
+                  </div>
+                )}
               </div>
               <div>
                 <label className="text-[10px] uppercase font-semibold text-muted-foreground">Link valid for</label>

@@ -32,9 +32,10 @@ interface Metrics {
   roas: number;
 }
 
-const fmtNum = (n: number) => n.toLocaleString('en-IN');
-const fmtINR = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-const fmtPct = (n: number) => `${n.toFixed(2)}%`;
+const safe = (n: any): number => (Number.isFinite(Number(n)) ? Number(n) : 0);
+const fmtNum = (n?: number | null) => safe(n).toLocaleString('en-IN');
+const fmtINR = (n?: number | null) => `₹${safe(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const fmtPct = (n?: number | null) => `${safe(n).toFixed(2)}%`;
 
 export function MetaAdsCard() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
