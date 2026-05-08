@@ -6,13 +6,13 @@ import { ScheduleMeetingButton } from '@/components/shared/ScheduleMeetingButton
 import { StartClientMeetingButton } from '@/components/shared/StartClientMeetingButton';
 
 /**
- * ScheduleMeetingsSection — sits under the daily tasks block on every
- * employee's dashboard. Two jobs:
+ * ScheduleMeetingsSection — sits in the right rail BESIDE the daily tasks
+ * block. Designed for a narrow column (~1/3 width). Two jobs:
  *   1. One-click access to scheduling: "Schedule team meeting" + "Start
- *      client meeting" buttons, always present.
- *   2. Glanceable list of the user's next few meetings (next 7 days, max 6
- *      rows) so they don't have to open the calendar to remember what's
- *      coming up.
+ *      client meeting" buttons, stacked.
+ *   2. Glanceable list of the user's next few meetings (next 7 days, max 5
+ *      rows). Most teams have a handful of meetings on the horizon — this
+ *      is the "what's next" glance, not a full calendar.
  */
 
 interface Meeting {
@@ -64,7 +64,7 @@ export function ScheduleMeetingsSection() {
         const upcoming = (Array.isArray(data) ? data : [])
           .filter((m: Meeting) => new Date(m.endTime).getTime() > Date.now())
           .sort((a: Meeting, b: Meeting) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-        setMeetings(upcoming.slice(0, 6));
+        setMeetings(upcoming.slice(0, 5));
       } finally { setLoading(false); }
     };
     load();
@@ -84,51 +84,51 @@ export function ScheduleMeetingsSection() {
   const days = Object.keys(byDay);
 
   return (
-    <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <div className="h-9 w-9 rounded-xl bg-primary/15 flex items-center justify-center">
-            <Calendar className="h-4 w-4 text-primary" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-sm">Schedule your meetings</h3>
-            <p className="text-[11px] text-muted-foreground">Team huddle, client call, or block focus time — one click.</p>
-          </div>
+    <div className="bg-card border border-border rounded-2xl p-3 space-y-3">
+      {/* Header — title + subtitle */}
+      <div className="flex items-center gap-2">
+        <div className="h-8 w-8 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
+          <Calendar className="h-4 w-4 text-primary" />
         </div>
-        <div className="flex items-center gap-2">
-          <ScheduleMeetingButton />
-          <StartClientMeetingButton />
+        <div className="min-w-0">
+          <h3 className="font-semibold text-sm leading-tight">Meetings</h3>
+          <p className="text-[10px] text-muted-foreground leading-tight">Schedule, join, share</p>
         </div>
+      </div>
+
+      {/* Quick-create buttons — stacked so they fit in the narrow rail.
+          We force the inner buttons to fill width via the [&>*>button] selector. */}
+      <div className="grid grid-cols-1 gap-1.5 [&>*>button]:!w-full [&>*>button]:!justify-center">
+        <ScheduleMeetingButton />
+        <StartClientMeetingButton />
       </div>
 
       {/* Upcoming list */}
       {loading ? null : meetings.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-6 text-center">
-          <Calendar className="h-6 w-6 text-muted-foreground/40 mx-auto" />
-          <p className="text-xs font-semibold mt-2">No meetings in the next 7 days</p>
-          <p className="text-[11px] text-muted-foreground">Schedule a team meeting or start an instant client call from the buttons above.</p>
+        <div className="rounded-lg border border-dashed border-border bg-muted/20 px-3 py-4 text-center">
+          <Calendar className="h-5 w-5 text-muted-foreground/40 mx-auto" />
+          <p className="text-[11px] font-semibold mt-1.5">No upcoming meetings</p>
+          <p className="text-[10px] text-muted-foreground">Use the buttons above to schedule one.</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-1.5">
+          <p className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground px-0.5">Up next</p>
           {days.map(day => (
             <div key={day} className="space-y-1">
-              <p className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground px-1">{day}</p>
+              <p className="text-[9px] uppercase font-semibold tracking-wide text-muted-foreground/70 px-0.5">{day}</p>
               {byDay[day].map(m => {
                 const now = Date.now();
                 const isLive = new Date(m.startTime).getTime() <= now && new Date(m.endTime).getTime() > now;
                 return (
                   <div
                     key={m._id}
-                    className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-background hover:bg-muted/30 transition-colors"
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-border bg-background hover:bg-muted/30 transition-colors"
                   >
-                    <span className={`h-2 w-2 rounded-full shrink-0 ${TYPE_DOT[m.type] || 'bg-blue-500'} ${isLive ? 'animate-pulse' : ''}`} />
+                    <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${TYPE_DOT[m.type] || 'bg-blue-500'} ${isLive ? 'animate-pulse' : ''}`} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold truncate">{m.title}</p>
-                      <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
-                        <Clock className="h-2.5 w-2.5" />
-                        {fmtTime(m.startTime)} – {fmtTime(m.endTime)}
-                        <span className="text-muted-foreground/60">·</span>
-                        <span>{TYPE_LABEL[m.type] || m.type}</span>
+                      <p className="text-[11px] font-semibold truncate leading-tight">{m.title}</p>
+                      <p className="text-[10px] text-muted-foreground leading-tight">
+                        {fmtTime(m.startTime)} · {TYPE_LABEL[m.type] || m.type}
                         {isLive && <span className="text-red-500 font-bold ml-1">LIVE</span>}
                       </p>
                     </div>
@@ -137,9 +137,10 @@ export function ScheduleMeetingsSection() {
                         href={m.link}
                         target="_blank"
                         rel="noreferrer"
-                        className="shrink-0 h-7 px-2 flex items-center gap-1 rounded-lg bg-primary/15 text-primary hover:bg-primary/25 text-[11px] font-semibold"
+                        title="Open meeting link"
+                        className="shrink-0 h-6 w-6 flex items-center justify-center rounded-md bg-primary/15 text-primary hover:bg-primary/25"
                       >
-                        <Video className="h-3 w-3" /> Join
+                        <Video className="h-3 w-3" />
                       </a>
                     )}
                   </div>
@@ -149,9 +150,9 @@ export function ScheduleMeetingsSection() {
           ))}
           <Link
             to="/team/calendar"
-            className="flex items-center justify-center gap-1.5 mt-1 text-[11px] text-primary hover:underline"
+            className="flex items-center justify-center gap-1 text-[10px] text-primary hover:underline pt-0.5"
           >
-            Open team calendar <ArrowRight className="h-3 w-3" />
+            Full calendar <ArrowRight className="h-2.5 w-2.5" />
           </Link>
         </div>
       )}

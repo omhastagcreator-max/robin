@@ -419,8 +419,12 @@ export default function EmployeeDashboard() {
             )}
           </div>
 
-          {/* ─── Right rail — Weekly planner, reminders, quick links ─── */}
+          {/* ─── Right rail — Meetings, weekly planner, reminders, quick links ─── */}
           <aside className="space-y-3">
+            {/* Meetings — sits beside tasks so the dashboard balances out
+                even when there are only a handful of tasks. */}
+            <ScheduleMeetingsSection />
+
             {/* Weekly planner — track every day this week + add reminders */}
             <WeeklyPlanner
               tasks={tasks}
@@ -479,10 +483,6 @@ export default function EmployeeDashboard() {
             </div>
           </aside>
         </div>
-
-        {/* Schedule your meetings — sits below daily tasks, full width.
-            Quick-create buttons + glanceable list of upcoming meetings. */}
-        <ScheduleMeetingsSection />
       </div>
     </AppLayout>
   );
