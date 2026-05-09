@@ -83,7 +83,7 @@ function LoginInner() {
       {/* Soft ambient gradients */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -left-40 h-96 w-96 rounded-full bg-primary/8 blur-3xl" />
-        <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-violet-400/8 blur-3xl" />
+        <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-accent/10 blur-3xl" />
       </div>
 
       <motion.div

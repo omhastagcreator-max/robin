@@ -139,7 +139,7 @@ export function HuddlePiPContent() {
             onClick={() => toggleOnCall()}
             className={`h-8 w-8 rounded-md flex items-center justify-center border transition-colors ${
               isOnCall
-                ? 'bg-violet-500/20 text-violet-700 border-violet-500/40 hover:bg-violet-500/30'
+                ? 'bg-primary/15 text-primary border-primary/40 hover:bg-primary/25'
                 : 'bg-card text-muted-foreground border-border hover:bg-muted'
             }`}
             title={isOnCall ? 'On a call (click to clear)' : 'Mark on a call (DND)'}

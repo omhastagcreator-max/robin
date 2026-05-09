@@ -229,12 +229,12 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4 flex items-center gap-3">
-            <div className="h-11 w-11 rounded-xl bg-violet-500/20 text-violet-600 flex items-center justify-center">
+          <div className="rounded-2xl border border-accent/20 bg-accent/5 p-4 flex items-center gap-3">
+            <div className="h-11 w-11 rounded-xl bg-accent/20 text-accent flex items-center justify-center">
               <Briefcase className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-2xl font-black text-violet-600 tabular-nums leading-none">{stats?.activeProjects ?? 0}</p>
+              <p className="text-2xl font-black text-accent tabular-nums leading-none">{stats?.activeProjects ?? 0}</p>
               <p className="text-xs font-semibold mt-1">Active projects</p>
               <p className="text-[10px] text-muted-foreground">{stats?.atRiskProjects?.length || 0} at risk · {pct}% tasks done</p>
             </div>

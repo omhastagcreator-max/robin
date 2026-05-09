@@ -320,7 +320,7 @@ function PeerTile({ peer, presenceStatus, onCall, deafened, hasMutedYou, inMeeti
   return (
     <div className={`relative bg-muted/30 border rounded-xl p-2 flex items-center gap-2.5 ${
       inMeetingUntil ? 'border-blue-500/40' :
-      onCall         ? 'border-violet-500/40' :
+      onCall         ? 'border-primary/40' :
       hasMutedYou    ? 'border-amber-500/40' :
                        'border-border'
     }`}>
@@ -339,7 +339,7 @@ function PeerTile({ peer, presenceStatus, onCall, deafened, hasMutedYou, inMeeti
             </span>
           )}
           {onCall && (
-            <span className="inline-flex items-center gap-0.5 px-1 py-0 rounded-full text-[8px] font-bold bg-violet-500/20 text-violet-700 border border-violet-500/30">
+            <span className="inline-flex items-center gap-0.5 px-1 py-0 rounded-full text-[8px] font-bold bg-primary/15 text-primary border border-primary/30">
               On call
             </span>
           )}

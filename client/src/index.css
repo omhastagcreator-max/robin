@@ -2,24 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Robin theme v2 — moved away from the default cool-violet palette that
+ * gave the app an obvious "AI generated" feel. New palette:
+ *   • Background — warm bone (slight cream tint, not cold blue-white)
+ *   • Foreground — warm ink (deep charcoal with a hint of brown, not cool navy)
+ *   • Primary    — confident coral-orange (a real brand colour, not lavender)
+ *   • Accent     — forest emerald for success / positive metrics
+ *   • Border     — hairline warm grey, not cool grey
+ *
+ * Numbers are HSL because shadcn-style components compose them as
+ * hsl(var(--primary) / 0.5) for opacity. Don't switch to hex.
+ */
 :root {
-  /* ── Clean Light Theme ─────────────────────────────────────────────────── */
-  --background:          210 40% 97%;       /* very light blue-white page bg  */
-  --foreground:          222 47% 11%;       /* dark navy text                 */
-  --card:                0 0% 100%;         /* pure white cards               */
-  --card-foreground:     222 47% 11%;
+  --background:          30 25% 97%;        /* warm bone */
+  --foreground:          222 12% 14%;       /* warm ink */
+  --card:                0 0% 100%;         /* pure white cards */
+  --card-foreground:     222 12% 14%;
   --popover:             0 0% 100%;
-  --popover-foreground:  222 47% 11%;
-  --border:              214 32% 88%;       /* subtle light border            */
-  --input:               214 32% 88%;
-  --primary:             265 70% 58%;       /* violet accent                  */
-  --primary-foreground:  0 0% 100%;
-  --muted:               210 40% 94%;       /* light gray-blue muted bg       */
-  --muted-foreground:    215 16% 47%;       /* medium gray text               */
-  --ring:                265 70% 58%;
-  --destructive:         0 72% 51%;
-  --success:             142 70% 40%;
-  --warning:             38 92% 50%;
+  --popover-foreground:  222 12% 14%;
+  --border:              28 12% 88%;        /* warm hairline */
+  --input:               28 12% 88%;
+  --primary:             14 88% 54%;        /* confident coral-orange */
+  --primary-foreground:  30 25% 98%;
+  --muted:               30 18% 94%;        /* cream-grey */
+  --muted-foreground:    222 8% 42%;        /* warm mid-grey */
+  --accent:              158 50% 32%;       /* forest emerald */
+  --accent-foreground:   0 0% 100%;
+  --ring:                14 88% 54%;        /* matches primary for focus rings */
+  --destructive:         358 65% 50%;
+  --success:             158 50% 32%;       /* match accent — one less colour to track */
+  --warning:             32 95% 50%;
   color-scheme: light;
 }
 
@@ -29,16 +42,30 @@ body {
   margin: 0;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
-  font-family: 'Inter', system-ui, sans-serif;
+  /* System font stack first — feels more native than always-Inter on every device.
+     Inter is still the design baseline for Figma / docs, but on Linux/Windows
+     the system font often looks sharper at small sizes. */
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Slightly tightened default tracking — feels less "default Tailwind" */
+  letter-spacing: -0.005em;
 }
+
+/* Headings get tighter tracking still — the "real product" tell */
+h1, h2, h3 { letter-spacing: -0.02em; }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.4); }
+
+/* Selection — picks up the brand colour instead of OS default blue */
+::selection {
+  background: hsl(var(--primary) / 0.18);
+  color: hsl(var(--foreground));
+}
 
 /* Page animation */
 .page-transition-enter {
@@ -54,10 +81,13 @@ body {
 .bg-card        { background: hsl(var(--card)); }
 .bg-muted       { background: hsl(var(--muted)); }
 .bg-primary     { background: hsl(var(--primary)); }
+.bg-accent      { background: hsl(var(--accent)); }
 .text-foreground     { color: hsl(var(--foreground)); }
 .text-muted-foreground { color: hsl(var(--muted-foreground)); }
 .text-primary    { color: hsl(var(--primary)); }
 .text-primary-foreground { color: hsl(var(--primary-foreground)); }
+.text-accent     { color: hsl(var(--accent)); }
+.text-accent-foreground { color: hsl(var(--accent-foreground)); }
 .text-destructive { color: hsl(var(--destructive)); }
 .border-border   { border-color: hsl(var(--border)); }
 .border-input    { border-color: hsl(var(--input)); }

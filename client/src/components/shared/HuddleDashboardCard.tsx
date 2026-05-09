@@ -58,7 +58,7 @@ export function HuddleDashboardCard() {
             onClick={toggleOnCall}
             className={`h-9 px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold border transition-colors ${
               isOnCall
-                ? 'bg-violet-500/20 text-violet-700 border-violet-500/40 hover:bg-violet-500/30'
+                ? 'bg-primary/15 text-primary border-primary/40 hover:bg-primary/25'
                 : 'bg-card text-foreground border-border hover:bg-muted'
             }`}
             title={isOnCall ? 'You are marked on a call — click to clear' : 'Mark yourself on a call (do not disturb)'}
