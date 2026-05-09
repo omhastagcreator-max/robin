@@ -16,8 +16,11 @@ import { toast } from 'sonner';
  */
 
 const NETWORK_TIMEOUT_MS = 30_000;
-const MAX_RETRIES = 2;
-const BACKOFF_BASE_MS = 700; // 700ms, 1.4s, 2.8s — enough to outlive a brief blip
+// 5 retries with exponential backoff covers a Render free-tier cold start
+// (which can take 30–60s while the service spins back up). Total worst-case
+// wait before we surface the failure: ~22 seconds. Most users never see it.
+const MAX_RETRIES = 5;
+const BACKOFF_BASE_MS = 700; // 700ms, 1.4s, 2.8s, 5.6s, 11.2s
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api',
@@ -92,7 +95,9 @@ api.interceptors.response.use(
       } else if (status === 429) {
         toast.error('Too many requests — please slow down.', { id: 'net-429' });
       } else if (status && status >= 500) {
-        toast.error('Server hiccup. Try again in a few seconds.', { id: 'net-5xx' });
+        // Silent — auto-retry already handled this. If we got here all 5
+        // retries failed (~22s). Show a calmer message instead of "hiccup".
+        toast.error('Couldn\'t reach the server. We\'ll keep trying.', { id: 'net-5xx' });
       } else if (status !== 410) {
         // 410 = meeting expired/ended — page renders a nicer state itself
         toast.error(message);

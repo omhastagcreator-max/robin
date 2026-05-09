@@ -178,7 +178,7 @@ export const listVaultAudit    = (params?: Record<string, unknown>) =>
   api.get('/credentials/audit', { params }).then(r => r.data);
 
 // ── Leave Applications ────────────────────────────────────────────────────────
-export const createLeave       = (d: { days: { date: string; reason: string }[] }) =>
+export const createLeave       = (d: { days: { date: string; reason: string; dayType?: 'full' | 'first_half' | 'second_half' }[] }) =>
   api.post('/leaves', d).then(r => r.data);
 export const listMyLeaves      = () => api.get('/leaves/mine').then(r => r.data);
 export const cancelLeave       = (id: string) => api.put(`/leaves/${id}/cancel`, {}).then(r => r.data);

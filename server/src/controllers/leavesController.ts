@@ -85,7 +85,9 @@ export async function createLeave(req: AuthRequest, res: Response): Promise<void
     }
 
     // Normalise + validate each entry
-    const cleaned: { date: Date; reason: string }[] = [];
+    const VALID_DAY_TYPES = ['full', 'first_half', 'second_half'] as const;
+    type DayType = typeof VALID_DAY_TYPES[number];
+    const cleaned: { date: Date; reason: string; dayType: DayType }[] = [];
     const seen = new Set<string>();
     for (const raw of days) {
       if (!raw?.date)   { res.status(400).json({ error: 'Each day needs a date' });   return; }
@@ -97,7 +99,10 @@ export async function createLeave(req: AuthRequest, res: Response): Promise<void
       const key = d.toISOString();
       if (seen.has(key)) continue; // de-dupe duplicate clicks
       seen.add(key);
-      cleaned.push({ date: d, reason: String(raw.reason).trim() });
+      const dt = (VALID_DAY_TYPES as readonly string[]).includes(raw.dayType)
+        ? (raw.dayType as DayType)
+        : 'full';
+      cleaned.push({ date: d, reason: String(raw.reason).trim(), dayType: dt });
     }
 
     // Saturday + Sunday in the same application not allowed

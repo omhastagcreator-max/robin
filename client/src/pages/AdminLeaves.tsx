@@ -9,7 +9,19 @@ import { format } from 'date-fns';
 import * as api from '@/api';
 import { toast } from 'sonner';
 
-interface LeaveDay { date: string; reason: string; }
+type DayType = 'full' | 'first_half' | 'second_half';
+interface LeaveDay { date: string; reason: string; dayType?: DayType; }
+
+const DAY_TYPE_LABEL: Record<DayType, string> = {
+  full:         'Full day',
+  first_half:   '½ · Morning',
+  second_half:  '½ · Afternoon',
+};
+const DAY_TYPE_BADGE: Record<DayType, string> = {
+  full:         'bg-blue-500/15 text-blue-700 border-blue-500/30',
+  first_half:   'bg-amber-500/15 text-amber-700 border-amber-500/30',
+  second_half:  'bg-purple-500/15 text-purple-700 border-purple-500/30',
+};
 
 interface AdminLeave {
   _id: string;
@@ -216,12 +228,18 @@ export default function AdminLeaves() {
 
                         {/* Day chips */}
                         <div className="flex flex-wrap gap-1.5">
-                          {l.days.map((d, i) => (
-                            <span key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted/40 text-xs">
-                              <span className="font-medium">{format(new Date(d.date), 'EEE, dd MMM')}</span>
-                              <span className="text-muted-foreground">— {d.reason}</span>
-                            </span>
-                          ))}
+                          {l.days.map((d, i) => {
+                            const t = (d.dayType || 'full') as DayType;
+                            return (
+                              <span key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted/40 text-xs">
+                                <span className="font-medium">{format(new Date(d.date), 'EEE, dd MMM')}</span>
+                                <span className={`inline-flex items-center px-1.5 py-0 rounded border text-[9px] font-bold ${DAY_TYPE_BADGE[t]}`}>
+                                  {DAY_TYPE_LABEL[t]}
+                                </span>
+                                <span className="text-muted-foreground">— {d.reason}</span>
+                              </span>
+                            );
+                          })}
                         </div>
 
                         {l.reviewNote && (

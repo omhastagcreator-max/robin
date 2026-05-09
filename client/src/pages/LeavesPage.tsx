@@ -11,10 +11,24 @@ import { format } from 'date-fns';
 import * as api from '@/api';
 import { toast } from 'sonner';
 
+type DayType = 'full' | 'first_half' | 'second_half';
+
 interface LeaveDay {
   date: string;   // ISO
   reason: string;
+  dayType?: DayType;
 }
+
+const DAY_TYPE_LABEL: Record<DayType, string> = {
+  full:         'Full day',
+  first_half:   '½ · Morning',
+  second_half:  '½ · Afternoon',
+};
+const DAY_TYPE_BADGE: Record<DayType, string> = {
+  full:         'bg-blue-500/15 text-blue-700 border-blue-500/30',
+  first_half:   'bg-amber-500/15 text-amber-700 border-amber-500/30',
+  second_half:  'bg-purple-500/15 text-purple-700 border-purple-500/30',
+};
 
 interface LeaveApp {
   _id: string;
@@ -54,6 +68,9 @@ function dateKey(d: Date): string {
 export default function LeavesPage() {
   const [selected, setSelected]   = useState<Date[]>([]);
   const [reasons,  setReasons]    = useState<Record<string, string>>({});
+  // Per-day type — defaults to 'full'. Lets people split their leave (e.g.
+  // half-day morning for a doctor's visit, work the afternoon).
+  const [dayTypes, setDayTypes]   = useState<Record<string, DayType>>({});
   const [submitting, setSubmitting] = useState(false);
 
   const [history, setHistory] = useState<LeaveApp[]>([]);
@@ -96,10 +113,11 @@ export default function LeavesPage() {
         days: sortedSelected.map(d => ({
           date: dateKey(d),                       // "2026-05-12" — timezone-safe
           reason: reasons[dateKey(d)].trim(),
+          dayType: dayTypes[dateKey(d)] || 'full',
         })),
       });
       toast.success('Leave application submitted — admin will review');
-      setSelected([]); setReasons({});
+      setSelected([]); setReasons({}); setDayTypes({});
       reload();
     } catch (e: any) {
       toast.error(e?.response?.data?.error || 'Could not submit');
@@ -115,6 +133,11 @@ export default function LeavesPage() {
   const removeDay = (d: Date) => {
     setSelected(prev => prev.filter(x => dateKey(x) !== dateKey(d)));
     setReasons(prev => {
+      const next = { ...prev };
+      delete next[dateKey(d)];
+      return next;
+    });
+    setDayTypes(prev => {
       const next = { ...prev };
       delete next[dateKey(d)];
       return next;
@@ -177,8 +200,26 @@ export default function LeavesPage() {
                         <span className="text-[9px] uppercase font-bold">{format(d, 'MMM')}</span>
                         <span className="text-sm font-bold">{format(d, 'dd')}</span>
                       </div>
-                      <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex-1 min-w-0 space-y-1.5">
                         <p className="text-xs text-muted-foreground">{format(d, 'EEEE, dd MMM yyyy')}</p>
+                        {/* Full vs half-day picker */}
+                        <div className="inline-flex gap-1 bg-muted/40 rounded-md p-0.5 text-[10px] font-semibold">
+                          {(['full', 'first_half', 'second_half'] as DayType[]).map(t => {
+                            const active = (dayTypes[k] || 'full') === t;
+                            return (
+                              <button
+                                key={t}
+                                type="button"
+                                onClick={() => setDayTypes(prev => ({ ...prev, [k]: t }))}
+                                className={`px-2 py-1 rounded transition-colors ${
+                                  active ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'
+                                }`}
+                              >
+                                {DAY_TYPE_LABEL[t]}
+                              </button>
+                            );
+                          })}
+                        </div>
                         <input
                           value={reasons[k] || ''}
                           onChange={e => setReasons(prev => ({ ...prev, [k]: e.target.value }))}
@@ -255,12 +296,18 @@ export default function LeavesPage() {
                             </span>
                           </div>
                           <div className="flex flex-wrap gap-1.5">
-                            {h.days.map((d, i) => (
-                              <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/40 text-xs">
-                                <span className="font-medium">{format(new Date(d.date), 'dd MMM')}</span>
-                                <span className="text-muted-foreground">· {d.reason}</span>
-                              </span>
-                            ))}
+                            {h.days.map((d, i) => {
+                              const t = (d.dayType || 'full') as DayType;
+                              return (
+                                <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/40 text-xs">
+                                  <span className="font-medium">{format(new Date(d.date), 'dd MMM')}</span>
+                                  <span className={`inline-flex items-center px-1.5 py-0 rounded border text-[9px] font-bold ${DAY_TYPE_BADGE[t]}`}>
+                                    {DAY_TYPE_LABEL[t]}
+                                  </span>
+                                  <span className="text-muted-foreground">· {d.reason}</span>
+                                </span>
+                              );
+                            })}
                           </div>
                           {h.reviewNote && (
                             <p className="text-[11px] italic text-muted-foreground">Admin note: {h.reviewNote}</p>

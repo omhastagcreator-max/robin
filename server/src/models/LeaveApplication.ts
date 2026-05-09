@@ -15,6 +15,9 @@ import { Schema, model, Types } from 'mongoose';
 const LeaveDaySchema = new Schema({
   date:   { type: Date,   required: true },
   reason: { type: String, required: true, trim: true },
+  // Half-day leave can be 'first_half' (morning) or 'second_half' (afternoon).
+  // 'full' is the default — the employee is off the entire day.
+  dayType: { type: String, enum: ['full', 'first_half', 'second_half'], default: 'full' },
 }, { _id: false });
 
 const LeaveApplicationSchema = new Schema({
