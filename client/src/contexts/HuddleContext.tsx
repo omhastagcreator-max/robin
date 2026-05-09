@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSocket } from '@/hooks/useSocket';
 import { useHuddleTranscription } from '@/hooks/useHuddleTranscription';
 import { HuddlePiPContent } from '@/components/shared/HuddlePiPContent';
+import { RemoteAudio } from '@/components/shared/RemoteAudio';
 import type { IceSource } from '@/lib/iceServers';
 
 type HuddleMode = 'idle' | 'joining' | 'expanded' | 'collapsed';
@@ -477,11 +478,23 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
   return (
     <HuddleContext.Provider value={value}>
       {children}
+      {/* PERSISTENT REMOTE AUDIO — one hidden <audio> per peer, mounted at the
+          provider level so it survives every route change. Without this, the
+          audio elements lived inside HuddleStage / HuddleDock and unmounted
+          the moment you navigated away from /workroom — you'd stay connected
+          to the LiveKit room but couldn't hear anyone. */}
+      {meeting.peers.map(peer =>
+        peer.stream && peer.audioOn ? (
+          <RemoteAudio
+            key={`global-audio-${peer.userId}`}
+            stream={peer.stream}
+            muted={deafened}
+          />
+        ) : null,
+      )}
       {/* PiP portal lives at the provider level so the floating window has
           content the moment it opens — independent of where in the React
-          tree the user happens to be. Was previously inside HuddleMicPiP
-          which is gated on huddle.joined, so a slow LiveKit handshake left
-          the PiP stuck on the loading splash. */}
+          tree the user happens to be. */}
       {pipContainer && createPortal(<HuddlePiPContent />, pipContainer)}
     </HuddleContext.Provider>
   );
