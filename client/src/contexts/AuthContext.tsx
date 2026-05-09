@@ -40,7 +40,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!token) { setLoading(false); return; }
 
     api.getMe()
-      .then(({ user: u }) => {
+      .then(({ user: u, refreshedToken }: any) => {
+        // Sliding session: server returned a fresh JWT because the current
+        // one was getting old. Swap it transparently — the user never sees
+        // a logout as long as they open Robin at least every few weeks.
+        if (refreshedToken) {
+          localStorage.setItem(TOKEN_KEY, refreshedToken);
+        }
         const mapped: RobinUser = { id: u._id, email: u.email, name: u.name, role: u.role, team: u.team, avatarUrl: u.avatarUrl, organizationId: u.organizationId };
         setUser(mapped);
         localStorage.setItem(USER_KEY, JSON.stringify(mapped));

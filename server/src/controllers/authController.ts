@@ -6,7 +6,13 @@ import User from '../models/User';
 import Organization from '../models/Organization';
 
 const JWT_SECRET  = process.env.JWT_SECRET!;
-const JWT_EXPIRES = process.env.JWT_EXPIRES_IN || '7d';
+// 30 days by default — bumped from 7d. With sliding refresh in getMe(),
+// an active user never has to log in again. Inactive users still get
+// auto-logged-out after a month, which is fine for security.
+const JWT_EXPIRES = process.env.JWT_EXPIRES_IN || '30d';
+// If the current token is older than this, getMe() mints a fresh one
+// and returns it as `refreshedToken`. Client swaps the stored token.
+const REFRESH_THRESHOLD_MS = 7 * 24 * 3600 * 1000;
 
 function signToken(userId: string) {
   return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES as any });
@@ -112,11 +118,37 @@ export async function googleAuth(req: Request, res: Response): Promise<void> {
 }
 
 // ── Get Me ────────────────────────────────────────────────────────────────────
+//
+// Also handles SLIDING SESSION REFRESH: if the JWT was issued more than
+// REFRESH_THRESHOLD_MS ago, we mint a fresh one and return it as
+// `refreshedToken`. The client's axios layer auto-swaps the stored token.
+// Net effect: anyone who opens Robin at least once a week never sees a
+// "session expired" screen.
 export async function getMe(req: any, res: Response): Promise<void> {
   try {
     const user = await User.findById(req.user.id);
     if (!user) { res.status(404).json({ error: 'User not found' }); return; }
-    res.json({ user: { _id: user._id, email: user.email, name: user.name, role: user.role, team: user.team, avatarUrl: user.avatarUrl, onCallSince: user.onCallSince } });
+
+    // Inspect the token's `iat` (issued-at) to decide if it needs refresh.
+    let refreshedToken: string | undefined;
+    try {
+      const auth = req.headers.authorization as string | undefined;
+      const raw  = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
+      if (raw) {
+        const decoded = jwt.decode(raw) as { iat?: number; exp?: number } | null;
+        if (decoded?.iat) {
+          const ageMs = Date.now() - decoded.iat * 1000;
+          if (ageMs > REFRESH_THRESHOLD_MS) {
+            refreshedToken = signToken(String(user._id));
+          }
+        }
+      }
+    } catch { /* ignore — refresh is best-effort */ }
+
+    res.json({
+      user: { _id: user._id, email: user.email, name: user.name, role: user.role, team: user.team, avatarUrl: user.avatarUrl, onCallSince: user.onCallSince },
+      ...(refreshedToken ? { refreshedToken } : {}),
+    });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
