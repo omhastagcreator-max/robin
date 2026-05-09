@@ -1,11 +1,22 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
 import User from '../models/User';
-import Session from '../models/Session';
-import ProjectTask from '../models/ProjectTask';
 import bcrypt from 'bcryptjs';
 import Lead from '../models/Lead';
-import Project from '../models/Project';
+
+/**
+ * Users controller — STRICT org isolation.
+ *
+ * Every endpoint here verifies that the actor and the target user share the
+ * same organizationId. Without this, one agency could enumerate / read /
+ * modify users belonging to another agency, which is the single biggest
+ * SaaS data-breach risk in this app.
+ */
+
+async function getActorOrgId(userId: string): Promise<string | null> {
+  const u = await User.findById(userId).select('organizationId').lean();
+  return u?.organizationId ? String(u.organizationId) : null;
+}
 
 // POST /api/users  (admin creates a new user — client, employee, etc.)
 export async function createUser(req: AuthRequest, res: Response): Promise<void> {
@@ -13,57 +24,69 @@ export async function createUser(req: AuthRequest, res: Response): Promise<void>
     const { name, email, password, role = 'client', team = '', phone = '', company = '', department = '', fromLeadId } = req.body;
     if (!name || !email || !password) { res.status(400).json({ error: 'name, email and password are required' }); return; }
 
-    const exists = await User.findOne({ email: email.toLowerCase() });
-    if (exists) { res.status(409).json({ error: 'A user with this email already exists' }); return; }
+    const orgId = await getActorOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'Your account is not linked to an organization.' }); return; }
 
-    // Inherit org from the creating admin
-    const admin = await User.findById(req.user!.id).select('organizationId');
+    // Org-scoped uniqueness — same email is allowed in different agencies.
+    // Mongo's unique index on email would normally collide; we manually
+    // check within-org uniqueness instead.
+    const exists = await User.findOne({ email: email.toLowerCase(), organizationId: orgId });
+    if (exists) { res.status(409).json({ error: 'A user with this email already exists in your agency' }); return; }
+
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({
       name, email: email.toLowerCase(), passwordHash, role, team, phone, department,
-      company, organizationId: admin?.organizationId, isActive: true,
+      company, organizationId: orgId, isActive: true,
     });
 
-    // If created from a won lead — mark the lead as converted
     if (fromLeadId) {
-      await Lead.findByIdAndUpdate(fromLeadId, { convertedToClientId: String(user._id) });
+      // Org-check the lead too — don't let an admin convert another agency's lead.
+      await Lead.findOneAndUpdate(
+        { _id: fromLeadId, organizationId: orgId },
+        { convertedToClientId: String(user._id) },
+      );
     }
 
     res.status(201).json({ ...user.toObject(), passwordHash: undefined, generatedPassword: password });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
-// GET /api/users
+// GET /api/users — list users in MY organization only.
 export async function listUsers(req: AuthRequest, res: Response): Promise<void> {
   try {
+    const orgId = await getActorOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'Your account is not linked to an organization.' }); return; }
+
     const { role, team, isActive } = req.query as Record<string, string>;
-    const filter: Record<string, any> = {};
+    const filter: Record<string, any> = { organizationId: orgId };
     if (role)     filter.role     = role;
     if (team)     filter.team     = team;
     if (isActive !== undefined) filter.isActive = isActive !== 'false';
     else filter.isActive = { $ne: false };   // default: exclude deactivated
+
     const users = await User.find(filter).select('-passwordHash').lean();
     res.json(users);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
-// GET /api/users/:id
+// GET /api/users/:id — returns the user only if they're in MY organization.
 export async function getUserById(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const user = await User.findById(req.params.id).select('-passwordHash');
+    const orgId = await getActorOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'Your account is not linked to an organization.' }); return; }
+
+    const user = await User.findOne({ _id: req.params.id, organizationId: orgId }).select('-passwordHash');
     if (!user) { res.status(404).json({ error: 'User not found' }); return; }
     res.json(user);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
-// PUT /api/users/:id  (admin only)
-//
-// Now also accepts `teams: string[]` and `roles: string[]` so admin can
-// assign an employee to multiple teams (e.g., ads + influencer) or grant
-// secondary roles. Primary `team` and `role` stay as the canonical
-// values; the arrays are additive on top.
+// PUT /api/users/:id — admin only, target must be in the same org.
 export async function updateUser(req: AuthRequest, res: Response): Promise<void> {
   try {
+    const orgId = await getActorOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'Your account is not linked to an organization.' }); return; }
+
     const { name, role, team, teams, roles, phone, isActive } = req.body;
     const update: Record<string, any> = {};
     if (name)                  update.name = name;
@@ -74,8 +97,8 @@ export async function updateUser(req: AuthRequest, res: Response): Promise<void>
     if (phone !== undefined)   update.phone = phone;
     if (isActive !== undefined) update.isActive = isActive;
 
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
+    const user = await User.findOneAndUpdate(
+      { _id: req.params.id, organizationId: orgId },
       { $set: update },
       { new: true }
     ).select('-passwordHash');
@@ -84,10 +107,17 @@ export async function updateUser(req: AuthRequest, res: Response): Promise<void>
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
-// DELETE /api/users/:id
+// DELETE /api/users/:id — soft delete. Org-scoped.
 export async function deleteUser(req: AuthRequest, res: Response): Promise<void> {
   try {
-    await User.findByIdAndUpdate(req.params.id, { isActive: false });
+    const orgId = await getActorOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'Your account is not linked to an organization.' }); return; }
+
+    const result = await User.findOneAndUpdate(
+      { _id: req.params.id, organizationId: orgId },
+      { isActive: false },
+    );
+    if (!result) { res.status(404).json({ error: 'User not found' }); return; }
     res.json({ message: 'User deactivated' });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }

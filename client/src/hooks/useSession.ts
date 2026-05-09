@@ -65,6 +65,10 @@ export function useSession() {
 
     const ping = async () => {
       if (cancelled) return;
+      // Skip when the browser is reporting offline — save bandwidth and avoid
+      // building up a queue of failed requests. The next interval will pick
+      // up automatically when connectivity returns.
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
       try { await api.sessionHeartbeat(); }
       catch { /* swallow — next interval will retry */ }
     };

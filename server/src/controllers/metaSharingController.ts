@@ -89,12 +89,17 @@ export async function listShares(req: AuthRequest, res: Response): Promise<void>
   }
 }
 
-/** DELETE /api/ads/meta/share/:id — revoke a link. */
+/** DELETE /api/ads/meta/share/:id — revoke a link. Org-scoped. */
 export async function revokeShare(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const doc = await MetaShareLink.findById(req.params.id);
+    const u = await User.findById(req.user!.id).select('organizationId').lean();
+    const orgId = u?.organizationId ? String(u.organizationId) : null;
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    // Look up by both id AND org so admins can't reach into another agency.
+    const doc = await MetaShareLink.findOne({ _id: req.params.id, organizationId: orgId });
     if (!doc) { res.status(404).json({ error: 'Not found' }); return; }
-    // Only the creator OR admin can revoke
+    // Within the org, only the creator OR an admin can revoke.
     if (String(doc.createdBy) !== req.user!.id && req.user!.role !== 'admin') {
       res.status(403).json({ error: 'Not allowed' }); return;
     }

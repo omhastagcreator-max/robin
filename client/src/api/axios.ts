@@ -1,9 +1,28 @@
-import axios from 'axios';
+import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 import { toast } from 'sonner';
+
+/**
+ * Network-resilient axios client tuned for India / mobile data.
+ *
+ * Behavior:
+ *  - 30s timeout (default 60s+ would feel like the app is frozen on 3G)
+ *  - Auto-retry idempotent GETs up to 2× with exponential backoff on
+ *    network errors / timeouts / 502/503/504 (server warming up after
+ *    Render free-tier idle). Non-idempotent requests (POST/PUT/DELETE)
+ *    are NOT retried — the server may have already processed them and a
+ *    blind retry could double-create/double-charge.
+ *  - Distinct toasts for "you're offline" vs. real server errors.
+ *  - Skips error toasts for background polls (configurable via header).
+ */
+
+const NETWORK_TIMEOUT_MS = 30_000;
+const MAX_RETRIES = 2;
+const BACKOFF_BASE_MS = 700; // 700ms, 1.4s, 2.8s — enough to outlive a brief blip
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api',
   headers: { 'Content-Type': 'application/json' },
+  timeout: NETWORK_TIMEOUT_MS,
 });
 
 // ── Request: attach JWT from localStorage ─────────────────────────────────────
@@ -19,21 +38,73 @@ const PUBLIC_ROUTE_PREFIXES = ['/meet/', '/share/', '/login', '/update-password'
 const isPublicRoute = () =>
   PUBLIC_ROUTE_PREFIXES.some(p => window.location.pathname.startsWith(p));
 
-// ── Response: show toast on errors ───────────────────────────────────────────
+const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+
+const isRetryableError = (err: AxiosError): boolean => {
+  // No response = network error / DNS / timeout
+  if (!err.response) return true;
+  // Render cold-start / gateway hiccups
+  if ([502, 503, 504].includes(err.response.status)) return true;
+  return false;
+};
+
+const isIdempotent = (cfg: AxiosRequestConfig): boolean => {
+  const method = (cfg.method || 'get').toLowerCase();
+  return method === 'get' || method === 'head' || method === 'options';
+};
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+// ── Response: retry + smart toasts ────────────────────────────────────────────
 api.interceptors.response.use(
   (res) => res,
-  (err) => {
+  async (err: AxiosError) => {
+    const cfg = err.config as (AxiosRequestConfig & { _retryCount?: number }) | undefined;
+
+    // Auto-retry transient failures on idempotent requests.
+    if (cfg && isIdempotent(cfg) && isRetryableError(err)) {
+      cfg._retryCount = (cfg._retryCount || 0) + 1;
+      if (cfg._retryCount <= MAX_RETRIES) {
+        await sleep(BACKOFF_BASE_MS * Math.pow(2, cfg._retryCount - 1));
+        return api(cfg);
+      }
+    }
+
     const status  = err.response?.status;
-    const message = err.response?.data?.error || err.message || 'Request failed';
+    const message = (err.response?.data as any)?.error || err.message || 'Request failed';
+
+    // Allow callers to opt-out of toasts (background polls, optional fetches).
+    const silent = (cfg?.headers as any)?.['X-Silent'] === '1';
+
     if (status === 401 && !isPublicRoute()) {
       localStorage.removeItem('robin_token');
       window.location.href = '/login';
     } else if (status !== 401 || !isPublicRoute()) {
-      // Skip toast on 410 (meeting expired/ended) — page renders a nicer state
-      if (status !== 410) toast.error(message);
+      if (silent) {
+        // swallow — caller is handling their own UX
+      } else if (!err.response) {
+        // No response — either offline or server unreachable.
+        if (isOffline()) {
+          toast.error('You appear to be offline. We\'ll retry when you reconnect.', { id: 'net-offline' });
+        } else {
+          toast.error('Network is slow or unreachable. Please retry in a moment.', { id: 'net-slow' });
+        }
+      } else if (status === 429) {
+        toast.error('Too many requests — please slow down.', { id: 'net-429' });
+      } else if (status && status >= 500) {
+        toast.error('Server hiccup. Try again in a few seconds.', { id: 'net-5xx' });
+      } else if (status !== 410) {
+        // 410 = meeting expired/ended — page renders a nicer state itself
+        toast.error(message);
+      }
     }
     return Promise.reject(err);
-  }
+  },
 );
+
+/** Helper: mark a request as silent so failures don't show a toast. */
+export function silent(config?: AxiosRequestConfig): AxiosRequestConfig {
+  return { ...config, headers: { ...(config?.headers || {}), 'X-Silent': '1' } };
+}
 
 export default api;

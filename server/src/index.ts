@@ -9,6 +9,7 @@ import { Server as SocketServer } from 'socket.io';
 import { connectDB } from './config/db';
 import { errorHandler } from './middleware/errorHandler';
 import ChatMessage from './models/ChatMessage';
+import User from './models/User';
 
 // Routes
 import authRoutes         from './routes/auth';
@@ -159,6 +160,11 @@ io.on('connection', (socket) => {
   // entries in the online list.
   const validUser = userId && userId !== 'undefined' && userId !== 'null';
 
+  // Look up organizationId once per connection so we can scope rooms.
+  // Stored on the socket data, not in any global map — survives reconnects
+  // because each new connection re-runs this handler.
+  let socketOrgId: string | null = null;
+
   if (validUser) {
     socket.join(`user:${userId}`);
     onlineUsers.set(socket.id, {
@@ -167,6 +173,11 @@ io.on('connection', (socket) => {
       role: userRole && userRole !== 'undefined' ? userRole : 'employee',
     });
     emitPresence();
+    // Resolve the user's org. Failures are non-fatal — they just won't be
+    // able to send chat messages, but other socket features still work.
+    User.findById(userId).select('organizationId').lean()
+      .then(u => { socketOrgId = u?.organizationId ? String(u.organizationId) : null; })
+      .catch(() => {/* ignore */});
   }
 
   // ── WebRTC Screen Share ──────────────────────────────────────────────────
@@ -177,23 +188,31 @@ io.on('connection', (socket) => {
   socket.on('screen:stop',   ({ userId: uid })                 => socket.broadcast.emit('screen:stopped', { userId: uid }));
   socket.on('view:request',  ({ targetId, adminId })           => io.to(`user:${targetId}`).emit('view:request', { adminId }));
 
-  // ── Group Chat ───────────────────────────────────────────────────────────
+  // ── Group Chat (per-org rooms) ────────────────────────────────────────────
+  // Room name on the wire is "agency-global", but internally we scope to
+  // "{orgId}:agency-global" so two agencies on the same SaaS instance never
+  // see each other's messages even if they used the same room name.
+  const orgRoom = (roomId: string) => `room:${socketOrgId}:${roomId}`;
+
   socket.on('chat:join', ({ roomId = 'agency-global' }) => {
-    socket.join(`room:${roomId}`);
+    if (!socketOrgId) return;
+    socket.join(orgRoom(roomId));
   });
 
   socket.on('chat:message', async ({ roomId = 'agency-global', content, type = 'text', mentions = [] }) => {
-    if (!content?.trim() || !userId) return;
+    if (!content?.trim() || !userId || !socketOrgId) return;
     try {
       const msg = await ChatMessage.create({
+        organizationId: socketOrgId,
         roomId, content: content.trim(), type, mentions,
         senderId: userId,
         senderName: userName || 'Unknown',
         senderRole: userRole || 'employee',
       });
-      // Broadcast to everyone in the room
-      io.to(`room:${roomId}`).emit('chat:message', msg);
-      // Send targeted notifications for mentions
+      // Broadcast only to listeners in THIS org's version of the room.
+      io.to(orgRoom(roomId)).emit('chat:message', msg);
+      // Send targeted notifications for mentions — user-rooms are already
+      // user-id-keyed, so no extra org check needed (uid is unique globally).
       mentions.forEach((uid: string) => {
         io.to(`user:${uid}`).emit('chat:mention', { from: userName, content: content.slice(0, 80), roomId });
       });

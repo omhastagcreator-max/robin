@@ -15,6 +15,13 @@ export function useSocket(): Socket | null {
       // Coerce missing name/role to safe strings — otherwise they get serialised
       // as the literal "undefined" in the query string and show up as
       // "undefined Undefined" in the chat sidebar.
+      //
+      // Reconnect tuning for India / mobile data:
+      //   - reconnection: yes, infinitely (don't give up if user is on a train)
+      //   - reconnectionDelay 500ms → reconnectionDelayMax 30s with random jitter
+      //   - timeout 20s before giving up on a single connection attempt
+      // The exponential backoff keeps us from hammering the server during an
+      // outage while still recovering quickly once the network returns.
       _socket = io(SOCKET_URL, {
         query: {
           userId:   user.id,
@@ -23,6 +30,12 @@ export function useSocket(): Socket | null {
         },
         transports: ['websocket', 'polling'],
         withCredentials: true,
+        reconnection:           true,
+        reconnectionAttempts:   Infinity,
+        reconnectionDelay:      500,
+        reconnectionDelayMax:   30_000,
+        randomizationFactor:    0.5,
+        timeout:                20_000,
       });
     }
     ref.current = _socket;

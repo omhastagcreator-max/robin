@@ -1,4 +1,4 @@
-import api from './axios';
+import api, { silent } from './axios';
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const login        = (email: string, password: string) => api.post('/auth/login', { email, password }).then(r => r.data);
@@ -11,7 +11,9 @@ export const changePassword = (data: Record<string, unknown>) => api.put('/auth/
 // ── Sessions: heartbeat ───────────────────────────────────────────────────────
 // Bump lastHeartbeatAt on the user's active session. Called every 60s while
 // the dashboard is open. If the browser closes, pings stop, and time stops.
-export const sessionHeartbeat = () => api.post('/sessions/heartbeat').then(r => r.data);
+// Heartbeat runs every 60s in the background — never show toast errors for it.
+// A few failed heartbeats during a network blip are normal and recoverable.
+export const sessionHeartbeat = () => api.post('/sessions/heartbeat', undefined, silent()).then(r => r.data);
 
 // Toggle "On Call" do-not-disturb flag.
 export const setOnCall = (on: boolean) => api.post('/sessions/on-call', { on }).then(r => r.data);

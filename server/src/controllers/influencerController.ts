@@ -36,19 +36,32 @@ export async function createInfluencer(req: AuthRequest, res: Response): Promise
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
-// Update
+// Update — org-scoped, whitelisted fields only.
 export async function updateInfluencer(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const doc = await Influencer.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const allowed = ['name', 'handle', 'category', 'platform', 'status', 'city', 'phone', 'email',
+                     'followers', 'engagementRate', 'ratePerPost', 'notes', 'avatarUrl', 'tags'];
+    const patch: Record<string, any> = {};
+    for (const k of allowed) if (req.body[k] !== undefined) patch[k] = req.body[k];
+    const doc = await Influencer.findOneAndUpdate(
+      { _id: req.params.id, organizationId: orgId },
+      patch,
+      { new: true },
+    );
     if (!doc) { res.status(404).json({ error: 'Not found' }); return; }
     res.json(doc);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
-// Delete
+// Delete — org-scoped.
 export async function deleteInfluencer(req: AuthRequest, res: Response): Promise<void> {
   try {
-    await Influencer.findByIdAndDelete(req.params.id);
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const result = await Influencer.findOneAndDelete({ _id: req.params.id, organizationId: orgId });
+    if (!result) { res.status(404).json({ error: 'Not found' }); return; }
     res.json({ message: 'Deleted' });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }

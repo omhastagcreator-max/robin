@@ -36,14 +36,17 @@ export async function listQueries(req: AuthRequest, res: Response): Promise<void
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
-// Reply to query
+// Reply to query — org-scoped.
 export async function replyQuery(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const { content } = req.body;
-    const query = await ClientQuery.findByIdAndUpdate(
-      req.params.id,
-      { $push: { replies: { authorId: req.user!.id, authorName: req.user!.name, content } }, status: 'in_progress' },
-      { new: true }
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const { content } = req.body || {};
+    if (!content?.trim()) { res.status(400).json({ error: 'content required' }); return; }
+    const query = await ClientQuery.findOneAndUpdate(
+      { _id: req.params.id, organizationId: orgId },
+      { $push: { replies: { authorId: req.user!.id, authorName: req.user!.name, content: content.trim() } }, status: 'in_progress' },
+      { new: true },
     );
     if (!query) { res.status(404).json({ error: 'Query not found' }); return; }
     await Notification.create({ recipientId: String(query.clientId), title: 'Reply to your query', body: content, type: 'info' });
@@ -51,27 +54,48 @@ export async function replyQuery(req: AuthRequest, res: Response): Promise<void>
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
-// Update status
+// Update status — org-scoped.
 export async function updateQueryStatus(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const query = await ClientQuery.findByIdAndUpdate(req.params.id, { status: req.body.status }, { new: true });
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    if (!['open', 'in_progress', 'resolved'].includes(req.body.status)) {
+      res.status(400).json({ error: 'invalid status' });
+      return;
+    }
+    const query = await ClientQuery.findOneAndUpdate(
+      { _id: req.params.id, organizationId: orgId },
+      { status: req.body.status },
+      { new: true },
+    );
+    if (!query) { res.status(404).json({ error: 'Query not found' }); return; }
     res.json(query);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
-// Sales: send payment due notification to client
+// Sales: send payment due notification to client — org-scoped lookup.
 export async function sendPaymentAlert(req: AuthRequest, res: Response): Promise<void> {
   try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     const { clientId, clientName, amount, dueDate, note, description } = req.body;
     const bodyText = note || description || 'Invoice payment is due';
     const dueStr = dueDate
       ? new Date(dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
       : '';
 
-    // Resolve targetUserId — try clientId first, then look up by name
-    let targetUserId = clientId;
+    // Resolve targetUserId — try clientId first, then look up by name.
+    // BOTH lookups are org-scoped so we never page a client from another agency.
+    let targetUserId: string | null = null;
+    if (clientId) {
+      const u = await User.findOne({ _id: clientId, organizationId: orgId }).select('_id').lean();
+      if (u) targetUserId = String(u._id);
+    }
     if (!targetUserId && clientName) {
-      const found = await User.findOne({ name: new RegExp(clientName, 'i') });
+      const found = await User.findOne({
+        organizationId: orgId,
+        name: new RegExp(clientName, 'i'),
+      }).select('_id').lean();
       if (found) targetUserId = String(found._id);
     }
 

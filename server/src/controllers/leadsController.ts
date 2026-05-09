@@ -5,14 +5,19 @@ import Lead from '../models/Lead';
 import LeadNote from '../models/LeadNote';
 import Deal from '../models/Deal';
 
-async function getOrgId(userId: string) {
-  const u = await User.findById(userId).select('organizationId');
-  return u?.organizationId;
+/**
+ * Leads — STRICT org isolation. Reads, updates, deletes always scoped by org.
+ */
+
+async function getOrgId(userId: string): Promise<string | null> {
+  const u = await User.findById(userId).select('organizationId').lean();
+  return u?.organizationId ? String(u.organizationId) : null;
 }
 
 export async function listLeads(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     const { status, source } = req.query;
     const query: any = { organizationId: orgId };
     if (status) query.status = status;
@@ -25,23 +30,38 @@ export async function listLeads(req: AuthRequest, res: Response): Promise<void> 
 export async function createLead(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await getOrgId(req.user!.id);
-    const lead = await Lead.create({ ...req.body, organizationId: orgId, assignedTo: req.user!.id });
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const allowed = ['name', 'contact', 'email', 'company', 'source', 'estimatedValue', 'status', 'notes'];
+    const body: Record<string, any> = {};
+    for (const k of allowed) if (req.body[k] !== undefined) body[k] = req.body[k];
+    const lead = await Lead.create({ ...body, organizationId: orgId, assignedTo: req.user!.id });
     res.status(201).json(lead);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
 export async function getLead(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const lead = await Lead.findById(req.params.id);
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const lead = await Lead.findOne({ _id: req.params.id, organizationId: orgId });
     if (!lead) { res.status(404).json({ error: 'Lead not found' }); return; }
-    const notes = await LeadNote.find({ leadId: lead._id }).sort({ createdAt: -1 });
+    const notes = await LeadNote.find({ leadId: lead._id, organizationId: orgId }).sort({ createdAt: -1 });
     res.json({ ...lead.toObject(), notes });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
 export async function updateLead(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const lead = await Lead.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const allowed = ['name', 'contact', 'email', 'company', 'source', 'estimatedValue', 'status', 'notes', 'assignedTo', 'currentStage'];
+    const patch: Record<string, any> = {};
+    for (const k of allowed) if (req.body[k] !== undefined) patch[k] = req.body[k];
+    const lead = await Lead.findOneAndUpdate(
+      { _id: req.params.id, organizationId: orgId },
+      patch,
+      { new: true },
+    );
     if (!lead) { res.status(404).json({ error: 'Lead not found' }); return; }
     res.json(lead);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
@@ -49,7 +69,10 @@ export async function updateLead(req: AuthRequest, res: Response): Promise<void>
 
 export async function deleteLead(req: AuthRequest, res: Response): Promise<void> {
   try {
-    await Lead.findByIdAndDelete(req.params.id);
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const result = await Lead.findOneAndDelete({ _id: req.params.id, organizationId: orgId });
+    if (!result) { res.status(404).json({ error: 'Lead not found' }); return; }
     res.json({ message: 'Lead deleted' });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -57,7 +80,18 @@ export async function deleteLead(req: AuthRequest, res: Response): Promise<void>
 export async function addLeadNote(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await getOrgId(req.user!.id);
-    const note = await LeadNote.create({ ...req.body, leadId: req.params.id, organizationId: orgId, authorId: req.user!.id });
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    // Verify the parent lead belongs to MY org before attaching a note.
+    const parent = await Lead.findOne({ _id: req.params.id, organizationId: orgId }).select('_id').lean();
+    if (!parent) { res.status(404).json({ error: 'Lead not found' }); return; }
+    const { content } = req.body || {};
+    if (!content?.trim()) { res.status(400).json({ error: 'content required' }); return; }
+    const note = await LeadNote.create({
+      content: content.trim(),
+      leadId: req.params.id,
+      organizationId: orgId,
+      authorId: req.user!.id,
+    });
     res.status(201).json(note);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -65,10 +99,22 @@ export async function addLeadNote(req: AuthRequest, res: Response): Promise<void
 export async function convertLead(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await getOrgId(req.user!.id);
-    const { dealValue, serviceType, currency = 'INR' } = req.body;
-    const lead = await Lead.findByIdAndUpdate(req.params.id, { status: 'converted' }, { new: true });
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const { dealValue, serviceType, currency = 'INR' } = req.body || {};
+    const lead = await Lead.findOneAndUpdate(
+      { _id: req.params.id, organizationId: orgId },
+      { status: 'converted' },
+      { new: true },
+    );
     if (!lead) { res.status(404).json({ error: 'Lead not found' }); return; }
-    const deal = await Deal.create({ organizationId: orgId, leadId: lead._id, dealValue, serviceType, currency, status: 'open' });
+    const deal = await Deal.create({
+      organizationId: orgId,
+      leadId: lead._id,
+      dealValue,
+      serviceType,
+      currency,
+      status: 'open',
+    });
     res.json({ lead, deal });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }

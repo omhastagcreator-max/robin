@@ -131,6 +131,7 @@ function AppRoutes() {
 import { ScreenShareProvider } from '@/contexts/ScreenShareContext';
 import { HuddleProvider } from '@/contexts/HuddleContext';
 import { BreakOverlay } from '@/components/shared/BreakOverlay';
+import { NetworkStatus } from '@/components/shared/NetworkStatus';
 
 export default function App() {
   // White-label: on meeting.hastagcreator.com, render ONLY the public guest
@@ -139,6 +140,7 @@ export default function App() {
   if (isMeetingHost()) {
     return (
       <BrowserRouter>
+        <NetworkStatus />
         <MeetingOnlyRoutes />
         <Toaster position="top-right" richColors expand />
       </BrowserRouter>
@@ -147,6 +149,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <NetworkStatus />
       <AuthProvider>
         <ScreenShareProvider>
           <HuddleProvider>
