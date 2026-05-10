@@ -5,8 +5,14 @@ interface RobinUser {
   id: string;
   email: string;
   name: string;
+  /** Primary role */
   role: string;
+  /** Additional roles (multi-role support — admin can grant secondary roles) */
+  roles?: string[];
+  /** Primary team */
   team?: string;
+  /** Additional teams (admin can assign someone to ads/meta/etc. on top of their primary) */
+  teams?: string[];
   avatarUrl?: string;
   organizationId?: string;
   onCallSince?: string | null;
@@ -47,7 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (refreshedToken) {
           localStorage.setItem(TOKEN_KEY, refreshedToken);
         }
-        const mapped: RobinUser = { id: u._id, email: u.email, name: u.name, role: u.role, team: u.team, avatarUrl: u.avatarUrl, organizationId: u.organizationId };
+        const mapped: RobinUser = { id: u._id, email: u.email, name: u.name, role: u.role, roles: u.roles || [], team: u.team, teams: u.teams || [], avatarUrl: u.avatarUrl, organizationId: u.organizationId };
         setUser(mapped);
         localStorage.setItem(USER_KEY, JSON.stringify(mapped));
       })
@@ -63,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { token, user: u } = await api.login(email, password);
       localStorage.setItem(TOKEN_KEY, token);
-      const mapped: RobinUser = { id: u.id, email: u.email, name: u.name, role: u.role, team: u.team, avatarUrl: u.avatarUrl, organizationId: u.organizationId };
+      const mapped: RobinUser = { id: u.id, email: u.email, name: u.name, role: u.role, roles: u.roles || [], team: u.team, teams: u.teams || [], avatarUrl: u.avatarUrl, organizationId: u.organizationId };
       localStorage.setItem(USER_KEY, JSON.stringify(mapped));
       setUser(mapped);
       return {};
@@ -74,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithToken = (token: string, u: any) => {
     localStorage.setItem(TOKEN_KEY, token);
-    const mapped: RobinUser = { id: u.id || u._id, email: u.email, name: u.name, role: u.role, team: u.team, avatarUrl: u.avatarUrl, organizationId: u.organizationId };
+    const mapped: RobinUser = { id: u.id || u._id, email: u.email, name: u.name, role: u.role, roles: u.roles || [], team: u.team, teams: u.teams || [], avatarUrl: u.avatarUrl, organizationId: u.organizationId };
     localStorage.setItem(USER_KEY, JSON.stringify(mapped));
     setUser(mapped);
   };
@@ -89,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshProfile = useCallback(async () => {
     try {
       const { user: u } = await api.getMe();
-      const mapped: RobinUser = { id: u._id, email: u.email, name: u.name, role: u.role, team: u.team, avatarUrl: u.avatarUrl, organizationId: u.organizationId };
+      const mapped: RobinUser = { id: u._id, email: u.email, name: u.name, role: u.role, roles: u.roles || [], team: u.team, teams: u.teams || [], avatarUrl: u.avatarUrl, organizationId: u.organizationId };
       setUser(mapped);
       localStorage.setItem(USER_KEY, JSON.stringify(mapped));
     } catch { /* ignore */ }

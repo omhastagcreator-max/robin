@@ -18,6 +18,29 @@ function signToken(userId: string) {
   return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES as any });
 }
 
+/**
+ * Single source of truth for what shape the client sees of a user.
+ * Includes BOTH the primary role/team AND the multi-value roles[]/teams[]
+ * arrays — without these, client-side gates (like MetaAdsCard) can't
+ * tell that an admin assigned someone to e.g. the 'meta' team.
+ */
+function publicUser(u: any) {
+  return {
+    id:               u._id,
+    _id:              u._id,
+    email:            u.email,
+    name:             u.name,
+    role:             u.role,
+    roles:            u.roles  || [],
+    team:             u.team   || '',
+    teams:            u.teams  || [],
+    avatarUrl:        u.avatarUrl,
+    organizationId:   u.organizationId,
+    onCallSince:      u.onCallSince,
+    metaAdAccountId:  u.metaAdAccountId,
+  };
+}
+
 // ── Register ─────────────────────────────────────────────────────────────────
 export async function register(req: Request, res: Response): Promise<void> {
   try {
@@ -36,7 +59,7 @@ export async function register(req: Request, res: Response): Promise<void> {
 
     res.status(201).json({
       token,
-      user: { id: user._id, email: user.email, name: user.name, role: user.role, team: user.team },
+      user: publicUser(user),
     });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -56,7 +79,7 @@ export async function login(req: Request, res: Response): Promise<void> {
     const token = signToken(String(user._id));
     res.json({
       token,
-      user: { id: user._id, email: user.email, name: user.name, role: user.role, team: user.team },
+      user: publicUser(user),
     });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -105,7 +128,7 @@ export async function googleAuth(req: Request, res: Response): Promise<void> {
     const token = signToken(String(user._id));
     res.json({
       token,
-      user: { id: user._id, email: user.email, name: user.name, role: user.role, team: user.team, avatarUrl: user.avatarUrl },
+      user: publicUser(user),
     });
   } catch (err) {
     const msg = (err as Error).message;
@@ -146,7 +169,7 @@ export async function getMe(req: any, res: Response): Promise<void> {
     } catch { /* ignore — refresh is best-effort */ }
 
     res.json({
-      user: { _id: user._id, email: user.email, name: user.name, role: user.role, team: user.team, avatarUrl: user.avatarUrl, onCallSince: user.onCallSince },
+      user: publicUser(user),
       ...(refreshedToken ? { refreshedToken } : {}),
     });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
