@@ -28,31 +28,33 @@ export function HuddleDashboardCard() {
     : 'border-primary/30 bg-primary/5';
 
   return (
-    <div className={`rounded-2xl border p-4 ${tone}`}>
-      <div className="flex items-center gap-3">
-        <div className="h-11 w-11 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
+    <div className={`rounded-2xl border p-3 sm:p-4 ${tone}`}>
+      {/* flex-wrap so action buttons drop to a new line in narrow rails
+          (e.g. dashboard right column) instead of squeezing the title text */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="h-10 w-10 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
           <Headphones className="h-5 w-5 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold leading-tight">
+          <p className="text-sm font-semibold leading-tight truncate">
             {huddle.joined
-              ? 'You are in the huddle'
+              ? 'In the huddle'
               : huddle.joining
                 ? 'Connecting…'
-                : 'Agency huddle'}
+                : 'Huddle'}
           </p>
           <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5 truncate">
             <Users className="h-3 w-3 shrink-0" />
             <span className="truncate">
               {huddle.participantCount > 0
-                ? `${huddle.participantCount} ${huddle.participantCount === 1 ? 'person' : 'people'} online`
-                : 'Voice + screen share'}
+                ? `${huddle.participantCount} ${huddle.participantCount === 1 ? 'person' : 'people'}`
+                : 'Voice + screen'}
             </span>
           </p>
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        {/* Actions — wrap to next line if there's no horizontal room */}
+        <div className="flex items-center gap-1.5 shrink-0 ml-auto">
           {/* On Call toggle — works for every role, independent of huddle */}
           <button
             onClick={toggleOnCall}

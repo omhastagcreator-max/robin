@@ -153,15 +153,16 @@ function StatCard({ icon: Icon, label, value, color }: { icon: any; label: strin
 function TimeCard({ icon: Icon, label, ms, color }: { icon: any; label: string; ms: number; color: string }) {
   const d = formatDuration(ms);
   return (
-    <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
-      <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${color}`}>
-        <Icon className="h-5 w-5" />
+    <div className="bg-card border border-border rounded-2xl p-3 flex items-center gap-2.5">
+      <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
+        <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-xl sm:text-2xl font-bold tabular-nums leading-none whitespace-nowrap">
           {d.value}<span className="text-xs sm:text-sm font-medium text-muted-foreground">{d.unit}</span>
         </p>
-        <p className="text-[11px] text-muted-foreground mt-1 truncate">{label}</p>
+        {/* No truncate — let label wrap to two lines if needed (e.g. "Working\nhours") */}
+        <p className="text-[11px] text-muted-foreground mt-1 leading-tight">{label}</p>
       </div>
     </div>
   );
