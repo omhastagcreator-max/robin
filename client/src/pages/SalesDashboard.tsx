@@ -11,6 +11,7 @@ import * as api from '@/api';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { SessionClockCard } from '@/components/shared/SessionClockCard';
+import { SheetConnectCard } from '@/components/dashboard/SheetConnectCard';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 
 // ── Stage Config ──────────────────────────────────────────────────────────────
@@ -104,6 +105,25 @@ export default function SalesDashboard() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Auto-refresh every 30s so new leads from the sheet sync show up without
+  // Rishi having to reload the page. Uses a flag to avoid showing the
+  // loading spinner on these background refreshes (would feel jumpy).
+  useEffect(() => {
+    const i = setInterval(async () => {
+      try {
+        const [l, u, d] = await Promise.all([
+          api.listLeads({}),
+          api.listUsers({ role: 'client' }),
+          api.listDeals(),
+        ]);
+        setLeads(Array.isArray(l) ? l : []);
+        setClients(Array.isArray(u) ? u : []);
+        setDeals(Array.isArray(d) ? d : []);
+      } catch { /* silent — next tick will retry */ }
+    }, 30_000);
+    return () => clearInterval(i);
+  }, []);
 
   const byStage = (key: string) => leads.filter(l => (l.stage || l.status) === key);
   const wonLeads   = leads.filter(l => (l.stage || l.status) === 'won');
@@ -249,35 +269,121 @@ export default function SalesDashboard() {
     catch { toast.error('Failed to update stage'); load(); }
   };
 
+  // Single-click next-stage mapping — the most likely transition Rishi
+  // will want for each stage. Returns null for terminal stages (won/lost).
+  const nextStageFor = (stage: string): { key: string; label: string } | null => {
+    const flow: Record<string, { key: string; label: string }> = {
+      new_lead:          { key: 'dialed',           label: 'Mark dialed' },
+      dialed:            { key: 'connected',        label: 'Mark connected' },
+      connected:         { key: 'demo_booked',      label: 'Book demo' },
+      demo_booked:       { key: 'demo_done',        label: 'Demo done' },
+      demo_done:         { key: 'demo2_conversion', label: 'Send to demo 2' },
+      demo2_conversion:  { key: 'won',              label: 'Mark won' },
+      follow_up:         { key: 'hot_follow_up',    label: 'Mark hot' },
+      hot_follow_up:     { key: 'cooking',          label: 'Mark cooking' },
+      cooking:           { key: 'won',              label: 'Mark won' },
+    };
+    return flow[stage] || null;
+  };
+
   // ── Lead Card ─────────────────────────────────────────────────────────────
+  // Designed for Rishi's workflow: new lead arrives → he calls → he hits
+  // ONE button to mark the outcome. No dropdowns to open, no modals.
   const LeadCard = ({ lead }: { lead: any }) => {
     const currentStage = lead.stage || lead.status;
+    const next = nextStageFor(currentStage);
+    const isNew = lead.createdAt && Date.now() - new Date(lead.createdAt).getTime() < 60 * 60 * 1000;
+    const isTerminal = currentStage === 'won' || currentStage === 'lost';
+
     return (
       <div
         draggable
         onDragStart={e => { e.dataTransfer.setData('leadId', lead._id); setDragging(lead._id); }}
         onDragEnd={() => setDragging(null)}
-        className={`bg-card border border-border rounded-lg p-3 cursor-grab active:cursor-grabbing space-y-1.5 group hover:border-primary/40 hover:shadow-sm transition-all ${dragging === lead._id ? 'opacity-40' : ''}`}
+        className={`bg-card border border-border rounded-lg p-2.5 cursor-grab active:cursor-grabbing space-y-1.5 group hover:border-primary/40 hover:shadow-sm transition-all relative ${dragging === lead._id ? 'opacity-40' : ''}`}
       >
-        <div className="flex items-start justify-between gap-1" onClick={() => setViewLead(lead)}>
-          <p className="text-xs font-semibold line-clamp-1">{lead.name}</p>
-          {lead.estimatedValue > 0 && <span className="text-[10px] text-emerald-600 font-semibold shrink-0">₹{lead.estimatedValue.toLocaleString('en-IN')}</span>}
-        </div>
-        {lead.company && <p className="text-[10px] text-muted-foreground" onClick={() => setViewLead(lead)}>{lead.company}</p>}
-        <div className="flex items-center gap-1.5 flex-wrap" onClick={() => setViewLead(lead)}>
-          {lead.source && <span className="text-[9px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded capitalize">{lead.source.replace('_',' ')}</span>}
-          {lead.contact && <span className="text-[9px] text-muted-foreground">{lead.contact}</span>}
-        </div>
-        {/* Mobile-friendly stage changer — works when drag-drop doesn't */}
-        <select
-          value={currentStage}
-          onChange={(e) => { e.stopPropagation(); moveLeadStage(lead._id, e.target.value); }}
-          onClick={(e) => e.stopPropagation()}
-          className="w-full mt-1 text-[10px] bg-muted/40 border border-border rounded px-1.5 py-1 cursor-pointer"
-          title="Change stage"
+        {/* NEW badge — top-right corner, only for fresh leads */}
+        {isNew && (
+          <span className="absolute -top-1 -right-1 bg-emerald-500 text-white text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full shadow-sm tracking-wider">
+            New
+          </span>
+        )}
+
+        {/* Name + value (clickable to open detail) */}
+        <button
+          type="button"
+          onClick={() => setViewLead(lead)}
+          className="w-full text-left flex items-start justify-between gap-1"
         >
-          {ALL_STAGES.map(s => <option key={s.key} value={s.key}>→ {s.label}</option>)}
-        </select>
+          <p className="text-xs font-semibold line-clamp-1 flex-1">{lead.name}</p>
+          {lead.estimatedValue > 0 && (
+            <span className="text-[10px] text-emerald-600 font-semibold shrink-0">
+              ₹{lead.estimatedValue.toLocaleString('en-IN')}
+            </span>
+          )}
+        </button>
+
+        {/* Phone — tappable on mobile to call directly. Single tap = action. */}
+        {lead.contact && (
+          <a
+            href={`tel:${lead.contact}`}
+            onClick={e => e.stopPropagation()}
+            className="block text-[11px] text-primary hover:underline tabular-nums"
+          >
+            📞 {lead.contact}
+          </a>
+        )}
+        {(lead.company || lead.source) && (
+          <p className="text-[10px] text-muted-foreground truncate">
+            {[lead.company, lead.source ? `via ${lead.source.replace('_', ' ')}` : null].filter(Boolean).join(' · ')}
+          </p>
+        )}
+
+        {/* ONE-CLICK ACTIONS — primary "next stage", secondary "lost" */}
+        {!isTerminal && (
+          <div className="flex items-center gap-1 pt-1">
+            {next && (
+              <button
+                onClick={(e) => { e.stopPropagation(); moveLeadStage(lead._id, next.key); }}
+                className="flex-1 h-7 px-2 rounded-md bg-primary/10 text-primary text-[10px] font-semibold hover:bg-primary/20 truncate"
+                title={`Move to ${next.label}`}
+              >
+                ✓ {next.label}
+              </button>
+            )}
+            {currentStage !== 'lost' && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm(`Mark "${lead.name}" as Lost?`)) moveLeadStage(lead._id, 'lost');
+                }}
+                className="h-7 px-2 rounded-md bg-card border border-border text-muted-foreground text-[10px] font-semibold hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/30"
+                title="Mark Lost"
+              >
+                ✗
+              </button>
+            )}
+            {/* Quiet "more stages" picker — collapsed into a dropdown so it's
+                not visible noise but available when needed */}
+            <select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  moveLeadStage(lead._id, e.target.value);
+                  e.target.value = '';
+                }
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="h-7 w-7 text-[10px] bg-card border border-border rounded-md text-muted-foreground hover:bg-muted cursor-pointer text-center appearance-none"
+              title="Move to other stage"
+            >
+              <option value="">⋯</option>
+              {ALL_STAGES.filter(s => s.key !== currentStage).map(s => (
+                <option key={s.key} value={s.key}>→ {s.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
     );
   };
@@ -459,6 +565,9 @@ export default function SalesDashboard() {
 
         {/* Clock-in (Start Day / Break / End Day) */}
         <SessionClockCard />
+
+        {/* Google Sheets auto-import — admin connects, sales sees status */}
+        <SheetConnectCard />
 
         {/* KPI Bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

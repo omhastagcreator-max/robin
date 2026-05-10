@@ -33,6 +33,8 @@ import adReportsRoutes    from './routes/adReports';
 import influencerRoutes   from './routes/influencers';
 import seedRoutes         from './routes/seed';
 import errorLogRoutes     from './routes/errorLogs';
+import integrationsRoutes from './routes/integrations';
+import { startSheetSyncJob } from './jobs/sheetSyncJob';
 import credentialsRoutes  from './routes/credentials';
 import leavesRoutes       from './routes/leaves';
 import huddleRoutes       from './routes/huddle';
@@ -365,6 +367,7 @@ app.use('/api/meetings',        meetingsRoutes);
 app.use('/api/client-meetings', clientMeetingsRoutes);  // host endpoints
 app.use('/api/seed',            seedRoutes);
 app.use('/api/logs',            errorLogRoutes);
+app.use('/api/integrations',    integrationsRoutes);
 
 // ── 404 + Error handler ───────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
@@ -389,6 +392,9 @@ connectDB().then(() => {
 
     // Auto-expire client meetings past their duration / expiresAt.
     startClientMeetingExpiryJob();
+
+    // Poll every connected Google Sheet every 5 min for new leads.
+    startSheetSyncJob();
   });
 });
 

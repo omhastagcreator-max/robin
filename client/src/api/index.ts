@@ -100,6 +100,16 @@ export const listScreenSessions = ()                            => api.get('/scr
 // ── Leads ─────────────────────────────────────────────────────────────────────
 export const listLeads   = (params?: Record<string, unknown>) => api.get('/leads', { params }).then(r => r.data);
 export const createLead  = (d: Record<string, unknown>)       => api.post('/leads', d).then(r => r.data);
+// Bulk import — accepts an array of {name, phone?, email?, company?, source?, value?, notes?} rows
+// parsed from CSV or a Google Sheets paste. Server dedupes by phone+email.
+export const importLeads = (rows: Array<Record<string, any>>)  => api.post('/leads/import', { rows }).then(r => r.data);
+
+// ── Lead source integrations (Google Sheets live sync) ──────────────────
+export const sheetGetStatus    = () => api.get('/integrations/sheet').then(r => r.data);
+export const sheetConnect      = (body: { spreadsheetId: string; sheetName?: string }) =>
+  api.post('/integrations/sheet', body).then(r => r.data);
+export const sheetDisconnect   = () => api.delete('/integrations/sheet').then(r => r.data);
+export const sheetSyncNow      = () => api.post('/integrations/sheet/sync').then(r => r.data);
 export const getLead     = (id: string)                        => api.get(`/leads/${id}`).then(r => r.data);
 export const updateLead  = (id: string, d: Record<string, unknown>) => api.put(`/leads/${id}`, d).then(r => r.data);
 export const deleteLead  = (id: string)                        => api.delete(`/leads/${id}`).then(r => r.data);
