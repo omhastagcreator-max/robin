@@ -41,13 +41,13 @@ export function HuddleDashboardCard() {
                 ? 'Connecting…'
                 : 'Agency huddle'}
           </p>
-          <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5">
-            <Users className="h-3 w-3" />
-            {huddle.participantCount > 0
-              ? `${huddle.participantCount} ${huddle.participantCount === 1 ? 'person' : 'people'} online`
-              : 'Be the first to join'}
-            <span className="mx-1">·</span>
-            <span>mic + screen, no camera</span>
+          <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5 truncate">
+            <Users className="h-3 w-3 shrink-0" />
+            <span className="truncate">
+              {huddle.participantCount > 0
+                ? `${huddle.participantCount} ${huddle.participantCount === 1 ? 'person' : 'people'} online`
+                : 'Voice + screen share'}
+            </span>
           </p>
         </div>
 

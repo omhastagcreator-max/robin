@@ -72,7 +72,9 @@ function formatDuration(ms: number): { value: string; unit: string } {
   const m = totalMinutes % 60;
   if (h === 0) return { value: String(m), unit: 'm' };
   if (m === 0) return { value: String(h), unit: 'h' };
-  return { value: `${h}h ${m}`, unit: 'm' };
+  // No internal space — "39h17" stays one atom for the renderer's
+  // whitespace-nowrap to actually keep it on one line at narrow widths.
+  return { value: `${h}h${m}`, unit: 'm' };
 }
 
 interface TimelineItem {
@@ -155,11 +157,11 @@ function TimeCard({ icon: Icon, label, ms, color }: { icon: any; label: string; 
       <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${color}`}>
         <Icon className="h-5 w-5" />
       </div>
-      <div className="min-w-0">
-        <p className="text-2xl font-bold tabular-nums leading-none whitespace-nowrap">
-          {d.value}<span className="text-sm font-medium text-muted-foreground ml-0.5">{d.unit}</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-xl sm:text-2xl font-bold tabular-nums leading-none whitespace-nowrap">
+          {d.value}<span className="text-xs sm:text-sm font-medium text-muted-foreground">{d.unit}</span>
         </p>
-        <p className="text-xs text-muted-foreground mt-1">{label}</p>
+        <p className="text-[11px] text-muted-foreground mt-1 truncate">{label}</p>
       </div>
     </div>
   );
