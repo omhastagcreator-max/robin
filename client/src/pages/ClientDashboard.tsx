@@ -9,6 +9,7 @@ import { format } from 'date-fns';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import * as api from '@/api';
 import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 
 const METRIC_CARDS = [
   { key: 'reach',       label: 'Total Reach',   icon: Eye,        color: 'text-blue-400',   bg: 'bg-blue-500/10'   },
@@ -18,6 +19,7 @@ const METRIC_CARDS = [
 ];
 
 export default function ClientDashboard() {
+  const { user } = useAuth();
   const [projects,      setProjects]      = useState<any[]>([]);
   const [reports,       setReports]       = useState<any[]>([]);
   const [queries,       setQueries]       = useState<any[]>([]);
@@ -72,10 +74,28 @@ export default function ClientDashboard() {
 
   return (
     <AppLayout>
-      <div className="max-w-6xl mx-auto space-y-6 page-transition-enter">
-        <div>
-          <h1 className="text-2xl font-bold">Your Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Project progress, daily reports & account overview</p>
+      <div className="max-w-6xl mx-auto space-y-5 page-transition-enter">
+        {/* Branded hero — same style as employee/admin/sales dashboards.
+            Tone is hospitality (we work for them), not internal-tool. */}
+        <div className="relative overflow-hidden rounded-2xl bg-card border border-border p-5 sm:p-6">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-accent to-primary opacity-90" />
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] uppercase tracking-[0.18em] font-semibold text-muted-foreground">
+                {format(new Date(), 'EEEE · dd MMM yyyy')} · Client portal
+              </p>
+              <h1 className="mt-1 text-3xl sm:text-4xl font-bold tracking-tight">
+                Welcome, <span className="text-primary">{user?.name?.split(' ')[0] || 'there'}</span>.
+              </h1>
+              <p className="mt-2 text-sm text-muted-foreground max-w-xl">
+                Project progress, daily reports & account overview — everything we're working on for you, in one place.
+              </p>
+            </div>
+            <div className="hidden sm:block text-center px-4 py-2 rounded-xl border border-border bg-background">
+              <p className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground leading-none">{format(new Date(), 'MMM')}</p>
+              <p className="text-2xl font-black text-primary leading-none mt-1">{format(new Date(), 'dd')}</p>
+            </div>
+          </div>
         </div>
 
         {/* Summary KPIs */}

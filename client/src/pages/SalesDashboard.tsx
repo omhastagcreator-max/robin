@@ -428,20 +428,32 @@ export default function SalesDashboard() {
   return (
     <AppLayout>
       <div className="space-y-5 page-transition-enter">
-        {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Sales CRM</h1>
-            <p className="text-sm text-gray-500">
-              {leads.length} leads · {wonLeads.length} won · ₹{pipelineValue.toLocaleString('en-IN')} pipeline
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <HuddleQuickPill />
-            <button onClick={() => setShowAdd(v => !v)}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 shadow-sm">
-              <Plus className="h-4 w-4" /> New Lead
-            </button>
+        {/* Branded hero — same style as employee/admin dashboards */}
+        <div className="relative overflow-hidden rounded-2xl bg-card border border-border p-5 sm:p-6">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-accent to-primary opacity-90" />
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] uppercase tracking-[0.18em] font-semibold text-muted-foreground">
+                {format(new Date(), 'EEEE · dd MMM yyyy')} · Sales
+              </p>
+              <h1 className="mt-1 text-3xl sm:text-4xl font-bold tracking-tight">
+                Sales <span className="text-primary">CRM</span>.
+              </h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {leads.length} leads · {wonLeads.length} won · <span className="font-semibold text-foreground">₹{pipelineValue.toLocaleString('en-IN')}</span> pipeline
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:block text-center px-4 py-2 rounded-xl border border-border bg-background">
+                <p className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground leading-none">{format(new Date(), 'MMM')}</p>
+                <p className="text-2xl font-black text-primary leading-none mt-1">{format(new Date(), 'dd')}</p>
+              </div>
+              <HuddleQuickPill />
+              <button onClick={() => setShowAdd(v => !v)}
+                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 shadow-sm">
+                <Plus className="h-4 w-4" /> New Lead
+              </button>
+            </div>
           </div>
         </div>
 
