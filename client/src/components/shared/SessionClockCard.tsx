@@ -73,10 +73,10 @@ export function SessionClockCard({ dayLocked = false, dayLockReason, onLockedAtt
           <p className="font-semibold text-sm">
             {isActive  ? 'Work session active' :
              isOnBreak ? 'On break' :
-                         'Not clocked in'}
+                         'Logged out'}
           </p>
           {!session && (
-            <p className="text-xs text-muted-foreground">Start your day to begin tracking time</p>
+            <p className="text-xs text-muted-foreground">Log in to start tracking your time</p>
           )}
           {isActive && (
             <p className="text-2xl font-mono font-bold tabular-nums">{fmtHMS(workedMs)}</p>
@@ -110,7 +110,7 @@ export function SessionClockCard({ dayLocked = false, dayLockReason, onLockedAtt
             disabled={dayLocked || loading}
             className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-medium hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <Play className="h-3.5 w-3.5" /> Start Day
+            <Play className="h-3.5 w-3.5" /> Log in
           </button>
         )}
         {isActive && (
@@ -121,7 +121,7 @@ export function SessionClockCard({ dayLocked = false, dayLockReason, onLockedAtt
             </button>
             <button onClick={endSession}
               className="flex items-center gap-1.5 px-3 py-2 bg-red-500/15 text-red-400 border border-red-500/30 rounded-xl text-xs font-medium hover:bg-red-500/25">
-              <StopCircle className="h-3.5 w-3.5" /> End Day
+              <StopCircle className="h-3.5 w-3.5" /> Log out
             </button>
           </>
         )}

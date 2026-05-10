@@ -96,11 +96,11 @@ export function CommandPalette() {
       { id: 'do-join-huddle', label: 'Join the huddle', hint: 'Open Work Room and connect', group: 'do', icon: Video,
         visibleFor: ['admin', 'employee', 'sales'], action: goto('/workroom') },
 
-      { id: 'do-start-day', label: 'Start your day', hint: 'Clock in', group: 'do', icon: Play,
+      { id: 'do-start-day', label: 'Log in for the day', hint: 'Start tracking your work hours', group: 'do', icon: Play,
         visibleFor: ['employee', 'sales'],
         action: async () => {
-          try { await api.startSession(); toast.success('You are clocked in'); setOpen(false); }
-          catch (e: any) { toast.error(e?.response?.data?.error || 'Could not start session'); }
+          try { await api.startSession(); toast.success('Logged in'); setOpen(false); }
+          catch (e: any) { toast.error(e?.response?.data?.error || 'Could not log in'); }
         } },
       { id: 'do-take-break', label: 'Take a break', hint: 'Pause work', group: 'do', icon: Coffee,
         visibleFor: ['employee', 'sales'],
@@ -114,10 +114,10 @@ export function CommandPalette() {
           try { await api.endBreak(); toast.success('Welcome back'); setOpen(false); }
           catch (e: any) { toast.error(e?.response?.data?.error || 'Not on break'); }
         } },
-      { id: 'do-end-day', label: 'End your day', hint: 'Clock out', group: 'do', icon: StopCircle,
+      { id: 'do-end-day', label: 'Log out for the day', hint: 'Stop tracking work hours', group: 'do', icon: StopCircle,
         visibleFor: ['employee', 'sales'],
         action: async () => {
-          try { await api.endSession(); toast.success('Have a good evening'); setOpen(false); }
+          try { await api.endSession(); toast.success('Logged out — have a good evening'); setOpen(false); }
           catch (e: any) { toast.error(e?.response?.data?.error || 'No active session'); }
         } },
     ];

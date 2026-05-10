@@ -36,9 +36,9 @@ export function BreakOverlay() {
     catch { toast.error('Could not resume'); }
   };
   const handleEndDay = async () => {
-    if (!confirm('End your day now? You can clock back in tomorrow.')) return;
+    if (!confirm('Log out for the day? You can log back in tomorrow.')) return;
     try { await endSession(); toast.success('Have a good evening'); }
-    catch { toast.error('Could not end your day'); }
+    catch { toast.error('Could not log you out'); }
   };
 
   return (

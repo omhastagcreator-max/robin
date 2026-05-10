@@ -67,9 +67,9 @@ export function SessionTopBar() {
     catch (e: any) { toast.error(e?.response?.data?.error || "Couldn't end break"); }
   };
   const handleEnd = async () => {
-    if (!confirm('End your day? You can clock back in tomorrow.')) return;
-    try { await endSession(); toast.success("Day wrapped. See you tomorrow."); }
-    catch (e: any) { toast.error(e?.response?.data?.error || "Couldn't end session"); }
+    if (!confirm('Log out for the day? You can log back in tomorrow.')) return;
+    try { await endSession(); toast.success("Logged out. See you tomorrow."); }
+    catch (e: any) { toast.error(e?.response?.data?.error || "Couldn't log out"); }
   };
   const handleOnCall = async () => {
     try {
@@ -98,9 +98,9 @@ export function SessionTopBar() {
         : 'bg-amber-500';
 
   const statusLabel = !session
-    ? 'Off the clock'
+    ? 'Logged out'
     : isActive
-      ? 'Working'
+      ? 'Logged in'
       : 'On break';
 
   return (
@@ -139,7 +139,7 @@ export function SessionTopBar() {
 
           {!session && (
             <span className="text-xs text-muted-foreground ml-1 hidden sm:inline">
-              Start your timer to clock in for the day.
+              Log in to start tracking your day.
             </span>
           )}
         </div>
@@ -152,7 +152,7 @@ export function SessionTopBar() {
               className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 shadow-sm transition-colors"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              Start your day
+              Log in
             </button>
           )}
 
@@ -181,7 +181,7 @@ export function SessionTopBar() {
               <button
                 onClick={handleEnd}
                 className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-red-500/15 text-red-600 border border-red-500/30 text-xs font-semibold hover:bg-red-500/25 transition-colors"
-                title="End your day"
+                title="Log out for the day"
               >
                 <StopCircle className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">End</span>
@@ -202,7 +202,7 @@ export function SessionTopBar() {
               <button
                 onClick={handleEnd}
                 className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-red-500/15 text-red-600 border border-red-500/30 text-xs font-semibold hover:bg-red-500/25 transition-colors"
-                title="End your day"
+                title="Log out for the day"
               >
                 <StopCircle className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">End</span>
