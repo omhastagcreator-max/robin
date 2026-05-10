@@ -37,6 +37,28 @@ const OUTCOME_STAGES = [
 const ALL_STAGES = [...PIPELINE_STAGES, ...SALES_STAGES, ...OUTCOME_STAGES];
 const EMPTY_FORM = { name: '', contact: '', email: '', company: '', source: 'other', estimatedValue: '' };
 
+/**
+ * parseContactBlob — extracts {name, phone, email} from a single freeform
+ * string. Lets people paste a contact line like "Priya Sharma — Acme Corp,
+ * priya@acme.com, +91 98765 43210" and have it split correctly. Used by
+ * both the full New Lead form and the per-column quick-add.
+ */
+function parseContactBlob(blob: string): { name: string; phone?: string; email?: string } {
+  if (!blob) return { name: '' };
+  const emailMatch = blob.match(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/);
+  const phoneMatch = blob.match(/(\+?\d[\d\s().-]{8,})/);
+  let name = blob;
+  if (emailMatch) name = name.replace(emailMatch[0], '');
+  if (phoneMatch) name = name.replace(phoneMatch[0], '');
+  // Clean trailing separators and whitespace
+  name = name.replace(/[,–—|·;]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return {
+    name,
+    email: emailMatch ? emailMatch[0] : undefined,
+    phone: phoneMatch ? phoneMatch[0].replace(/\s+/g, ' ').trim() : undefined,
+  };
+}
+
 type Tab = 'pipeline' | 'clients' | 'won';
 
 export default function SalesDashboard() {
@@ -56,6 +78,16 @@ export default function SalesDashboard() {
   const [onboardLead, setOnboardLead]     = useState<any | null>(null);
   const [onboardForm, setOnboardForm]     = useState({ clientName: '', email: '', password: '', services: [] as string[], projectType: 'combined', servicesDescription: '' });
   const [onboarding, setOnboarding]       = useState(false);
+  // Quick-add per column — when set, that stage's column shows an inline
+  // single-line input above the cards. Hitting Enter creates a lead in that
+  // stage with smart defaults. Massively reduces clicks vs. opening the
+  // full new-lead modal every time.
+  const [quickAddStage, setQuickAddStage]   = useState<string | null>(null);
+  const [quickAddName,  setQuickAddName]    = useState('');
+  const [quickAddSaving, setQuickAddSaving] = useState(false);
+  // Mobile: which stage is being viewed (kanban is horizontal scroll on
+  // desktop, but on a phone we show one stage at a time via this picker).
+  const [mobileStage, setMobileStage] = useState<string>('new_lead');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -102,11 +134,45 @@ export default function SalesDashboard() {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.createLead({ ...form, stage: 'new_lead', estimatedValue: Number(form.estimatedValue) || 0 });
+      // Smart paste: if "name" looks like it has phone/email mixed in, parse them out.
+      const parsed = parseContactBlob(form.name);
+      const payload = {
+        ...form,
+        name:    parsed.name    || form.name,
+        contact: form.contact   || parsed.phone || '',
+        email:   form.email     || parsed.email || '',
+        stage: 'new_lead',
+        estimatedValue: Number(form.estimatedValue) || 0,
+      };
+      await api.createLead(payload);
       toast.success('Lead created!');
       setForm({ ...EMPTY_FORM }); setShowAdd(false); load();
     } catch { toast.error('Failed to create lead'); }
     finally { setSaving(false); }
+  };
+
+  // Per-column quick add. Pre-fills the stage so you don't have to drag.
+  // Smart-parse the input: if you paste "Priya 9876543210 priya@acme.com"
+  // it splits into name + phone + email automatically.
+  const quickAddSubmit = async (stageKey: string) => {
+    const trimmed = quickAddName.trim();
+    if (!trimmed) return;
+    setQuickAddSaving(true);
+    try {
+      const parsed = parseContactBlob(trimmed);
+      await api.createLead({
+        name:    parsed.name || trimmed,
+        contact: parsed.phone || '',
+        email:   parsed.email || '',
+        source:  'manual',
+        stage:   stageKey,
+        estimatedValue: 0,
+      });
+      setQuickAddName('');
+      setQuickAddStage(null);
+      load();
+    } catch { toast.error('Could not add lead'); }
+    finally { setQuickAddSaving(false); }
   };
 
   const sendPaymentDue = async (e: React.FormEvent) => {
@@ -167,52 +233,120 @@ export default function SalesDashboard() {
     }
   };
 
+  // Move a lead to a different stage (used by the mobile-friendly stage
+  // dropdown, since drag-drop doesn't work on touch devices).
+  const moveLeadStage = async (leadId: string, targetStage: string) => {
+    if (targetStage === 'won') {
+      const actualLead = leads.find(l => l._id === leadId);
+      if (actualLead) {
+        setOnboardLead(actualLead);
+        setOnboardForm({ clientName: actualLead.name || '', email: actualLead.email || '', password: '', services: [], projectType: 'combined', servicesDescription: '' });
+      }
+      return;
+    }
+    setLeads(prev => prev.map(l => l._id === leadId ? { ...l, stage: targetStage, status: targetStage } : l));
+    try { await api.updateLead(leadId, { stage: targetStage, status: targetStage }); }
+    catch { toast.error('Failed to update stage'); load(); }
+  };
+
   // ── Lead Card ─────────────────────────────────────────────────────────────
-  const LeadCard = ({ lead }: { lead: any }) => (
-    <div
-      draggable
-      onDragStart={e => { e.dataTransfer.setData('leadId', lead._id); setDragging(lead._id); }}
-      onDragEnd={() => setDragging(null)}
-      onClick={() => setViewLead(lead)}
-      className={`bg-white border border-gray-100 rounded-xl p-3 cursor-grab active:cursor-grabbing space-y-1.5 group hover:border-primary/40 hover:shadow-sm transition-all ${dragging === lead._id ? 'opacity-40' : ''}`}
-    >
-      <div className="flex items-start justify-between gap-1">
-        <p className="text-xs font-semibold text-gray-800 line-clamp-1">{lead.name}</p>
-        {lead.estimatedValue > 0 && <span className="text-[10px] text-emerald-600 font-medium shrink-0">₹{lead.estimatedValue.toLocaleString('en-IN')}</span>}
+  const LeadCard = ({ lead }: { lead: any }) => {
+    const currentStage = lead.stage || lead.status;
+    return (
+      <div
+        draggable
+        onDragStart={e => { e.dataTransfer.setData('leadId', lead._id); setDragging(lead._id); }}
+        onDragEnd={() => setDragging(null)}
+        className={`bg-card border border-border rounded-lg p-3 cursor-grab active:cursor-grabbing space-y-1.5 group hover:border-primary/40 hover:shadow-sm transition-all ${dragging === lead._id ? 'opacity-40' : ''}`}
+      >
+        <div className="flex items-start justify-between gap-1" onClick={() => setViewLead(lead)}>
+          <p className="text-xs font-semibold line-clamp-1">{lead.name}</p>
+          {lead.estimatedValue > 0 && <span className="text-[10px] text-emerald-600 font-semibold shrink-0">₹{lead.estimatedValue.toLocaleString('en-IN')}</span>}
+        </div>
+        {lead.company && <p className="text-[10px] text-muted-foreground" onClick={() => setViewLead(lead)}>{lead.company}</p>}
+        <div className="flex items-center gap-1.5 flex-wrap" onClick={() => setViewLead(lead)}>
+          {lead.source && <span className="text-[9px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded capitalize">{lead.source.replace('_',' ')}</span>}
+          {lead.contact && <span className="text-[9px] text-muted-foreground">{lead.contact}</span>}
+        </div>
+        {/* Mobile-friendly stage changer — works when drag-drop doesn't */}
+        <select
+          value={currentStage}
+          onChange={(e) => { e.stopPropagation(); moveLeadStage(lead._id, e.target.value); }}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full mt-1 text-[10px] bg-muted/40 border border-border rounded px-1.5 py-1 cursor-pointer"
+          title="Change stage"
+        >
+          {ALL_STAGES.map(s => <option key={s.key} value={s.key}>→ {s.label}</option>)}
+        </select>
       </div>
-      {lead.company && <p className="text-[10px] text-gray-500">{lead.company}</p>}
-      <div className="flex items-center gap-1.5 flex-wrap">
-        {lead.source && <span className="text-[9px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded capitalize">{lead.source.replace('_',' ')}</span>}
-        {lead.contact && <span className="text-[9px] text-gray-400">{lead.contact}</span>}
-      </div>
-    </div>
-  );
+    );
+  };
 
   // ── Kanban Column ─────────────────────────────────────────────────────────
   const Column = ({ stage }: { stage: typeof ALL_STAGES[number] }) => {
     const Icon = stage.icon;
     const items = byStage(stage.key);
     const stageValue = items.reduce((s, l) => s + (l.estimatedValue || 0), 0);
+    const isAdding = quickAddStage === stage.key;
     return (
       <div
-        className={`bg-card border-t-2 ${stage.color} border border-gray-100 rounded-2xl flex flex-col min-w-[195px] max-h-[calc(100vh-300px)] shadow-sm`}
+        className={`bg-card border-t-2 ${stage.color} border border-border rounded-xl flex flex-col min-w-[210px] w-full md:w-auto max-h-[calc(100vh-300px)] shadow-sm`}
         onDragOver={e => e.preventDefault()}
         onDrop={e => handleDrop(e, stage.key)}
       >
-        <div className="px-3 py-2.5 border-b border-gray-50">
+        <div className="px-3 py-2.5 border-b border-border">
           <div className="flex items-center gap-2">
-            <div className={`h-6 w-6 rounded-lg flex items-center justify-center ${stage.bg}`}>
+            <div className={`h-6 w-6 rounded-md flex items-center justify-center ${stage.bg}`}>
               <Icon className={`h-3.5 w-3.5 ${stage.text}`} />
             </div>
-            <p className="text-xs font-semibold text-gray-700 flex-1 truncate">{stage.label}</p>
+            <p className="text-xs font-semibold flex-1 truncate">{stage.label}</p>
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${stage.bg} ${stage.text}`}>{items.length}</span>
+            <button
+              onClick={() => { setQuickAddStage(isAdding ? null : stage.key); setQuickAddName(''); }}
+              className="h-5 w-5 rounded-md flex items-center justify-center text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+              title={`Add lead to ${stage.label}`}
+            >
+              <Plus className="h-3 w-3" />
+            </button>
           </div>
           {stageValue > 0 && (
-            <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-0.5">
+            <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-0.5">
               <IndianRupee className="h-2.5 w-2.5" />{stageValue.toLocaleString('en-IN')}
             </p>
           )}
         </div>
+        {/* Quick-add inline form — collapses when not in use */}
+        {isAdding && (
+          <div className="px-2 pt-2 space-y-1">
+            <input
+              autoFocus
+              value={quickAddName}
+              onChange={e => setQuickAddName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.preventDefault(); quickAddSubmit(stage.key); }
+                if (e.key === 'Escape') { setQuickAddStage(null); setQuickAddName(''); }
+              }}
+              placeholder="Name, phone, email…"
+              className="w-full px-2 py-1.5 bg-background border border-input rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => quickAddSubmit(stage.key)}
+                disabled={quickAddSaving || !quickAddName.trim()}
+                className="flex-1 h-7 rounded-md bg-primary text-primary-foreground text-[10px] font-semibold disabled:opacity-50 hover:bg-primary/90"
+              >
+                {quickAddSaving ? <Loader2 className="h-3 w-3 animate-spin mx-auto" /> : 'Add'}
+              </button>
+              <button
+                onClick={() => { setQuickAddStage(null); setQuickAddName(''); }}
+                className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted flex items-center justify-center"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+            <p className="text-[9px] text-muted-foreground/70 px-1">Tip: paste "name 9876543210 email@x.com" — auto-splits.</p>
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[100px]">
           <AnimatePresence initial={false}>
             {items.map(lead => (
@@ -221,10 +355,13 @@ export default function SalesDashboard() {
               </motion.div>
             ))}
           </AnimatePresence>
-          {items.length === 0 && (
-            <div className="h-14 flex items-center justify-center border-2 border-dashed border-gray-100 rounded-xl">
-              <p className="text-[10px] text-gray-300">Drop here</p>
-            </div>
+          {items.length === 0 && !isAdding && (
+            <button
+              onClick={() => { setQuickAddStage(stage.key); setQuickAddName(''); }}
+              className="h-14 w-full flex items-center justify-center border-2 border-dashed border-border rounded-lg text-[10px] text-muted-foreground hover:border-primary/40 hover:bg-primary/5 hover:text-primary transition-colors"
+            >
+              + Add lead here
+            </button>
           )}
         </div>
       </div>
