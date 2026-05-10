@@ -207,58 +207,26 @@ export default function EmployeeDashboard() {
           </div>
         </div>
 
-        {/* AI Morning Brief — Claude-generated personalized briefing */}
-        <AIMorningBrief />
-
-        {/* Today's meetings — only renders if user has any scheduled */}
-        <TodayMeetingsStrip />
-
-        {/* Active client meetings — anyone on the team can drop in */}
-        <ActiveClientMeetingsCard />
-
-        {/* Huddle entry point — one click to join voice + screen room */}
-        <HuddleDashboardCard />
-
-        {/* Meta Ads daily report — only renders for ads-team / admin */}
-        <MetaAdsCard />
-
-        {/* Team/role specific widget */}
-        {user?.team && <TeamRoleWidget team={user.team} tasks={tasks} />}
-
-        {/* Day-Start Gate Banner */}
+        {/* Day-start gate — slim inline strip when locked, replaces the
+            chunky banner that used to dominate the page. */}
         <AnimatePresence>
           {dayLocked && (
-            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-              className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-start gap-3">
-              <Info className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-amber-300">Add {3 - todayTasks.length} more task{3 - todayTasks.length !== 1 ? 's' : ''} to start your day</p>
-                <p className="text-xs text-amber-400/70 mt-0.5">You must plan at least 3 tasks for today before clocking in.</p>
-                <button onClick={() => setAddingTask(true)} className="mt-2 text-xs text-amber-400 underline">+ Add task now</button>
-              </div>
+            <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 flex items-center gap-2 text-xs">
+              <Info className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+              <p className="flex-1 text-amber-700">
+                Plan {3 - todayTasks.length} more task{3 - todayTasks.length !== 1 ? 's' : ''} before clocking in.
+              </p>
+              <button onClick={() => setAddingTask(true)}
+                className="text-amber-700 font-semibold underline hover:no-underline">
+                + Add task
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Notifications strip */}
-        {notifications.filter(n => !n.isRead).length > 0 && (
-          <div className="bg-primary/10 border border-primary/20 rounded-2xl p-3 space-y-1.5">
-            <p className="text-xs font-semibold text-primary">🔔 Unread notifications</p>
-            {notifications.filter(n => !n.isRead).slice(0, 3).map(n => (
-              <div key={n._id} className="flex items-start gap-2">
-                <Bell className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs font-medium">{n.title}</p>
-                  {n.message && <p className="text-xs text-muted-foreground">{n.message}</p>}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* KPI strip — confident numbers, hairline cards, accent-coded by urgency.
-            Open tasks is the one you act on every morning, so it gets the
-            primary teal treatment. Overdue gets red because it should bug you. */}
+        {/* KPI strip — moved UP to be directly under hero. The numbers are the
+            most important thing on the page; everything else is secondary. */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: 'Open tasks', value: todayTasks.length,   hint: `${tasks.filter(t => t.dueDate && isToday(new Date(t.dueDate)) && t.status !== 'done').length} due today`, dot: 'bg-primary',  num: 'text-primary',   icon: Target },
@@ -279,6 +247,48 @@ export default function EmployeeDashboard() {
             </div>
           ))}
         </div>
+
+        {/* Active sections — 2-column layout instead of stacked full-width cards.
+            Left column = AI Morning Brief (if it has content). Right column =
+            live status (huddle + today's meetings + active client meetings).
+            Cards that only render conditionally (Meta Ads, Team Role) sit
+            below in their own row so they don't push the layout around. */}
+        <div className="grid lg:grid-cols-3 gap-3">
+          <div className="lg:col-span-2">
+            <AIMorningBrief />
+          </div>
+          <div className="space-y-3">
+            <HuddleDashboardCard />
+            <TodayMeetingsStrip />
+            <ActiveClientMeetingsCard />
+          </div>
+        </div>
+
+        {/* Conditional: Meta Ads (only renders for ads/admin) */}
+        <MetaAdsCard />
+
+        {/* Conditional: team-specific role widget */}
+        {user?.team && <TeamRoleWidget team={user.team} tasks={tasks} />}
+
+        {/* Notifications — slim if any, hidden otherwise */}
+        {notifications.filter(n => !n.isRead).length > 0 && (
+          <div className="bg-primary/5 border border-primary/20 rounded-xl px-3 py-2 flex items-start gap-2">
+            <Bell className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] uppercase tracking-wider font-semibold text-primary">
+                {notifications.filter(n => !n.isRead).length} unread
+              </p>
+              <div className="space-y-0.5 mt-1">
+                {notifications.filter(n => !n.isRead).slice(0, 3).map(n => (
+                  <p key={n._id} className="text-xs">
+                    <span className="font-medium">{n.title}</span>
+                    {n.message && <span className="text-muted-foreground"> · {n.message}</span>}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Tasks (2/3) + Today rail (1/3) */}
         <div className="grid lg:grid-cols-3 gap-4">
