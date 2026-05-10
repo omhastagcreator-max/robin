@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { TrendingUp, IndianRupee, Eye, MousePointerClick, Target, AlertCircle, ArrowRight, Sparkles, Loader2 } from 'lucide-react';
 import * as api from '@/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 /**
  * MetaAdsCard
@@ -12,10 +13,29 @@ import * as api from '@/api';
  * impressions, clicks, CTR, conversions, ROAS. Server caches so
  * dashboard refreshes don't spam Meta's API.
  *
- * Visible only to: admin role / ads team primary / ads in teams[] —
- * the server's role gate (requireMetaAccess) returns 403 to anyone
- * else and we show nothing.
+ * Visible ONLY to:
+ *   - admin role (primary or in roles[])
+ *   - users whose primary team is 'meta' or 'ads'
+ *   - users whose teams[] includes 'meta' or 'ads'
+ *
+ * We gate this CLIENT-SIDE before making any API call so non-eligible
+ * users (sales, client, plain employees) don't even see the empty state
+ * flash, don't waste a Render request, and the card simply doesn't exist
+ * for them. The server's requireMetaAccess gate is still the source of
+ * truth — this is just a UI guard that mirrors it.
  */
+const ELIGIBLE_TEAMS = ['meta', 'ads'];
+
+function userHasMetaAccess(user: any): boolean {
+  if (!user) return false;
+  // Admin always wins
+  if (user.role === 'admin' || (user.roles || []).includes('admin')) return true;
+  // Primary team match
+  if (user.team && ELIGIBLE_TEAMS.includes(user.team)) return true;
+  // Multi-team match
+  if (Array.isArray(user.teams) && user.teams.some((t: string) => ELIGIBLE_TEAMS.includes(t))) return true;
+  return false;
+}
 
 interface Metrics {
   dateStart: string;
@@ -40,18 +60,22 @@ const fmtPct = (n?: number | null) => `${safe(n).toFixed(2)}%`;
 type Window = 'today' | 'yesterday';
 
 export function MetaAdsCard() {
+  const { user } = useAuth();
+  const hasAccess = userHasMetaAccess(user);
+
   const [view, setView] = useState<Window>('today');
   const [today, setToday] = useState<Metrics | null>(null);
   const [yesterday, setYesterday] = useState<Metrics | null>(null);
   const [accountName, setAccountName] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [forbidden, setForbidden] = useState(false);
   const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
 
   // Pull both today + yesterday so the toggle is instant. Today auto-refreshes
   // every 60s — Meta surfaces in-day stats with a small lag (5–15 min).
   useEffect(() => {
+    // Don't even hit the API if the user can't see this card.
+    if (!hasAccess) { setLoading(false); return; }
     let cancelled = false;
     const load = async () => {
       try {
@@ -70,9 +94,7 @@ export function MetaAdsCard() {
         setRefreshedAt(new Date());
       } catch (e: any) {
         if (cancelled) return;
-        const status = e?.response?.status;
-        if (status === 403) setForbidden(true);
-        else setError(e?.response?.data?.error || 'Could not load Meta Ads');
+        setError(e?.response?.data?.error || 'Could not load Meta Ads');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -80,13 +102,12 @@ export function MetaAdsCard() {
     load();
     const interval = setInterval(load, 60_000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, []);
+  }, [hasAccess]);
 
   const metrics = view === 'today' ? today : yesterday;
 
-  // Don't render anything if user doesn't have access (cleaner than showing
-  // a "you can't see this" card on every dashboard for non-ads users).
-  if (forbidden) return null;
+  // No access → render nothing at all. No flash, no empty state, no card.
+  if (!hasAccess) return null;
 
   return (
     <motion.div

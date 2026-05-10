@@ -51,9 +51,10 @@ function LoginInner() {
     setLoading(false);
 
     if (error) {
-      const isNetwork = error.toLowerCase().includes('network') || error === 'Login failed';
-      setErrMsg(isNetwork ? 'Unable to reach server. Please try again in a moment.' : error);
-      toast.error(isNetwork ? 'Network error — server may be starting up, try again in 10s' : error);
+      const safe = String(error || '');
+      const isNetwork = safe.toLowerCase().includes('network') || safe === 'Login failed';
+      setErrMsg(isNetwork ? 'Unable to reach server. Please try again in a moment.' : safe);
+      toast.error(isNetwork ? 'Network error — server may be starting up, try again in 10s' : safe);
       return;
     }
     navigate(dashboardForRole(role), { replace: true });
