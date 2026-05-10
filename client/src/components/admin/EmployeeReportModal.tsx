@@ -153,16 +153,16 @@ function StatCard({ icon: Icon, label, value, color }: { icon: any; label: strin
 function TimeCard({ icon: Icon, label, ms, color }: { icon: any; label: string; ms: number; color: string }) {
   const d = formatDuration(ms);
   return (
-    <div className="bg-card border border-border rounded-2xl p-3 flex items-center gap-2.5">
-      <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
-        <Icon className="h-4 w-4" />
+    <div className="bg-card border border-border rounded-xl p-2.5 flex items-center gap-2">
+      <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${color}`}>
+        <Icon className="h-3.5 w-3.5" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-xl sm:text-2xl font-bold tabular-nums leading-none whitespace-nowrap">
-          {d.value}<span className="text-xs sm:text-sm font-medium text-muted-foreground">{d.unit}</span>
+        <p className="text-base sm:text-lg font-bold tabular-nums leading-none whitespace-nowrap">
+          {d.value}<span className="text-[10px] sm:text-xs font-medium text-muted-foreground">{d.unit}</span>
         </p>
-        {/* No truncate — let label wrap to two lines if needed (e.g. "Working\nhours") */}
-        <p className="text-[11px] text-muted-foreground mt-1 leading-tight">{label}</p>
+        {/* No truncate — wrap to two lines if needed (e.g. "Working\nhours") */}
+        <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{label}</p>
       </div>
     </div>
   );
