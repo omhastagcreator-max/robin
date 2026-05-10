@@ -100,7 +100,7 @@ export function SessionTopBar() {
   const statusLabel = !session
     ? 'Logged out'
     : isActive
-      ? 'Logged in'
+      ? 'Working'
       : 'On break';
 
   return (
