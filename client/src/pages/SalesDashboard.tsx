@@ -5,13 +5,14 @@ import {
   Phone, UserCheck, Calendar, Presentation, CheckCheck,
   TrendingUp, Repeat, Flame, ChefHat, Trophy, XCircle,
   Plus, IndianRupee, Loader2, X, Users, Bell, BadgeCheck,
-  AlertCircle, Clock, Building2, LayoutDashboard, ChevronDown
+  AlertCircle, Clock, Building2, LayoutDashboard, ChevronDown, List, Search, Sheet,
 } from 'lucide-react';
 import * as api from '@/api';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { SessionClockCard } from '@/components/shared/SessionClockCard';
 import { SheetConnectCard } from '@/components/dashboard/SheetConnectCard';
+import { LeadListView } from '@/components/dashboard/LeadListView';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 
 // ── Stage Config ──────────────────────────────────────────────────────────────
@@ -60,7 +61,7 @@ function parseContactBlob(blob: string): { name: string; phone?: string; email?:
   };
 }
 
-type Tab = 'pipeline' | 'clients' | 'won';
+type Tab = 'pipeline' | 'list' | 'clients' | 'won';
 
 export default function SalesDashboard() {
   const [tab, setTab]         = useState<Tab>('pipeline');
@@ -591,6 +592,7 @@ export default function SalesDashboard() {
         <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
           {([
             ['pipeline', 'Pipeline', LayoutDashboard],
+            ['list',     'All leads · list', List],
             ['clients',  'Clients',  Building2],
             ['won',      'Won Deals', Trophy],
           ] as const).map(([key, label, Icon]) => (
@@ -671,6 +673,17 @@ export default function SalesDashboard() {
                   </div>
                 </div>
               </div>
+            )}
+
+            {/* ── LIST VIEW ── one row per lead, stage clearly visible.
+                Designed for "where is X right now?" scanning. Searchable. */}
+            {tab === 'list' && (
+              <LeadListView
+                leads={leads}
+                onView={(l) => setViewLead(l)}
+                onMove={(id, stage) => moveLeadStage(id, stage)}
+                stageMeta={ALL_STAGES}
+              />
             )}
 
             {/* ── CLIENTS TAB ── */}

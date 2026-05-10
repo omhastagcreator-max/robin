@@ -32,6 +32,8 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/admin/projects',   label: 'Projects',     icon: Briefcase,       roles: ['admin'] },
   { to: '/admin/employees',  label: 'Employees',    icon: Users,           roles: ['admin'] },
   { to: '/admin/clients',    label: 'Clients',      icon: Building2,       roles: ['admin'] },
+  // Sales CRM — admin can view + manage leads alongside the sales team
+  { to: '/sales',            label: 'Sales CRM',    icon: BarChart2,       roles: ['admin'] },
   { to: '/admin/reports',    label: 'Reports',      icon: BarChart2,       roles: ['admin'] },
   { to: '/admin/leaves',     label: 'Leave Approvals', icon: CalendarOff,  roles: ['admin'] },
   { to: '/admin/attendance', label: 'Attendance',      icon: Clock,        roles: ['admin'] },
