@@ -3,36 +3,43 @@
 @tailwind utilities;
 
 /*
- * Robin theme v2 — moved away from the default cool-violet palette that
- * gave the app an obvious "AI generated" feel. New palette:
- *   • Background — warm bone (slight cream tint, not cold blue-white)
- *   • Foreground — warm ink (deep charcoal with a hint of brown, not cool navy)
- *   • Primary    — confident coral-orange (a real brand colour, not lavender)
- *   • Accent     — forest emerald for success / positive metrics
- *   • Border     — hairline warm grey, not cool grey
+ * Robin "Robin's-Egg" theme — a brand-anchored palette built around the name.
  *
- * Numbers are HSL because shadcn-style components compose them as
- * hsl(var(--primary) / 0.5) for opacity. Don't switch to hex.
+ * Primary       Deep teal (#155F5A-ish) — robin's-egg blue dialled to a
+ *               serious/premium tone. Distinctive: most SaaS uses generic
+ *               blue/violet, very few pick teal.
+ * Accent        Saffron gold — culturally Indian, contrasts the teal cleanly,
+ *               reads as "premium" not "playful".
+ * Background    Bone cream — warm off-white, never the cold blue-grey
+ *               "Tailwind default" look.
+ * Foreground    Deep charcoal with the slightest blue tint — softer on eyes
+ *               than pure black, sharper than navy.
+ * Border        Hairline warm grey to keep everything calm.
+ *
+ * Why this is "the brand" — it pairs (a) the literal robin's-egg colour
+ * association of the product name with (b) saffron, the most recognisable
+ * Indian colour signal. Together: Indian agency tooling, considered.
  */
 :root {
-  --background:          30 25% 97%;        /* warm bone */
-  --foreground:          222 12% 14%;       /* warm ink */
-  --card:                0 0% 100%;         /* pure white cards */
-  --card-foreground:     222 12% 14%;
+  --background:          36 30% 97%;        /* bone cream */
+  --foreground:          218 20% 14%;       /* deep charcoal-ink */
+  --card:                0 0% 100%;
+  --card-foreground:     218 20% 14%;
   --popover:             0 0% 100%;
-  --popover-foreground:  222 12% 14%;
-  --border:              28 12% 88%;        /* warm hairline */
-  --input:               28 12% 88%;
-  --primary:             14 88% 54%;        /* confident coral-orange */
-  --primary-foreground:  30 25% 98%;
-  --muted:               30 18% 94%;        /* cream-grey */
-  --muted-foreground:    222 8% 42%;        /* warm mid-grey */
-  --accent:              158 50% 32%;       /* forest emerald */
-  --accent-foreground:   0 0% 100%;
-  --ring:                14 88% 54%;        /* matches primary for focus rings */
+  --popover-foreground:  218 20% 14%;
+  --border:              35 14% 87%;
+  --input:               35 14% 87%;
+  --primary:             178 65% 26%;       /* deep teal — Robin's egg */
+  --primary-foreground:  36 30% 98%;
+  --muted:               36 22% 93%;
+  --muted-foreground:    218 8% 40%;
+  --accent:              38 88% 52%;        /* saffron gold */
+  --accent-foreground:   218 20% 14%;
+  --ring:                178 65% 26%;
   --destructive:         358 65% 50%;
-  --success:             158 50% 32%;       /* match accent — one less colour to track */
-  --warning:             32 95% 50%;
+  --success:             158 50% 32%;
+  --warning:             38 88% 52%;        /* matches accent — one less colour to track */
+  --radius:              0.625rem;          /* slightly less round than default */
   color-scheme: light;
 }
 
@@ -42,17 +49,12 @@ body {
   margin: 0;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
-  /* System font stack first — feels more native than always-Inter on every device.
-     Inter is still the design baseline for Figma / docs, but on Linux/Windows
-     the system font often looks sharper at small sizes. */
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Slightly tightened default tracking — feels less "default Tailwind" */
   letter-spacing: -0.005em;
 }
 
-/* Headings get tighter tracking still — the "real product" tell */
 h1, h2, h3 { letter-spacing: -0.02em; }
 
 /* Scrollbar */
@@ -61,16 +63,14 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.4); }
 
-/* Selection — picks up the brand colour instead of OS default blue */
+/* Selection — picks up the brand colour */
 ::selection {
   background: hsl(var(--primary) / 0.18);
   color: hsl(var(--foreground));
 }
 
 /* Page animation */
-.page-transition-enter {
-  animation: fadeSlideIn 0.2s ease forwards;
-}
+.page-transition-enter { animation: fadeSlideIn 0.2s ease forwards; }
 @keyframes fadeSlideIn {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -82,14 +82,14 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .bg-muted       { background: hsl(var(--muted)); }
 .bg-primary     { background: hsl(var(--primary)); }
 .bg-accent      { background: hsl(var(--accent)); }
-.text-foreground     { color: hsl(var(--foreground)); }
-.text-muted-foreground { color: hsl(var(--muted-foreground)); }
-.text-primary    { color: hsl(var(--primary)); }
+.text-foreground         { color: hsl(var(--foreground)); }
+.text-muted-foreground   { color: hsl(var(--muted-foreground)); }
+.text-primary            { color: hsl(var(--primary)); }
 .text-primary-foreground { color: hsl(var(--primary-foreground)); }
-.text-accent     { color: hsl(var(--accent)); }
-.text-accent-foreground { color: hsl(var(--accent-foreground)); }
-.text-destructive { color: hsl(var(--destructive)); }
-.border-border   { border-color: hsl(var(--border)); }
-.border-input    { border-color: hsl(var(--input)); }
-.ring-ring       { --tw-ring-color: hsl(var(--ring)); }
+.text-accent             { color: hsl(var(--accent)); }
+.text-accent-foreground  { color: hsl(var(--accent-foreground)); }
+.text-destructive        { color: hsl(var(--destructive)); }
+.border-border  { border-color: hsl(var(--border)); }
+.border-input   { border-color: hsl(var(--input)); }
+.ring-ring      { --tw-ring-color: hsl(var(--ring)); }
 .focus\:ring-ring:focus { --tw-ring-color: hsl(var(--ring)); }

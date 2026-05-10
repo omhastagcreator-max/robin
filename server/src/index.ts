@@ -32,6 +32,7 @@ import queriesRoutes      from './routes/queries';
 import adReportsRoutes    from './routes/adReports';
 import influencerRoutes   from './routes/influencers';
 import seedRoutes         from './routes/seed';
+import errorLogRoutes     from './routes/errorLogs';
 import credentialsRoutes  from './routes/credentials';
 import leavesRoutes       from './routes/leaves';
 import huddleRoutes       from './routes/huddle';
@@ -363,6 +364,7 @@ app.use('/api/ads/meta',        metaAdsRoutes);    // includes /share, /shares (
 app.use('/api/meetings',        meetingsRoutes);
 app.use('/api/client-meetings', clientMeetingsRoutes);  // host endpoints
 app.use('/api/seed',            seedRoutes);
+app.use('/api/logs',            errorLogRoutes);
 
 // ── 404 + Error handler ───────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));

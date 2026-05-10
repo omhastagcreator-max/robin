@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import User from '../models/User';
+import Organization from '../models/Organization';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -36,6 +37,25 @@ export async function authMiddleware(
     const user = await User.findById(userId).select('email name role roles team teams organizationId');
     if (!user) { res.status(401).json({ error: 'User not found' }); return; }
 
+    // SAFETY NET — legacy users without an organizationId would otherwise hit
+    // 400 "No organization" on every endpoint after the org-isolation pass.
+    // Auto-attach them to the first existing org (the agency) and persist,
+    // so this only happens once per stranded account.
+    let orgId = user.organizationId ? String(user.organizationId) : undefined;
+    if (!orgId) {
+      try {
+        const fallback = await Organization.findOne().sort({ createdAt: 1 }).select('_id').lean();
+        if (fallback?._id) {
+          user.organizationId = fallback._id;
+          await user.save();
+          orgId = String(fallback._id);
+          console.warn('[auth] auto-attached user to default org', { userId: String(user._id), email: user.email, orgId });
+        }
+      } catch (e) {
+        console.error('[auth] failed to auto-attach org', e);
+      }
+    }
+
     req.user = {
       id:             String(user._id),
       email:          user.email,
@@ -44,7 +64,7 @@ export async function authMiddleware(
       team:           user.team ?? '',
       teams:          (user as any).teams || [],
       roles:          (user as any).roles || [],
-      organizationId: user.organizationId ? String(user.organizationId) : undefined,
+      organizationId: orgId,
     };
     next();
   } catch {
