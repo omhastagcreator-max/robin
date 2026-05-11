@@ -94,6 +94,11 @@ api.interceptors.response.use(
         }
       } else if (status === 429) {
         toast.error('Too many requests — please slow down.', { id: 'net-429' });
+      } else if (status === 403) {
+        // Don't toast role/permission errors — they're system-level, not
+        // user-facing. Almost always means the user is on a page they
+        // shouldn't be (route guard about to redirect) or a background
+        // poll for a feature they don't have access to. Silent.
       } else if (status && status >= 500) {
         // Silent — auto-retry already handled this. If we got here all 5
         // retries failed (~22s). Show a calmer message instead of "hiccup".
