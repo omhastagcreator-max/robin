@@ -1,10 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Eye, MousePointerClick, Target, ShoppingCart, IndianRupee, Award,
   TrendingUp, TrendingDown, AlertTriangle, Sparkles, Flame, Snowflake,
   PlayCircle, Zap, ArrowUpRight, ArrowDownRight, Megaphone, Users,
-  Layers, Activity, BadgeCheck, Lightbulb,
+  Layers, Activity, BadgeCheck, Lightbulb, Pause, FlaskConical, Rocket, Wrench,
+  ChevronDown, ChevronRight, ArrowUpDown,
 } from 'lucide-react';
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar,
@@ -435,6 +436,11 @@ export function BrandGrowthVisualization({ totals, daily, campaigns, accountName
         </div>
       )}
 
+      {/* ── 5b. EVERY CAMPAIGN — diagnosis + insights per row ─────── */}
+      {campaigns.length > 0 && (
+        <CampaignBreakdown campaigns={campaigns} accountSpend={spend} />
+      )}
+
       {/* ── 6. SMART INSIGHTS ───────────────────────────────────────── */}
       <Section title="What to do next" subtitle="Rule-based callouts based on your numbers vs D2C benchmarks">
         <div className="space-y-2">
@@ -573,6 +579,282 @@ function RankingPill({ label, value }: { label: string; value?: string }) {
     <div className={`rounded-xl border p-3 ${tone}`}>
       <p className="text-[10px] uppercase tracking-wider font-semibold opacity-80">{label}</p>
       <p className="text-sm font-bold capitalize mt-0.5">{value.replace(/_/g, ' ').toLowerCase()}</p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CampaignBreakdown — every campaign with stage diagnosis, KPI strip, and
+// 1-line action recommendation. The point: a founder/admin should be able
+// to scan this once and know which campaigns to scale, optimize, or pause.
+// ─────────────────────────────────────────────────────────────────────────
+
+type Action = 'scale' | 'optimize' | 'pause' | 'test' | 'monitor';
+
+const ACTION_META: Record<Action, { label: string; tone: string; icon: any }> = {
+  scale:    { label: 'Scale',    tone: 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30', icon: Rocket },
+  optimize: { label: 'Optimize', tone: 'bg-blue-500/15    text-blue-700    border-blue-500/30',    icon: Wrench },
+  pause:    { label: 'Pause',    tone: 'bg-red-500/15     text-red-700     border-red-500/30',     icon: Pause },
+  test:     { label: 'Test more',tone: 'bg-amber-500/15   text-amber-700   border-amber-500/30',   icon: FlaskConical },
+  monitor:  { label: 'Monitor',  tone: 'bg-muted          text-foreground  border-border',         icon: Activity },
+};
+
+/**
+ * Diagnose a single campaign — produces an Action verdict + 1-3 short
+ * insight strings. Heuristics chosen to match what a media buyer would say
+ * while looking at the same row in Ads Manager.
+ */
+function diagnoseCampaign(c: CampaignLike, accountSpend: number) {
+  const sp   = safe(c.spend);
+  const ros  = safe(c.roas);
+  const ctr  = safe(c.ctr);
+  const freq = safe(c.frequency) || (safe(c.reach) ? safe(c.impressions) / safe(c.reach) : 0);
+  const cpa  = safe(c.purchases || c.conversions) ? sp / safe(c.purchases || c.conversions) : safe(c.costPerPurchase);
+  const purchases = safe(c.purchases || c.conversions);
+  const lpv  = safe(c.landingPageViews);
+  const clicks = safe(c.inlineLinkClicks || c.clicks);
+  const lpvRate = clicks ? (lpv / clicks) * 100 : 0;
+  const spendShare = accountSpend ? (sp / accountSpend) * 100 : 0;
+
+  const insights: string[] = [];
+  let action: Action = 'monitor';
+
+  // Hard pause conditions first — these override anything else.
+  if (sp > 500 && purchases === 0 && lpv > 30) {
+    insights.push('Spending without conversions — pause and audit the Pixel + offer.');
+    action = 'pause';
+  } else if (ros && ros < 1.0 && sp > 1000) {
+    insights.push(`ROAS ${ros.toFixed(2)}x is below break-even — pause unless this is a top-of-funnel awareness play.`);
+    action = 'pause';
+  } else if (freq >= 4) {
+    insights.push(`Frequency ${freq.toFixed(1)} — audience is fatigued. Refresh creative or expand the audience.`);
+    action = 'optimize';
+  } else if (ros >= 4) {
+    insights.push(`Top-tier ROAS — increase daily budget by 20-30% and watch CPA over 3-5 days.`);
+    action = 'scale';
+  } else if (ros >= 2.5 && spendShare < 15) {
+    insights.push(`Healthy ROAS but underspending (${spendShare.toFixed(0)}% of total). Scale this campaign first.`);
+    action = 'scale';
+  } else if (ros >= 1.8) {
+    action = 'optimize';
+    if (lpvRate && lpvRate < 50) insights.push(`Only ${lpvRate.toFixed(0)}% of clickers reach the landing page — fix page speed or broken redirect first.`);
+    else if (ctr && ctr < 1.0)   insights.push(`Low CTR (${ctr.toFixed(2)}%) — test new hook frames and ad copy.`);
+    else                         insights.push('Workable economics — small creative + audience iterations should push it past 3x.');
+  } else if (sp < 500) {
+    insights.push('Not enough spend yet — let it run another 2-3 days before judging.');
+    action = 'test';
+  } else {
+    insights.push(`ROAS ${ros.toFixed(2)}x is in the no-mans-land — either commit (more spend) or kill it.`);
+    action = 'optimize';
+  }
+
+  // Secondary insight — useful for color regardless of primary verdict.
+  if (action !== 'pause') {
+    if (freq > 2.5 && freq < 4 && !insights.some(i => i.includes('Frequency'))) {
+      insights.push(`Frequency creeping up (${freq.toFixed(1)}) — plan a creative refresh in the next 7-10 days.`);
+    } else if (ctr && ctr > 2.5 && !insights.some(i => i.includes('CTR'))) {
+      insights.push(`Strong CTR (${ctr.toFixed(2)}%) — document the hook and brief the next batch around it.`);
+    } else if (cpa && cpa > 0 && purchases > 5 && !insights.some(i => i.includes('CPA'))) {
+      insights.push(`CPA at ₹${cpa.toFixed(0)} across ${purchases} sales — stable enough to project monthly returns.`);
+    }
+  }
+
+  return { action, insights, sp, ros, ctr, freq, cpa, purchases, spendShare };
+}
+
+type SortKey = 'spend' | 'roas' | 'ctr' | 'frequency' | 'cpa' | 'purchases';
+
+function CampaignBreakdown({ campaigns, accountSpend }: { campaigns: CampaignLike[]; accountSpend: number }) {
+  const [sortKey, setSortKey]   = useState<SortKey>('spend');
+  const [filterAction, setFilterAction] = useState<Action | 'all'>('all');
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  // Diagnose every campaign once, then sort + filter.
+  const diagnosed = useMemo(() => {
+    return campaigns
+      .filter(c => safe(c.spend) > 0)
+      .map(c => ({ campaign: c, diag: diagnoseCampaign(c, accountSpend) }));
+  }, [campaigns, accountSpend]);
+
+  const filtered = useMemo(() => {
+    const list = filterAction === 'all'
+      ? diagnosed
+      : diagnosed.filter(x => x.diag.action === filterAction);
+    return [...list].sort((a, b) => {
+      switch (sortKey) {
+        case 'spend':     return b.diag.sp  - a.diag.sp;
+        case 'roas':      return b.diag.ros - a.diag.ros;
+        case 'ctr':       return b.diag.ctr - a.diag.ctr;
+        case 'frequency': return b.diag.freq - a.diag.freq;
+        case 'cpa':       return (a.diag.cpa || Infinity) - (b.diag.cpa || Infinity);
+        case 'purchases': return b.diag.purchases - a.diag.purchases;
+      }
+    });
+  }, [diagnosed, sortKey, filterAction]);
+
+  // Action counts for the filter pills.
+  const actionCounts = useMemo(() => {
+    const c: Record<Action | 'all', number> = { all: diagnosed.length, scale: 0, optimize: 0, pause: 0, test: 0, monitor: 0 };
+    diagnosed.forEach(x => { c[x.diag.action]++; });
+    return c;
+  }, [diagnosed]);
+
+  return (
+    <Section
+      title={`Per-campaign · ${diagnosed.length}`}
+      subtitle="Each campaign diagnosed against benchmarks — verdict, KPIs, and one-line next step"
+    >
+      {/* Filter + sort controls */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        {/* Action filter pills */}
+        {(['all', 'scale', 'optimize', 'pause', 'test', 'monitor'] as const).map(a => {
+          if (a !== 'all' && actionCounts[a] === 0) return null;
+          const meta = a === 'all' ? null : ACTION_META[a];
+          const Icon = meta?.icon;
+          return (
+            <button key={a} onClick={() => setFilterAction(a)}
+              className={`h-7 px-2.5 text-[11px] font-semibold rounded-full border flex items-center gap-1 transition-colors ${
+                filterAction === a
+                  ? a === 'all' ? 'bg-foreground text-background border-foreground' : meta!.tone
+                  : 'bg-card border-border text-muted-foreground hover:text-foreground'
+              }`}>
+              {Icon && <Icon className="h-3 w-3" />}
+              {a === 'all' ? 'All' : meta!.label}
+              <span className="opacity-70">{actionCounts[a]}</span>
+            </button>
+          );
+        })}
+        {/* Sort dropdown */}
+        <div className="ml-auto flex items-center gap-1 text-[11px]">
+          <ArrowUpDown className="h-3 w-3 text-muted-foreground" />
+          <span className="text-muted-foreground">Sort:</span>
+          <select
+            value={sortKey}
+            onChange={e => setSortKey(e.target.value as SortKey)}
+            className="bg-background border border-input rounded-md px-2 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="spend">Spend (high → low)</option>
+            <option value="roas">ROAS (high → low)</option>
+            <option value="ctr">CTR (high → low)</option>
+            <option value="frequency">Frequency (high → low)</option>
+            <option value="cpa">CPA (low → high)</option>
+            <option value="purchases">Purchases (high → low)</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Campaign rows */}
+      {filtered.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-6 text-center">No campaigns match this filter.</p>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map(({ campaign: c, diag }) => {
+            const meta   = ACTION_META[diag.action];
+            const ActionIcon = meta.icon;
+            const isOpen = !!expanded[c.campaignId];
+            return (
+              <div key={c.campaignId} className="rounded-xl border border-border bg-background hover:border-primary/30 transition-colors">
+                <button
+                  onClick={() => setExpanded(p => ({ ...p, [c.campaignId]: !p[c.campaignId] }))}
+                  className="w-full px-3 py-2.5 flex items-start gap-3 text-left"
+                >
+                  {/* Action badge — the single most important thing in the row */}
+                  <div className={`shrink-0 h-8 w-8 rounded-lg border flex items-center justify-center ${meta.tone}`}>
+                    <ActionIcon className="h-4 w-4" />
+                  </div>
+
+                  {/* Name + spend share + first insight */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold truncate">{c.campaignName}</p>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide border ${meta.tone}`}>
+                        {meta.label}
+                      </span>
+                      {diag.spendShare >= 25 && (
+                        <span className="text-[9px] font-semibold text-amber-700 bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded uppercase tracking-wide">
+                          {diag.spendShare.toFixed(0)}% of budget
+                        </span>
+                      )}
+                    </div>
+                    {diag.insights[0] && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{diag.insights[0]}</p>
+                    )}
+                  </div>
+
+                  {/* KPI strip — compact 5-cell row */}
+                  <div className="hidden sm:grid grid-cols-5 gap-2 shrink-0 text-right">
+                    <KpiCell label="Spend" value={fmtINR(diag.sp)} />
+                    <KpiCell label="ROAS"  value={diag.ros ? fmtMul(diag.ros) : '—'}
+                      tone={diag.ros >= 3 ? 'good' : diag.ros >= 1.5 ? 'ok' : diag.ros > 0 ? 'poor' : 'muted'} />
+                    <KpiCell label="CTR"   value={diag.ctr ? fmtPct(diag.ctr) : '—'}
+                      tone={diag.ctr >= 1.5 ? 'good' : diag.ctr >= 0.8 ? 'ok' : diag.ctr > 0 ? 'poor' : 'muted'} />
+                    <KpiCell label="Freq"  value={diag.freq ? `${diag.freq.toFixed(1)}x` : '—'}
+                      tone={diag.freq < 2 ? 'good' : diag.freq < 3 ? 'ok' : 'poor'} />
+                    <KpiCell label="CPA"   value={diag.cpa ? fmtINR(diag.cpa) : '—'}
+                      tone={diag.cpa && diag.cpa < 500 ? 'good' : diag.cpa && diag.cpa < 1500 ? 'ok' : diag.cpa ? 'poor' : 'muted'} />
+                  </div>
+
+                  {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
+                          : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />}
+                </button>
+
+                {/* Expanded detail */}
+                {isOpen && (
+                  <div className="border-t border-border bg-muted/10 px-3 py-3 space-y-2">
+                    {/* All insights */}
+                    {diag.insights.length > 0 && (
+                      <div className="space-y-1.5">
+                        {diag.insights.map((ins, i) => (
+                          <div key={i} className="flex items-start gap-2 text-[12px]">
+                            <Lightbulb className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
+                            <p>{ins}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Mobile KPIs (hidden on sm+ since the row already shows them) */}
+                    <div className="grid grid-cols-3 sm:hidden gap-2 pt-1">
+                      <KpiCell label="Spend" value={fmtINR(diag.sp)} />
+                      <KpiCell label="ROAS"  value={diag.ros ? fmtMul(diag.ros) : '—'} />
+                      <KpiCell label="CTR"   value={diag.ctr ? fmtPct(diag.ctr) : '—'} />
+                      <KpiCell label="Freq"  value={diag.freq ? `${diag.freq.toFixed(1)}x` : '—'} />
+                      <KpiCell label="CPA"   value={diag.cpa ? fmtINR(diag.cpa) : '—'} />
+                      <KpiCell label="Sales" value={fmtNum(diag.purchases)} />
+                    </div>
+
+                    {/* Secondary numbers row — purchases, revenue, frequency */}
+                    <div className="hidden sm:flex items-center gap-3 pt-1 text-[11px] text-muted-foreground">
+                      <span><strong className="text-foreground">{fmtNum(diag.purchases)}</strong> sales</span>
+                      <span>·</span>
+                      <span><strong className="text-foreground">{fmtINR(safe(c.conversionValue))}</strong> revenue</span>
+                      <span>·</span>
+                      <span><strong className="text-foreground">{fmtNum(safe(c.landingPageViews))}</strong> landing-page views</span>
+                      <span>·</span>
+                      <span><strong className="text-foreground">{fmtNum(safe(c.addToCart))}</strong> add-to-carts</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function KpiCell({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'good' | 'ok' | 'poor' | 'muted' }) {
+  const valueClass =
+    tone === 'good' ? 'text-emerald-700' :
+    tone === 'ok'   ? 'text-amber-700' :
+    tone === 'poor' ? 'text-red-700' :
+    tone === 'muted' ? 'text-muted-foreground' :
+    'text-foreground';
+  return (
+    <div className="min-w-[56px]">
+      <p className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground">{label}</p>
+      <p className={`text-xs font-bold tabular-nums leading-tight ${valueClass}`}>{value}</p>
     </div>
   );
 }
