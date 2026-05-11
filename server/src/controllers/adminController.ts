@@ -111,14 +111,28 @@ export async function deactivateUser(req: AuthRequest, res: Response): Promise<v
 }
 
 // PUT /api/admin/users/:id/reset-password
+//
+// Admin sets a new password for any user in THEIR organization. Org-scoped
+// so an admin from agency A can't reset agency B's users. The User model's
+// pre-save hook auto-hashes plaintext passwords, so we just assign and save.
 export async function resetUserPassword(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const { newPassword = 'Robin2024!' } = req.body;
-    const user = await User.findById(req.params.id);
+    // Org-scope: actor's org === target's org
+    const actor = await User.findById(req.user!.id).select('organizationId').lean();
+    const orgId = actor?.organizationId;
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    const user = await User.findOne({ _id: req.params.id, organizationId: orgId });
     if (!user) { res.status(404).json({ error: 'User not found' }); return; }
-    user.passwordHash = newPassword;
+
+    const { newPassword: provided } = req.body || {};
+    const newPassword = (provided && String(provided).trim().length >= 6)
+      ? String(provided).trim()
+      : 'Robin2024!';   // safe default if admin didn't pick one
+
+    user.passwordHash = newPassword;   // pre-save hook bcrypts it
     await user.save();
-    res.json({ message: 'Password reset', newPassword });
+    res.json({ message: `Password reset for ${user.name || user.email}`, newPassword, email: user.email });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 

@@ -48,6 +48,10 @@ export const listUsers   = (params?: Record<string, unknown>) => api.get('/users
 export const getUserById = (id: string)                        => api.get(`/users/${id}`).then(r => r.data);
 export const updateUser  = (id: string, d: Record<string, unknown>) => api.put(`/users/${id}`, d).then(r => r.data);
 export const deleteUser  = (id: string)                        => api.delete(`/users/${id}`).then(r => r.data);
+// Admin resets any user's password. If newPassword is omitted, the server
+// generates a random one and returns it for the admin to share.
+export const adminResetPassword = (id: string, newPassword?: string) =>
+  api.post(`/users/${id}/reset-password`, { newPassword }).then(r => r.data);
 
 // ── Projects ──────────────────────────────────────────────────────────────────
 export const listProjects        = ()                                      => api.get('/projects').then(r => r.data);

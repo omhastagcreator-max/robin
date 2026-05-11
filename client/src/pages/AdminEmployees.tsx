@@ -72,8 +72,22 @@ export default function AdminEmployees() {
   };
 
   const resetPw = async (id: string, name: string) => {
-    const resp = await api.adminResetPass(id);
-    toast.success(`Password reset for ${name}: ${resp.newPassword}`, { duration: 8000 });
+    const entered = window.prompt(
+      `Set new password for ${name}.\n\nType the password you want, or leave blank to use the safe default "Robin2024!".`,
+      ''
+    );
+    if (entered === null) return; // user clicked cancel
+    const trimmed = entered.trim();
+    if (trimmed && trimmed.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+    try {
+      const resp = await api.adminResetPass(id, trimmed || undefined);
+      toast.success(`Password set for ${name}: ${resp.newPassword}`, { duration: 12000 });
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Reset failed');
+    }
   };
 
   const changeRole = async (id: string, role: string) => {

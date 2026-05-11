@@ -121,3 +121,52 @@ export async function deleteUser(req: AuthRequest, res: Response): Promise<void>
     res.json({ message: 'User deactivated' });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
+
+/**
+ * POST /api/users/:id/reset-password  (admin only, org-scoped)
+ * Body: { newPassword?: string }   — if omitted, a random one is generated
+ *
+ * Used when someone forgets their password and admin wants to set a new one.
+ * Hashes via bcrypt directly (bypassing Mongoose middleware would store
+ * plaintext — that's why we don't use findOneAndUpdate here).
+ *
+ * Returns the new password so the admin can share it with the user. The
+ * user should change it on first login (we'll add a "must reset" flag in
+ * a future pass).
+ */
+export async function adminResetPassword(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    if (req.user!.role !== 'admin') {
+      res.status(403).json({ error: 'Admin only' });
+      return;
+    }
+    const orgId = await getActorOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'Your account is not linked to an organization.' }); return; }
+
+    const target = await User.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!target) { res.status(404).json({ error: 'User not found' }); return; }
+
+    // Either use the password the admin typed, or generate a sensible random one.
+    let newPassword: string = (req.body?.newPassword || '').toString().trim();
+    if (!newPassword) {
+      // Pattern: Capital + 4 chars + @ + 4 digits → easy to read out loud, hard to guess.
+      const rand = Math.random().toString(36).slice(2, 6);
+      const num  = Math.floor(1000 + Math.random() * 9000);
+      newPassword = `${rand[0].toUpperCase()}${rand.slice(1)}@${num}`;
+    }
+    if (newPassword.length < 6) {
+      res.status(400).json({ error: 'New password must be at least 6 characters.' });
+      return;
+    }
+
+    target.passwordHash = await bcrypt.hash(newPassword, 12);
+    await target.save();
+
+    res.json({
+      ok: true,
+      message: `Password reset for ${target.name || target.email}`,
+      newPassword,                                 // returned so admin can share it
+      email: target.email,
+    });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
