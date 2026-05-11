@@ -4,9 +4,10 @@ import { motion } from 'framer-motion';
 import {
   TrendingUp, IndianRupee, Eye, MousePointerClick, Target, AlertCircle,
   Loader2, RefreshCw, BarChart3, ChevronDown, Check, X, Lock,
-  Share2, Copy, MessageCircle, Mail,
+  Share2, Copy, MessageCircle, Mail, Sparkles,
   ExternalLink, ShoppingCart, CreditCard, FileSearch, Heart, PlayCircle, Users as UsersIcon, Award,
 } from 'lucide-react';
+import { BrandGrowthVisualization } from '@/components/dashboard/BrandGrowthVisualization';
 import { toast } from 'sonner';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { format } from 'date-fns';
@@ -116,6 +117,17 @@ export default function MetaAdsReport() {
   const [error, setError]         = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  // Toggle between the deep drill-down view and the executive Growth view.
+  // Persisted in localStorage so the user's preference survives reloads —
+  // analysts will likely default to drill-down, founders to growth.
+  const [view, setView] = useState<'drilldown' | 'growth'>(() => {
+    const saved = (typeof window !== 'undefined' && localStorage.getItem('metaAdsView')) as 'drilldown' | 'growth' | null;
+    return saved === 'growth' ? 'growth' : 'drilldown';
+  });
+  const switchView = (next: 'drilldown' | 'growth') => {
+    setView(next);
+    try { localStorage.setItem('metaAdsView', next); } catch { /* ignore quota */ }
+  };
 
   // Effective date window from preset.
   // last_7d / last_30d include TODAY so the running spend is always visible.
@@ -193,7 +205,28 @@ export default function MetaAdsReport() {
               Live data from Meta Marketing API. Pick an account and a window.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* One-click view toggle — Drill-down for analysts, Growth for
+                founders/clients who want the "what should I do" version. */}
+            <div className="flex rounded-lg border border-border bg-card p-0.5 shadow-sm">
+              <button
+                onClick={() => switchView('drilldown')}
+                className={`h-8 px-3 flex items-center gap-1.5 rounded-md text-xs font-semibold transition-colors ${
+                  view === 'drilldown' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <BarChart3 className="h-3.5 w-3.5" /> Drill-down
+              </button>
+              <button
+                onClick={() => switchView('growth')}
+                className={`h-8 px-3 flex items-center gap-1.5 rounded-md text-xs font-semibold transition-colors ${
+                  view === 'growth' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title="Executive view: brand-growth funnel + smart insights"
+              >
+                <Sparkles className="h-3.5 w-3.5" /> Growth view
+              </button>
+            </div>
             <button
               onClick={() => setShareOpen(true)}
               disabled={!accountId}
@@ -256,19 +289,34 @@ export default function MetaAdsReport() {
           </div>
         )}
 
-        {/* Headline KPIs grouped by funnel stage */}
+        {/* Headline KPIs grouped by funnel stage — only in drill-down view.
+            The growth view renders its own headline section so we skip this
+            block to avoid duplicate KPIs at the top. */}
         {loading && !totals ? (
           <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-blue-500" /></div>
-        ) : totals ? (
+        ) : totals && view === 'drilldown' ? (
           <FunnelKpis totals={totals} dailyBudget={dailyBudget} />
-        ) : (
+        ) : !totals ? (
           <p className="text-sm text-muted-foreground py-8 text-center bg-card border border-border rounded-2xl">
             No data for this account in the selected window.
           </p>
+        ) : null}
+
+        {/* GROWTH VIEW — one-click brand-stage visualization. Skips the
+            existing drill-down sections (daily spend chart, campaign table,
+            etc.) since the growth view renders its own takes on those. */}
+        {view === 'growth' && totals && (
+          <BrandGrowthVisualization
+            totals={totals}
+            daily={daily}
+            campaigns={campaigns}
+            accountName={accounts.find(a => a.id === accountId)?.name}
+          />
         )}
 
-        {/* Daily spend trend */}
-        {daily.length > 0 && (
+        {/* Daily spend trend — drill-down view only. The growth view's
+            spend-vs-ROAS chart covers this in a more decision-friendly way. */}
+        {view === 'drilldown' && daily.length > 0 && (
           <div className="bg-card border border-border rounded-2xl p-4">
             <h2 className="font-semibold text-sm mb-3 flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-blue-500" /> Daily spend
@@ -337,7 +385,9 @@ export default function MetaAdsReport() {
         )}
 
         {/* Per-campaign table */}
-        {campaigns.length > 0 && (
+        {/* Per-campaign breakdown — drill-down view only. Growth view shows
+            its own ranked top-performers + needs-review lists instead. */}
+        {view === 'drilldown' && campaigns.length > 0 && (
           <div className="bg-card border border-border rounded-2xl overflow-hidden">
             <div className="px-4 py-3 border-b border-border">
               <h2 className="font-semibold text-sm">Per-campaign breakdown · {campaigns.length}</h2>
