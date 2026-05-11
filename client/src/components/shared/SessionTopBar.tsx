@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import { Clock, Coffee, Pause, Play, StopCircle, AlertTriangle, Sparkles, Phone, PhoneOff } from 'lucide-react';
 import { useSession } from '@/hooks/useSession';
 import { useOnCall } from '@/hooks/useOnCall';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import * as api from '@/api';
+import { WorkingDespiteLeaveDialog } from '@/components/shared/WorkingDespiteLeaveDialog';
 
 /**
  * SessionTopBar
@@ -52,9 +55,23 @@ export function SessionTopBar() {
   const isOnBreak = session?.status === 'on_break';
   const breakOverLimit = currentBreakMs > SINGLE_BREAK_WARN_MS || totalBreakMs > TOTAL_BREAK_WARN_MS;
 
+  // Today's leave (set when user clicks Log In and we detect an approved leave).
+  // Triggers the WorkingDespiteLeaveDialog so they can confirm what's actually happening.
+  const [pendingLeave, setPendingLeave] = useState<{ reason?: string } | null>(null);
+
   // Toast wrappers so users get instant confirmation when the network
   // lag would otherwise leave them wondering if their click registered.
   const handleStart = async () => {
+    // Before starting the session, check if the user has an approved leave
+    // for today. If yes, show the "Are you working?" dialog and let them
+    // pick. The dialog itself starts the session via the onChose callback.
+    try {
+      const { leave } = await api.myLeaveToday();
+      if (leave) {
+        setPendingLeave({ reason: leave.reason });
+        return;
+      }
+    } catch { /* non-fatal — fall through to normal start */ }
     try { await startSession(); toast.success("You're on the clock — have a great day!"); }
     catch (e: any) { toast.error(e?.response?.data?.error || "Couldn't start session"); }
   };
@@ -211,6 +228,22 @@ export function SessionTopBar() {
           )}
         </div>
       </div>
+
+      {/* "Are you working today?" dialog — shows when user clicks Log In
+          but has an approved leave covering today */}
+      {pendingLeave && (
+        <WorkingDespiteLeaveDialog
+          reason={pendingLeave.reason}
+          onChose={async () => {
+            // After user picks an option, the dialog has already updated the
+            // leave server-side (or skipped it for "still_off"). Now actually
+            // start the session.
+            try { await startSession(); toast.success("You're on the clock — have a great day!"); }
+            catch (e: any) { toast.error(e?.response?.data?.error || "Couldn't start session"); }
+          }}
+          onClose={() => setPendingLeave(null)}
+        />
+      )}
     </div>
   );
 }

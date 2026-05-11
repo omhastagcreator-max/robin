@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
 import {
-  createLeave, listMyLeaves, listAdminLeaves, approveLeave, rejectLeave, cancelLeave, onLeaveToday, leavesSummary, adminEditLeave,
+  createLeave, listMyLeaves, listAdminLeaves, approveLeave, rejectLeave, cancelLeave, onLeaveToday, leavesSummary, adminEditLeave, myLeaveToday, setWorkingDespiteLeave,
 } from '../controllers/leavesController';
 
 const router = Router();
@@ -13,6 +13,9 @@ router.use(authMiddleware);
 router.post('/',                  requireRole('admin', 'employee', 'sales'), createLeave);
 router.get('/mine',               requireRole('admin', 'employee', 'sales'), listMyLeaves);
 router.put('/:id/cancel',         requireRole('admin', 'employee', 'sales'), cancelLeave);
+// "Are you working today?" flow when user clocks in despite an approved leave
+router.get('/mine-today',         requireRole('admin', 'employee', 'sales'), myLeaveToday);
+router.put('/mine-today/working', requireRole('admin', 'employee', 'sales'), setWorkingDespiteLeave);
 
 // Admin-only review actions
 router.get('/admin',              requireRole('admin'),                     listAdminLeaves);

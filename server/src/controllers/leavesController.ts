@@ -368,6 +368,97 @@ export async function cancelLeave(req: AuthRequest, res: Response): Promise<void
 }
 
 /**
+ * GET /api/leaves/mine-today
+ *
+ * Returns this user's approved leave covering today (or null). The client
+ * uses this to ask "Hey, you applied for leave today — are you actually
+ * working?" before letting them clock in. Catches the common case of
+ * someone forgetting to update Robin when their plans change.
+ */
+export async function myLeaveToday(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const { start, end } = istTodayWindow();
+    const leave = await LeaveApplication.findOne({
+      userId: req.user!.id,
+      status: 'approved',
+      'days.date': { $gte: start, $lt: end },
+    }).lean();
+    if (!leave) { res.json({ leave: null }); return; }
+    // Find the specific day entry that matches today
+    const todayDay = (leave.days || []).find((d: any) => {
+      const t = new Date(d.date).getTime();
+      return t >= start.getTime() && t < end.getTime();
+    });
+    res.json({
+      leave: {
+        _id: leave._id,
+        dayType: todayDay ? (todayDay as any).dayType || 'full' : 'full',
+        reason: todayDay ? (todayDay as any).reason : '',
+      },
+    });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * PUT /api/leaves/mine-today/working
+ *
+ * Update today's leave because the user is actually working. Options:
+ *   workingType = 'full'         → cancel the whole leave (worked all day)
+ *   workingType = 'first_half'   → working morning only → leave becomes second_half (off afternoon)
+ *   workingType = 'second_half'  → working afternoon only → leave becomes first_half (off morning)
+ *
+ * The user can also choose "still on leave, just checking in" — in which
+ * case they don't call this endpoint at all and the leave stays as-is.
+ */
+export async function setWorkingDespiteLeave(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const { workingType } = req.body || {};
+    if (!['full', 'first_half', 'second_half'].includes(workingType)) {
+      res.status(400).json({ error: 'workingType must be full, first_half, or second_half' });
+      return;
+    }
+    const { start, end } = istTodayWindow();
+    const leave = await LeaveApplication.findOne({
+      userId: req.user!.id,
+      status: 'approved',
+      'days.date': { $gte: start, $lt: end },
+    });
+    if (!leave) { res.status(404).json({ error: 'No leave for today' }); return; }
+
+    if (workingType === 'full') {
+      // Working full day — cancel today's leave entry. If it's a single-day
+      // leave, mark the whole application cancelled. If multi-day, just
+      // remove today's entry.
+      const todayDays = leave.days.filter((d: any) => {
+        const t = new Date(d.date).getTime();
+        return t >= start.getTime() && t < end.getTime();
+      });
+      const otherDays = leave.days.filter((d: any) => !todayDays.includes(d));
+      if (otherDays.length === 0) {
+        leave.status = 'cancelled';
+      } else {
+        (leave as any).days = otherDays;
+      }
+    } else {
+      // Working partial day — flip today's dayType to the OPPOSITE half so
+      // the off-time matches what they actually need. e.g. workingType
+      // 'first_half' means they work the morning, so they're OFF in the
+      // afternoon → leave becomes 'second_half'.
+      const oppositeHalf = workingType === 'first_half' ? 'second_half' : 'first_half';
+      leave.days.forEach((d: any) => {
+        const t = new Date(d.date).getTime();
+        if (t >= start.getTime() && t < end.getTime()) {
+          d.dayType = oppositeHalf;
+        }
+      });
+    }
+
+    await leave.save();
+    res.json({ ok: true, leave });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
  * PUT /api/leaves/:id/admin-edit  — admin can fix dates / status / dayType
  * on any leave in their organisation.
  *

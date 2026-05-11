@@ -206,6 +206,12 @@ export const rejectLeave       = (id: string, note?: string) =>
 export const adminEditLeave    = (id: string, body: { days?: { date: string; reason?: string; dayType?: string }[]; status?: string }) =>
   api.put(`/leaves/${id}/admin-edit`, body).then(r => r.data);
 export const onLeaveToday      = () => api.get('/leaves/on-leave-today').then(r => r.data);
+// "Are you working today?" — fetch self's approved leave for today (or null)
+export const myLeaveToday      = () => api.get('/leaves/mine-today').then(r => r.data);
+// Convert today's leave because user is actually working
+//   workingType: 'full' (cancel leave) | 'first_half' (work morning, off pm) | 'second_half' (work pm, off morning)
+export const setWorkingDespiteLeave = (workingType: 'full' | 'first_half' | 'second_half') =>
+  api.put('/leaves/mine-today/working', { workingType }).then(r => r.data);
 export const adminLeavesSummary = () => api.get('/leaves/admin/summary').then(r => r.data);
 export const adminAttendance    = (date?: string) => api.get('/admin/attendance', { params: date ? { date } : {} }).then(r => r.data);
 
