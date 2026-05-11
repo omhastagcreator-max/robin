@@ -1,12 +1,16 @@
 import { useState, useCallback } from 'react';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
+import type { TaskStatus, TaskPriority } from '@/lib/enums';
 
 export interface Task {
   _id: string;
   title: string;
-  status: 'pending' | 'in_progress' | 'done' | 'blocked';
-  priority: 'low' | 'medium' | 'high' | 'urgent';
+  // Mirrors server enum exactly — see lib/enums.ts. Old type used
+  // 'in_progress' / 'blocked' which the server rejected with 400 on every
+  // status change. Single source of truth lives in lib/enums.ts now.
+  status: TaskStatus;
+  priority: TaskPriority;
   dueDate?: string;
   taskType?: string;
   projectId?: string;

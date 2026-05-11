@@ -238,7 +238,7 @@ export function BrandGrowthVisualization({ totals, daily, campaigns, accountName
     if (ctr && tierFor(ctr, 'ctr') === 'poor') out.push({ tone: 'poor', icon: Snowflake, title: 'CTR is below industry average', body: `CTR of ${ctr.toFixed(2)}% suggests the creative isn't stopping the scroll. Test new hooks: pattern interrupts, bold first frames, surprising claims.` });
     if (ctr && tierFor(ctr, 'ctr') === 'great') out.push({ tone: 'great', icon: Sparkles, title: 'Creative is doing the work', body: `${ctr.toFixed(2)}% CTR is well above benchmark. Document what's working in this creative and brief the next batch around the same hook.` });
 
-    if (hookRate && tierFor(hookRate, 'hookRate') === 'poor') out.push({ tone: 'poor', icon: PlayCircle, title: 'First 3 seconds aren't landing', body: `Only ${hookRate.toFixed(1)}% of viewers stay past 3 seconds. The hook frame, sound, or visual isn't earning attention. Re-cut with a faster hook.` });
+    if (hookRate && tierFor(hookRate, 'hookRate') === 'poor') out.push({ tone: 'poor', icon: PlayCircle, title: "First 3 seconds aren't landing", body: `Only ${hookRate.toFixed(1)}% of viewers stay past 3 seconds. The hook frame, sound, or visual isn't earning attention. Re-cut with a faster hook.` });
 
     if (lpvRate && tierFor(lpvRate, 'lpvRate') === 'poor') out.push({ tone: 'poor', icon: Layers, title: 'Big drop between click and landing', body: `Only ${lpvRate.toFixed(0)}% of clickers actually load the page. Check load speed (LCP < 2.5s), broken redirects, or ad → page mismatch.` });
 
