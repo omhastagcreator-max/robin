@@ -30,30 +30,54 @@ export default function ClientDashboard() {
   const [showQuery,     setShowQuery]     = useState(false);
   const [queryForm,     setQueryForm]     = useState({ title: '', description: '', priority: 'medium', projectId: '' });
 
+  const [submitting, setSubmitting] = useState(false);
+
   const load = async () => {
-    const [p, r, q, t, s] = await Promise.all([
-      api.getDashboardClient(),
-      api.listAdReports({ limit: 30 }),
-      api.listQueries(),
-      api.myTransactions(),
-      api.getAdReportSummary({}),
-    ]);
-    setProjects((p as any)?.projects || []);
-    setReports(Array.isArray(r) ? r : []);
-    setQueries(Array.isArray(q) ? q : []);
-    setTransactions(Array.isArray(t) ? t : []);
-    setSummary(s);
-    setLoading(false);
+    setLoading(true);
+    try {
+      // Use Promise.allSettled so a single failing endpoint (e.g. ad-report
+      // summary not configured for this client) doesn't blow away the whole
+      // dashboard. Each section degrades to empty independently — the user
+      // still sees what we could fetch.
+      const results = await Promise.allSettled([
+        api.getDashboardClient(),
+        api.listAdReports({ limit: 30 }),
+        api.listQueries(),
+        api.myTransactions(),
+        api.getAdReportSummary({}),
+      ]);
+      const [p, r, q, t, s] = results;
+      setProjects(p.status === 'fulfilled' ? ((p.value as any)?.projects || []) : []);
+      setReports (r.status === 'fulfilled' && Array.isArray(r.value) ? r.value : []);
+      setQueries (q.status === 'fulfilled' && Array.isArray(q.value) ? q.value : []);
+      setTransactions(t.status === 'fulfilled' && Array.isArray(t.value) ? t.value : []);
+      setSummary (s.status === 'fulfilled' ? s.value : null);
+    } finally {
+      // CRITICAL: always release the spinner. Before this fix a single
+      // rejected promise (from any of the 5 calls above) would skip
+      // setLoading(false) entirely and leave every client staring at an
+      // infinite spinner. This was the "ClientDashboard never loads" bug.
+      setLoading(false);
+    }
   };
   useEffect(() => { load(); }, []);
 
   const submitQuery = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!queryForm.title) return;
-    await api.createQuery({ ...queryForm });
-    toast.success('Query submitted! Our team will respond shortly.');
-    setShowQuery(false); setQueryForm({ title: '', description: '', priority: 'medium', projectId: '' });
-    load();
+    if (!queryForm.title || submitting) return;
+    setSubmitting(true);
+    try {
+      await api.createQuery({ ...queryForm });
+      toast.success('Query submitted! Our team will respond shortly.');
+      setShowQuery(false);
+      setQueryForm({ title: '', description: '', priority: 'medium', projectId: '' });
+      load();
+    } catch {
+      // Axios interceptor already toasted the real reason. Keep the form
+      // open so the user can correct + retry instead of losing their input.
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const filteredReports = activeProject === 'all' ? reports : reports.filter(r => r.projectId === activeProject);

@@ -6,8 +6,9 @@ import {
   Bird, LayoutDashboard, ListTodo, Video, Bell, User, LogOut,
   Briefcase, Users, Building2, BarChart2, TrendingUp, Menu, X,
   MessageSquare, Monitor, MonitorOff, KeyRound, CalendarOff, Clock,
-  BarChart3, Calendar,
+  BarChart3, Calendar, Bug,
 } from 'lucide-react';
+import { Avatar } from '@/components/shared/Avatar';
 import * as api from '@/api';
 import { useSocket } from '@/hooks/useSocket';
 import { useScreenShare } from '@/contexts/ScreenShareContext';
@@ -37,6 +38,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/admin/reports',    label: 'Reports',      icon: BarChart2,       roles: ['admin'] },
   { to: '/admin/leaves',     label: 'Leave Approvals', icon: CalendarOff,  roles: ['admin'] },
   { to: '/admin/attendance', label: 'Attendance',      icon: Clock,        roles: ['admin'] },
+  { to: '/admin/crash-logs', label: 'Crash Logs',      icon: Bug,          roles: ['admin'] },
   // Leave applications — employees and sales (private to each user)
   { to: '/leaves',           label: 'My Leaves',    icon: CalendarOff,     roles: ['employee', 'sales'] },
   // Work room
@@ -211,9 +213,7 @@ export function AppLayout({ children, requiredRole }: Props) {
       {/* User + Logout */}
       <div className="border-t border-border pt-3 mt-2">
         <div className="flex items-center gap-3 px-3 py-2 mb-1">
-          <div className="h-8 w-8 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
-            <span className="text-xs font-bold text-primary">{(user?.name || user?.email || '?')[0].toUpperCase()}</span>
-          </div>
+          <Avatar name={user?.name} email={user?.email} url={user?.avatarUrl} size="sm" tone="primary" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold truncate text-foreground">{user?.name || 'User'}</p>
             <p className="text-[10px] text-muted-foreground truncate">{user?.email}</p>

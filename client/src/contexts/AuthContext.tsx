@@ -111,7 +111,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, role: user?.role || 'guest', loading, login, loginWithToken, logout, refreshProfile, updatePassword }}>
+    <AuthContext.Provider value={{
+      user,
+      // Default to 'employee' (matches server-side authMiddleware fallback)
+      // when an authenticated user somehow has no primary role. Avoids
+      // ProtectedRoute redirect loops the moment they touch any route.
+      role: user ? (user.role || 'employee') : '',
+      loading, login, loginWithToken, logout, refreshProfile, updatePassword,
+    }}>
       {children}
     </AuthContext.Provider>
   );

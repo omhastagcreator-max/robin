@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { SessionClockCard } from '@/components/shared/SessionClockCard';
 import { SheetConnectCard } from '@/components/dashboard/SheetConnectCard';
+import { LiveSheetSection } from '@/components/dashboard/LiveSheetSection';
 import { LeadListView } from '@/components/dashboard/LeadListView';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 
@@ -185,7 +186,7 @@ export default function SalesDashboard() {
         name:    parsed.name || trimmed,
         contact: parsed.phone || '',
         email:   parsed.email || '',
-        source:  'manual',
+        source:  'other',  // 'manual' isn't in the Lead.source enum — use 'other' so save doesn't 400
         stage:   stageKey,
         estimatedValue: 0,
       });
@@ -569,6 +570,11 @@ export default function SalesDashboard() {
 
         {/* Google Sheets auto-import — admin connects, sales sees status */}
         <SheetConnectCard />
+
+        {/* Live view of the connected Meta-linked sheet — formatted nicely,
+            grouped by date, expandable rows for the full campaign context.
+            Hidden automatically until a sheet is connected. */}
+        <LiveSheetSection />
 
         {/* KPI Bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

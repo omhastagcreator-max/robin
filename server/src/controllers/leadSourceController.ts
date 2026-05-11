@@ -24,6 +24,54 @@ async function getOrgId(userId: string): Promise<string | null> {
 const norm = (s?: string) => (s || '').trim().toLowerCase();
 
 /**
+ * Header aliases — common variants we auto-recognise so users connecting
+ * Meta Lead Ads sheets (via Zapier / Meta's "Download Leads" CSV / native
+ * leads-to-Sheets sync) don't have to rename a single column.
+ *
+ * Order matters: the FIRST alias that exists in the row wins. If the admin
+ * has set an explicit columnMap for the source, that always trumps these.
+ *
+ * All keys are lowercased to match how fetchSheetRows normalises headers.
+ */
+const HEADER_ALIASES: Record<string, string[]> = {
+  // NB: fetchSheetRows lowercases + trims headers, so 'NAME' → 'name',
+  // 'E MAIL ID' → 'e mail id', etc. Listed lowercased here.
+  name:    ['name', 'full_name', 'fullname', 'full name', 'lead_name', 'first_name'],
+  phone:   ['phone', 'phone_number', 'phonenumber', 'phone number', 'mobile', 'mobile_number', 'contact', 'contact_number', 'whatsapp'],
+  email:   ['email', 'email_address', 'emailaddress', 'email address', 'e-mail', 'e mail', 'e mail id', 'email id', 'mail', 'mail id'],
+  company: ['company', 'company_name', 'organization', 'business', 'business_name', 'website', 'websitr'], // 'websitr' = common typo we've seen in real sheets
+  source:  ['source', 'campaign_name', 'campaign', 'ad_name', 'platform', 'utm_source'],
+  notes:   ['notes', 'note', 'message', 'comments', 'remarks', 'enquiry', 'inquiry', 'city'],
+};
+
+/**
+ * Meta wraps phone numbers with a `p:` prefix and lead IDs with `l:` —
+ * artefacts of how Lead Center serialises ID-typed fields. We strip them
+ * before saving so phone numbers display cleanly and dedupe works.
+ */
+const stripMetaPrefix = (s: string, prefix: string): string =>
+  s.startsWith(prefix) ? s.slice(prefix.length).trim() : s;
+
+// Alias for the SheetRow type so pickField stays typed without re-importing.
+type SheetRow = sheets.SheetRow;
+
+/**
+ * Pick the first non-empty value for a Robin field from a row, honouring an
+ * explicit override first and then falling back to the alias list.
+ */
+function pickField(row: SheetRow, field: keyof typeof HEADER_ALIASES, override?: string): string {
+  if (override) {
+    const v = row[override.toLowerCase()];
+    if (v != null && String(v).trim()) return String(v).trim();
+  }
+  for (const alias of HEADER_ALIASES[field]) {
+    const v = row[alias];
+    if (v != null && String(v).trim()) return String(v).trim();
+  }
+  return '';
+}
+
+/**
  * Core sync function — pulls rows from the sheet, dedupes against existing
  * leads (by phone OR email) AND against importedKeys on the source doc,
  * inserts new ones, returns a summary.
@@ -46,15 +94,17 @@ export async function syncSheetForOrg(orgId: string, options: { actorUserId?: st
     return { ok: false, reason: 'fetch-failed', error: source.lastError };
   }
 
-  // Build lookup of EXISTING leads in this org by phone/email so we never
-  // re-create what's already there (handles cases where rows came in via
-  // manual entry too).
-  const existing = await Lead.find({ organizationId: orgId }).select('contact email').lean();
-  const seenPhones = new Set(existing.map(l => norm((l as any).contact)).filter(Boolean));
-  const seenEmails = new Set(existing.map(l => norm((l as any).email)).filter(Boolean));
+  // Build lookup of EXISTING leads in this org by phone/email/externalId so
+  // we never re-create what's already there (handles rows that also came in
+  // via manual entry, AND Meta lead_ids we've already imported on a previous
+  // tick).
+  const existing = await Lead.find({ organizationId: orgId }).select('contact email externalId').lean();
+  const seenPhones    = new Set(existing.map(l => norm((l as any).contact)).filter(Boolean));
+  const seenEmails    = new Set(existing.map(l => norm((l as any).email)).filter(Boolean));
+  const seenExternal  = new Set(existing.map(l => (l as any).externalId).filter(Boolean));
 
   // importedKeys is a per-source dedupe in case a row in the sheet has
-  // neither phone nor email yet (shouldn't happen often, but safe).
+  // neither phone nor email nor lead_id yet (shouldn't happen often).
   const importedKeys = new Set(source.importedKeys || []);
 
   const map = source.columnMap || ({} as any);
@@ -62,22 +112,55 @@ export async function syncSheetForOrg(orgId: string, options: { actorUserId?: st
   let skipped = 0;
 
   for (const r of rows) {
-    const name    = (r[(map.name    || 'name').toLowerCase()]    || '').trim();
-    const phone   = (r[(map.phone   || 'phone').toLowerCase()]   || '').trim();
-    const email   = (r[(map.email   || 'email').toLowerCase()]   || '').trim();
-    const company = (r[(map.company || 'company').toLowerCase()] || '').trim();
-    const source2 = (r[(map.source  || 'source').toLowerCase()]  || 'sheet').trim().toLowerCase().slice(0, 30) || 'sheet';
-    const notes   = (r[(map.notes   || 'notes').toLowerCase()]   || '').trim();
+    // Each pickField call honours admin override first, then tries the
+    // alias list (handles Meta's full_name / phone_number / etc).
+    let name    = pickField(r, 'name',    map.name);
+    let phone     = pickField(r, 'phone',   map.phone);
+    const email   = pickField(r, 'email',   map.email);
+    const company = pickField(r, 'company', map.company);
+    let source2   = (pickField(r, 'source',  map.source) || 'sheet').toLowerCase().slice(0, 30);
+    const notes   = pickField(r, 'notes',   map.notes);
+
+    // Meta serialises phones as "p:+91…" — strip the prefix so the saved
+    // value is the actual E.164 number.
+    phone = stripMetaPrefix(phone, 'p:');
+
+    // Meta sometimes splits names into first_name + last_name. If we only
+    // got first_name above, glue last_name onto it so the lead has a
+    // sensible display name.
+    if (name && r['last_name'] && !/\s/.test(name)) {
+      name = `${name} ${r['last_name']}`.trim();
+    }
+
+    // Meta's stable lead identifier — `id` or `lead_id` column. Best dedupe
+    // key because the user could fix a typo in phone/email later. Stored
+    // with the `l:` prefix stripped so the value is just the numeric ID.
+    const rawExt = (r['lead_id'] || r['id'] || r['leadgen_id'] || '').trim();
+    const externalId = stripMetaPrefix(rawExt, 'l:') || undefined;
+
+    // The strict Lead.source enum can't hold a campaign name. Save the raw
+    // campaign as sourceLabel for display, and bucket the enum field as
+    // 'social' for Meta-style rows (campaign_name/ad_name present),
+    // otherwise 'inbound' for sheet-only rows.
+    const sourceLabel = source2; // pre-bucket value (campaign_name etc.)
+    const isMeta = !!(r['campaign_name'] || r['ad_name'] || r['adset_name'] || r['form_id'] || r['platform']);
+    const sourceEnum = isMeta ? 'social' : 'inbound';
 
     if (!name && !phone && !email) { skipped++; continue; }
     if (!name) { skipped++; continue; }
 
-    const ph = norm(phone);
-    const em = norm(email);
-    const key = `${ph}|${em}|${name.toLowerCase()}`;
-    if ((ph && seenPhones.has(ph)) || (em && seenEmails.has(em)) || importedKeys.has(key)) {
+    const ph  = norm(phone);
+    const em  = norm(email);
+    const key = `${externalId || ''}|${ph}|${em}|${name.toLowerCase()}`;
+    if (
+      (externalId && seenExternal.has(externalId)) ||
+      (ph && seenPhones.has(ph)) ||
+      (em && seenEmails.has(em)) ||
+      importedKeys.has(key)
+    ) {
       skipped++; continue;
     }
+    if (externalId) seenExternal.add(externalId);
     if (ph) seenPhones.add(ph);
     if (em) seenEmails.add(em);
     importedKeys.add(key);
@@ -87,10 +170,14 @@ export async function syncSheetForOrg(orgId: string, options: { actorUserId?: st
       assignedTo:     options.actorUserId,
       name, contact: phone || undefined, email: email || undefined,
       company: company || undefined,
-      source:  source2,
+      source:  sourceEnum,
+      sourceLabel,
       notes:   notes   || undefined,
       stage:   'new_lead',
       status:  'new_lead',
+      externalId,
+      rawData: r,                     // keep the WHOLE original row
+      importedFrom: isMeta ? 'meta-leadgen' : 'google-sheet',
     });
   }
 
@@ -192,6 +279,67 @@ export async function disconnectSheet(req: AuthRequest, res: Response): Promise<
     await LeadSource.findOneAndDelete({ organizationId: orgId, kind: 'google-sheet' });
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * GET /api/integrations/sheet/preview — live read of the sheet, returned
+ * EXACTLY as it appears (headers untouched, no field-mapping). Used by the
+ * Sales dashboard "Live from your sheet" section so the team can see the
+ * raw Meta Lead Ads feed in real time.
+ *
+ * Returns:
+ *   {
+ *     headers: ["created_time", "full_name", "phone_number", "campaign_name", ...],
+ *     rows:    [{ created_time: "...", full_name: "...", ... }, ...],
+ *     total:   123,
+ *     fetchedAt: ISO,
+ *     spreadsheetId, sheetName,
+ *   }
+ *
+ * No DB writes — this is a pass-through view, not a sync.
+ */
+export async function previewSheet(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const src = await LeadSource.findOne({ organizationId: orgId, kind: 'google-sheet' }).lean();
+    if (!src || !src.spreadsheetId) { res.status(404).json({ error: 'No sheet connected' }); return; }
+    if (!sheets.isConfigured()) { res.status(503).json({ error: 'Google Sheets not configured on the server.' }); return; }
+
+    const limit = Math.min(parseInt(String(req.query.limit || '500'), 10) || 500, 2000);
+    const rows = await sheets.fetchSheetRows(src.spreadsheetId, src.sheetName || 'Sheet1', limit);
+    const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+    // Annotate each row with the Robin Lead it created (if any), so the UI
+    // can show the current stage + assignee without a second round trip.
+    const externalIds = rows.map(r => r['lead_id'] || r['id'] || r['leadgen_id']).filter(Boolean);
+    const linkedLeads = externalIds.length
+      ? await Lead.find({ organizationId: orgId, externalId: { $in: externalIds } })
+          .select('externalId stage assignedTo _id').lean()
+      : [];
+    const leadByExt = new Map(linkedLeads.map(l => [(l as any).externalId, l]));
+
+    const annotated = rows.map(r => {
+      const ext = r['lead_id'] || r['id'] || r['leadgen_id'];
+      const linked = ext ? leadByExt.get(ext) : null;
+      return {
+        ...r,
+        _robin: linked ? { leadId: String((linked as any)._id), stage: (linked as any).stage, assignedTo: (linked as any).assignedTo } : null,
+      };
+    });
+
+    res.json({
+      headers,
+      rows: annotated,
+      total: rows.length,
+      fetchedAt: new Date().toISOString(),
+      spreadsheetId: src.spreadsheetId,
+      sheetName: src.sheetName,
+      sheetUrl: `https://docs.google.com/spreadsheets/d/${src.spreadsheetId}`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Preview failed' });
+  }
 }
 
 /** POST /api/integrations/sheet/sync — trigger an immediate poll */

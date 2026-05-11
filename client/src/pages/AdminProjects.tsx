@@ -26,11 +26,20 @@ export default function AdminProjects() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', projectType: 'website', clientId: '', projectLeadId: '', deadline: '' });
 
+  const [creating, setCreating] = useState(false);
+
   const load = async () => {
-    const [p, u] = await Promise.all([api.listProjects(), api.listUsers()]);
-    setProjects(Array.isArray(p) ? p : []);
-    setUsers(Array.isArray(u) ? u : []);
-    setLoading(false);
+    setLoading(true);
+    try {
+      const results = await Promise.allSettled([api.listProjects(), api.listUsers()]);
+      const [p, u] = results;
+      setProjects(p.status === 'fulfilled' && Array.isArray(p.value) ? p.value : []);
+      setUsers   (u.status === 'fulfilled' && Array.isArray(u.value) ? u.value : []);
+    } finally {
+      // Always release the spinner — previously a single rejection skipped
+      // setLoading(false) and froze the page indefinitely.
+      setLoading(false);
+    }
   };
   useEffect(() => { load(); }, []);
 
@@ -39,17 +48,31 @@ export default function AdminProjects() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name) return;
-    await api.createProject(form);
-    toast.success('Project created!');
-    setShowForm(false);
-    setForm({ name: '', projectType: 'website', clientId: '', projectLeadId: '', deadline: '' });
-    load();
+    if (!form.name || creating) return;
+    setCreating(true);
+    try {
+      await api.createProject(form);
+      toast.success('Project created!');
+      setShowForm(false);
+      setForm({ name: '', projectType: 'website', clientId: '', projectLeadId: '', deadline: '' });
+      load();
+    } catch {
+      // Keep the form open with the user's input intact so they can fix +
+      // retry. Axios interceptor already toasted the actual server message.
+    } finally {
+      setCreating(false);
+    }
   };
 
   const changeStatus = async (id: string, status: string) => {
-    await api.updateProject(id, { status });
+    // Optimistic update with rollback if the server rejects.
+    const before = projects;
     setProjects(prev => prev.map(p => p._id === id ? { ...p, status } : p));
+    try {
+      await api.updateProject(id, { status });
+    } catch {
+      setProjects(before);  // rollback
+    }
   };
 
   return (

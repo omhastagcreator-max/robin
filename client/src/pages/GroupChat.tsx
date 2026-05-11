@@ -188,8 +188,8 @@ export default function GroupChat() {
                 {filteredUsers.slice(0, 5).map((u: any) => (
                   <button key={u._id} type="button" onClick={() => insertMention(u.name || u.email)}
                     className="w-full flex items-center gap-2 px-3 py-2 hover:bg-muted/50 text-left">
-                    <div className={`h-6 w-6 rounded-lg flex items-center justify-center text-[10px] font-bold ${ROLE_COLORS[u.role] || 'bg-muted text-muted-foreground'}`}>
-                      {(u.name || u.email)[0].toUpperCase()}
+                    <div className={`h-6 w-6 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${ROLE_COLORS[u.role] || 'bg-muted text-muted-foreground'}`}>
+                      {((u.name || u.email || '?').charAt(0) || '?').toUpperCase()}
                     </div>
                     <div>
                       <p className="text-xs font-medium">{u.name || u.email}</p>

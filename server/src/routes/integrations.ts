@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
-import { getSheetSource, connectSheet, disconnectSheet, syncNow } from '../controllers/leadSourceController';
+import { getSheetSource, connectSheet, disconnectSheet, syncNow, previewSheet } from '../controllers/leadSourceController';
 
 const router = Router();
 router.use(authMiddleware);
@@ -13,5 +13,7 @@ router.post('/sheet',          requireRole('admin'),         connectSheet);
 router.delete('/sheet',        requireRole('admin'),         disconnectSheet);
 // Manual "sync now" — admin or sales can trigger.
 router.post('/sheet/sync',     requireRole('admin', 'sales'), syncNow);
+// Live read-through — the sheet, presented as-is to Sales / Admin.
+router.get('/sheet/preview',   requireRole('admin', 'sales', 'employee'), previewSheet);
 
 export default router;

@@ -131,9 +131,16 @@ export default function InfluencerSheet() {
   };
 
   const handleDelete = async (id: string) => {
-    await api.deleteInfluencer(id);
-    toast.success('Removed');
-    setDeleteId(null); load();
+    if (!confirm('Remove this influencer? This cannot be undone.')) return;
+    try {
+      await api.deleteInfluencer(id);
+      toast.success('Removed');
+      setDeleteId(null);
+      load();
+    } catch {
+      // axios interceptor toasted the actual error; keep modal open so the
+      // user can retry instead of being told it succeeded when it didn't.
+    }
   };
 
   const totalFollowers = influencers.reduce((s, i) => s + (i.followers || 0), 0);

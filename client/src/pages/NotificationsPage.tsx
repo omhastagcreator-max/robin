@@ -26,20 +26,30 @@ export default function NotificationsPage() {
   };
   useEffect(() => { load(); }, []);
 
+  // Optimistic-with-rollback pattern: update UI immediately so the click
+  // feels instant, then revert if the server rejects. Previously every
+  // mutation just trusted the server and lied to the user when it failed.
   const readOne = async (id: string) => {
-    await api.readNotification(id);
+    const before = notifs;
     setNotifs(prev => prev.map(n => n._id === id ? { ...n, isRead: true } : n));
+    try { await api.readNotification(id); }
+    catch { setNotifs(before); }
   };
 
   const deleteOne = async (id: string) => {
-    await api.deleteNotification(id);
+    const before = notifs;
     setNotifs(prev => prev.filter(n => n._id !== id));
+    try { await api.deleteNotification(id); }
+    catch { setNotifs(before); }
   };
 
   const readAll = async () => {
-    await api.readAllNotifications();
+    const before = notifs;
     setNotifs(prev => prev.map(n => ({ ...n, isRead: true })));
-    toast.success('All marked as read');
+    try {
+      await api.readAllNotifications();
+      toast.success('All marked as read');
+    } catch { setNotifs(before); }
   };
 
   const unread = notifs.filter(n => !n.isRead).length;

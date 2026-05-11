@@ -1,5 +1,6 @@
 import api from '@/api/axios';
 import { silent } from '@/api/axios';
+import { toast } from 'sonner';
 
 /**
  * Global client-side error reporter.
@@ -53,6 +54,18 @@ export function installGlobalErrorReporters() {
   window.addEventListener('unhandledrejection', (event) => {
     const reason: any = event.reason;
     const message = typeof reason === 'string' ? reason : (reason?.message || 'Unhandled rejection');
+
+    // If this looks like an axios error, the response interceptor in
+    // axios.ts already toasted (or chose to stay silent). Don't double-toast.
+    // Otherwise the rejection is a real bug — let the user know something
+    // went wrong instead of leaving them staring at a frozen UI.
+    const isAxios = !!reason?.isAxiosError || !!reason?.response;
+    if (!isAxios) {
+      toast.error('Something went wrong — the team has been notified.', {
+        id: 'unhandled-rejection',
+        description: String(message).slice(0, 120),
+      });
+    }
     report(message, reason?.stack, { kind: 'unhandledrejection' });
   });
 }

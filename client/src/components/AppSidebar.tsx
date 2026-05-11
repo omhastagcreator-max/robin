@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ListTodo, Video, Users, BarChart3, LogOut, Briefcase,
-  TrendingUp, Bell, User, ChevronRight, ChevronLeft, Building2, MessageSquare, Bird
+  TrendingUp, Bell, User, ChevronRight, ChevronLeft, Building2, MessageSquare, Bird, Bug
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -19,6 +19,7 @@ const adminItems = [
   { title: 'Clients',       url: '/admin/clients',     icon: Building2 },
   { title: 'Employees',     url: '/admin/employees',   icon: Users },
   { title: 'Reports',       url: '/admin/reports',     icon: BarChart3 },
+  { title: 'Crash Logs',    url: '/admin/crash-logs',  icon: Bug },
   { title: 'Work Room',     url: '/workroom',          icon: Video },
   { title: 'Group Chat',    url: '/chat',              icon: MessageSquare },
   { title: 'All Tasks',     url: '/tasks',             icon: ListTodo },

@@ -7,14 +7,20 @@ import { toast } from 'sonner';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { EmployeeReportModal } from '@/components/admin/EmployeeReportModal';
 import { useTeamPresence, type PresenceStatus } from '@/hooks/useTeamPresence';
+import { Avatar } from '@/components/shared/Avatar';
+import { USER_TEAMS, USER_TEAM_LABEL } from '@/lib/enums';
 
+// Color per team chip — keys MUST match USER_TEAMS in lib/enums.ts.
+// Previously this had `web/marketing/admin` (none in USER_TEAMS), so every
+// chip rendered in the muted gray fallback regardless of team.
 const teamColors: Record<string, string> = {
-  web:       'bg-blue-500/15 text-blue-400',
-  marketing: 'bg-pink-500/15 text-pink-400',
-  content:   'bg-purple-500/15 text-purple-400',
-  sales:     'bg-amber-500/15 text-amber-400',
-  design:    'bg-teal-500/15 text-teal-400',
-  admin:     'bg-red-500/15 text-red-400',
+  meta:       'bg-blue-500/15   text-blue-600',
+  ads:        'bg-pink-500/15   text-pink-600',
+  influencer: 'bg-amber-500/15  text-amber-700',
+  dev:        'bg-emerald-500/15 text-emerald-600',
+  content:    'bg-purple-500/15 text-purple-600',
+  sales:      'bg-orange-500/15 text-orange-600',
+  design:     'bg-teal-500/15   text-teal-600',
 };
 
 function PresenceBadge({ status }: { status: PresenceStatus }) {
@@ -91,9 +97,17 @@ export default function AdminEmployees() {
   };
 
   const changeRole = async (id: string, role: string) => {
-    await api.adminUpdateRole(id, role);
+    // Optimistic update with rollback. Previously toasted "Role updated"
+    // even when the server rejected, leaving the admin staring at a UI
+    // that disagreed with reality.
+    const before = employees;
     setEmployees(prev => prev.map(e => e._id === id ? { ...e, role } : e));
-    toast.success('Role updated');
+    try {
+      await api.adminUpdateRole(id, role);
+      toast.success('Role updated');
+    } catch {
+      setEmployees(before);
+    }
   };
 
   // Team chip toggle — adds/removes a team from the user's teams[] array.
@@ -175,9 +189,9 @@ export default function AdminEmployees() {
                 >
                   {/* Header — avatar + name + presence chip */}
                   <div className="flex items-start gap-3">
-                    <div className="h-11 w-11 rounded-xl bg-primary/20 flex items-center justify-center text-base font-bold text-primary shrink-0">
-                      {(emp.name || emp.email)[0].toUpperCase()}
-                    </div>
+                    {/* Avatar handles missing name+email safely (no more
+                        TypeError on rows where both are blank). */}
+                    <Avatar name={emp.name} email={emp.email} url={emp.avatarUrl} size="md" tone="primary" className="!rounded-xl" />
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-sm truncate">{emp.name || 'Unnamed'}</p>
                       <p className="text-[11px] text-muted-foreground truncate">{emp.email}</p>
@@ -205,7 +219,10 @@ export default function AdminEmployees() {
                       to put them on the broader 'ads' team. */}
                   <div className="flex items-center gap-1 flex-wrap text-[10px]">
                     <span className="text-muted-foreground">Also on:</span>
-                    {(['meta', 'ads', 'influencer', 'dev', 'content', 'sales'] as const).map(t => {
+                    {/* Single source of truth — was previously hard-coded
+                        and didn't match the team list in ProfilePage, so
+                        team chips between the two pages disagreed. */}
+                    {USER_TEAMS.map(t => {
                       if (t === emp.team) return null;          // hide primary team — already shown above
                       const active = (emp.teams || []).includes(t);
                       return (

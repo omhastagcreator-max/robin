@@ -114,6 +114,14 @@ export const sheetConnect      = (body: { spreadsheetId: string; sheetName?: str
   api.post('/integrations/sheet', body).then(r => r.data);
 export const sheetDisconnect   = () => api.delete('/integrations/sheet').then(r => r.data);
 export const sheetSyncNow      = () => api.post('/integrations/sheet/sync').then(r => r.data);
+// Live read-through of the connected sheet, headers + rows untouched.
+export const sheetPreview      = (limit = 500) =>
+  api.get('/integrations/sheet/preview', { params: { limit } }).then(r => r.data);
+
+// ── Centralized error logs (admin-only) ────────────────────────────────
+// Returns up to 500 most-recent errors (server + client) for the admin's org.
+export const listErrorLogs = (params: { source?: 'server' | 'client'; limit?: number } = {}) =>
+  api.get('/logs', { params }).then(r => r.data);
 export const getLead     = (id: string)                        => api.get(`/leads/${id}`).then(r => r.data);
 export const updateLead  = (id: string, d: Record<string, unknown>) => api.put(`/leads/${id}`, d).then(r => r.data);
 export const deleteLead  = (id: string)                        => api.delete(`/leads/${id}`).then(r => r.data);

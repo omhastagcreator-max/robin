@@ -4,13 +4,26 @@ import { useAuth } from '@/contexts/AuthContext';
 import { User, Lock, Camera, Save, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/api';
+import { Avatar } from '@/components/shared/Avatar';
+import { USER_TEAMS, USER_TEAM_LABEL } from '@/lib/enums';
 
 export default function ProfilePage() {
   const { user, refreshProfile, updatePassword } = useAuth();
-  const [name, setName] = useState(user?.name || '');
-  const [phone, setPhone] = useState('');
-  const [team, setTeam] = useState(user?.team || '');
+  // Initialize from the user record. Previously phone was hardcoded to '' so
+  // every Save would wipe the user's real phone number.
+  const [name, setName]   = useState(user?.name || '');
+  const [phone, setPhone] = useState((user as any)?.phone || '');
+  const [team, setTeam]   = useState(user?.team || '');
   const [saving, setSaving] = useState(false);
+
+  // Re-sync if `user` arrives later than first render (auth still loading).
+  useEffect(() => {
+    if (user) {
+      setName(user.name || '');
+      setPhone((user as any).phone || '');
+      setTeam(user.team || '');
+    }
+  }, [user]);
 
   const [curPw, setCurPw] = useState('');
   const [newPw, setNewPw] = useState('');
@@ -45,11 +58,7 @@ export default function ProfilePage() {
 
         {/* Avatar */}
         <div className="bg-card border border-border rounded-2xl p-6 flex items-center gap-5">
-          <div className="relative">
-            <div className="h-16 w-16 rounded-2xl bg-primary/20 flex items-center justify-center text-2xl font-bold text-primary">
-              {(user?.name || user?.email || '?')[0].toUpperCase()}
-            </div>
-          </div>
+          <Avatar name={user?.name} email={user?.email} url={user?.avatarUrl} size="lg" tone="primary" className="!rounded-2xl" />
           <div>
             <p className="font-semibold">{user?.name}</p>
             <p className="text-sm text-muted-foreground">{user?.email}</p>
@@ -77,17 +86,22 @@ export default function ProfilePage() {
               ))}
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Team</label>
+                {/* Single source of truth — was previously a stale list (web/
+                    marketing) that didn't match the team chips admins see in
+                    AdminEmployees, so any team set here was orphaned. */}
                 <select value={team} onChange={e => setTeam(e.target.value)}
                   className="w-full px-3 py-2.5 bg-background border border-input rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring">
                   <option value="">None</option>
-                  {['web', 'marketing', 'content', 'sales', 'design', 'admin'].map(t => (
-                    <option key={t} value={t} className="capitalize">{t}</option>
+                  {USER_TEAMS.map(t => (
+                    <option key={t} value={t}>{USER_TEAM_LABEL[t]}</option>
                   ))}
                 </select>
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Email</label>
-                <input value={user?.email} disabled
+                {/* `value={user?.email}` would be undefined on first render →
+                    React controlled-uncontrolled warning. Coerce to ''. */}
+                <input value={user?.email || ''} disabled
                   className="w-full px-3 py-2.5 bg-muted border border-input rounded-xl text-sm text-muted-foreground cursor-not-allowed" />
               </div>
             </div>

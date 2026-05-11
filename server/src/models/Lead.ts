@@ -52,6 +52,20 @@ const LeadSchema = new Schema({
   lostReason:           String,
   wonAmount:            Number,
   convertedToClientId:  { type: String, default: null }, // set when admin converts lead → client account
+
+  // ── External feed fingerprints (Meta Lead Ads / Google Sheet rows) ────
+  // externalId = the stable ID from the upstream system. For Meta this is
+  // the lead `id` (or `lead_id`) column on the sheet — guarantees we never
+  // double-import the same lead even if the sales rep edits phone/email.
+  externalId:   { type: String, index: true },
+  // Free-text label so the UI can show "Diwali Promo Reel" alongside the
+  // strict `source` enum (which stays as 'social' / 'website' / etc).
+  sourceLabel:  { type: String },
+  // The original sheet row, header→value, untouched. Lets the Sales UI
+  // surface campaign/ad/form/created_time without us having to model them.
+  rawData:      { type: Schema.Types.Mixed },
+  // Where this lead came from — useful for filtering "show me only Meta leads".
+  importedFrom: { type: String, enum: ['manual', 'google-sheet', 'meta-leadgen', 'csv'], default: 'manual' },
 }, { timestamps: true });
 
 // Keep status in sync with stage

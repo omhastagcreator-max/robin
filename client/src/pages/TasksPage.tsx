@@ -6,23 +6,29 @@ import { format, isToday, isBefore, startOfDay, isThisWeek } from 'date-fns';
 import { useTasks } from '@/hooks/useTasks';
 import { toast } from 'sonner';
 import { EmptyState } from '@/components/shared/EmptyState';
-import * as api from '@/api';
+import {
+  TASK_STATUSES, TASK_TYPES, TASK_PRIORITIES,
+  TASK_STATUS_LABEL, TASK_TYPE_LABEL, nextTaskStatus,
+  type TaskStatus, type TaskType, type TaskPriority,
+} from '@/lib/enums';
 
-const priorityColor: Record<string, string> = {
+const priorityColor: Record<TaskPriority, string> = {
   urgent: 'bg-red-500/15 text-red-400 border-red-500/30',
   high:   'bg-orange-500/15 text-orange-400 border-orange-500/30',
   medium: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
   low:    'bg-green-500/15 text-green-400 border-green-500/30',
 };
 
-const statusColor: Record<string, string> = {
-  pending:     'bg-muted text-muted-foreground',
-  in_progress: 'bg-blue-500/15 text-blue-400',
-  done:        'bg-green-500/15 text-green-400',
-  blocked:     'bg-red-500/15 text-red-400',
+// Note: server enum is `pending | ongoing | done` — NOT `in_progress | blocked`.
+// Sending `in_progress` would 400 every time, which was breaking task toggle
+// for everyone before this fix. Single source of truth lives in lib/enums.ts.
+const statusColor: Record<TaskStatus, string> = {
+  pending: 'bg-muted text-muted-foreground',
+  ongoing: 'bg-blue-500/15 text-blue-400',
+  done:    'bg-green-500/15 text-green-400',
 };
 
-interface NewTaskForm { title: string; priority: string; dueDate: string; taskType: string; }
+interface NewTaskForm { title: string; priority: TaskPriority; dueDate: string; taskType: TaskType; }
 
 const EMPTY_FORM: NewTaskForm = { title: '', priority: 'medium', dueDate: '', taskType: 'dev' };
 
@@ -58,16 +64,23 @@ export default function TasksPage() {
   };
 
   const toggle = async (id: string, status: string) => {
-    const MAP: Record<string, 'pending' | 'in_progress' | 'done' | 'blocked'> = {
-      pending: 'in_progress', in_progress: 'done', done: 'pending', blocked: 'in_progress',
-    };
-    const next = MAP[status] ?? 'pending';
-    await updateTask(id, { status: next });
+    // Use the canonical cycle helper — pending → ongoing → done → pending.
+    const current = (TASK_STATUSES as readonly string[]).includes(status) ? status as TaskStatus : 'pending';
+    const next = nextTaskStatus(current);
+    try {
+      await updateTask(id, { status: next });
+    } catch (e: any) {
+      // Axios interceptor toasts the real error; keep this catch so the
+      // rejection doesn't bubble up as an unhandled promise.
+    }
   };
 
   const remove = async (id: string) => {
-    await deleteTask(id);
-    toast.success('Task deleted');
+    if (!confirm('Delete this task?')) return;
+    try {
+      await deleteTask(id);
+      toast.success('Task deleted');
+    } catch { /* interceptor handled the toast */ }
   };
 
   const TaskRow = ({ task }: { task: typeof tasks[0] }) => (
@@ -94,12 +107,11 @@ export default function TasksPage() {
     </motion.div>
   );
 
-  const STATUSES = ['pending', 'in_progress', 'done', 'blocked'] as const;
-  const boardColors: Record<string, string> = {
-    pending:     'border-t-muted-foreground/30',
-    in_progress: 'border-t-blue-500',
-    done:        'border-t-green-500',
-    blocked:     'border-t-red-500',
+  const STATUSES = TASK_STATUSES;
+  const boardColors: Record<TaskStatus, string> = {
+    pending: 'border-t-muted-foreground/30',
+    ongoing: 'border-t-blue-500',
+    done:    'border-t-green-500',
   };
 
   return (
@@ -141,16 +153,16 @@ export default function TasksPage() {
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <label className="text-[10px] text-muted-foreground uppercase">Priority</label>
-                  <select value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value }))}
+                  <select value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value as TaskPriority }))}
                     className="w-full px-2 py-1.5 bg-background border border-input rounded-lg text-xs">
-                    {['low', 'medium', 'high', 'urgent'].map(p => <option key={p} value={p}>{p}</option>)}
+                    {TASK_PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] text-muted-foreground uppercase">Type</label>
-                  <select value={form.taskType} onChange={e => setForm(p => ({ ...p, taskType: e.target.value }))}
+                  <select value={form.taskType} onChange={e => setForm(p => ({ ...p, taskType: e.target.value as TaskType }))}
                     className="w-full px-2 py-1.5 bg-background border border-input rounded-lg text-xs">
-                    {['dev', 'ads', 'content', 'admin_task'].map(t => <option key={t} value={t}>{t}</option>)}
+                    {TASK_TYPES.map(t => <option key={t} value={t}>{TASK_TYPE_LABEL[t]}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1">
@@ -196,7 +208,7 @@ export default function TasksPage() {
             {STATUSES.map(status => (
               <div key={status} className={`bg-card border-t-2 ${boardColors[status]} border-x border-b border-border rounded-2xl overflow-hidden`}>
                 <div className="px-3 py-2.5 border-b border-border flex items-center gap-2">
-                  <p className="text-xs font-semibold capitalize">{status}</p>
+                  <p className="text-xs font-semibold">{TASK_STATUS_LABEL[status]}</p>
                   <span className="ml-auto text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">{filtered.filter(t => t.status === status).length}</span>
                 </div>
                 <div className="p-2 space-y-2 max-h-96 overflow-y-auto">

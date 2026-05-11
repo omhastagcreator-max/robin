@@ -32,8 +32,13 @@ function LoginInner() {
   const [waking, setWaking]         = useState(false);   // Render cold-start
 
   useEffect(() => {
+    // Watch BOTH user and role — when login completes, `user` is set first
+    // and `role` may still be the empty default for one render. Without
+    // role in the deps, we'd navigate using stale role and land everyone
+    // on /dashboard regardless of who they are.
     if (user) navigate(dashboardForRole(role), { replace: true });
-  }, [user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, role]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

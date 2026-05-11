@@ -22,18 +22,20 @@ import { TodayMeetingsStrip } from '@/components/dashboard/TodayMeetingsStrip';
 import { ActiveClientMeetingsCard } from '@/components/dashboard/ActiveClientMeetingsCard';
 import { ScheduleMeetingsSection } from '@/components/dashboard/ScheduleMeetingsSection';
 import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
+import { TASK_STATUSES, TASK_TYPES, nextTaskStatus, type TaskStatus } from '@/lib/enums';
 
 
 const PRIORITY_COLORS: Record<string, string> = {
   urgent: 'text-red-400', high: 'text-orange-400', medium: 'text-yellow-400', low: 'text-green-400'
 };
+// Server enum: pending | ongoing | done. The old in_progress/blocked values
+// 400'd on every dropdown change; single source of truth in lib/enums.ts.
 const STATUS_COLORS: Record<string, string> = {
-  pending:     'bg-muted text-muted-foreground',
-  in_progress: 'bg-blue-500/15 text-blue-400',
-  done:        'bg-green-500/15 text-green-400',
-  blocked:     'bg-red-500/15 text-red-400',
+  pending: 'bg-muted text-muted-foreground',
+  ongoing: 'bg-blue-500/15 text-blue-400',
+  done:    'bg-green-500/15 text-green-400',
 };
-const STATUSES = ['pending', 'in_progress', 'done', 'blocked'] as const;
+const STATUSES = TASK_STATUSES;
 
 // ── Team / Role specific widget ────────────────────────────────────────────
 function TeamRoleWidget({ team, tasks }: { team: string; tasks: any[] }) {
@@ -131,10 +133,21 @@ export default function EmployeeDashboard() {
   const dayLocked = !session && tasks.filter(t => t.dueDate && isToday(new Date(t.dueDate))).length < 3;
 
   useEffect(() => {
-    refresh();
-    api.listUsers().then(d => setAllUsers(Array.isArray(d) ? d.filter((u: any) => u._id !== user?.id) : []));
-    api.listNotifications({ limit: 10 }).then(d => setNotifications(Array.isArray(d) ? d.slice(0, 5) : []));
-    api.listProjects().then(d => setProjects(Array.isArray(d) ? d.filter(p => p.status === 'active') : []));
+    // Each call gets its own .catch so a single 5xx doesn't trigger an
+    // unhandled promise rejection. The axios interceptor still toasts the
+    // user-facing error; we just don't want to crash the dashboard if (e.g.)
+    // notifications fail to load while everything else works.
+    refresh().catch(() => {/* hook handles its own state */});
+    api.listUsers()
+      .then(d => setAllUsers(Array.isArray(d) ? d.filter((u: any) => u._id !== user?.id) : []))
+      .catch(() => setAllUsers([]));
+    api.listNotifications({ limit: 10 })
+      .then(d => setNotifications(Array.isArray(d) ? d.slice(0, 5) : []))
+      .catch(() => setNotifications([]));
+    api.listProjects()
+      .then(d => setProjects(Array.isArray(d) ? d.filter(p => p.status === 'active') : []))
+      .catch(() => setProjects([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCreateTask = async (e: React.FormEvent) => {
@@ -154,14 +167,20 @@ export default function EmployeeDashboard() {
   };
 
   const cycleStatus = async (task: any) => {
-    const MAP: Record<string, 'pending' | 'in_progress' | 'done' | 'blocked'> = { pending: 'in_progress', in_progress: 'done', done: 'pending', blocked: 'in_progress' };
-    const next = MAP[task.status as string] ?? 'pending';
-    await updateTask(task._id, { status: next });
+    // Server enum is `pending | ongoing | done`. The old map used
+    // `in_progress`/`blocked` which 400'd every cycle and silently desynced
+    // the UI from the database. Use canonical helper from lib/enums.
+    const current = (TASK_STATUSES as readonly string[]).includes(task.status) ? task.status : 'pending';
+    const next = nextTaskStatus(current);
+    try {
+      await updateTask(task._id, { status: next });
+    } catch { /* axios interceptor toasts the error */ }
   };
 
-  // KPI summary
+  // KPI summary — server has no 'blocked' status, so "stuck" is now derived
+  // from overdue+ongoing instead. Avoids showing a stat that's always zero.
   const doneTasks    = tasks.filter(t => t.status === 'done').length;
-  const blockedTasks = tasks.filter(t => t.status === 'blocked').length;
+  const stuckTasks   = tasks.filter(t => t.status === 'ongoing' && t.dueDate && isBefore(new Date(t.dueDate), startOfDay(new Date()))).length;
 
   return (
     <AppLayout>
@@ -232,7 +251,7 @@ export default function EmployeeDashboard() {
             { label: 'Open tasks', value: todayTasks.length,   hint: `${tasks.filter(t => t.dueDate && isToday(new Date(t.dueDate)) && t.status !== 'done').length} due today`, dot: 'bg-primary',  num: 'text-primary',   icon: Target },
             { label: 'Completed',  value: doneTasks,           hint: 'all time',                                                                                              dot: 'bg-emerald-500', num: 'text-foreground', icon: CheckCircle2 },
             { label: 'Overdue',    value: overdueTasks.length, hint: overdueTasks.length === 0 ? 'all clear' : 'fix today',                                                   dot: 'bg-red-500',  num: overdueTasks.length === 0 ? 'text-foreground' : 'text-red-500',     icon: AlertTriangle },
-            { label: 'Blocked',    value: blockedTasks,        hint: blockedTasks === 0 ? 'nothing stuck' : 'needs help',                                                     dot: 'bg-amber-500', num: blockedTasks === 0 ? 'text-foreground' : 'text-amber-500', icon: Zap },
+            { label: 'Stuck',      value: stuckTasks,          hint: stuckTasks === 0 ? 'nothing stuck' : 'in-progress + overdue',                                            dot: 'bg-amber-500', num: stuckTasks === 0 ? 'text-foreground' : 'text-amber-500', icon: Zap },
           ].map(k => (
             <div key={k.label} className="group rounded-xl border border-border bg-card hover:border-primary/30 hover:shadow-sm transition-all p-4">
               <div className="flex items-center justify-between gap-2">
@@ -319,7 +338,8 @@ export default function EmployeeDashboard() {
                     </select>
                     <select value={newTask.taskType} onChange={e => setNewTask(p => ({ ...p, taskType: e.target.value }))}
                       className="col-span-1 px-2 py-1.5 bg-background border border-input rounded-lg text-xs">
-                      {['dev','ads','content','design','admin_task','pixel','seo'].map(v => <option key={v} value={v}>{v}</option>)}
+                      {/* Server enum is dev/ads/content/admin_task/personal — sending design/pixel/seo would 400. */}
+                      {TASK_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
                     </select>
                     <input type="date" value={newTask.dueDate} onChange={e => setNewTask(p => ({ ...p, dueDate: e.target.value }))}
                       className="col-span-1 px-2 py-1.5 bg-background border border-input rounded-lg text-xs" />
@@ -429,7 +449,14 @@ export default function EmployeeDashboard() {
                                 ) : (
                                   <select
                                     value={task.status}
-                                    onChange={e => updateTask(task._id, { status: e.target.value as 'pending' | 'in_progress' | 'done' | 'blocked' })}
+                                    onChange={e => {
+                                      // Wrap in try/catch — server only accepts pending|ongoing|done.
+                                      // The dropdown is now bound to TASK_STATUSES so invalid values
+                                      // can't reach this handler, but defensive catch keeps an
+                                      // unhandled rejection from bubbling up if something else fails.
+                                      updateTask(task._id, { status: e.target.value as TaskStatus })
+                                        .catch(() => {/* axios interceptor handles the toast */});
+                                    }}
                                     onClick={e => e.stopPropagation()}
                                     className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border-0 cursor-pointer ${STATUS_COLORS[task.status]}`}
                                     style={{ background: 'transparent' }}

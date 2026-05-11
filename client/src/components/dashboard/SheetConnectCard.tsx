@@ -195,7 +195,12 @@ export function SheetConnectCard() {
               </button>
             </div>
             <p>2. Paste the sheet URL or ID below + the tab name. Robin starts polling immediately.</p>
-            <p className="text-muted-foreground">Required columns (header row): <code>name</code>, <code>phone</code>, <code>email</code>. Optional: <code>company</code>, <code>source</code>, <code>notes</code>.</p>
+            <p className="text-muted-foreground">
+              Sheets linked to <strong>Meta Lead Ads</strong> (Zapier / Lead Center) work out of the box —
+              Robin auto-detects <code>full_name</code>, <code>phone_number</code>, <code>email</code>,
+              <code>campaign_name</code>, etc. Plain sheets just need a <code>name</code> column plus
+              <code>phone</code> or <code>email</code>.
+            </p>
           </div>
           <input
             value={input}
