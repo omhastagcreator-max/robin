@@ -198,6 +198,9 @@ export const approveLeave      = (id: string, note?: string) =>
   api.put(`/leaves/${id}/approve`, { note }).then(r => r.data);
 export const rejectLeave       = (id: string, note?: string) =>
   api.put(`/leaves/${id}/reject`, { note }).then(r => r.data);
+// Admin fix dates / status on any leave (e.g. correcting off-by-one date)
+export const adminEditLeave    = (id: string, body: { days?: { date: string; reason?: string; dayType?: string }[]; status?: string }) =>
+  api.put(`/leaves/${id}/admin-edit`, body).then(r => r.data);
 export const onLeaveToday      = () => api.get('/leaves/on-leave-today').then(r => r.data);
 export const adminLeavesSummary = () => api.get('/leaves/admin/summary').then(r => r.data);
 export const adminAttendance    = (date?: string) => api.get('/admin/attendance', { params: date ? { date } : {} }).then(r => r.data);

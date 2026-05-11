@@ -70,6 +70,9 @@ export default function AdminLeaves() {
   const [acting, setActing] = useState<string | null>(null);
   const [rejectFor, setRejectFor] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
+  // Edit dates: which leave is being edited + the draft date strings
+  const [editFor, setEditFor]     = useState<string | null>(null);
+  const [editDates, setEditDates] = useState<string[]>([]);
   const [tab, setTab] = useState<Tab>('approvals');
 
   // Per-employee leave aggregates (loaded only when Report tab is opened).
@@ -128,6 +131,36 @@ export default function AdminLeaves() {
       reload();
     } catch (e: any) {
       toast.error(e?.response?.data?.error || 'Reject failed');
+    } finally { setActing(null); }
+  };
+
+  const startEdit = (l: AdminLeave) => {
+    // Pre-fill the editor with the leave's current dates as YYYY-MM-DD strings.
+    const ymd = l.days.map(d => {
+      const dt = new Date(d.date);
+      // Use the IST day, not the UTC day, to display what the user really meant.
+      const ist = new Date(dt.getTime() + 330 * 60_000);
+      return ist.toISOString().slice(0, 10);
+    });
+    setEditFor(l._id);
+    setEditDates(ymd);
+  };
+
+  const saveEdit = async (l: AdminLeave) => {
+    setActing(l._id);
+    try {
+      // Re-use each day's existing reason; only the date is editable here.
+      const days = editDates.map((date, i) => ({
+        date,
+        reason: (l.days[i] as any)?.reason || 'Admin edited',
+        dayType: (l.days[i] as any)?.dayType || 'full',
+      }));
+      await api.adminEditLeave(l._id, { days });
+      toast.success('Dates updated');
+      setEditFor(null); setEditDates([]);
+      reload();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Save failed');
     } finally { setActing(null); }
   };
 
@@ -278,7 +311,7 @@ export default function AdminLeaves() {
                       </div>
 
                       {/* Actions */}
-                      {l.status === 'pending' && !isRejecting && (
+                      {l.status === 'pending' && !isRejecting && editFor !== l._id && (
                         <div className="flex items-center gap-1.5 shrink-0">
                           <button
                             onClick={() => approve(l._id)}
@@ -296,6 +329,54 @@ export default function AdminLeaves() {
                           >
                             <X className="h-3 w-3" /> Reject
                           </button>
+                          <button
+                            onClick={() => startEdit(l)}
+                            className="flex items-center gap-1 px-2 py-1.5 bg-card border border-border rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted"
+                            title="Fix dates"
+                          >
+                            ✎
+                          </button>
+                        </div>
+                      )}
+                      {/* "Fix dates" available on ANY status (incl. approved) so admin
+                          can correct off-by-one or wrong dates without bouncing the user */}
+                      {l.status !== 'pending' && editFor !== l._id && (
+                        <button
+                          onClick={() => startEdit(l)}
+                          className="shrink-0 flex items-center gap-1 px-2 py-1.5 bg-card border border-border rounded-lg text-[11px] font-medium text-muted-foreground hover:bg-muted"
+                          title="Fix dates"
+                        >
+                          ✎ Edit dates
+                        </button>
+                      )}
+                      {/* Inline date editor */}
+                      {editFor === l._id && (
+                        <div className="shrink-0 flex flex-col gap-1.5 bg-muted/30 rounded-lg p-2 border border-border min-w-[180px]">
+                          <p className="text-[10px] font-semibold text-muted-foreground">Edit dates</p>
+                          {editDates.map((d, i) => (
+                            <input
+                              key={i}
+                              type="date"
+                              value={d}
+                              onChange={e => setEditDates(prev => prev.map((x, idx) => idx === i ? e.target.value : x))}
+                              className="px-2 py-1 bg-background border border-input rounded text-xs"
+                            />
+                          ))}
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => saveEdit(l)}
+                              disabled={busy}
+                              className="flex-1 h-7 rounded bg-primary text-primary-foreground text-[10px] font-semibold hover:bg-primary/90 disabled:opacity-50"
+                            >
+                              {busy ? <Loader2 className="h-3 w-3 animate-spin mx-auto" /> : 'Save'}
+                            </button>
+                            <button
+                              onClick={() => { setEditFor(null); setEditDates([]); }}
+                              className="h-7 px-2 rounded bg-card border border-border text-[10px] font-semibold text-muted-foreground hover:bg-muted"
+                            >
+                              Cancel
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>

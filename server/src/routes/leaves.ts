@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
 import {
-  createLeave, listMyLeaves, listAdminLeaves, approveLeave, rejectLeave, cancelLeave, onLeaveToday, leavesSummary,
+  createLeave, listMyLeaves, listAdminLeaves, approveLeave, rejectLeave, cancelLeave, onLeaveToday, leavesSummary, adminEditLeave,
 } from '../controllers/leavesController';
 
 const router = Router();
@@ -19,6 +19,8 @@ router.get('/admin',              requireRole('admin'),                     list
 router.get('/admin/summary',      requireRole('admin'),                     leavesSummary);
 router.put('/:id/approve',        requireRole('admin'),                     approveLeave);
 router.put('/:id/reject',         requireRole('admin'),                     rejectLeave);
+// Admin can fix dates / status on any leave (e.g. correcting an off-by-one)
+router.put('/:id/admin-edit',     requireRole('admin'),                     adminEditLeave);
 
 // Public-to-internal-staff: lightweight "who's on leave today" for badges
 router.get('/on-leave-today',     requireRole('admin', 'employee', 'sales'), onLeaveToday);

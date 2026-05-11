@@ -367,6 +367,58 @@ export async function cancelLeave(req: AuthRequest, res: Response): Promise<void
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
+/**
+ * PUT /api/leaves/:id/admin-edit  — admin can fix dates / status / dayType
+ * on any leave in their organisation.
+ *
+ * Why this exists: a one-off case (e.g. an old leave saved with the
+ * pre-fix off-by-one timezone bug) needs to be corrected without asking
+ * the employee to cancel + reapply. Admin updates the dates inline and
+ * the on-leave badge clears within 60s.
+ *
+ * Body:
+ *   { days?: [{ date: 'YYYY-MM-DD', reason?: string, dayType?: 'full'|'first_half'|'second_half' }],
+ *     status?: 'pending'|'approved'|'rejected'|'cancelled' }
+ */
+export async function adminEditLeave(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    const doc = await LeaveApplication.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!doc) { res.status(404).json({ error: 'Leave not found' }); return; }
+
+    const { days, status } = req.body || {};
+
+    if (Array.isArray(days) && days.length > 0) {
+      const VALID_DAY_TYPES = ['full', 'first_half', 'second_half'] as const;
+      const cleaned = days.map((raw: any) => {
+        const d = normaliseToIstDay(raw.date);
+        const dt = (VALID_DAY_TYPES as readonly string[]).includes(raw.dayType)
+          ? raw.dayType
+          : 'full';
+        return {
+          date: d,
+          reason: String(raw.reason || (doc.days[0] as any)?.reason || 'Admin edited').trim(),
+          dayType: dt,
+        };
+      });
+      (doc as any).days = cleaned;
+    }
+
+    if (status && ['pending', 'approved', 'rejected', 'cancelled'].includes(status)) {
+      doc.status = status;
+      if (status === 'approved' || status === 'rejected') {
+        doc.reviewedBy = req.user!.id;
+        doc.reviewedAt = new Date();
+      }
+    }
+
+    await doc.save();
+    res.json(doc);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
 // GET /api/leaves/on-leave-today  — minimal payload for badge rendering
 // Returns userIds (and names) of employees whose approved leave covers today.
 export async function onLeaveToday(req: AuthRequest, res: Response): Promise<void> {
