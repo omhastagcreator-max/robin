@@ -72,10 +72,23 @@ export async function authMiddleware(
   }
 }
 
-/** Convenience helper — call after authMiddleware */
+/**
+ * Convenience helper — call after authMiddleware.
+ * Checks BOTH the primary `role` field AND the `roles[]` multi-role array
+ * so admin-granted secondary roles count. Without this, anyone whose
+ * primary role got changed to e.g. 'meta' would lose access to
+ * everything they should still have.
+ */
 export function requireRole(...roles: string[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (!req.user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+    const primary = req.user.role;
+    const extras  = req.user.roles || [];
+    const hasMatch = roles.includes(primary) || extras.some(r => roles.includes(r));
+    if (!hasMatch) {
       res.status(403).json({ error: `Requires one of roles: ${roles.join(', ')}` });
       return;
     }
