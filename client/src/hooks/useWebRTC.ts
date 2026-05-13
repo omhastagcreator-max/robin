@@ -1,10 +1,9 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
 import { toast } from 'sonner';
 import * as api from '@/api';
 import { getIceServers } from '@/lib/iceServers';
-
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000';
+import { getSharedSocket } from '@/hooks/useSocket';
 
 // Resolved at first use via getIceServers() — see lib/iceServers.ts. Order:
 // (1) Metered.live REST API   (2) static VITE_TURN_*   (3) public STUN.
@@ -21,16 +20,11 @@ function attachConnLogging(pc: RTCPeerConnection, label: string) {
   pc.oniceconnectionstatechange = () => console.log(`[webrtc:${label}] ice=${pc.iceConnectionState}`);
 }
 
-let socketSingleton: Socket | null = null;
-
-function getSocket(userId: string, userName?: string, userRole?: string): Socket {
-  if (!socketSingleton || !socketSingleton.connected) {
-    socketSingleton = io(SOCKET_URL, {
-      query: { userId, userName, userRole },
-      transports: ['websocket', 'polling'],
-    });
-  }
-  return socketSingleton;
+// Use the shared socket from useSocket() so we don't open a SECOND TCP
+// connection per user (every authenticated tab was opening two sockets,
+// doubling presence updates and disconnect events).
+function getSocket(userId: string): Socket | null {
+  return getSharedSocket({ id: userId });
 }
 
 // ── Sender (Employee broadcasting their screen) ──────────────────────────────
@@ -89,6 +83,7 @@ export function useWebRTCSender(userId: string) {
   useEffect(() => {
     if (!userId) return;
     const socket = getSocket(userId);
+    if (!socket) return;            // shared socket not ready yet
     socketRef.current = socket;
 
     // Admin asks to view our screen — create a PC just for them.
@@ -238,6 +233,7 @@ export function useWebRTCReceiver(userId: string) {
   useEffect(() => {
     if (!userId) return;
     const socket = getSocket(userId);
+    if (!socket) return;            // shared socket not ready yet
     socketRef.current = socket;
 
     const onOffer = async ({ offer, senderId }: any) => {

@@ -68,7 +68,11 @@ export function ScheduleMeetingsSection() {
       } finally { setLoading(false); }
     };
     load();
-    const i = setInterval(load, 30_000);
+    // Visible-only — pause when tab is hidden.
+    const i = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      load();
+    }, 30_000);
     // Components elsewhere can fire 'meetings:changed' to force a refresh
     const onChange = () => load();
     window.addEventListener('meetings:changed', onChange);

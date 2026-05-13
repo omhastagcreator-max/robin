@@ -95,17 +95,24 @@ export async function syncSheetForOrg(orgId: string, options: { actorUserId?: st
   }
 
   // Build lookup of EXISTING leads in this org by phone/email/externalId so
-  // we never re-create what's already there (handles rows that also came in
-  // via manual entry, AND Meta lead_ids we've already imported on a previous
-  // tick).
-  const existing = await Lead.find({ organizationId: orgId }).select('contact email externalId').lean();
+  // we never re-create what's already there. The Lead collection itself is
+  // now the source of truth for dedupe — we used to use a 5000-entry capped
+  // array on the LeadSource doc as a secondary dedupe set, but once a Meta
+  // account crosses 5000 leads the OLDEST keys get dropped and Robin happily
+  // re-imports them as duplicates. Querying the Lead collection has no
+  // upper bound and is the durable correct check.
+  const existing = await Lead.find({ organizationId: orgId }).select('contact email externalId name').lean();
   const seenPhones    = new Set(existing.map(l => norm((l as any).contact)).filter(Boolean));
   const seenEmails    = new Set(existing.map(l => norm((l as any).email)).filter(Boolean));
   const seenExternal  = new Set(existing.map(l => (l as any).externalId).filter(Boolean));
-
-  // importedKeys is a per-source dedupe in case a row in the sheet has
-  // neither phone nor email nor lead_id yet (shouldn't happen often).
-  const importedKeys = new Set(source.importedKeys || []);
+  // Per-row signature of (name, phone, email) for the rare row that has no
+  // externalId/phone/email match but is the same person by name+something.
+  // Built from the live Lead collection too — no more capped array.
+  const seenName = new Set(
+    existing
+      .map(l => `${norm((l as any).name)}|${norm((l as any).contact)}|${norm((l as any).email)}`)
+      .filter(s => s.length > 2),
+  );
 
   const map = source.columnMap || ({} as any);
   const toInsert: any[] = [];
@@ -151,19 +158,19 @@ export async function syncSheetForOrg(orgId: string, options: { actorUserId?: st
 
     const ph  = norm(phone);
     const em  = norm(email);
-    const key = `${externalId || ''}|${ph}|${em}|${name.toLowerCase()}`;
+    const sig = `${name.toLowerCase()}|${ph}|${em}`;
     if (
       (externalId && seenExternal.has(externalId)) ||
       (ph && seenPhones.has(ph)) ||
       (em && seenEmails.has(em)) ||
-      importedKeys.has(key)
+      seenName.has(sig)
     ) {
       skipped++; continue;
     }
     if (externalId) seenExternal.add(externalId);
     if (ph) seenPhones.add(ph);
     if (em) seenEmails.add(em);
-    importedKeys.add(key);
+    seenName.add(sig);
 
     toInsert.push({
       organizationId: orgId,
@@ -187,11 +194,13 @@ export async function syncSheetForOrg(orgId: string, options: { actorUserId?: st
     createdCount = ins.length;
   }
 
-  // Persist sync state. importedKeys is bounded — keep last 5000.
+  // Persist sync state. importedKeys field is now legacy — left empty so
+  // upgrades don't grow it forever. The Lead collection itself is the
+  // source of truth for dedupe (see comments above).
   source.lastError = '';
   source.lastSyncedAt = new Date();
   source.totalImported = (source.totalImported || 0) + createdCount;
-  source.importedKeys = Array.from(importedKeys).slice(-5000);
+  source.importedKeys = [];
   await source.save();
 
   return { ok: true, createdCount, skippedCount: skipped, totalRows: rows.length };

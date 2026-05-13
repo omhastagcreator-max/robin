@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTeamPresence } from '@/hooks/useTeamPresence';
 import * as api from '@/api';
@@ -44,7 +44,15 @@ export function useOnCall() {
     ? optimistic
     : presence.isOnCall(myId) || !!user?.onCallSince;
 
+  // Ignore rapid double-clicks while a request is in flight. Without this,
+  // a user toggling fast could end up with UI=false but server=true (or
+  // vice-versa) — the second click read stale `isOnCall` and posted the
+  // wrong intended value to the server.
+  const inFlightRef = useRef(false);
+
   const toggle = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     const next = !isOnCall;
     setOptimistic(next);
     try {
@@ -53,6 +61,8 @@ export function useOnCall() {
     } catch {
       // Revert
       setOptimistic(prev => (prev === next ? !next : prev));
+    } finally {
+      inFlightRef.current = false;
     }
   }, [isOnCall]);
 

@@ -52,7 +52,12 @@ export function TodayMeetingsStrip() {
       } finally { setLoading(false); }
     };
     load();
-    const interval = setInterval(load, 60_000); // refresh every minute
+    // Visible-only — skip ticks when tab is hidden so backgrounded tabs
+    // don't burn CPU / API quota for a list nobody can see.
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      load();
+    }, 60_000);
     return () => clearInterval(interval);
   }, []);
 

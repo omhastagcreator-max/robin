@@ -39,7 +39,11 @@ export function ActiveClientMeetingsCard() {
 
   useEffect(() => {
     load();
-    const i = setInterval(load, 30_000); // refresh every 30s
+    // Visible-only — pause when tab is hidden.
+    const i = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      load();
+    }, 30_000); // refresh every 30s while visible
     return () => clearInterval(i);
   }, []);
 

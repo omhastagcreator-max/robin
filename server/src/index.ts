@@ -122,24 +122,46 @@ const io = new SocketServer(httpServer, {
 
 // Online users tracker — keyed by socket.id (raw connections).
 // We deduplicate by userId at emit time so multiple tabs / reconnects don't
-// show the same user multiple times in the chat sidebar.
-const onlineUsers = new Map<string, { userId: string; name: string; role: string }>();
+// show the same user multiple times in the chat sidebar. orgId is included
+// so presence can be scoped per-org for the SaaS multi-tenant case.
+const onlineUsers = new Map<string, { userId: string; name: string; role: string; orgId: string | null }>();
 
 /**
- * Build the deduplicated online list. One entry per userId regardless of
- * how many tabs / sockets that user has open. Filters out garbage entries
- * that came from clients connecting without proper auth (e.g., literal
- * string "undefined" coming through the query string).
+ * Build the deduplicated online list FOR A GIVEN ORG. One entry per userId
+ * regardless of how many tabs / sockets that user has open. Filters out
+ * garbage entries that came from clients without proper auth, AND filters
+ * to only the requested org so Org A never sees Org B's presence.
  */
-function buildOnlinePresence() {
+function buildOnlinePresenceForOrg(orgId: string) {
   const byUser = new Map<string, { userId: string; name: string; role: string }>();
   for (const info of onlineUsers.values()) {
+    if (info.orgId !== orgId) continue;
     if (!info.userId || info.userId === 'undefined' || info.userId === 'null') continue;
-    if (!byUser.has(info.userId)) byUser.set(info.userId, info);
+    if (!byUser.has(info.userId)) byUser.set(info.userId, { userId: info.userId, name: info.name, role: info.role });
   }
   return Array.from(byUser.values());
 }
-function emitPresence() { io.emit('presence:update', buildOnlinePresence()); }
+
+/**
+ * Emit presence:update to one specific org's room only. Was previously a
+ * global io.emit which leaked Org A's online list to every tenant on the
+ * same SaaS instance.
+ */
+function emitPresenceForOrg(orgId: string) {
+  io.to(`org:${orgId}`).emit('presence:update', buildOnlinePresenceForOrg(orgId));
+}
+
+/**
+ * Re-emit presence for every org currently represented in the online map.
+ * Cheap because most installs have ≤ a handful of orgs at once.
+ */
+function emitPresenceForAllOrgs() {
+  const orgs = new Set<string>();
+  for (const info of onlineUsers.values()) {
+    if (info.orgId) orgs.add(info.orgId);
+  }
+  orgs.forEach(emitPresenceForOrg);
+}
 
 // Meeting room participant tracker:
 //   roomId -> Map<userId, { name, role }>
@@ -174,21 +196,40 @@ io.on('connection', (socket) => {
       userId,
       name: userName && userName !== 'undefined' ? userName : 'Unknown',
       role: userRole && userRole !== 'undefined' ? userRole : 'employee',
+      orgId: null, // filled in once User lookup resolves
     });
-    emitPresence();
-    // Resolve the user's org. Failures are non-fatal — they just won't be
-    // able to send chat messages, but other socket features still work.
+    // Resolve the user's org synchronously-ish so subsequent broadcasts
+    // can scope by org. Failures are non-fatal — they just won't be able
+    // to send chat messages, but other socket features still work.
     User.findById(userId).select('organizationId').lean()
-      .then(u => { socketOrgId = u?.organizationId ? String(u.organizationId) : null; })
+      .then(u => {
+        socketOrgId = u?.organizationId ? String(u.organizationId) : null;
+        if (socketOrgId) {
+          socket.join(`org:${socketOrgId}`);            // for org-scoped emits
+          const cur = onlineUsers.get(socket.id);
+          if (cur) cur.orgId = socketOrgId;
+          emitPresenceForOrg(socketOrgId);
+        }
+      })
       .catch(() => {/* ignore */});
   }
 
   // ── WebRTC Screen Share ──────────────────────────────────────────────────
+  // The targeted webrtc:* messages are user-room scoped already (correct).
+  // screen:start / screen:stop now fan out only to teammates IN THE SAME
+  // ORG instead of every connected socket on the SaaS instance. socket.to
+  // with a room only delivers to other sockets in that room (excludes self).
   socket.on('webrtc:offer',  ({ target, offer, senderId })     => io.to(`user:${target}`).emit('webrtc:offer',  { offer, senderId }));
   socket.on('webrtc:answer', ({ target, answer, adminId })     => io.to(`user:${target}`).emit('webrtc:answer', { answer, adminId }));
   socket.on('webrtc:ice',    ({ target, candidate, senderId }) => io.to(`user:${target}`).emit('webrtc:ice',    { candidate, senderId }));
-  socket.on('screen:start',  ({ userId: uid })                 => socket.broadcast.emit('screen:started', { userId: uid }));
-  socket.on('screen:stop',   ({ userId: uid })                 => socket.broadcast.emit('screen:stopped', { userId: uid }));
+  socket.on('screen:start',  ({ userId: uid }) => {
+    if (!socketOrgId) return;
+    socket.to(`org:${socketOrgId}`).emit('screen:started', { userId: uid });
+  });
+  socket.on('screen:stop',   ({ userId: uid }) => {
+    if (!socketOrgId) return;
+    socket.to(`org:${socketOrgId}`).emit('screen:stopped', { userId: uid });
+  });
   socket.on('view:request',  ({ targetId, adminId })           => io.to(`user:${targetId}`).emit('view:request', { adminId }));
 
   // ── Group Chat (per-org rooms) ────────────────────────────────────────────
@@ -275,9 +316,10 @@ io.on('connection', (socket) => {
   // tile so we don't keep shouting at someone who can't hear us.
   // Ephemeral — not persisted; clears when the user disconnects below.
   socket.on('presence:deafen', ({ on }: { on: boolean }) => {
-    if (!userId) return;
-    // Broadcast to everyone except the toggling user.
-    socket.broadcast.emit('presence:deafened', {
+    if (!userId || !socketOrgId) return;
+    // Org-scoped broadcast (was a global socket.broadcast.emit which leaked
+    // Org A's mute toggles to every other tenant on the SaaS).
+    socket.to(`org:${socketOrgId}`).emit('presence:deafened', {
       userId,
       name: userName || 'Unknown',
       on: !!on,
@@ -285,13 +327,15 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    const cached = onlineUsers.get(socket.id);
+    const cachedOrg = cached?.orgId || socketOrgId;
     onlineUsers.delete(socket.id);
-    emitPresence();
+    if (cachedOrg) emitPresenceForOrg(cachedOrg);
     // Clear any deafen badge so it doesn't linger after the user leaves.
-    if (userId) {
+    if (userId && cachedOrg) {
       const stillConnected = Array.from(onlineUsers.values()).some(u => u.userId === userId);
       if (!stillConnected) {
-        socket.broadcast.emit('presence:deafened', { userId, on: false });
+        socket.to(`org:${cachedOrg}`).emit('presence:deafened', { userId, on: false });
       }
     }
 

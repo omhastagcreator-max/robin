@@ -15,8 +15,22 @@ export function startSheetSyncJob() {
     return;
   }
 
+  // Overlap guard — without this, a tick that runs longer than 5 minutes
+  // (50+ orgs, slow Google API, retries) would have a SECOND cron tick start
+  // while the first is still iterating. Both ticks process the same orgs in
+  // parallel, both call source.save() with their own importedKeys delta, and
+  // last-write-wins corrupts the dedupe set. The same lead gets re-imported
+  // on the next tick. The fix is the simplest possible: a single boolean,
+  // skip-and-log on overlap.
+  let running = false;
+
   // Every 5 minutes
   cron.schedule('*/5 * * * *', async () => {
+    if (running) {
+      console.warn('[sheetSync] previous tick still running — skipping this one to avoid double-import');
+      return;
+    }
+    running = true;
     try {
       const sources = await LeadSource.find({ kind: 'google-sheet', enabled: true }).select('organizationId').lean();
       if (sources.length === 0) return;
@@ -33,6 +47,8 @@ export function startSheetSyncJob() {
       }
     } catch (err) {
       console.error('[sheetSync] tick failed', (err as Error).message);
+    } finally {
+      running = false;
     }
   });
 

@@ -47,19 +47,19 @@ export default function GroupChat() {
     api.listUsers().then(d => setAllUsers(Array.isArray(d) ? d : []));
   }, []);
 
-  // Socket events
+  // Socket events — use named handlers + targeted .off() so we don't strip
+  // sibling listeners (AppLayout listens for chat:message too for the unread
+  // badge; HuddlePingChat listens for the same event for the huddle chat).
   useEffect(() => {
     if (!socket) return;
     socket.emit('chat:join', { roomId: ROOM });
-    socket.on('chat:message', (msg: any) => {
-      setMessages(prev => [...prev, msg]);
-    });
-    socket.on('presence:update', (users: any[]) => {
-      setOnlineUsers(users);
-    });
+    const onMessage = (msg: any) => setMessages(prev => [...prev, msg]);
+    const onPresence = (users: any[]) => setOnlineUsers(users);
+    socket.on('chat:message',   onMessage);
+    socket.on('presence:update', onPresence);
     return () => {
-      socket.off('chat:message');
-      socket.off('presence:update');
+      socket.off('chat:message',   onMessage);
+      socket.off('presence:update', onPresence);
     };
   }, [socket]);
 

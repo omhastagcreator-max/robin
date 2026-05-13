@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sheet, RefreshCcw, Loader2, ExternalLink, Search, Phone, Mail,
@@ -126,10 +127,8 @@ export function LiveSheetSection() {
   useEffect(() => { load(); }, []);
 
   // Auto-refresh every 60s so the team sees new Meta leads without clicking.
-  useEffect(() => {
-    const t = setInterval(load, 60_000);
-    return () => clearInterval(t);
-  }, []);
+  // Visible-only: don't poll while the tab is backgrounded.
+  useVisiblePoll(load, 60_000);
 
   const syncToPipeline = async () => {
     setSyncing(true);

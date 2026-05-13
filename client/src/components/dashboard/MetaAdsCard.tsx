@@ -100,7 +100,12 @@ export function MetaAdsCard() {
       }
     };
     load();
-    const interval = setInterval(load, 60_000);
+    // Visible-only auto-refresh — pause polling when tab is hidden so we
+    // don't burn the Meta Ads API quota or the user's battery.
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      load();
+    }, 60_000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [hasAccess]);
 

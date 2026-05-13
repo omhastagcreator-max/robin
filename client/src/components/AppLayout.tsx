@@ -1,4 +1,5 @@
 import { useState, useEffect, type ReactNode } from 'react';
+import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -71,52 +72,54 @@ export function AppLayout({ children, requiredRole }: Props) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [chatUnread, setChatUnread] = useState(0);
 
-  // ── Poll unread notifications (REST) ─────────────────────────────────────
-  useEffect(() => {
-    const poll = async () => {
-      try {
-        const data = await api.listNotifications({ limit: 50 });
-        setUnreadCount(Array.isArray(data) ? data.filter((n: any) => !n.isRead).length : 0);
-      } catch { /* ignore */ }
-    };
-    poll();
-    const i = setInterval(poll, 30000);
-    return () => clearInterval(i);
-  }, []);
+  // ── Poll unread notifications (REST) — visible-only ─────────────────────
+  // Was a plain setInterval that fired every 30s even on backgrounded tabs.
+  // useVisiblePoll pauses when document.hidden — saves CPU + battery.
+  useVisiblePoll(async () => {
+    try {
+      const data = await api.listNotifications({ limit: 50 });
+      setUnreadCount(Array.isArray(data) ? data.filter((n: any) => !n.isRead).length : 0);
+    } catch { /* ignore */ }
+  }, 30_000);
 
   // ── Real-time: Socket.io notification + chat unread ───────────────────────
   useEffect(() => {
     if (!socket) return;
 
-    // New push notification arrives
-    socket.on('notification:new', (data: { title: string; body?: string; message?: string; type?: string }) => {
+    // CRITICAL: `socket.off('event')` with no handler unbinds EVERY listener
+    // for that event across the whole app. GroupChat, HuddlePingChat, and
+    // others all listen to chat:message — wiping them silently is what
+    // caused "chat goes dead after I navigate around" complaints.
+    // Use named handlers + `socket.off(event, handler)` so we only remove
+    // OUR listener.
+    const onNotification = (data: { title: string; body?: string; message?: string; type?: string }) => {
       setUnreadCount(c => c + 1);
       toast(data.title, {
         description: data.body || data.message,
         icon: '🔔',
         duration: 6000,
       });
-    });
-
-    // Chat mention — increment chat badge if not on /chat page
-    socket.on('chat:mention', (data: { from: string; content: string }) => {
+    };
+    const onChatMention = (data: { from: string; content: string }) => {
       if (!location.pathname.startsWith('/chat')) {
         setChatUnread(c => c + 1);
         toast(`${data.from} mentioned you`, { description: data.content, icon: '💬', duration: 5000 });
       }
-    });
-
-    // New chat message badge (if not on /chat)
-    socket.on('chat:message', () => {
+    };
+    const onChatMessage = () => {
       if (!location.pathname.startsWith('/chat')) {
         setChatUnread(c => c + 1);
       }
-    });
+    };
+
+    socket.on('notification:new', onNotification);
+    socket.on('chat:mention',     onChatMention);
+    socket.on('chat:message',     onChatMessage);
 
     return () => {
-      socket.off('notification:new');
-      socket.off('chat:mention');
-      socket.off('chat:message');
+      socket.off('notification:new', onNotification);
+      socket.off('chat:mention',     onChatMention);
+      socket.off('chat:message',     onChatMessage);
     };
   }, [socket, location.pathname]);
 

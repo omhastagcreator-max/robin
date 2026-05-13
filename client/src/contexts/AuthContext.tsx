@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import * as api from '@/api';
+import { disconnectSharedSocket } from '@/hooks/useSocket';
 
 interface RobinUser {
   id: string;
@@ -88,6 +89,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    // Tear down the shared socket so the next login doesn't inherit the
+    // previous user's identity in chat/presence.
+    try { disconnectSharedSocket(); } catch { /* ignore */ }
     setUser(null);
     window.location.href = '/login';
   }, []);

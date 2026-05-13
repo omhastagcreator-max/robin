@@ -124,7 +124,11 @@ export function useTeamPresence() {
       } catch { /* ignore — bad network is harmless */ }
     };
     refresh();
-    const i = setInterval(refresh, 60_000);
+    // Visible-only — pause polling when tab is hidden.
+    const i = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      refresh();
+    }, 60_000);
 
     let off: (() => void) | undefined;
     if (socket) {

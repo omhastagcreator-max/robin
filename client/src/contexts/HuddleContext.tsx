@@ -157,12 +157,26 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     };
     muteAll();
 
-    // Watch the entire document tree, not just <body>.
-    const observer = new MutationObserver(muteAll);
+    // Watch the entire document tree, not just <body>. Throttle the handler
+    // — without throttling, a single chat scroll fires thousands of mutation
+    // events, each triggering a full document.querySelectorAll('audio,video')
+    // walk. Coalesce into one walk per animation frame instead.
+    let scheduled = false;
+    const scheduleMuteAll = () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => { scheduled = false; muteAll(); });
+    };
+    const observer = new MutationObserver(scheduleMuteAll);
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
-    // Periodic safety net for any element a re-render un-mutes.
-    const interval = setInterval(muteAll, 500);
+    // Periodic safety net for any element a re-render un-mutes — but only
+    // while the tab is visible. Backgrounded tabs can't play sound that
+    // matters anyway, and the 2Hz interval was burning battery.
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      muteAll();
+    }, 1000);
 
     return () => {
       observer.disconnect();
@@ -431,6 +445,14 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     }
     autoSharedThisJoinRef.current = true;
     const t = setTimeout(() => {
+      // RE-CHECK at fire time: between scheduling (now) and 600ms later,
+      // LiveKit's screenOn could have flipped to true (user manually toggled
+      // share), or the user could have left the huddle, or the OTHER share
+      // system could have started broadcasting. If we toggle now we'd
+      // either turn off a share they JUST started, or start a phantom one.
+      if (!meeting.joined) return;
+      if (meeting.screenOn) return;
+      if (alreadyBroadcasting) return;
       try { meeting.toggleScreen(); } catch { /* user can still trigger manually */ }
     }, 600);
     return () => clearTimeout(t);
