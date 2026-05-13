@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { createPortal } from 'react-dom';
 import { useMeetingRoom, type PeerView } from '@/hooks/useMeetingRoom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useScreenShare } from '@/contexts/ScreenShareContext';
 import { useSocket } from '@/hooks/useSocket';
 import { useHuddleTranscription } from '@/hooks/useHuddleTranscription';
 import { HuddlePiPContent } from '@/components/shared/HuddlePiPContent';
@@ -74,6 +75,12 @@ const HuddleContext = createContext<HuddleApi | null>(null);
 export function HuddleProvider({ children }: { children: ReactNode }) {
   const { user, role } = useAuth();
   const socket = useSocket();
+  // Read the OTHER screen-share system's state so the auto-share-on-join
+  // effect can skip itself when the user is already broadcasting via
+  // useWebRTCSender. Two getDisplayMedia captures racing each other was the
+  // real cause of "screen sharing stops automatically" — Chrome ends the
+  // first track when the second one is acquired.
+  const { isSharing: alreadyBroadcasting } = useScreenShare();
   const [mode, setMode] = useState<HuddleMode>('idle');
 
   // The ONE useMeetingRoom instance for the whole app.
@@ -413,12 +420,21 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     if (meeting.screenOn) { autoSharedThisJoinRef.current = true; return; }
     // Admins are NOT auto-prompted — they're observers by default.
     if (role === 'admin') { autoSharedThisJoinRef.current = true; return; }
+    // CRITICAL: don't auto-grab a second getDisplayMedia track if the user
+    // is already broadcasting via Robin's screen-share button. Chrome would
+    // kill the first track to give us the new one — which is exactly the
+    // "screen sharing stopped automatically" bug. Mark as handled so we
+    // don't keep retrying every render.
+    if (alreadyBroadcasting) {
+      autoSharedThisJoinRef.current = true;
+      return;
+    }
     autoSharedThisJoinRef.current = true;
     const t = setTimeout(() => {
       try { meeting.toggleScreen(); } catch { /* user can still trigger manually */ }
     }, 600);
     return () => clearTimeout(t);
-  }, [meeting.joined, meeting.screenOn, meeting.toggleScreen, role]);
+  }, [meeting.joined, meeting.screenOn, meeting.toggleScreen, role, alreadyBroadcasting]);
 
   const participantCount = meeting.peers.length + (meeting.joined ? 1 : 0);
 
