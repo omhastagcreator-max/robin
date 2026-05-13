@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { toast } from 'sonner';
 import * as api from '@/api';
 import { getIceServers } from '@/lib/iceServers';
 
@@ -41,6 +42,16 @@ export function useWebRTCSender(userId: string) {
   const socketRef = useRef<Socket | null>(null);
   // Buffer ICE candidates that arrive before remoteDescription is set on a PC.
   const pendingIce = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+  // True while a teardown is already in flight — prevents the onended →
+  // stopSharing → t.stop() → onended recursion that was double-emitting
+  // screen:stop and double-firing updateScreenStatus on every manual stop.
+  const stoppingRef = useRef(false);
+  // True ONLY when the user clicked Stop in our UI. If onended fires while
+  // this is false, the browser ended the track unexpectedly (user clicked
+  // Chrome's native Stop pill, the source window closed, OS sleep, etc.).
+  // Lets us surface a "Sharing ended — resume?" toast instead of silently
+  // killing the share.
+  const manualStopRef = useRef(false);
 
   // Forward declarations so closures can call each other
   const stopAllPCs = useCallback(() => {
@@ -50,12 +61,29 @@ export function useWebRTCSender(userId: string) {
   }, []);
 
   const stopSharing = useCallback(async () => {
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    streamRef.current = null;
-    stopAllPCs();
-    setIsSharing(false);
-    try { await api.updateScreenStatus({ status: 'inactive' }); } catch { /* ignore */ }
-    socketRef.current?.emit('screen:stop', { userId });
+    // Guard against re-entry: t.stop() below fires onended → onended calls
+    // stopSharing → infinite recursion + double network emits. The ref-flag
+    // is the only way to break the cycle since onended runs async.
+    if (stoppingRef.current) return;
+    stoppingRef.current = true;
+    manualStopRef.current = true;
+    try {
+      streamRef.current?.getTracks().forEach(t => {
+        // Clear onended FIRST so t.stop() can't re-enter via the handler.
+        t.onended = null;
+        try { t.stop(); } catch { /* track already ended */ }
+      });
+      streamRef.current = null;
+      stopAllPCs();
+      setIsSharing(false);
+      try { await api.updateScreenStatus({ status: 'inactive' }); } catch { /* ignore */ }
+      socketRef.current?.emit('screen:stop', { userId });
+    } finally {
+      stoppingRef.current = false;
+      // Reset manualStop so the NEXT share's onended fires correctly.
+      // Defer to next tick so any racing onended sees true (no auto-toast).
+      setTimeout(() => { manualStopRef.current = false; }, 0);
+    }
   }, [userId, stopAllPCs]);
 
   useEffect(() => {
@@ -129,14 +157,68 @@ export function useWebRTCSender(userId: string) {
       // Resolve ICE servers up front — guarantees TURN is fetched before
       // an admin asks to view this stream.
       await ensureIce();
-      const stream = await (navigator.mediaDevices as any).getDisplayMedia({ video: true, audio: false });
+      // Higher framerate + content hint keep the share crisp without taxing
+      // the network. Audio off because Chrome will prompt for tab audio.
+      const stream = await (navigator.mediaDevices as any).getDisplayMedia({
+        video: { frameRate: { ideal: 15, max: 24 } },
+        audio: false,
+      });
       streamRef.current = stream;
-      stream.getVideoTracks()[0].onended = () => stopSharing();
+      manualStopRef.current = false;
+
+      // Listen to track ending — could be from:
+      //   1. Our stopSharing() calling t.stop() (manualStopRef = true)
+      //   2. User clicked Chrome's native "Stop sharing" pill
+      //   3. The captured window/tab closed
+      //   4. OS sleep / display change / extension interference
+      // For cases 2-4 we want to clean up state AND tell the user why so
+      // they can re-share with one click — previously this just died silently.
+      const track = stream.getVideoTracks()[0];
+      track.onended = () => {
+        const wasManual = manualStopRef.current;
+        // Always finish teardown so state stays consistent with reality.
+        stopSharing();
+        if (!wasManual) {
+          // Browser-driven stop — surface a clear, actionable toast.
+          toast('Screen sharing stopped', {
+            description: 'The browser ended the share (window closed, system sleep, or Chrome\'s native Stop button).',
+            action: {
+              label: 'Share again',
+              onClick: () => { startSharingRef.current?.(); },
+            },
+            duration: 8000,
+          });
+        }
+      };
+      // Also listen to mute — Chrome briefly mutes the track when the source
+      // tab backgrounds; log it but DON'T tear down. Stops the "share dies on
+      // tab switch" bug for users sharing a tab.
+      track.onmute = () => console.log('[screen-share] track muted (source backgrounded?)');
+      track.onunmute = () => console.log('[screen-share] track unmuted (source foregrounded)');
+
       setIsSharing(true);
       try { await api.updateScreenStatus({ status: 'active', startedAt: new Date().toISOString() }); } catch { /* ignore */ }
       socketRef.current?.emit('screen:start', { userId });
-    } catch { /* user cancelled the picker */ }
+    } catch (err: any) {
+      // Distinguish "user cancelled" (NotAllowedError + no message) from
+      // real failures (NotReadableError, NotFoundError, OverconstrainedError).
+      const name = err?.name;
+      if (name && name !== 'NotAllowedError' && name !== 'AbortError') {
+        toast.error('Could not start screen sharing', {
+          description: name === 'NotReadableError'
+            ? 'The source might be in use by another app. Close it and try again.'
+            : name === 'NotFoundError'
+            ? 'No screen / window / tab was selected.'
+            : 'Browser declined the request. Try a different source.',
+        });
+      }
+    }
   }, [userId, stopSharing]);
+
+  // Stable ref so the onended toast's "Share again" button can call the
+  // current startSharing even after it's been regenerated by a userId change.
+  const startSharingRef = useRef(startSharing);
+  useEffect(() => { startSharingRef.current = startSharing; }, [startSharing]);
 
   return { isSharing, startSharing, stopSharing };
 }
