@@ -46,6 +46,15 @@ export function useWebRTCSender(userId: string) {
   // Lets us surface a "Sharing ended — resume?" toast instead of silently
   // killing the share.
   const manualStopRef = useRef(false);
+  // Wake-lock keeps the Mac display from sleeping while we're sharing —
+  // macOS aggressively cuts screen-capture when the display sleeps. Held
+  // for the lifetime of the share, released in stopSharing.
+  const wakeLockRef = useRef<any>(null);
+  // Keep-alive interval that polls track.readyState. When the OS, browser
+  // tab discard, or memory-saver kills the track WITHOUT firing onended
+  // (which happens on Mac under tab freezing), this catches it within 2s
+  // instead of leaving the UI stuck on "Sharing".
+  const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Forward declarations so closures can call each other
   const stopAllPCs = useCallback(() => {
@@ -61,7 +70,16 @@ export function useWebRTCSender(userId: string) {
     if (stoppingRef.current) return;
     stoppingRef.current = true;
     manualStopRef.current = true;
+    console.log('[screen-share] stopSharing called');
     try {
+      // Clear watchdog before tearing down tracks so it doesn't fire
+      // mid-teardown and trigger spurious "share ended" diagnostics.
+      if (watchdogRef.current) { clearInterval(watchdogRef.current); watchdogRef.current = null; }
+      // Release the screen wake-lock so the Mac can sleep normally.
+      if (wakeLockRef.current) {
+        try { await wakeLockRef.current.release(); } catch { /* ignore */ }
+        wakeLockRef.current = null;
+      }
       streamRef.current?.getTracks().forEach(t => {
         // Clear onended FIRST so t.stop() can't re-enter via the handler.
         t.onended = null;
@@ -160,44 +178,89 @@ export function useWebRTCSender(userId: string) {
       });
       streamRef.current = stream;
       manualStopRef.current = false;
+      const track = stream.getVideoTracks()[0];
+      console.log('[screen-share] started', {
+        label: track.label, settings: track.getSettings?.(),
+        platform: navigator.userAgent,
+      });
 
-      // Listen to track ending — could be from:
+      // ── 1. Screen wake-lock so the Mac display doesn't sleep ─────────
+      // macOS aggressively ends screen-capture when the display sleeps
+      // (lock screen, hot corners, energy saver). Hold a wake-lock while
+      // sharing to prevent that. Best-effort — older browsers don't have
+      // the API; that's fine.
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+          console.log('[screen-share] wake-lock acquired');
+        }
+      } catch (e) {
+        console.log('[screen-share] wake-lock unavailable', e);
+      }
+
+      // Re-acquire wake-lock if the browser drops it on tab focus change
+      // (it auto-releases when document.hidden becomes true).
+      const onVis = async () => {
+        if (document.visibilityState === 'visible' && streamRef.current && !wakeLockRef.current) {
+          try {
+            wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+            console.log('[screen-share] wake-lock re-acquired on visibility change');
+          } catch { /* ignore */ }
+        }
+      };
+      document.addEventListener('visibilitychange', onVis);
+
+      // ── 2. Listen to track ending ───────────────────────────────────
+      // Could be from:
       //   1. Our stopSharing() calling t.stop() (manualStopRef = true)
       //   2. User clicked Chrome's native "Stop sharing" pill
       //   3. The captured window/tab closed
-      //   4. OS sleep / display change / extension interference
-      // For cases 2-4 we want to clean up state AND tell the user why so
-      // they can re-share with one click — previously this just died silently.
-      const track = stream.getVideoTracks()[0];
+      //   4. macOS display sleep / lock screen / energy saver
+      //   5. Chrome Memory Saver discarding a backgrounded tab
       track.onended = () => {
         const wasManual = manualStopRef.current;
-        // Always finish teardown so state stays consistent with reality.
+        console.warn('[screen-share] track.onended fired', {
+          wasManual, readyState: track.readyState, muted: track.muted,
+        });
+        document.removeEventListener('visibilitychange', onVis);
         stopSharing();
         if (!wasManual) {
-          // Browser-driven stop — surface a clear, actionable toast.
           toast('Screen sharing stopped', {
-            description: 'The browser ended the share (window closed, system sleep, or Chrome\'s native Stop button).',
+            description: 'Most common Mac cause: display went to sleep, the captured window was closed, or Chrome\'s Stop pill was clicked.',
             action: {
               label: 'Share again',
               onClick: () => { startSharingRef.current?.(); },
             },
-            duration: 8000,
+            duration: 10000,
           });
         }
       };
-      // Also listen to mute — Chrome briefly mutes the track when the source
-      // tab backgrounds; log it but DON'T tear down. Stops the "share dies on
-      // tab switch" bug for users sharing a tab.
-      track.onmute = () => console.log('[screen-share] track muted (source backgrounded?)');
+      // Mute = source backgrounded (don't tear down). Unmute = back.
+      track.onmute   = () => console.log('[screen-share] track muted (source backgrounded?)');
       track.onunmute = () => console.log('[screen-share] track unmuted (source foregrounded)');
+
+      // ── 3. Watchdog — readyState polling ────────────────────────────
+      // Sometimes (especially on Mac with Chrome Memory Saver / tab freeze)
+      // the track gets killed without firing onended. Poll readyState
+      // every 2s and force-cleanup if it ever flips to 'ended'.
+      if (watchdogRef.current) clearInterval(watchdogRef.current);
+      watchdogRef.current = setInterval(() => {
+        const t = streamRef.current?.getVideoTracks()[0];
+        if (!t) return;
+        if (t.readyState === 'ended') {
+          console.warn('[screen-share] watchdog detected ended track without onended firing');
+          // Trigger the onended path manually
+          if (t.onended) (t.onended as any)(new Event('ended'));
+          else stopSharing();
+        }
+      }, 2000);
 
       setIsSharing(true);
       try { await api.updateScreenStatus({ status: 'active', startedAt: new Date().toISOString() }); } catch { /* ignore */ }
       socketRef.current?.emit('screen:start', { userId });
     } catch (err: any) {
-      // Distinguish "user cancelled" (NotAllowedError + no message) from
-      // real failures (NotReadableError, NotFoundError, OverconstrainedError).
       const name = err?.name;
+      console.warn('[screen-share] startSharing failed', { name, message: err?.message });
       if (name && name !== 'NotAllowedError' && name !== 'AbortError') {
         toast.error('Could not start screen sharing', {
           description: name === 'NotReadableError'

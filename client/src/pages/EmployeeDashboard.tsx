@@ -156,7 +156,11 @@ export default function EmployeeDashboard() {
     setSaving(true);
     try {
       const payload: any = { ...newTask, status: 'pending', dueDate: newTask.dueDate || new Date().toISOString().split('T')[0] };
-      if (newTask.assignToId) payload.assignedTo = newTask.assignToId;
+      // If an explicit teammate was picked, assign to them. Otherwise
+      // assign to ME so the task is actually visible in MY task list on
+      // next refresh — listTasks filters non-admins to assignedTo: userId
+      // so an unassigned task would "vanish" the moment you reload.
+      payload.assignedTo = newTask.assignToId || user?.id;
       if (!payload.projectId) delete payload.projectId;
       await createTask(payload);
       setNewTask({ title: '', priority: 'medium', dueDate: '', taskType: 'dev', assignToId: '', projectId: '' });

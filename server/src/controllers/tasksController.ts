@@ -51,8 +51,17 @@ export async function createTask(req: AuthRequest, res: Response): Promise<void>
     // malicious client set organizationId, _id, etc.
     const { title, description, priority, status, dueDate, taskType, projectId, assignedTo } = req.body || {};
     if (!title) { res.status(400).json({ error: 'title required' }); return; }
+    // Default assignedTo to the creator. listTasks filters non-admins to
+    // `assignedTo: userId` only — without this default, a task someone
+    // creates for themselves (typical TasksPage / EmployeeDashboard quick-
+    // add flow with no explicit assignee) saves successfully but is then
+    // invisible to them on next refresh, looking like it "vanished" the
+    // moment they navigated away. Explicit assignedTo from the form still
+    // wins (e.g. admin/lead assigning to a teammate).
+    const finalAssignedTo = assignedTo || req.user!.id;
     const task = await ProjectTask.create({
-      title, description, priority, status, dueDate, taskType, projectId, assignedTo,
+      title, description, priority, status, dueDate, taskType, projectId,
+      assignedTo: finalAssignedTo,
       organizationId: orgId,
       assignedBy: req.user!.id,
     });

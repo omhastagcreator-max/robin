@@ -6,6 +6,7 @@ import { format, isToday, isBefore, startOfDay, isThisWeek } from 'date-fns';
 import { useTasks } from '@/hooks/useTasks';
 import { toast } from 'sonner';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   TASK_STATUSES, TASK_TYPES, TASK_PRIORITIES,
   TASK_STATUS_LABEL, TASK_TYPE_LABEL, nextTaskStatus,
@@ -33,6 +34,7 @@ interface NewTaskForm { title: string; priority: TaskPriority; dueDate: string; 
 const EMPTY_FORM: NewTaskForm = { title: '', priority: 'medium', dueDate: '', taskType: 'dev' };
 
 export default function TasksPage() {
+  const { user } = useAuth();
   const { tasks, loading, refresh, updateTask, createTask, deleteTask } = useTasks();
   const [view, setView] = useState<'list' | 'board'>('list');
   const [adding, setAdding] = useState(false);
@@ -56,7 +58,13 @@ export default function TasksPage() {
     if (!form.title) return;
     setSaving(true);
     try {
-      await createTask({ ...form, status: 'pending' } as any);
+      // Explicitly assign to self if no assignee picked. The server now
+      // defaults this too, but sending it from the client guarantees the
+      // task survives even on older deploys + makes the intent obvious.
+      // Without assignedTo, listTasks (which filters non-admins to their
+      // own assigned tasks) hides the task we just created — looks like
+      // it "vanished" the next time you visit /tasks.
+      await createTask({ ...form, status: 'pending', assignedTo: user?.id } as any);
       setForm(EMPTY_FORM); setAdding(false);
       toast.success('Task created!');
     } catch { toast.error('Failed to create task'); }
