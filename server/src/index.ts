@@ -39,6 +39,7 @@ import credentialsRoutes  from './routes/credentials';
 import leavesRoutes       from './routes/leaves';
 import huddleRoutes       from './routes/huddle';
 import remindersRoutes    from './routes/reminders';
+import clientScheduleRoutes from './routes/clientSchedule';
 import aiRoutes           from './routes/ai';
 import transcriptsRoutes  from './routes/transcripts';
 import metaAdsRoutes      from './routes/metaAds';
@@ -404,6 +405,7 @@ app.use('/api/credentials',     credentialsRoutes);
 app.use('/api/leaves',          leavesRoutes);
 app.use('/api/huddle',          huddleRoutes);
 app.use('/api/reminders',       remindersRoutes);
+app.use('/api/client-schedule', clientScheduleRoutes);
 app.use('/api/ai',              aiRoutes);
 app.use('/api/transcripts',     transcriptsRoutes);
 app.use('/api/ads/meta',        metaAdsRoutes);    // includes /share, /shares (authed)

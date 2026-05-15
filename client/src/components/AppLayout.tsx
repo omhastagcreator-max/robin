@@ -7,7 +7,7 @@ import {
   Bird, LayoutDashboard, ListTodo, Video, Bell, User, LogOut,
   Briefcase, Users, Building2, BarChart2, TrendingUp, Menu, X,
   MessageSquare, Monitor, MonitorOff, KeyRound, CalendarOff, Clock,
-  BarChart3, Calendar, Bug,
+  BarChart3, Calendar, Bug, CalendarDays,
 } from 'lucide-react';
 import { Avatar } from '@/components/shared/Avatar';
 import * as api from '@/api';
@@ -46,6 +46,8 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/workroom',         label: 'Work Room',    icon: Video,           roles: ['admin', 'employee', 'sales'] },
   // Shared team calendar — busy/free visibility for everyone
   { to: '/team/calendar',    label: 'Team Calendar', icon: Calendar,       roles: ['admin', 'employee', 'sales'] },
+  // Personal weekly client schedule — who you're serving on which day
+  { to: '/client-schedule',  label: 'Client Schedule', icon: CalendarDays, roles: ['admin', 'employee', 'sales'] },
   // Client credential vault
   { to: '/vault',            label: 'Client Vault', icon: KeyRound,        roles: ['admin', 'employee', 'sales'] },
   // Group Chat — ALL internal roles
@@ -81,6 +83,45 @@ export function AppLayout({ children, requiredRole }: Props) {
       setUnreadCount(Array.isArray(data) ? data.filter((n: any) => !n.isRead).length : 0);
     } catch { /* ignore */ }
   }, 30_000);
+
+  // ── Today's client schedule reminder ────────────────────────────────────
+  // Fires ONCE per session (per logged-in user, per IST day) when the user
+  // first lands in the app. Surfaces a single toast listing the clients
+  // they're scheduled to serve today, with a quick-link to the schedule
+  // page. Uses sessionStorage so navigating around doesn't re-fire it; uses
+  // an IST-day key so a tab left open across midnight re-fires next day.
+  useEffect(() => {
+    if (!user || !['admin', 'employee', 'sales'].includes(role)) return;
+    const istNow = new Date(Date.now() + 330 * 60_000);
+    const istDayKey = istNow.toISOString().slice(0, 10);
+    const flagKey = `robin.todaySchedule.shown.${user.id}.${istDayKey}`;
+    if (sessionStorage.getItem(flagKey) === '1') return;
+    sessionStorage.setItem(flagKey, '1');
+
+    api.todaysClientSchedule()
+      .then((items: any[]) => {
+        if (!Array.isArray(items) || items.length === 0) return;
+        const names = items
+          .filter(i => i.status !== 'done' && i.status !== 'skipped')
+          .map(i => i.clientName)
+          .filter(Boolean);
+        if (names.length === 0) return;
+        const description = names.length <= 3
+          ? names.join(', ')
+          : `${names.slice(0, 3).join(', ')} + ${names.length - 3} more`;
+        toast(`Today's clients · ${names.length}`, {
+          description,
+          icon: '📋',
+          duration: 9000,
+          action: {
+            label: 'Open schedule',
+            onClick: () => { window.location.href = '/client-schedule'; },
+          },
+        });
+      })
+      .catch(() => { /* silent — interceptor handles real errors */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, role]);
 
   // ── Real-time: Socket.io notification + chat unread ───────────────────────
   useEffect(() => {

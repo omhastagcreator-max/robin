@@ -13,6 +13,7 @@ import { format } from 'date-fns';
 import { SessionClockCard } from '@/components/shared/SessionClockCard';
 import { SheetConnectCard } from '@/components/dashboard/SheetConnectCard';
 import { LiveSheetSection } from '@/components/dashboard/LiveSheetSection';
+import { TodayClientsCard } from '@/components/dashboard/TodayClientsCard';
 import { LeadListView } from '@/components/dashboard/LeadListView';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 
@@ -567,6 +568,10 @@ export default function SalesDashboard() {
 
         {/* Clock-in (Start Day / Break / End Day) */}
         <SessionClockCard />
+
+        {/* Today's clients — sales reps' own scheduled clients with quick
+            mark-done. Hidden when nothing's scheduled. */}
+        <TodayClientsCard />
 
         {/* Google Sheets auto-import — admin connects, sales sees status */}
         <SheetConnectCard />

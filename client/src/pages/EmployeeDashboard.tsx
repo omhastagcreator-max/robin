@@ -22,6 +22,7 @@ import { TodayMeetingsStrip } from '@/components/dashboard/TodayMeetingsStrip';
 import { ActiveClientMeetingsCard } from '@/components/dashboard/ActiveClientMeetingsCard';
 import { ScheduleMeetingsSection } from '@/components/dashboard/ScheduleMeetingsSection';
 import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
+import { TodayClientsCard } from '@/components/dashboard/TodayClientsCard';
 import { TASK_STATUSES, TASK_TYPES, nextTaskStatus, type TaskStatus } from '@/lib/enums';
 
 
@@ -270,6 +271,11 @@ export default function EmployeeDashboard() {
             </div>
           ))}
         </div>
+
+        {/* Today's clients — mirrors the login reminder, lets the user mark
+            slots done without opening the full schedule page. Hidden on
+            days with nothing scheduled so it doesn't clutter the dashboard. */}
+        <TodayClientsCard />
 
         {/* Active sections — 2-column layout instead of stacked full-width cards.
             Left column = AI Morning Brief (if it has content). Right column =

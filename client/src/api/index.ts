@@ -122,6 +122,19 @@ export const sheetPreview      = (limit = 500) =>
 // Returns up to 500 most-recent errors (server + client) for the admin's org.
 export const listErrorLogs = (params: { source?: 'server' | 'client'; limit?: number } = {}) =>
   api.get('/logs', { params }).then(r => r.data);
+
+// ── Client Schedule (per-employee weekly calendar of clients to serve) ──
+export const listClientSchedule = (params: { from?: string; to?: string; userId?: string } = {}) =>
+  api.get('/client-schedule', { params }).then(r => r.data);
+export const todaysClientSchedule = () =>
+  api.get('/client-schedule/today').then(r => r.data);
+export const createClientScheduleEntry = (body: {
+  clientId: string; serviceDate: string; userId?: string; taskType?: string; notes?: string;
+}) => api.post('/client-schedule', body).then(r => r.data);
+export const updateClientScheduleEntry = (id: string, body: Record<string, any>) =>
+  api.put(`/client-schedule/${id}`, body).then(r => r.data);
+export const deleteClientScheduleEntry = (id: string) =>
+  api.delete(`/client-schedule/${id}`).then(r => r.data);
 export const getLead     = (id: string)                        => api.get(`/leads/${id}`).then(r => r.data);
 export const updateLead  = (id: string, d: Record<string, unknown>) => api.put(`/leads/${id}`, d).then(r => r.data);
 export const deleteLead  = (id: string)                        => api.delete(`/leads/${id}`).then(r => r.data);

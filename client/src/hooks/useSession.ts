@@ -151,8 +151,15 @@ export function useSession() {
   const workedMs = useMemo(() => {
     if (!session) return 0;
     const start = new Date(session.startTime).getTime();
-    return Math.max(0, now - start);
-  }, [session, now]);
+    // Working time = total elapsed since clock-in MINUS all break time.
+    // Previously this was just (now - start) which kept counting while the
+    // user was on break — the "Working 04:32:11" timer would keep ticking
+    // even though they weren't actually working. totalBreakMs already
+    // includes the in-progress break (it ticks live via `now`), so
+    // subtracting it gives a net-of-breaks counter that pauses the moment
+    // a break starts and resumes the moment it ends.
+    return Math.max(0, (now - start) - totalBreakMs);
+  }, [session, now, totalBreakMs]);
 
   return {
     session,

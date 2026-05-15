@@ -16,6 +16,7 @@ import { MetaAdsCard } from '@/components/dashboard/MetaAdsCard';
 import { TodayMeetingsStrip } from '@/components/dashboard/TodayMeetingsStrip';
 import { ActiveClientMeetingsCard } from '@/components/dashboard/ActiveClientMeetingsCard';
 import { ScheduleMeetingsSection } from '@/components/dashboard/ScheduleMeetingsSection';
+import { TodayClientsCard } from '@/components/dashboard/TodayClientsCard';
 import { VaultAuditPanel } from '@/components/admin/VaultAuditPanel';
 import * as api from '@/api';
 import { FullPageSpinner } from '@/components/shared/Spinner';
@@ -191,6 +192,10 @@ export default function AdminDashboard() {
 
         {/* Active client meetings — admin can hop into any live prospect call */}
         <ActiveClientMeetingsCard />
+
+        {/* Today's clients — admin sees their own scheduled clients +
+            quick mark-done. Hidden when nothing's scheduled. */}
+        <TodayClientsCard />
 
         {/* Huddle quick join — admin sees who's in and can drop in instantly */}
         <HuddleDashboardCard />

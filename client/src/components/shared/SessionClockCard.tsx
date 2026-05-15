@@ -87,7 +87,11 @@ export function SessionClockCard({ dayLocked = false, dayLockReason, onLockedAtt
                 {fmtMS(currentBreakMs)}
               </p>
               <p className="text-[11px] text-muted-foreground">
-                worked <span className="font-mono">{fmtHMS(workedMs - totalBreakMs)}</span> · breaks today <span className="font-mono">{fmtMS(totalBreakMs)}</span>
+                {/* workedMs is already net of breaks (see useSession). The
+                    previous code did `workedMs - totalBreakMs` as a manual
+                    workaround for the hook bug — fixed there now, so just
+                    render workedMs directly. */}
+                worked <span className="font-mono">{fmtHMS(workedMs)}</span> · breaks today <span className="font-mono">{fmtMS(totalBreakMs)}</span>
               </p>
             </div>
           )}
