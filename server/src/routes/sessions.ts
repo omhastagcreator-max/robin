@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
-import { startSession, startBreak, endBreak, endSession, getActiveSession, getSessionHistory, getPerformance, getTeamSessionStatus, heartbeat, setOnCall } from '../controllers/sessionsController';
+import { startSession, startBreak, endBreak, endSession, getActiveSession, getSessionHistory, getPerformance, getTeamSessionStatus, heartbeat, setOnCall, huddleJoined, huddleLeft } from '../controllers/sessionsController';
 
 const router = Router();
 router.use(authMiddleware);
@@ -12,6 +12,9 @@ router.post('/break/end', requireRole('admin', 'employee', 'sales'), endBreak);
 router.post('/end',       requireRole('admin', 'employee', 'sales'), endSession);
 router.post('/heartbeat', requireRole('admin', 'employee', 'sales'), heartbeat);
 router.post('/on-call',   requireRole('admin', 'employee', 'sales'), setOnCall);
+// Huddle attendance — drives the "working time = time in huddle" model.
+router.post('/huddle-joined', requireRole('admin', 'employee', 'sales'), huddleJoined);
+router.post('/huddle-left',   requireRole('admin', 'employee', 'sales'), huddleLeft);
 router.get('/active',     requireRole('admin', 'employee', 'sales'), getActiveSession);
 router.get('/history',    requireRole('admin', 'employee', 'sales'), getSessionHistory);
 router.get('/performance', requireRole('admin'),                     getPerformance);

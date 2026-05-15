@@ -96,6 +96,11 @@ export const getActiveSession  = () => api.get('/sessions/active').then(r => r.d
 export const getSessionHistory = (params?: Record<string, unknown>) => api.get('/sessions/history', { params }).then(r => r.data);
 export const getPerformance    = (params?: Record<string, unknown>) => api.get('/sessions/performance', { params }).then(r => r.data);
 export const getTeamSessionStatus = () => api.get('/sessions/team-status').then(r => r.data);
+// Huddle attendance — when called, the server starts/pauses the work
+// counter for this session. silent() because these fire on every join/
+// leave and we don't want a network blip toasting the user mid-meeting.
+export const huddleJoined  = () => api.post('/sessions/huddle-joined', {}, silent()).then(r => r.data);
+export const huddleLeft    = () => api.post('/sessions/huddle-left',   {}, silent()).then(r => r.data);
 
 // ── Screen Sessions ───────────────────────────────────────────────────────────
 export const updateScreenStatus = (d: Record<string, unknown>) => api.put('/screen-sessions/status', d).then(r => r.data);

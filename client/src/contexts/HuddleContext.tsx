@@ -4,6 +4,7 @@ import { useMeetingRoom, type PeerView } from '@/hooks/useMeetingRoom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useScreenShare } from '@/contexts/ScreenShareContext';
 import { useSocket } from '@/hooks/useSocket';
+import * as api from '@/api';
 import { useHuddleTranscription } from '@/hooks/useHuddleTranscription';
 import { HuddlePiPContent } from '@/components/shared/HuddlePiPContent';
 import { RemoteAudio } from '@/components/shared/RemoteAudio';
@@ -373,6 +374,44 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
       setMode('expanded');
     }
   }, [meeting.joined, mode]);
+
+  // ── Tie working time to huddle attendance ───────────────────────────
+  // The agency rule is "you're at work when you're in the huddle." When
+  // LiveKit reports joined/left, ping the server so it can start/pause
+  // the work counter. Both endpoints are silent + idempotent so the
+  // network stays clean during a flaky connection.
+  //
+  // Also fire huddleLeft on tab close (best-effort sendBeacon-style) so
+  // the server doesn't keep counting after the browser is killed —
+  // sessionEnd's finalisation also handles this case as a backstop.
+  useEffect(() => {
+    if (!user) return;
+    if (meeting.joined) {
+      api.huddleJoined().catch(() => {/* silent */});
+    } else {
+      api.huddleLeft().catch(() => {/* silent */});
+    }
+  }, [meeting.joined, user?.id]);
+
+  // Best-effort huddle-left on hard tab close. Uses the standard fetch
+  // with keepalive so the request survives the unload — sendBeacon would
+  // need a different content-type. Server treats no-op gracefully.
+  useEffect(() => {
+    if (!meeting.joined) return;
+    const onUnload = () => {
+      try {
+        const token = localStorage.getItem('robin_token');
+        const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
+        fetch(`${baseURL}/sessions/huddle-left`, {
+          method: 'POST',
+          keepalive: true,
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+      } catch { /* unload, can't do much */ }
+    };
+    window.addEventListener('pagehide', onUnload);
+    return () => window.removeEventListener('pagehide', onUnload);
+  }, [meeting.joined]);
 
   // ── Aggressive PiP auto-reopen ────────────────────────────────────────
   // Browser security rule: documentPictureInPicture.requestWindow() only

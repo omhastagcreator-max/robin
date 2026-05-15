@@ -35,6 +35,21 @@ const SessionSchema = new Schema({
   // worked-time alongside breakTime, so closing your tab pauses your timer
   // within ~90s instead of waiting for the 8pm cron to clean up.
   awayMs:          { type: Number, default: 0 },
+
+  // ── Huddle tracking — working time = time spent in the agency huddle ──
+  // The agency model is "everyone hangs out in the always-on voice room
+  // while working." Joining the huddle starts the work counter; leaving
+  // it pauses the counter (the user is presumed AFK / not actually
+  // collaborating). These fields persist that accounting:
+  //
+  //   huddleJoinedAt — non-null while currently inside the huddle.
+  //                    On join: set to now. On leave: cleared after
+  //                    flushing elapsed into huddleMs.
+  //   huddleMs       — cumulative completed huddle time so far this
+  //                    session. Open huddle interval (now - huddleJoinedAt)
+  //                    is added on read; finalised on session end.
+  huddleJoinedAt:  { type: Date, default: null },
+  huddleMs:        { type: Number, default: 0 },
   // ── On Call (independent of break) ────────────────────────────────────
   // Whitelist for "do not disturb" — when set, the team UI shows an
   // "On call" badge so colleagues know not to ping you. Doesn't pause the

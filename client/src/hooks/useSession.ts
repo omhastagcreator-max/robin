@@ -16,6 +16,10 @@ export interface SessionData {
   awayMs?: number;
   /** Bumped every heartbeat. Used to clamp the live timer locally. */
   lastHeartbeatAt?: string;
+  /** Cumulative completed time spent in the agency huddle this session. */
+  huddleMs?: number;
+  /** Non-null while currently in the huddle — start of open interval. */
+  huddleJoinedAt?: string | null;
 }
 
 /**
@@ -78,7 +82,9 @@ export function useSession() {
         // Server returns updated awayMs + lastHeartbeatAt — merge into local
         // state so workedMs immediately reflects any away-time the server
         // detected during a gap (e.g., user closed tab, came back, first
-        // ping detected the gap and bumped awayMs).
+        // ping detected the gap and bumped awayMs). Also pick up huddleMs/
+        // huddleJoinedAt periodically so the timer reconciles with what
+        // the server thinks (e.g. another tab joined the huddle).
         if (r && (r.awayMs !== undefined || r.lastHeartbeatAt !== undefined)) {
           setSession(prev => prev ? {
             ...prev,
@@ -89,6 +95,19 @@ export function useSession() {
       } catch { /* swallow — next interval will retry */ }
     };
 
+    // Also re-fetch the full session every 60s so huddleMs / huddleJoinedAt
+    // stay in sync with what the server thinks. Cheap (single-doc lookup)
+    // and removes the dependency on api.sessionHeartbeat returning huddle
+    // fields. This is also what makes the "joined huddle in another tab"
+    // case eventually-consistent in this tab.
+    const reconcile = setInterval(() => {
+      if (cancelled || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
+      api.getActiveSession().then((s: SessionData | null) => {
+        if (cancelled || !s) return;
+        setSession(prev => prev ? { ...prev, huddleMs: s.huddleMs, huddleJoinedAt: s.huddleJoinedAt } : s);
+      }).catch(() => {});
+    }, 60_000);
+
     // Fire once immediately, then every 60s.
     ping();
     const i = setInterval(ping, 60_000);
@@ -96,6 +115,7 @@ export function useSession() {
     return () => {
       cancelled = true;
       clearInterval(i);
+      clearInterval(reconcile);
     };
   }, [session?.status, session?._id]);
 
@@ -166,26 +186,33 @@ export function useSession() {
 
   const workedMs = useMemo(() => {
     if (!session) return 0;
-    const start = new Date(session.startTime).getTime();
-    // Working time = total elapsed since clock-in MINUS breaks MINUS away.
+    // Working time = time spent in the agency huddle.
     //
-    // Three layers of pause:
-    //   1. Breaks (totalBreakMs) — explicit "I'm taking 5"
-    //   2. Away time (session.awayMs) — gaps between heartbeats > 90s,
-    //      detected server-side when the user comes back from a closed
-    //      tab. Without this, closing the laptop for 2 hours and coming
-    //      back would show 'Working +2h' even though they weren't.
-    //   3. Heartbeat clamp — between heartbeats, while the tab is closed
-    //      RIGHT NOW, the local timer would keep ticking until the next
-    //      successful ping. We clamp the upper bound to lastHeartbeatAt +
-    //      90s grace so the LIVE counter freezes within ~90s of going
-    //      offline (matches the server's effectiveEndMs logic).
-    let upper = now;
-    if (session.lastHeartbeatAt) {
-      const hb = new Date(session.lastHeartbeatAt).getTime();
-      upper = Math.min(now, hb + 90_000);
+    // Counter starts when the user joins the huddle (HuddleContext pings
+    // /sessions/huddle-joined) and pauses the moment they leave. Outside
+    // of the huddle the timer doesn't tick at all — the agency rule is
+    // "you're at work when you're in the room with the team."
+    //
+    //   workedMs = huddleMs (completed intervals so far)
+    //            + (now - huddleJoinedAt) if currently in the huddle
+    //
+    // Breaks still apply on top — if the user takes a break while in the
+    // huddle, that time gets subtracted. Away time is implicit (closing
+    // the tab also drops you from the huddle on the server).
+    const completed = session.huddleMs || 0;
+    let openInterval = 0;
+    if (session.huddleJoinedAt) {
+      const joined = new Date(session.huddleJoinedAt).getTime();
+      // Clamp against lastHeartbeatAt + grace so the live counter still
+      // freezes within ~90s of going offline (matches server logic).
+      let upper = now;
+      if (session.lastHeartbeatAt) {
+        const hb = new Date(session.lastHeartbeatAt).getTime();
+        upper = Math.min(now, hb + 90_000);
+      }
+      openInterval = Math.max(0, upper - joined);
     }
-    return Math.max(0, (upper - start) - totalBreakMs - (session.awayMs || 0));
+    return Math.max(0, completed + openInterval - totalBreakMs);
   }, [session, now, totalBreakMs]);
 
   return {

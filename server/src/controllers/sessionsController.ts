@@ -199,9 +199,61 @@ export async function endSession(req: AuthRequest, res: Response): Promise<void>
       }
     }
 
+    // Finalise any open huddle interval — user clocking out without a
+    // huddle:left signal (most common path) should still get credit for
+    // the time they were in the huddle.
+    if (session.huddleJoinedAt) {
+      const open = now.getTime() - new Date(session.huddleJoinedAt).getTime();
+      if (open > 0) session.huddleMs = (session.huddleMs || 0) + open;
+      session.huddleJoinedAt = null;
+    }
+
     await session.save();
     await broadcastPresence(req, 'ended');
     res.json(session);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+// ── Huddle attendance — used to compute working time ──────────────────────
+/**
+ * POST /api/sessions/huddle-joined
+ *
+ * Marks the user as currently in the agency huddle. Working time = time
+ * spent in huddle, so the timer "starts" the moment this fires.
+ *
+ * Idempotent — if huddleJoinedAt is already set, leave it alone (don't
+ * reset the start so a refresh during huddle doesn't reset the counter).
+ */
+export async function huddleJoined(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const session = await Session.findOne({ userId: req.user!.id, status: { $in: ['active', 'on_break'] } });
+    if (!session) { res.status(404).json({ error: 'No active session' }); return; }
+    if (!session.huddleJoinedAt) {
+      session.huddleJoinedAt = new Date();
+      await session.save();
+    }
+    res.json({ ok: true, huddleJoinedAt: session.huddleJoinedAt, huddleMs: session.huddleMs });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * POST /api/sessions/huddle-left
+ *
+ * Marks the user as no longer in the huddle — flushes the open interval
+ * into huddleMs and clears huddleJoinedAt. After this the worked-time
+ * counter is paused until the next huddle:joined.
+ */
+export async function huddleLeft(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const session = await Session.findOne({ userId: req.user!.id, status: { $in: ['active', 'on_break'] } });
+    if (!session) { res.status(404).json({ error: 'No active session' }); return; }
+    if (session.huddleJoinedAt) {
+      const open = Date.now() - new Date(session.huddleJoinedAt).getTime();
+      if (open > 0) session.huddleMs = (session.huddleMs || 0) + open;
+      session.huddleJoinedAt = null;
+      await session.save();
+    }
+    res.json({ ok: true, huddleMs: session.huddleMs });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 

@@ -31,6 +31,15 @@ export interface SessionLike {
    * lunch where the user closed their laptop doesn't inflate worked hours.
    */
   awayMs?: number;
+  /**
+   * Cumulative completed huddle attendance for this session, in ms. The
+   * agency rule is "working time = time in huddle" — when present, this
+   * field is the SOURCE OF TRUTH for activeMs and the elapsed - breaks -
+   * away math becomes a fallback for legacy rows / non-huddle workflows.
+   */
+  huddleMs?: number;
+  /** Open huddle interval start (non-null while currently inside). */
+  huddleJoinedAt?: Date | string | null;
 }
 
 const ms = (d: Date | string | null | undefined) =>
@@ -89,7 +98,28 @@ export function sessionTotals(
   const windowFraction    = Math.max(0, Math.min(1, workedMs / sessionDurationMs));
   const awayInWindowMs    = Math.round((s.awayMs || 0) * windowFraction);
 
-  const activeMs = Math.max(0, workedMs - breakMs - awayInWindowMs);
+  // Huddle-based active time: when the session has any huddle attendance,
+  // working time = time in huddle (not "elapsed minus stuff"). Adds the
+  // open interval if currently inside, then subtracts breaks that
+  // overlapped huddle time. Falls back to elapsed-minus-breaks-minus-away
+  // for sessions / orgs that don't use huddle attendance.
+  const hasHuddleData = (s.huddleMs || 0) > 0 || !!s.huddleJoinedAt;
+  let activeMs: number;
+  if (hasHuddleData) {
+    let huddleTotal = s.huddleMs || 0;
+    if (s.huddleJoinedAt) {
+      const joined = ms(s.huddleJoinedAt);
+      const close  = sEnd; // end of session caps any open interval
+      if (close > joined) huddleTotal += (close - joined);
+    }
+    // Don't double-deduct breaks if a break and the huddle overlap.
+    // Approximation: subtract breakMs in full (we expect users not to be
+    // in huddle while on break — the break overlay covers the UI).
+    activeMs = Math.max(0, Math.round(huddleTotal * windowFraction) - breakMs);
+  } else {
+    activeMs = Math.max(0, workedMs - breakMs - awayInWindowMs);
+  }
+
   return { workedMs, breakMs, awayMs: awayInWindowMs, activeMs };
 }
 
