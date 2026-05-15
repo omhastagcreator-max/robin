@@ -186,33 +186,30 @@ export function useSession() {
 
   const workedMs = useMemo(() => {
     if (!session) return 0;
-    // Working time = time spent in the agency huddle.
+    const start = new Date(session.startTime).getTime();
+    // Working time = total elapsed since clock-in MINUS breaks MINUS away.
     //
-    // Counter starts when the user joins the huddle (HuddleContext pings
-    // /sessions/huddle-joined) and pauses the moment they leave. Outside
-    // of the huddle the timer doesn't tick at all — the agency rule is
-    // "you're at work when you're in the room with the team."
+    // Reverted from huddle-only tracking — that broke the live timer for
+    // anyone not currently in the huddle (showed 00:00:00 even while
+    // working). Huddle attendance is still tracked on the server (huddleMs
+    // / huddleJoinedAt) for future reports + analytics, but the LIVE
+    // counter is the simple, predictable elapsed-minus-stuff calculation.
     //
-    //   workedMs = huddleMs (completed intervals so far)
-    //            + (now - huddleJoinedAt) if currently in the huddle
-    //
-    // Breaks still apply on top — if the user takes a break while in the
-    // huddle, that time gets subtracted. Away time is implicit (closing
-    // the tab also drops you from the huddle on the server).
-    const completed = session.huddleMs || 0;
-    let openInterval = 0;
-    if (session.huddleJoinedAt) {
-      const joined = new Date(session.huddleJoinedAt).getTime();
-      // Clamp against lastHeartbeatAt + grace so the live counter still
-      // freezes within ~90s of going offline (matches server logic).
-      let upper = now;
-      if (session.lastHeartbeatAt) {
-        const hb = new Date(session.lastHeartbeatAt).getTime();
-        upper = Math.min(now, hb + 90_000);
-      }
-      openInterval = Math.max(0, upper - joined);
+    // Three pause sources, all subtracted:
+    //   1. Breaks (totalBreakMs) — explicit "I'm taking 5"
+    //   2. Away time (session.awayMs) — gaps between heartbeats > 90s,
+    //      detected server-side when the user comes back from a closed tab
+    //   3. Heartbeat clamp — between heartbeats, while the tab is closed
+    //      RIGHT NOW, the local timer would keep ticking until the next
+    //      successful ping. We clamp the upper bound to lastHeartbeatAt +
+    //      90s grace so the LIVE counter freezes within ~90s of going
+    //      offline (matches the server's effectiveEndMs logic).
+    let upper = now;
+    if (session.lastHeartbeatAt) {
+      const hb = new Date(session.lastHeartbeatAt).getTime();
+      upper = Math.min(now, hb + 90_000);
     }
-    return Math.max(0, completed + openInterval - totalBreakMs);
+    return Math.max(0, (upper - start) - totalBreakMs - (session.awayMs || 0));
   }, [session, now, totalBreakMs]);
 
   return {
