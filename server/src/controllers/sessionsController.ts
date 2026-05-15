@@ -90,24 +90,60 @@ export async function setOnCall(req: AuthRequest, res: Response): Promise<void> 
 }
 
 /**
+ * Heartbeats arrive every 60s while the tab is open. If we see one MORE
+ * than this many ms after the previous one, the gap was the user being
+ * offline / having Robin closed — that gap is "away time" and gets added
+ * to awayMs so it isn't counted as worked time.
+ *
+ * 90s = normal 60s cadence + 30s slack for slow networks. Any gap bigger
+ * than this is a real absence, not network jitter.
+ */
+const AWAY_THRESHOLD_MS = 90_000;
+
+/**
  * POST /api/sessions/heartbeat
  *
  * Client pings this once a minute while the user has the app open. Each
  * ping bumps lastHeartbeatAt to "now" (server time). When the browser is
  * closed, pings stop, and time stops accruing — that's the whole trick.
  *
- * Idempotent: any number of pings have the same effect as one. We use
- * findOneAndUpdate with $set so two tabs racing don't cause issues.
+ * Gap detection: if the previous lastHeartbeatAt was more than 90s ago,
+ * the user was away. The away duration (gap minus the normal 60s cadence)
+ * gets added to session.awayMs so end-of-day reports + the live UI
+ * subtract that time from "worked." Pauses the timer within one heartbeat
+ * cycle of the user closing their tab — no need to wait for the 8pm cron.
  */
 export async function heartbeat(req: AuthRequest, res: Response): Promise<void> {
   try {
+    const now = new Date();
+    // Read current state first so we can compute the gap before $set.
+    const current = await Session.findOne(
+      { userId: req.user!.id, status: { $in: ['active', 'on_break'] } },
+      { lastHeartbeatAt: 1, awayMs: 1, status: 1 },
+    ).lean();
+    if (!current) { res.status(404).json({ error: 'No active session' }); return; }
+
+    const update: any = { $set: { lastHeartbeatAt: now } };
+    const last = current.lastHeartbeatAt ? new Date(current.lastHeartbeatAt).getTime() : null;
+    if (last) {
+      const gap = now.getTime() - last;
+      // A gap bigger than the threshold = the user was away. Subtract the
+      // normal heartbeat cadence (60s) from the gap so we only count the
+      // EXTRA time, not the full interval. Don't accumulate away time
+      // while the user is on break — break time is its own bucket.
+      if (gap > AWAY_THRESHOLD_MS && current.status !== 'on_break') {
+        const awayThisGap = gap - 60_000;
+        update.$inc = { awayMs: awayThisGap };
+      }
+    }
+
     const session = await Session.findOneAndUpdate(
       { userId: req.user!.id, status: { $in: ['active', 'on_break'] } },
-      { $set: { lastHeartbeatAt: new Date() } },
-      { new: true }
+      update,
+      { new: true },
     );
     if (!session) { res.status(404).json({ error: 'No active session' }); return; }
-    res.json({ ok: true, lastHeartbeatAt: session.lastHeartbeatAt });
+    res.json({ ok: true, lastHeartbeatAt: session.lastHeartbeatAt, awayMs: session.awayMs });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
@@ -141,13 +177,28 @@ export async function endSession(req: AuthRequest, res: Response): Promise<void>
   try {
     const session = await Session.findOne({ userId: req.user!.id, status: { $in: ['active', 'on_break'] } });
     if (!session) { res.status(404).json({ error: 'No active session' }); return; }
+    const now = new Date();
     session.status = 'ended';
-    session.endTime = new Date();
+    session.endTime = now;
     const totalBreakMs = (session.breakEvents || []).reduce((sum: number, b: any) => {
       if (b.startedAt && b.endedAt) return sum + (new Date(b.endedAt).getTime() - new Date(b.startedAt).getTime());
       return sum;
     }, 0);
     session.breakTime = Math.round(totalBreakMs / 60000);
+
+    // Trailing-gap detection: if the last heartbeat was > 90s ago, the user
+    // was away between then and end-of-session. That gap counts as away
+    // time too (covers the case where the user closes their tab and never
+    // explicitly clicks End — the 8pm cron then ends the session and we
+    // need to backfill the trailing gap so it doesn't show as worked).
+    if (session.lastHeartbeatAt) {
+      const trailingGap = now.getTime() - new Date(session.lastHeartbeatAt).getTime();
+      if (trailingGap > 90_000 && session.status !== 'on_break') {
+        const awayThisGap = trailingGap - 60_000;
+        session.awayMs = (session.awayMs || 0) + awayThisGap;
+      }
+    }
+
     await session.save();
     await broadcastPresence(req, 'ended');
     res.json(session);

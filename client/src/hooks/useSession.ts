@@ -12,6 +12,10 @@ export interface SessionData {
   breakEvents: { startedAt: string; endedAt?: string }[];
   createdAt: string;
   onCallSince?: string | null;
+  /** Server-tracked total time the user was offline / had Robin closed. */
+  awayMs?: number;
+  /** Bumped every heartbeat. Used to clamp the live timer locally. */
+  lastHeartbeatAt?: string;
 }
 
 /**
@@ -69,8 +73,20 @@ export function useSession() {
       // building up a queue of failed requests. The next interval will pick
       // up automatically when connectivity returns.
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-      try { await api.sessionHeartbeat(); }
-      catch { /* swallow — next interval will retry */ }
+      try {
+        const r: any = await api.sessionHeartbeat();
+        // Server returns updated awayMs + lastHeartbeatAt — merge into local
+        // state so workedMs immediately reflects any away-time the server
+        // detected during a gap (e.g., user closed tab, came back, first
+        // ping detected the gap and bumped awayMs).
+        if (r && (r.awayMs !== undefined || r.lastHeartbeatAt !== undefined)) {
+          setSession(prev => prev ? {
+            ...prev,
+            awayMs: r.awayMs !== undefined ? r.awayMs : prev.awayMs,
+            lastHeartbeatAt: r.lastHeartbeatAt || prev.lastHeartbeatAt,
+          } : prev);
+        }
+      } catch { /* swallow — next interval will retry */ }
     };
 
     // Fire once immediately, then every 60s.
@@ -151,14 +167,25 @@ export function useSession() {
   const workedMs = useMemo(() => {
     if (!session) return 0;
     const start = new Date(session.startTime).getTime();
-    // Working time = total elapsed since clock-in MINUS all break time.
-    // Previously this was just (now - start) which kept counting while the
-    // user was on break — the "Working 04:32:11" timer would keep ticking
-    // even though they weren't actually working. totalBreakMs already
-    // includes the in-progress break (it ticks live via `now`), so
-    // subtracting it gives a net-of-breaks counter that pauses the moment
-    // a break starts and resumes the moment it ends.
-    return Math.max(0, (now - start) - totalBreakMs);
+    // Working time = total elapsed since clock-in MINUS breaks MINUS away.
+    //
+    // Three layers of pause:
+    //   1. Breaks (totalBreakMs) — explicit "I'm taking 5"
+    //   2. Away time (session.awayMs) — gaps between heartbeats > 90s,
+    //      detected server-side when the user comes back from a closed
+    //      tab. Without this, closing the laptop for 2 hours and coming
+    //      back would show 'Working +2h' even though they weren't.
+    //   3. Heartbeat clamp — between heartbeats, while the tab is closed
+    //      RIGHT NOW, the local timer would keep ticking until the next
+    //      successful ping. We clamp the upper bound to lastHeartbeatAt +
+    //      90s grace so the LIVE counter freezes within ~90s of going
+    //      offline (matches the server's effectiveEndMs logic).
+    let upper = now;
+    if (session.lastHeartbeatAt) {
+      const hb = new Date(session.lastHeartbeatAt).getTime();
+      upper = Math.min(now, hb + 90_000);
+    }
+    return Math.max(0, (upper - start) - totalBreakMs - (session.awayMs || 0));
   }, [session, now, totalBreakMs]);
 
   return {

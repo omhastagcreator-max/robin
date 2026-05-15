@@ -24,6 +24,13 @@ export interface SessionLike {
   lastHeartbeatAt?: Date | string | null;
   breakEvents?: Array<{ startedAt?: Date | string | null; endedAt?: Date | string | null }>;
   status?: 'active' | 'on_break' | 'ended' | string;
+  /**
+   * Total time the user was offline (closed tab / browser) DURING the
+   * session. Accumulated by the heartbeat handler whenever the gap between
+   * pings exceeded the away threshold. Subtracted from active time so a
+   * lunch where the user closed their laptop doesn't inflate worked hours.
+   */
+  awayMs?: number;
 }
 
 const ms = (d: Date | string | null | undefined) =>
@@ -74,8 +81,16 @@ export function sessionTotals(
     if (ce > cs) breakMs += ce - cs;
   }
 
-  const activeMs = Math.max(0, workedMs - breakMs);
-  return { workedMs, breakMs, activeMs };
+  // awayMs is whole-session — proportionally clamp it to the requested
+  // window so partial-day reports don't subtract more than makes sense.
+  // (For most reports the window covers the whole session, so awayMs is
+  // applied in full.)
+  const sessionDurationMs = Math.max(1, ms(s.endTime || effectiveEndMs(s, windowEndMs)) - ms(s.startTime));
+  const windowFraction    = Math.max(0, Math.min(1, workedMs / sessionDurationMs));
+  const awayInWindowMs    = Math.round((s.awayMs || 0) * windowFraction);
+
+  const activeMs = Math.max(0, workedMs - breakMs - awayInWindowMs);
+  return { workedMs, breakMs, awayMs: awayInWindowMs, activeMs };
 }
 
 export const SESSION_GRACE_MS = GRACE_MS;

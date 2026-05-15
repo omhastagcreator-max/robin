@@ -28,6 +28,13 @@ const SessionSchema = new Schema({
   breakEvents:     [BreakEventSchema],
   lastHeartbeatAt: { type: Date },
   autoClosedAt:    { type: Date },
+  // Total time the user was offline / had Robin closed during this session,
+  // in milliseconds. Accumulated by the heartbeat endpoint whenever the gap
+  // between consecutive heartbeats exceeds the away threshold (90s) — that
+  // gap is treated as "user wasn't actually working." Subtracted from
+  // worked-time alongside breakTime, so closing your tab pauses your timer
+  // within ~90s instead of waiting for the 8pm cron to clean up.
+  awayMs:          { type: Number, default: 0 },
   // ── On Call (independent of break) ────────────────────────────────────
   // Whitelist for "do not disturb" — when set, the team UI shows an
   // "On call" badge so colleagues know not to ping you. Doesn't pause the
