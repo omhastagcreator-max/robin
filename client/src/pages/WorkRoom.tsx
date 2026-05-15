@@ -2,7 +2,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  Coffee, Users, Loader2, Headphones, CalendarOff,
+  Coffee, Users, Loader2, Headphones, CalendarOff, WifiOff,
 } from 'lucide-react';
 import { useTeamPresence, type TeamMember, type PresenceStatus } from '@/hooks/useTeamPresence';
 import { HuddleStage } from '@/components/shared/HuddleStage';
@@ -145,6 +145,14 @@ function StatusBadge({ status }: { status: PresenceStatus }) {
       </span>
     );
   }
+  if (status === 'away') {
+    return (
+      <span title="Clocked in but Robin closed — timer paused"
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/15 text-slate-600 border border-slate-500/30">
+        <WifiOff className="h-3 w-3" /> Robin closed
+      </span>
+    );
+  }
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground">
       Off the clock
@@ -157,6 +165,7 @@ function RosterCard({ member }: { member: TeamMember }) {
     member.status === 'active'    ? 'border-green-500/30 bg-green-500/5' :
     member.status === 'on_break'  ? 'border-amber-500/30 bg-amber-500/5' :
     member.status === 'on_leave'  ? 'border-purple-500/30 bg-purple-500/5' :
+    member.status === 'away'      ? 'border-slate-500/30 bg-slate-500/5' :
                                     'border-border bg-card';
   return (
     <div className={`rounded-2xl border ${accent} p-4 flex flex-col items-center text-center gap-2 transition-colors hover:shadow-md`}>

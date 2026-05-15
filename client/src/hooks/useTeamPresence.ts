@@ -2,7 +2,10 @@ import { useEffect, useState, useMemo } from 'react';
 import * as api from '@/api';
 import { useSocket } from '@/hooks/useSocket';
 
-export type PresenceStatus = 'active' | 'on_break' | 'on_leave' | 'off_clock' | 'ended';
+// 'away' = clocked-in session whose last heartbeat is older than ~2 min
+// (user closed the tab / browser). Distinct from 'off_clock' (no session)
+// and 'on_break' (intentional pause).
+export type PresenceStatus = 'active' | 'on_break' | 'away' | 'on_leave' | 'off_clock' | 'ended';
 
 export interface TeamMember {
   userId: string;
@@ -144,6 +147,10 @@ export function useTeamPresence() {
   const onBreak = useMemo(() => list.filter(m => m.status === 'on_break'),  [list]);
   const onLeave = useMemo(() => list.filter(m => m.status === 'on_leave'),  [list]);
   const active  = useMemo(() => list.filter(m => m.status === 'active'),    [list]);
+  // 'away' = clocked in but Robin closed. Surfaced as its own bucket so the
+  // dashboard "currently working" KPI stays honest — closing your tab
+  // shouldn't keep you in the working count.
+  const away    = useMemo(() => list.filter(m => m.status === 'away'),      [list]);
   const off     = useMemo(() => list.filter(m => m.status === 'off_clock'), [list]);
 
   const statusOf = (userId: string): PresenceStatus =>
@@ -155,7 +162,7 @@ export function useTeamPresence() {
     inMeetingMap[userId] ? new Date(inMeetingMap[userId].endTime) : null;
 
   return {
-    loading, members, list, onBreak, onLeave, active, off,
+    loading, members, list, onBreak, onLeave, active, away, off,
     statusOf, isOnCall, onCallSet, isDeafened, deafenedSet,
     isInMeeting, meetingEndsAt, inMeetingMap,
   };

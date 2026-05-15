@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
-import { Users, Plus, Activity, CheckCircle2, Mail, Phone, Loader2, UserCheck, BarChart2, Coffee, CalendarOff, Trash2 } from 'lucide-react';
+import { Users, Plus, Activity, CheckCircle2, Mail, Phone, Loader2, UserCheck, BarChart2, Coffee, CalendarOff, Trash2, WifiOff } from 'lucide-react';
 import * as api from '@/api';
 import { toast } from 'sonner';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -37,6 +37,15 @@ function PresenceBadge({ status }: { status: PresenceStatus }) {
   if (status === 'active') return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-500/15 text-green-600 border border-green-500/30">
       <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" /> Working
+    </span>
+  );
+  // Clocked-in but Robin tab is closed — heartbeat gone stale. Distinct
+  // from 'off_clock' (no session at all) so admins can tell at a glance
+  // who's just away from their desk vs who never clocked in.
+  if (status === 'away') return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/15 text-slate-600 border border-slate-500/30"
+      title="Clocked in but Robin tab is closed — timer paused">
+      <WifiOff className="h-3 w-3" /> Robin closed
     </span>
   );
   return (
@@ -180,6 +189,7 @@ export default function AdminEmployees() {
                 status === 'active'    ? 'border-green-500/30' :
                 status === 'on_break'  ? 'border-amber-500/30' :
                 status === 'on_leave'  ? 'border-purple-500/30' :
+                status === 'away'      ? 'border-slate-500/30' :
                                           'border-border';
               return (
                 <motion.div

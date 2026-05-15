@@ -259,9 +259,24 @@ export async function getTeamSessionStatus(req: AuthRequest, res: Response): Pro
       status: { $in: ['active', 'on_break'] },
     }).lean();
 
-    const statusByUser = new Map<string, 'active' | 'on_break'>();
+    // Derive a real-time presence per user. An "active" session whose last
+    // heartbeat is older than the away threshold means the user closed
+    // their tab / browser — they shouldn't show up as "Working" to
+    // teammates. Promote those to a separate 'away' state so the UI can
+    // render "Robin closed" instead of green-dot Working.
+    const AWAY_AFTER_MS = 120_000; // 2 min — heartbeat is 60s + buffer
+    const nowMs = Date.now();
+    const statusByUser = new Map<string, 'active' | 'on_break' | 'away'>();
     for (const s of liveSessions) {
-      statusByUser.set(String(s.userId), s.status as any);
+      const id = String(s.userId);
+      if (s.status === 'on_break') {
+        // Breaks are intentional — never show as "away" even if the user
+        // closed the tab during one. Break has its own UX.
+        statusByUser.set(id, 'on_break');
+        continue;
+      }
+      const hbAge = s.lastHeartbeatAt ? nowMs - new Date(s.lastHeartbeatAt).getTime() : Infinity;
+      statusByUser.set(id, hbAge > AWAY_AFTER_MS ? 'away' : 'active');
     }
 
     // Pull approved leaves covering today (in IST) — those users get
