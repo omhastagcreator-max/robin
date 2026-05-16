@@ -4,7 +4,7 @@ import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { FullPageSpinner } from '@/components/shared/Spinner';
 import { PageErrorBoundary } from '@/components/shared/PageErrorBoundary';
-import { dashboardForRole, ProtectedRoute } from '@/components/ProtectedRoute';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
 
 const Login             = lazy(() => import('@/pages/Login'));
 const UpdatePassword    = lazy(() => import('@/pages/UpdatePassword'));
@@ -34,11 +34,18 @@ const TeamCalendar      = lazy(() => import('@/pages/TeamCalendar'));
 const MeetGuest         = lazy(() => import('@/pages/MeetGuest'));
 const MeetHost          = lazy(() => import('@/pages/MeetHost'));
 
-function RootRedirect() {
-  const { user, role, loading } = useAuth();
-  if (loading) return <FullPageSpinner />;
-  if (!user)   return <Navigate to="/login" replace />;
-  return <Navigate to={dashboardForRole(role)} replace />;
+/**
+ * BlankRoot — the public root (robin.hastagcreator.com/) renders nothing.
+ * Per agency-owner request: keep the bare domain empty so visitors land on
+ * a clean page instead of an automatic login redirect. The actual login
+ * page lives at /login, and logged-in users get to their dashboard by
+ * navigating there explicitly (or via direct deep-link from email / chat).
+ *
+ * If we ever want a marketing landing page here later, this is the spot
+ * to render it instead of `null`.
+ */
+function BlankRoot() {
+  return <div className="min-h-screen bg-background" />;
 }
 
 const E = ({ children }: { children: React.ReactNode }) => (
@@ -91,8 +98,9 @@ function AppRoutes() {
         {/* Public guest meeting page — no Robin login required */}
         <Route path="/meet/:slug"        element={<E><MeetGuest /></E>} />
 
-        {/* Root */}
-        <Route path="/"                 element={<RootRedirect />} />
+        {/* Root — intentionally blank. Users go to /login or deep-link to
+            their dashboard. Old auto-redirect to /login removed per req. */}
+        <Route path="/"                 element={<BlankRoot />} />
 
         {/* Employee / Sales / Admin — internal staff only.
             Clients hitting these get bounced to /client (their own dashboard). */}
