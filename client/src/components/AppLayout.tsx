@@ -18,6 +18,7 @@ import { CommandPalette } from '@/components/shared/CommandPalette';
 import { PresenceStrip } from '@/components/shared/PresenceStrip';
 import { SessionTopBar } from '@/components/shared/SessionTopBar';
 import { ScreenShareReminder } from '@/components/shared/ScreenShareReminder';
+import { ClientMeetingDock } from '@/components/shared/ClientMeetingDock';
 import { ScheduleMeetingButton } from '@/components/shared/ScheduleMeetingButton';
 import { StartClientMeetingButton } from '@/components/shared/StartClientMeetingButton';
 
@@ -319,6 +320,11 @@ export function AppLayout({ children, requiredRole }: Props) {
             </Link>
           )}
         </header>
+
+        {/* If host is in a client meeting, sticky pill on every page with
+            mute / end / back-to-meeting controls. Hidden on the meeting
+            page itself (full controls already there). */}
+        <ClientMeetingDock />
 
         {/* Sticky session controls — timer + start/break/end on every page */}
         <SessionTopBar />

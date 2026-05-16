@@ -3,141 +3,36 @@ import { useParams, Link } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import {
   Mic, MicOff, Monitor, MonitorOff, PhoneOff, Loader2, AlertCircle,
-  Users as UsersIcon, Copy, MessageCircle, Mail, Clock, Plus,
-  Maximize2, Minimize2,
+  Users as UsersIcon, Copy, MessageCircle, Mail, Plus,
+  Maximize2, Minimize2, Volume2,
 } from 'lucide-react';
-import {
-  Room, RoomEvent, Track, RemoteParticipant, RemoteTrackPublication,
-} from 'livekit-client';
 import { toast } from 'sonner';
-import * as api from '@/api';
+import { useClientMeeting } from '@/contexts/ClientMeetingContext';
 
 /**
- * MeetHost — host's view of a client meeting. Same room as MeetGuest,
- * but mounted inside Robin (with sidebar) and with a side panel showing
- * the share link, audit (who's joined), and host actions (extend, end).
+ * MeetHost — thin view that reads the live LiveKit room from
+ * ClientMeetingContext. The room itself lives in the provider (mounted
+ * at App level) so navigating away from this page no longer kicks the
+ * host out of the meeting. Audio elements are rendered via a portal
+ * inside the provider, so they keep playing across route changes too.
  */
-
 export default function MeetHost() {
   const { slug } = useParams();
-  const [meeting, setMeeting] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    meeting, peers, audioOn, screenOn, joined, joining, error, audioBlocked,
+    joinAs, toggleMic, toggleScreen, endMeeting, extendMeeting, unblockAudio,
+  } = useClientMeeting();
 
-  const roomRef = useRef<Room | null>(null);
-  const [peers, setPeers] = useState<Record<string, any>>({});
-  const [audioOn, setAudioOn] = useState(false);
-  const [screenOn, setScreenOn] = useState(false);
-  const [joined, setJoined] = useState(false);
-  const [joining, setJoining] = useState(false);
-
-  // Fetch meeting metadata (must be the host) and join room
+  // Idempotent join — if the user navigates back into MeetHost with a
+  // different slug, the provider tears down the old room and connects to
+  // the new one. Same slug = no-op, the existing connection is reused.
   useEffect(() => {
     if (!slug) return;
-    let cancelled = false;
-    (async () => {
-      setJoining(true);
-      try {
-        // Mint host token (proves ownership server-side)
-        const t = await api.clientMeetingsHostToken(slug);
-        if (cancelled) return;
-        const list = await api.clientMeetingsMine();
-        const m = list.find((x: any) => x.slug === slug);
-        setMeeting(m);
-
-        const room = new Room({ adaptiveStream: true, dynacast: true });
-        roomRef.current = room;
-
-        const buildPeer = (p: RemoteParticipant) => {
-          const audio = new MediaStream();
-          const screen = new MediaStream();
-          let aOn = false; let sOn = false;
-          p.audioTrackPublications.forEach(pub => {
-            if (pub.track && pub.isSubscribed) {
-              if (pub.track.mediaStreamTrack) audio.addTrack(pub.track.mediaStreamTrack);
-              if (!pub.isMuted) aOn = true;
-            }
-          });
-          p.videoTrackPublications.forEach(pub => {
-            if (pub.source === Track.Source.ScreenShare && pub.track && pub.isSubscribed) {
-              if (pub.track.mediaStreamTrack) screen.addTrack(pub.track.mediaStreamTrack);
-              sOn = true;
-            }
-          });
-          let role: 'host' | 'guest' = 'guest';
-          try { if (p.metadata) role = JSON.parse(p.metadata).role || 'guest'; } catch {}
-          return {
-            identity: p.identity,
-            name: p.name || 'Guest',
-            role,
-            audioOn: aOn,
-            screenOn: sOn,
-            audioStream: audio.getAudioTracks().length ? audio : undefined,
-            screenStream: screen.getVideoTracks().length ? screen : undefined,
-          };
-        };
-        const refreshPeer = (p: RemoteParticipant) => setPeers(prev => ({ ...prev, [p.identity]: buildPeer(p) }));
-        const dropPeer   = (id: string)            => setPeers(prev => { const n = { ...prev }; delete n[id]; return n; });
-
-        room
-          .on(RoomEvent.ParticipantConnected,    refreshPeer)
-          .on(RoomEvent.ParticipantDisconnected, p => dropPeer(p.identity))
-          .on(RoomEvent.TrackSubscribed,         (_t, _pub, p) => refreshPeer(p))
-          .on(RoomEvent.TrackUnsubscribed,       (_t, _pub, p) => refreshPeer(p))
-          .on(RoomEvent.TrackMuted,              (_pub, p) => p.isLocal ? null : refreshPeer(p as RemoteParticipant))
-          .on(RoomEvent.TrackUnmuted,            (_pub, p) => p.isLocal ? null : refreshPeer(p as RemoteParticipant))
-          .on(RoomEvent.Disconnected,            () => { setJoined(false); setPeers({}); });
-
-        await room.connect(t.url, t.token);
-        await room.localParticipant.setMicrophoneEnabled(true);
-        setAudioOn(true);
-        room.remoteParticipants.forEach(refreshPeer);
-        setJoined(true);
-      } catch (e: any) {
-        if (cancelled) return;
-        setError(e?.response?.data?.error || e?.message || 'Could not join the meeting');
-      } finally {
-        if (!cancelled) setJoining(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      roomRef.current?.disconnect();
-      roomRef.current = null;
-    };
-  }, [slug]);
-
-  const toggleMic = async () => {
-    const room = roomRef.current; if (!room) return;
-    const next = !audioOn;
-    await room.localParticipant.setMicrophoneEnabled(next);
-    setAudioOn(next);
-  };
-  const toggleScreen = async () => {
-    const room = roomRef.current; if (!room) return;
-    try {
-      await room.localParticipant.setScreenShareEnabled(!screenOn);
-      setScreenOn(!screenOn);
-    } catch { /* user cancelled the picker */ }
-  };
-  const endMeeting = async () => {
-    if (!slug) return;
-    if (!confirm('End this meeting now? Anyone still on the link will be disconnected.')) return;
-    try {
-      await api.clientMeetingsEnd(slug);
-      roomRef.current?.disconnect();
-      toast.success('Meeting ended');
-      setJoined(false);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.error || 'Could not end meeting');
-    }
-  };
-  const extendMeeting = async () => {
-    if (!slug) return;
-    try {
-      const r = await api.clientMeetingsExtend(slug);
-      toast.success(`Extended — duration cap is now ${r.maxDurationMinutes} min`);
-    } catch (e: any) { toast.error(e?.response?.data?.error || 'Could not extend'); }
-  };
+    joinAs(slug);
+    // Intentionally no cleanup that calls leave() — that would re-create
+    // the original bug. Leaving the meeting is an explicit user action
+    // (End meeting button), not a side effect of navigation.
+  }, [slug, joinAs]);
 
   const guestUrl = meeting ? `${window.location.origin}/meet/${meeting.slug}` : '';
   const copyLink = async () => {
@@ -173,6 +68,15 @@ export default function MeetHost() {
   return (
     <AppLayout>
       <div className="max-w-6xl mx-auto space-y-4 page-transition-enter">
+        {/* Audio-blocked banner — Chrome refused to autoplay the guest's
+            voice until a user gesture is provided. One click unlocks it. */}
+        {audioBlocked && joined && (
+          <button onClick={unblockAudio}
+            className="w-full flex items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-700 px-4 py-2.5 text-sm font-semibold hover:bg-amber-500/20">
+            <Volume2 className="h-4 w-4" /> Click to enable audio (browser blocked autoplay)
+          </button>
+        )}
+
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold">Client meeting</h1>
@@ -213,6 +117,9 @@ export default function MeetHost() {
                 <Mail className="h-3.5 w-3.5" /> Email
               </button>
             </div>
+            <p className="text-[11px] text-muted-foreground italic">
+              You can switch to any other page in Robin without disconnecting — the meeting keeps running in the background.
+            </p>
           </div>
         )}
 
@@ -227,10 +134,8 @@ export default function MeetHost() {
         {/* In-meeting view */}
         {joined && (
           <>
-            {/* Hidden audio for each peer */}
-            {Object.values(peers).map((p: any) => p.audioStream && (
-              <RemoteAudio key={`a-${p.identity}`} stream={p.audioStream} />
-            ))}
+            {/* Audio elements are rendered by the provider via portal —
+                they survive route changes. No <RemoteAudio> here. */}
 
             {/* Screen shares */}
             {Object.values(peers).filter((p: any) => p.screenOn && p.screenStream).length > 0 ? (
@@ -275,16 +180,6 @@ export default function MeetHost() {
       </div>
     </AppLayout>
   );
-}
-
-function RemoteAudio({ stream }: { stream: MediaStream }) {
-  const ref = useRef<HTMLAudioElement | null>(null);
-  useEffect(() => {
-    const el = ref.current; if (!el) return;
-    el.srcObject = stream;
-    el.play().catch(() => {});
-  }, [stream]);
-  return <audio ref={ref} autoPlay playsInline style={{ position: 'absolute', width: 1, height: 1, opacity: 0 }} />;
 }
 
 function ScreenTile({ name, stream }: { name: string; stream: MediaStream }) {
