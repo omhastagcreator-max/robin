@@ -79,9 +79,27 @@ api.interceptors.response.use(
     // Allow callers to opt-out of toasts (background polls, optional fetches).
     const silent = (cfg?.headers as any)?.['X-Silent'] === '1';
 
+    // Treat 401s on background polls as transient. Previously a single
+    // 401 anywhere — including a poll firing during the JWT sliding-refresh
+    // race, or a brief gateway hiccup — would wipe the token and slam the
+    // browser to /login. That's the "Robin keeps logging me out" /
+    // "dashboard keeps fluctuating" complaint. We now require TWO
+    // consecutive 401s on non-silent requests within a short window before
+    // bouncing, so a one-off blip just gets retried by the next poll.
     if (status === 401 && !isPublicRoute()) {
-      localStorage.removeItem('robin_token');
-      window.location.href = '/login';
+      if (silent) {
+        // Silent (poll / optional fetch) — never bounce on its own.
+      } else {
+        const w = window as any;
+        const now = Date.now();
+        if (w.__robin401Strike && now - w.__robin401Strike < 8000) {
+          localStorage.removeItem('robin_token');
+          window.location.href = '/login';
+        } else {
+          w.__robin401Strike = now;
+          // first strike — let the caller handle it (or get retried next tick)
+        }
+      }
     } else if (status !== 401 || !isPublicRoute()) {
       if (silent) {
         // swallow — caller is handling their own UX

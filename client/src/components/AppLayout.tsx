@@ -80,15 +80,17 @@ export function AppLayout({ children, requiredRole }: Props) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [chatUnread, setChatUnread] = useState(0);
 
-  // ── Poll unread notifications (REST) — visible-only ─────────────────────
+  // ── Poll unread notifications (REST) — visible-only, silent ─────────────
   // Was a plain setInterval that fired every 30s even on backgrounded tabs.
   // useVisiblePoll pauses when document.hidden — saves CPU + battery.
+  // Stretched to 60s and marked silent so a transient 401 on a background
+  // tick can never bounce the user to /login mid-session.
   useVisiblePoll(async () => {
     try {
-      const data = await api.listNotifications({ limit: 50 });
+      const data = await api.listNotifications({ limit: 50, silent: true });
       setUnreadCount(Array.isArray(data) ? data.filter((n: any) => !n.isRead).length : 0);
-    } catch { /* ignore */ }
-  }, 30_000);
+    } catch { /* swallow — silent header keeps interceptor quiet */ }
+  }, 60_000);
 
   // ── Today's client schedule reminder ────────────────────────────────────
   // Fires ONCE per session (per logged-in user, per IST day) when the user
