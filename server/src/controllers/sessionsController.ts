@@ -191,9 +191,11 @@ export async function endSession(req: AuthRequest, res: Response): Promise<void>
     // time too (covers the case where the user closes their tab and never
     // explicitly clicks End — the 8pm cron then ends the session and we
     // need to backfill the trailing gap so it doesn't show as worked).
+    // (No 'on_break' check needed here — we already set status to 'ended'
+    // above. The TS narrowing rightly rejects the comparison.)
     if (session.lastHeartbeatAt) {
       const trailingGap = now.getTime() - new Date(session.lastHeartbeatAt).getTime();
-      if (trailingGap > 90_000 && session.status !== 'on_break') {
+      if (trailingGap > 90_000) {
         const awayThisGap = trailingGap - 60_000;
         session.awayMs = (session.awayMs || 0) + awayThisGap;
       }

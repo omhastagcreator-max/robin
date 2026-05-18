@@ -93,8 +93,10 @@ export function sessionTotals(
   // awayMs is whole-session — proportionally clamp it to the requested
   // window so partial-day reports don't subtract more than makes sense.
   // (For most reports the window covers the whole session, so awayMs is
-  // applied in full.)
-  const sessionDurationMs = Math.max(1, ms(s.endTime || effectiveEndMs(s, windowEndMs)) - ms(s.startTime));
+  // applied in full.) Note: effectiveEndMs returns a number, ms() expects
+  // a Date/string — branch instead of relying on `||` so TS narrows.
+  const sessionEndMs = s.endTime ? ms(s.endTime) : effectiveEndMs(s, windowEndMs);
+  const sessionDurationMs = Math.max(1, sessionEndMs - ms(s.startTime));
   const windowFraction    = Math.max(0, Math.min(1, workedMs / sessionDurationMs));
   const awayInWindowMs    = Math.round((s.awayMs || 0) * windowFraction);
 
