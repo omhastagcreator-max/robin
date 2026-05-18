@@ -269,19 +269,28 @@ export async function getWorkflow(req: AuthRequest, res: Response): Promise<void
     const ids = new Set<string>();
     wf.services.forEach((s: any) => { if (s.assignedTo) ids.add(s.assignedTo); });
     (wf.activity || []).forEach((a: any) => { if (a.actorId) ids.add(a.actorId); });
+    // Build the hydrated response as a plain JS object so we can safely
+    // attach assignee / actorName fields. We can't assign back to wf.services
+    // / wf.activity directly because Mongoose's lean() still types those as
+    // DocumentArray<...> and TS rejects a plain []. Spread into a fresh
+    // object instead — exactly what we want to send to the client anyway.
+    let payload: any = wf;
     if (ids.size) {
       const users = await User.find({ _id: { $in: Array.from(ids) } }).select('name email').lean();
       const byId = new Map(users.map(u => [String(u._id), u]));
-      wf.services = wf.services.map((s: any) => ({
-        ...s,
-        assignee: s.assignedTo ? byId.get(s.assignedTo) : null,
-      }));
-      wf.activity = (wf.activity || []).map((a: any) => ({
-        ...a,
-        actorName: byId.get(a.actorId)?.name || byId.get(a.actorId)?.email || 'Someone',
-      }));
+      payload = {
+        ...wf,
+        services: wf.services.map((s: any) => ({
+          ...s,
+          assignee: s.assignedTo ? byId.get(s.assignedTo) : null,
+        })),
+        activity: (wf.activity || []).map((a: any) => ({
+          ...a,
+          actorName: byId.get(a.actorId)?.name || byId.get(a.actorId)?.email || 'Someone',
+        })),
+      };
     }
-    res.json(wf);
+    res.json(payload);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 

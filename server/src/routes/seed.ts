@@ -334,8 +334,10 @@ router.post('/demo-clients', authMiddleware, async (req: AuthRequest, res: Respo
     const skipped: string[] = [];
 
     for (const brand of BRANDS) {
-      // Idempotent: re-find by phone first.
-      let clientUser = await User.findOne({ organizationId: orgId, role: 'client', phone: brand.phone }).lean();
+      // Idempotent: re-find by phone first. Typed as `any` so we can
+      // assign either a lean() result OR a freshly-created Document's
+      // toObject() without TS griping about FlattenMaps vs the raw shape.
+      let clientUser: any = await User.findOne({ organizationId: orgId, role: 'client', phone: brand.phone }).lean();
       if (!clientUser) {
         const newClient = await User.create({
           organizationId: orgId,
