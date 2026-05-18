@@ -62,6 +62,23 @@ export default function AdminEmployees() {
   const [inviteRole, setInviteRole] = useState('employee');
   const [inviting, setInviting] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
+  // One-shot helper: maps the four named teammates to their canonical
+  // team + role. Idempotent on the server — safe to click more than once.
+  const [assigningRoles, setAssigningRoles] = useState(false);
+  const runAssignRoles = async () => {
+    if (assigningRoles) return;
+    setAssigningRoles(true);
+    try {
+      const r = await api.assignTeamRoles();
+      toast.success(r.message || 'Team roles updated');
+      if (Array.isArray(r.notFound) && r.notFound.length) {
+        toast.warning(`Not found: ${r.notFound.join(', ')} — add them first, then re-run.`);
+      }
+      await load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Failed to assign team roles');
+    } finally { setAssigningRoles(false); }
+  };
   const [reportFor, setReportFor] = useState<any | null>(null);
   const presence = useTeamPresence();
 
@@ -153,10 +170,18 @@ export default function AdminEmployees() {
             <h1 className="text-2xl font-bold">Team Members</h1>
             <p className="text-sm text-muted-foreground">{employees.length} members</p>
           </div>
-          <button onClick={() => setShowInvite(v => !v)}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90">
-            <Plus className="h-4 w-4" /> Add Member
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={runAssignRoles} disabled={assigningRoles}
+              title="Sets Om→dev, Sakshi→meta, Priyanka→influencer, Rishi→sales. Safe to re-run."
+              className="flex items-center gap-2 px-3 py-2 bg-muted text-foreground rounded-xl text-sm font-medium hover:bg-muted/70 disabled:opacity-50">
+              {assigningRoles ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserCheck className="h-3.5 w-3.5" />}
+              Assign team roles
+            </button>
+            <button onClick={() => setShowInvite(v => !v)}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90">
+              <Plus className="h-4 w-4" /> Add Member
+            </button>
+          </div>
         </div>
 
         {showInvite && (

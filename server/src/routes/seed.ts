@@ -440,4 +440,92 @@ router.post('/demo-clients', authMiddleware, async (req: AuthRequest, res: Respo
   }
 });
 
+/**
+ * POST /api/seed/assign-roles
+ *
+ * One-shot helper for the Hastag Creator team — sets the canonical team /
+ * role mapping for the four named teammates so the workflow auto-assigner
+ * picks the right person every time.
+ *
+ *   Om       → role employee, team 'dev'         (Shopify / store dev + issues)
+ *   Sakshi   → role employee, team 'meta'        (Meta ads + campaigns)
+ *   Priyanka → role employee, team 'influencer'  (Influencer video work)
+ *   Rishi    → role sales,    team 'sales'       (Sales — not a dev)
+ *
+ * Matching is case-insensitive on the user's name OR email local-part, so
+ * "Om", "om.dev@hastag…", "om-developer" all resolve to the same person.
+ * Admin-only — run once from the browser console or curl after deploy.
+ *
+ *   curl -X POST -H "Authorization: Bearer $TOKEN" \
+ *        https://<robin-api>/api/seed/assign-roles
+ */
+router.post('/assign-roles', authMiddleware, async (req: AuthRequest, res: Response) => {
+  if (!req.user || req.user.role !== 'admin') {
+    res.status(403).json({ error: 'Admin only' });
+    return;
+  }
+  try {
+    const me = await User.findById(req.user.id).select('organizationId').lean();
+    if (!me?.organizationId) { res.status(400).json({ error: 'No organization' }); return; }
+    const orgId = me.organizationId;
+
+    // name OR email-local matchers (case-insensitive). "shakshi" is a common
+    // mis-spelling of "sakshi" — accept both. "priyanks" likewise.
+    const MAPPING: Array<{ match: RegExp[]; team: string; role: 'admin' | 'employee' | 'sales'; label: string }> = [
+      { label: 'Om',       match: [/\bom\b/i],                          team: 'dev',        role: 'employee' },
+      { label: 'Sakshi',   match: [/\bsakshi\b/i, /\bshakshi\b/i],      team: 'meta',       role: 'employee' },
+      { label: 'Priyanka', match: [/\bpriyanka\b/i, /\bpriyanks?\b/i],  team: 'influencer', role: 'employee' },
+      { label: 'Rishi',    match: [/\brishi\b/i],                       team: 'sales',      role: 'sales'    },
+    ];
+
+    const updated: Array<{ label: string; email: string; previous: { role: string; team: string }; now: { role: string; team: string } }> = [];
+    const notFound: string[] = [];
+
+    for (const entry of MAPPING) {
+      // Build a regex-OR query against name + email
+      const orClauses = entry.match.flatMap(rx => [{ name: rx }, { email: rx }]);
+      const user = await User.findOne({
+        organizationId: orgId,
+        isActive: true,
+        $or: orClauses,
+      });
+      if (!user) { notFound.push(entry.label); continue; }
+
+      const prev = { role: user.role, team: user.team || '' };
+      // Only update if it's actually changing — keeps audit log clean and
+      // avoids a no-op DB write for users already in the right slot.
+      let changed = false;
+      if (user.role !== entry.role) { user.role = entry.role as any;       changed = true; }
+      if ((user.team || '') !== entry.team) { user.team = entry.team;       changed = true; }
+      // Also ensure their secondary teams[] includes the canonical team —
+      // belt-and-suspenders for the pickAssignee `{ teams: team }` branch.
+      if (!Array.isArray(user.teams) || !user.teams.includes(entry.team)) {
+        user.teams = Array.from(new Set([...(user.teams || []), entry.team]));
+        changed = true;
+      }
+      if (changed) await user.save();
+
+      updated.push({
+        label: entry.label,
+        email: user.email,
+        previous: prev,
+        now: { role: user.role, team: user.team || '' },
+      });
+    }
+
+    res.json({
+      ok: true,
+      message: `Updated ${updated.length} teammate${updated.length === 1 ? '' : 's'}.` +
+               (notFound.length ? ` Not found: ${notFound.join(', ')}.` : ''),
+      updated,
+      notFound,
+      tip: notFound.length
+        ? 'Add the missing teammate(s) under Admin → Employees first (any role), then re-run.'
+        : 'Auto-assignment of new client services will now go to the right person.',
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

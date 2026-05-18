@@ -130,6 +130,9 @@ export const listErrorLogs = (params: { source?: 'server' | 'client'; limit?: nu
 
 // ── Seed (admin-only, one-shot helpers) ────────────────────────────────
 export const seedDemoClients = () => api.post('/seed/demo-clients', {}).then(r => r.data);
+// One-shot: maps Om/Sakshi/Priyanka/Rishi to their canonical team + role
+// so the workflow auto-assigner picks the right person. Admin-only.
+export const assignTeamRoles  = () => api.post('/seed/assign-roles', {}).then(r => r.data);
 
 // ── Client Workflow pipeline (services + SOP checklists per client) ────
 export const cwListWorkflows    = (params: { q?: string; mine?: '1' } = {}) =>
