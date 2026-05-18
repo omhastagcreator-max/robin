@@ -268,15 +268,19 @@ router.post('/reseed', authMiddleware, async (req: AuthRequest, res: Response) =
  * Admin-only. Safe to run on production to populate demo data.
  */
 router.post('/demo-clients', authMiddleware, async (req: AuthRequest, res: Response) => {
-  if (req.user?.role !== 'admin') {
-    res.status(403).json({ error: 'Admin only' });
+  // Open to any internal staff — this is demo data only, no PII risk, and
+  // every team member needs to be able to seed test workflows to learn the
+  // UI. Clients are still blocked.
+  if (!req.user || !['admin', 'employee', 'sales'].includes(req.user.role)) {
+    res.status(403).json({ error: 'Internal staff only' });
     return;
   }
   try {
-    // Resolve the admin's org so seeded data lives in the right place.
+    // Resolve the caller's org so seeded data lives in the right place.
     const me = await User.findById(req.user.id).select('organizationId').lean();
     if (!me?.organizationId) { res.status(400).json({ error: 'No organization' }); return; }
     const orgId = me.organizationId;
+    const callerId = req.user.id;
 
     /** Round-robin assignee pick — same logic the workflow controller uses. */
     const pickAssignee = async (team: string): Promise<string | null> => {
@@ -349,10 +353,14 @@ router.post('/demo-clients', authMiddleware, async (req: AuthRequest, res: Respo
       const existing = await ClientWorkflow.findOne({ organizationId: orgId, clientId: String(clientUser!._id) });
       if (existing) { skipped.push(brand.name); continue; }
 
-      // Build services per brand spec.
-      const services = await Promise.all(brand.services.map(async (s) => {
+      // Build services per brand spec. The CALLER is auto-assigned to the
+      // first service so they immediately see the new workflow in their
+      // pipeline (otherwise they'd only see it via "Only mine = off" or
+      // if the round-robin picker happened to land on them).
+      const services = await Promise.all(brand.services.map(async (s, idx) => {
         const tpl = SERVICE_TEMPLATES[s.type];
-        const assignedTo = await pickAssignee(tpl.team);
+        const teamPick = await pickAssignee(tpl.team);
+        const assignedTo = idx === 0 ? callerId : (teamPick || callerId);
         const checklist = tpl.checklist.map((text, i) => ({
           text,
           done: i < s.tickedItems,
@@ -374,12 +382,12 @@ router.post('/demo-clients', authMiddleware, async (req: AuthRequest, res: Respo
 
       // Initial activity log.
       const activity: any[] = [
-        { actorId: req.user.id, action: 'created', detail: `Pipeline created with: ${services.map(s => s.label).join(', ')}`, at: new Date(Date.now() - 14 * 86400_000) },
+        { actorId: callerId, action: 'created', detail: `Pipeline created with: ${services.map(s => s.label).join(', ')}`, at: new Date(Date.now() - 14 * 86400_000) },
       ];
       services.forEach(s => {
-        s.checklist.forEach((c, i) => {
+        s.checklist.forEach((c) => {
           if (c.done) activity.push({
-            actorId: s.assignedTo || req.user.id,
+            actorId: s.assignedTo || callerId,
             action: 'item_checked',
             serviceType: s.serviceType,
             detail: c.text,
@@ -387,7 +395,7 @@ router.post('/demo-clients', authMiddleware, async (req: AuthRequest, res: Respo
           });
         });
         if (s.completedAt) activity.push({
-          actorId: s.assignedTo || req.user.id,
+          actorId: s.assignedTo || callerId,
           action: 'service_completed',
           serviceType: s.serviceType,
           detail: s.label,
@@ -413,7 +421,7 @@ router.post('/demo-clients', authMiddleware, async (req: AuthRequest, res: Respo
         clientEmail: brand.email,
         services,
         activity,
-        createdBy: req.user.id,
+        createdBy: callerId,
       });
       created.push({ name: brand.name, workflowId: String(wf._id), phone: brand.phone });
     }

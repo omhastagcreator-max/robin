@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppLayout } from '@/components/AppLayout';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -70,7 +70,19 @@ export default function SalesDashboard() {
   const [leads, setLeads]     = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [deals, setDeals]     = useState<any[]>([]);
+  // Two flags so subsequent refreshes never blank the page:
+  //   loading      — true ONLY on the very first mount, drives the
+  //                  full-screen spinner. Never set true again.
+  //   refreshing   — true while a background refresh is in flight. Could
+  //                  drive a subtle inline indicator if we want; mostly
+  //                  used to prevent overlapping refreshes.
+  // Without this, every CRUD action (drag-drop, quick-add, stage flip)
+  // called load() → setLoading(true) → spinner → setLoading(false) →
+  // dashboard re-renders. From the user POV that looked like the page
+  // was fluctuating between blank and dashboard.
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const initialLoadDone = useRef(false);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm]       = useState({ ...EMPTY_FORM });
   const [saving, setSaving]   = useState(false);
@@ -94,7 +106,11 @@ export default function SalesDashboard() {
   const [mobileStage, setMobileStage] = useState<string>('new_lead');
 
   const load = useCallback(async () => {
-    setLoading(true);
+    // First call → drive the full-screen spinner. Subsequent calls (after
+    // any CRUD action) → silent refresh; keep the existing data visible
+    // so the page doesn't flicker.
+    if (!initialLoadDone.current) setLoading(true);
+    else                          setRefreshing(true);
     try {
       const [l, u, d] = await Promise.all([
         api.listLeads({}),
@@ -104,16 +120,22 @@ export default function SalesDashboard() {
       setLeads(Array.isArray(l) ? l : []);
       setClients(Array.isArray(u) ? u : []);
       setDeals(Array.isArray(d) ? d : []);
-    } finally { setLoading(false); }
+    } finally {
+      initialLoadDone.current = true;
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
   // Auto-refresh every 30s so new leads from the sheet sync show up without
-  // Rishi having to reload the page. Uses a flag to avoid showing the
-  // loading spinner on these background refreshes (would feel jumpy).
+  // Rishi having to reload the page. Pauses when the tab is hidden — no
+  // point hitting the API for a page nobody's looking at, and helps avoid
+  // a backlog of pending requests when the tab comes back.
   useEffect(() => {
     const i = setInterval(async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       try {
         const [l, u, d] = await Promise.all([
           api.listLeads({}),
@@ -657,6 +679,15 @@ export default function SalesDashboard() {
             </motion.form>
           )}
         </AnimatePresence>
+
+        {/* Subtle inline indicator when a background refresh is happening
+            (CRUD action + 30s poll). Keeps the dashboard visible — no
+            full-screen spinner flash. */}
+        {refreshing && (
+          <div className="flex items-center justify-center text-[10px] text-muted-foreground gap-1 -mt-1">
+            <Loader2 className="h-3 w-3 animate-spin" /> refreshing
+          </div>
+        )}
 
         {loading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>

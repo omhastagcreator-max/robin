@@ -201,6 +201,17 @@ function ServiceChip({ svc }: { svc: ServiceSummary }) {
 }
 
 function EmptyState({ query, isAdminOrSales, onCreate }: { query: string; isAdminOrSales: boolean; onCreate: () => void }) {
+  const [seeding, setSeeding] = useState(false);
+  const seed = async () => {
+    setSeeding(true);
+    try {
+      const res = await api.seedDemoClients();
+      toast.success(res.message || 'Demo clients seeded', { duration: 6000 });
+      window.location.reload();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Seed failed');
+    } finally { setSeeding(false); }
+  };
   return (
     <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center">
       <Sparkles className="h-8 w-8 mx-auto text-muted-foreground/40 mb-3" />
@@ -208,10 +219,21 @@ function EmptyState({ query, isAdminOrSales, onCreate }: { query: string; isAdmi
       <p className="text-xs text-muted-foreground mt-1">
         {query ? 'Try the phone number, full name, or email.' : 'When sales onboards a client and picks their services, the pipeline shows up here.'}
       </p>
-      {!query && isAdminOrSales && (
-        <button onClick={onCreate} className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90">
-          <Plus className="h-4 w-4" /> Onboard a client
-        </button>
+      {!query && (
+        <div className="mt-4 flex items-center justify-center gap-2 flex-wrap">
+          {isAdminOrSales && (
+            <button onClick={onCreate} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90">
+              <Plus className="h-4 w-4" /> Onboard a client
+            </button>
+          )}
+          {/* Demo seeder — visible to ALL internal staff so any teammate
+              can populate test data without needing admin access. */}
+          <button onClick={seed} disabled={seeding}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-border bg-card text-foreground text-sm font-semibold hover:bg-muted disabled:opacity-50">
+            {seeding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {seeding ? 'Seeding…' : 'Seed 3 demo clients'}
+          </button>
+        </div>
       )}
     </div>
   );
