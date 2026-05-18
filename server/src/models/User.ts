@@ -1,7 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 import bcrypt from 'bcryptjs';
 
-export type AppRole = 'admin' | 'employee' | 'client' | 'sales';
+export type AppRole = 'admin' | 'employee' | 'client' | 'sales' | 'workroom';
 
 export interface IUser extends Document {
   _id: mongoose.Types.ObjectId;
@@ -29,7 +29,9 @@ const UserSchema = new Schema<IUser>(
     email:          { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash:   { type: String, required: true, select: false },
     name:           { type: String, default: '' },
-    role:           { type: String, enum: ['admin', 'employee', 'client', 'sales'], default: 'employee' },
+    // 'workroom' = bare-minimum employee — only sees the huddle/Workroom
+    // (used for floor/support staff who join calls but don't manage tasks).
+    role:           { type: String, enum: ['admin', 'employee', 'client', 'sales', 'workroom'], default: 'employee' },
     roles:          { type: [String], default: [] },               // extra roles
     team:           { type: String, default: '' },
     teams:          { type: [String], default: [] },               // multiple teams

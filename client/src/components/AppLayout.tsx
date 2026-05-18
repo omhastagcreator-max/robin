@@ -32,6 +32,9 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/admin',             label: 'Dashboard',    icon: LayoutDashboard, roles: ['admin'] },
   { to: '/client',            label: 'Dashboard',    icon: LayoutDashboard, roles: ['client'] },
   { to: '/sales',             label: 'Dashboard',    icon: LayoutDashboard, roles: ['sales'] },
+  // Workroom-only role lands here — a tiny page with "Open Workroom" +
+  // "Join huddle" buttons. They see no other nav items.
+  { to: '/workroom-home',     label: 'Dashboard',    icon: LayoutDashboard, roles: ['workroom'] },
 
   // ── Employee + admin + sales shared tools ─────────────────────────
   // Restored to pre-restriction state: sales sees everything except the
@@ -47,7 +50,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/admin/attendance',  label: 'Attendance',   icon: Clock,           roles: ['admin'] },
   { to: '/admin/crash-logs',  label: 'Crash Logs',   icon: Bug,             roles: ['admin'] },
   { to: '/leaves',            label: 'My Leaves',    icon: CalendarOff,     roles: ['employee', 'sales'] },
-  { to: '/workroom',          label: 'Work Room',    icon: Video,           roles: ['admin', 'employee', 'sales'] },
+  { to: '/workroom',          label: 'Work Room',    icon: Video,           roles: ['admin', 'employee', 'sales', 'workroom'] },
   { to: '/team/calendar',     label: 'Team Calendar', icon: Calendar,       roles: ['admin', 'employee', 'sales'] },
   { to: '/client-schedule',   label: 'Client Schedule', icon: CalendarDays, roles: ['admin', 'employee', 'sales'] },
   { to: '/clients/pipeline',  label: 'Client Pipeline', icon: Workflow,     roles: ['admin', 'employee', 'sales'] },
@@ -94,7 +97,9 @@ export function AppLayout({ children, requiredRole }: Props) {
   // page. Uses sessionStorage so navigating around doesn't re-fire it; uses
   // an IST-day key so a tab left open across midnight re-fires next day.
   useEffect(() => {
+    // Workroom role doesn't own client schedules — skip the daily toast.
     if (!user || !['admin', 'employee', 'sales'].includes(role)) return;
+    // (workroom intentionally excluded — they don't see schedule pages)
     const istNow = new Date(Date.now() + 330 * 60_000);
     const istDayKey = istNow.toISOString().slice(0, 10);
     const flagKey = `robin.todaySchedule.shown.${user.id}.${istDayKey}`;

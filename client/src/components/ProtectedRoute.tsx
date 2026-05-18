@@ -18,6 +18,10 @@ export function dashboardForRole(role: string): string {
     case 'client':   return '/client';
     case 'sales':    return '/sales';
     case 'employee': return '/dashboard';
+    // 'workroom' = bare-minimum employee — only the Workroom + a tiny
+    // landing page. Lands on /workroom-home which has Open Workroom +
+    // Join huddle buttons and nothing else.
+    case 'workroom': return '/workroom-home';
     default:         return '/dashboard';
   }
 }

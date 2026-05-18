@@ -52,24 +52,54 @@ export default function ClientPipelinePage() {
   const [list, setList]         = useState<Workflow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  // Last fingerprint of the workflow list — we compare incoming poll data
+  // against this and SKIP setState when nothing changed. This is what kills
+  // the visible refresh: even though the data was identical, setList(new
+  // ref) was re-rendering the kanban every minute and resetting expanded
+  // cards / open dropdowns. No diff → no re-render → no flicker.
+  const lastSigRef = useRef<string>('');
 
-  const load = async () => {
+  // Build a tiny structural fingerprint — enough to detect real changes
+  // (new client, status change, checklist tick) without doing an expensive
+  // deep equal on every poll.
+  const fingerprint = (data: Workflow[]) =>
+    data.map(w => `${w._id}:${w.services.map(s =>
+      `${s.serviceType}/${s.status}/${s.checklist?.filter(c => c.done).length || 0}/${s.checklist?.length || 0}`
+    ).join('|')}`).join(';');
+
+  /**
+   * load(options.background = true) — when called from the poll we DON'T
+   * touch `loading`, DON'T show toasts for transient errors, and skip
+   * setList when the data is structurally identical. The axios interceptor
+   * also bounces 401s to /login globally; we add the `X-Silent` header on
+   * background polls so a momentary 5xx doesn't blow up the UI with a toast
+   * either.
+   */
+  const load = async (opts: { background?: boolean } = {}) => {
+    const isBg = !!opts.background;
     try {
       const data = await api.cwListWorkflows({ q: query || undefined, mine: mineOnly ? '1' : undefined });
-      setList(Array.isArray(data) ? data : []);
-    } catch { /* axios toast handles it */ }
-    finally { setLoading(false); }
+      const arr  = Array.isArray(data) ? data : [];
+      const sig  = fingerprint(arr);
+      if (sig === lastSigRef.current && isBg) return;  // no change → no re-render
+      lastSigRef.current = sig;
+      setList(arr);
+    } catch { /* axios toast (foreground) or silent (background) */ }
+    finally { if (!isBg) setLoading(false); }
   };
 
-  // Debounce search
+  // Debounce search — foreground load (user-initiated)
   useEffect(() => {
-    const t = setTimeout(load, query ? 300 : 0);
+    const t = setTimeout(() => load(), query ? 300 : 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, mineOnly]);
 
-  // Refresh in the background so progress updates show up live.
-  useVisiblePoll(load, 60_000, [query, mineOnly]);
+  // Background refresh — stretched to 5 minutes (was 60s, which made the
+  // board feel like it was constantly "refreshing"). Background polls
+  // don't touch the loading flag and skip the state update when the data
+  // hasn't actually changed, so the user never sees a flicker.
+  useVisiblePoll(() => load({ background: true }), 300_000, [query, mineOnly]);
 
   return (
     <AppLayout>

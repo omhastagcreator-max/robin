@@ -16,7 +16,7 @@ router.use(authMiddleware);
  * The LiveKit API key + secret stay on the server — the client never sees
  * them. Tokens are short-lived (10 minutes) and minted on demand.
  */
-router.post('/token', requireRole('admin', 'employee', 'sales'), async (req: AuthRequest, res: Response) => {
+router.post('/token', requireRole('admin', 'employee', 'sales', 'workroom'), async (req: AuthRequest, res: Response) => {
   try {
     const apiKey    = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;

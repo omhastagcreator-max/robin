@@ -168,7 +168,7 @@ export default function AdminEmployees() {
               <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="email@example.com" type="email" required
                 className="flex-1 min-w-48 px-3 py-2 bg-background border border-input rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
               <select value={inviteRole} onChange={e => setInviteRole(e.target.value)} className="px-3 py-2 bg-background border border-input rounded-xl text-sm">
-                {['employee', 'sales', 'client', 'admin'].map(r => <option key={r} value={r}>{r}</option>)}
+                {['employee', 'sales', 'workroom', 'client', 'admin'].map(r => <option key={r} value={r}>{r}</option>)}
               </select>
               <button type="submit" disabled={inviting} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
                 {inviting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserCheck className="h-3.5 w-3.5" />} Create
@@ -266,7 +266,7 @@ export default function AdminEmployees() {
                       onChange={e => changeRole(emp._id, e.target.value)}
                       className="text-xs bg-background border border-input rounded-lg px-2 py-1.5"
                     >
-                      {['employee', 'sales', 'client', 'admin'].map(r => <option key={r} value={r}>{r}</option>)}
+                      {['employee', 'sales', 'workroom', 'client', 'admin'].map(r => <option key={r} value={r}>{r}</option>)}
                     </select>
                     <button
                       onClick={() => resetPw(emp._id, emp.name || emp.email)}
