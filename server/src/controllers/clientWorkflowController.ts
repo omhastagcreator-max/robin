@@ -1,8 +1,27 @@
 import { Response } from 'express';
+import { Types } from 'mongoose';
 import { AuthRequest } from '../middleware/authMiddleware';
 import ClientWorkflow from '../models/ClientWorkflow';
 import User from '../models/User';
+import SopOverride from '../models/SopOverride';
 import { SERVICE_TEMPLATES, SERVICE_TYPES, blockingServices, type ServiceType } from '../lib/workflowTemplates';
+import { notify } from '../services/notify';
+
+/**
+ * Resolve the effective SOP checklist + label for a service in a given org.
+ * Falls back to the default template if there's no override saved. Lets us
+ * ship admin SOP editing later without changing any callers.
+ */
+async function resolveTemplate(orgId: string, type: ServiceType): Promise<{ label: string; checklist: string[]; team: string; dependsOn: ServiceType[] }> {
+  const def = SERVICE_TEMPLATES[type];
+  const override = await SopOverride.findOne({ organizationId: orgId, serviceType: type }).lean();
+  return {
+    label:     override?.label || def.label,
+    checklist: (override?.checklist && override.checklist.length > 0) ? override.checklist : def.checklist,
+    team:      def.team,
+    dependsOn: def.dependsOn,
+  };
+}
 
 /**
  * Client Workflow controller — org-isolated, role-gated.
@@ -45,6 +64,9 @@ function recomputeServiceStatuses(wf: any) {
     if (ticked === 0) s.status = 'pending';
     else              s.status = 'in_progress';
     if (!s.startedAt && ticked > 0) s.startedAt = new Date();
+    // Clear stale startedAt if the user unticked everything — otherwise
+    // reports show "started 3 weeks ago" on a service that's pending again.
+    if (ticked === 0 && s.startedAt) s.startedAt = undefined;
   }
 }
 
@@ -62,7 +84,7 @@ async function pickAssignee(orgId: string, team: string): Promise<string | null>
 
   const ids = candidates.map(c => String(c._id));
   const counts = await ClientWorkflow.aggregate([
-    { $match: { organizationId: new (require('mongoose').Types.ObjectId)(orgId) } },
+    { $match: { organizationId: new Types.ObjectId(orgId) } },
     { $unwind: '$services' },
     { $match: { 'services.status': { $in: ['pending', 'in_progress', 'blocked'] }, 'services.assignedTo': { $in: ids } } },
     { $group: { _id: '$services.assignedTo', n: { $sum: 1 } } },
@@ -97,9 +119,10 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
     const client = await User.findOne({ _id: clientId, organizationId: orgId, role: 'client' }).select('name phone email').lean();
     if (!client) { res.status(400).json({ error: 'Client not found' }); return; }
 
-    // Build each service from its template, auto-assigning a teammate.
+    // Build each service from its (possibly overridden) template, auto-
+    // assigning a teammate from the right team.
     const serviceDocs = await Promise.all(services.map(async (type: ServiceType) => {
-      const tpl = SERVICE_TEMPLATES[type];
+      const tpl = await resolveTemplate(orgId, type);
       const assignedTo = await pickAssignee(orgId, tpl.team);
       return {
         serviceType: type,
@@ -114,6 +137,7 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
     // to it rather than refusing or duplicating.
     const existing = await ClientWorkflow.findOne({ organizationId: orgId, clientId });
     let wf;
+    let notifyServices: typeof serviceDocs;
     if (existing) {
       const existingTypes = new Set(existing.services.map(s => s.serviceType));
       const toAdd = serviceDocs.filter(s => !existingTypes.has(s.serviceType));
@@ -128,6 +152,7 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
       } as any);
       recomputeServiceStatuses(existing);
       wf = await existing.save();
+      notifyServices = toAdd;
     } else {
       wf = await ClientWorkflow.create({
         organizationId: orgId,
@@ -145,6 +170,22 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
       });
       recomputeServiceStatuses(wf);
       await wf.save();
+      notifyServices = serviceDocs;
+    }
+
+    // Notify every freshly assigned teammate — one notification per
+    // service they got. Skips the sales person who created the pipeline.
+    const io = req.app.get('io');
+    for (const s of notifyServices) {
+      if (!s.assignedTo) continue;
+      await notify({
+        io, organizationId: orgId, actorId: req.user!.id,
+        userId: s.assignedTo,
+        type: 'workflow.assigned',
+        title: `New client work: ${s.label}`,
+        body:  `${client.name || 'A client'} just got onboarded. You're the owner for ${s.label}.`,
+        entityId: String(wf._id), entityType: 'workflow',
+      });
     }
 
     res.status(201).json(wf);
@@ -165,7 +206,17 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
     const filter: any = { organizationId: orgId };
     const { q, mine } = req.query as Record<string, string>;
 
-    if (mine === '1') {
+    // Non-admins/sales are FORCED to their own pipelines (created or
+    // assigned). Without this, an employee could untick "Only mine" in
+    // the UI and see every client in the org — the gate has to be on the
+    // server, not in the React state.
+    const role = req.user!.role;
+    if (role !== 'admin' && role !== 'sales') {
+      filter.$or = [
+        { 'services.assignedTo': req.user!.id },
+        { createdBy: req.user!.id },
+      ];
+    } else if (mine === '1') {
       filter['services.assignedTo'] = req.user!.id;
     }
 
@@ -185,6 +236,21 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
+/**
+ * Workflow access policy:
+ *   - admin/sales: can see ALL workflows in the org
+ *   - employee:    can only see workflows where THEY own at least one service
+ *                  OR where they created it.
+ *
+ * Centralised so getWorkflow / addNote / returnService / etc. all enforce
+ * the same rule. Returns true if access is allowed.
+ */
+function canSeeWorkflow(wf: any, userId: string, role: string): boolean {
+  if (role === 'admin' || role === 'sales') return true;
+  if (wf.createdBy === userId) return true;
+  return (wf.services || []).some((s: any) => s.assignedTo === userId);
+}
+
 // ── Get a single workflow (full detail + activity log) ───────────────────
 export async function getWorkflow(req: AuthRequest, res: Response): Promise<void> {
   try {
@@ -192,14 +258,27 @@ export async function getWorkflow(req: AuthRequest, res: Response): Promise<void
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId }).lean();
     if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
-    // Hydrate assignee names
-    const assigneeIds = Array.from(new Set(wf.services.map((s: any) => s.assignedTo).filter(Boolean)));
-    if (assigneeIds.length) {
-      const users = await User.find({ _id: { $in: assigneeIds } }).select('name email').lean();
+    // AuthZ: stop employees from URL-guessing into workflows they don't own.
+    if (!canSeeWorkflow(wf, req.user!.id, req.user!.role)) {
+      res.status(403).json({ error: 'You do not have access to this client' });
+      return;
+    }
+
+    // Hydrate assignee names on services AND activity log actor names so
+    // the UI doesn't show user IDs as avatars.
+    const ids = new Set<string>();
+    wf.services.forEach((s: any) => { if (s.assignedTo) ids.add(s.assignedTo); });
+    (wf.activity || []).forEach((a: any) => { if (a.actorId) ids.add(a.actorId); });
+    if (ids.size) {
+      const users = await User.find({ _id: { $in: Array.from(ids) } }).select('name email').lean();
       const byId = new Map(users.map(u => [String(u._id), u]));
       wf.services = wf.services.map((s: any) => ({
         ...s,
         assignee: s.assignedTo ? byId.get(s.assignedTo) : null,
+      }));
+      wf.activity = (wf.activity || []).map((a: any) => ({
+        ...a,
+        actorName: byId.get(a.actorId)?.name || byId.get(a.actorId)?.email || 'Someone',
       }));
     }
     res.json(wf);
@@ -253,12 +332,22 @@ export async function completeService(req: AuthRequest, res: Response): Promise<
       res.status(403).json({ error: 'Only the assignee can complete this service' });
       return;
     }
+    if (svc.status === 'blocked') {
+      res.status(409).json({ error: 'This service is waiting on an earlier service — can\'t complete it yet.' });
+      return;
+    }
     const total = svc.checklist?.length || 0;
     const ticked = (svc.checklist || []).filter((c: any) => c.done).length;
     if (ticked < total) {
       res.status(409).json({ error: 'Tick every checklist item before completing the service' });
       return;
     }
+    // Snapshot which services were 'blocked' BEFORE we recompute — any that
+    // flip to non-blocked are now actionable and their owners deserve a ping.
+    const blockedBefore = new Set(
+      wf.services.filter(s => s.status === 'blocked').map(s => String((s as any)._id)),
+    );
+
     svc.status = 'done';
     svc.completedAt = new Date();
     wf.activity.push({
@@ -267,6 +356,34 @@ export async function completeService(req: AuthRequest, res: Response): Promise<
     } as any);
     recomputeServiceStatuses(wf);
     await wf.save();
+
+    // Notify the assignees of any service that JUST got unblocked.
+    const io = req.app.get('io');
+    for (const s of wf.services) {
+      const idStr = String((s as any)._id);
+      if (blockedBefore.has(idStr) && s.status !== 'blocked' && s.assignedTo) {
+        await notify({
+          io, organizationId: orgId, actorId: req.user!.id,
+          userId: s.assignedTo,
+          type: 'workflow.unblocked',
+          title: `${s.label} is now ready for you`,
+          body:  `${wf.clientName || 'A client'} — ${svc.label} just wrapped up, you can start.`,
+          entityId: String(wf._id), entityType: 'workflow',
+        });
+      }
+    }
+    // Also notify sales (who created the pipeline) when a whole service completes.
+    if (wf.createdBy && wf.createdBy !== req.user!.id) {
+      await notify({
+        io, organizationId: orgId, actorId: req.user!.id,
+        userId: wf.createdBy,
+        type: 'workflow.completed',
+        title: `${svc.label} is done · ${wf.clientName || 'client'}`,
+        body:  `Pipeline progressed — check the next stage when you have a sec.`,
+        entityId: String(wf._id), entityType: 'workflow',
+      });
+    }
+
     res.json(wf);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -283,6 +400,13 @@ export async function returnService(req: AuthRequest, res: Response): Promise<vo
     }
     const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
     if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
+    // AuthZ: only people who can see this workflow can return one of its
+    // services. Admin/sales always, employees only when they own at least
+    // one service on this client.
+    if (!canSeeWorkflow(wf, req.user!.id, req.user!.role)) {
+      res.status(403).json({ error: 'You do not have access to this client' });
+      return;
+    }
     const target = wf.services.find((s: any) => s.serviceType === targetServiceType);
     if (!target) { res.status(400).json({ error: 'Target service not in this pipeline' }); return; }
     target.status = 'in_progress';
@@ -299,6 +423,20 @@ export async function returnService(req: AuthRequest, res: Response): Promise<vo
     } as any);
     recomputeServiceStatuses(wf);
     await wf.save();
+
+    // Ping the upstream owner (and admin) — they have rework to do.
+    const io = req.app.get('io');
+    if (target.assignedTo) {
+      await notify({
+        io, organizationId: orgId, actorId: req.user!.id,
+        userId: target.assignedTo,
+        type: 'workflow.returned',
+        title: `${target.label} returned for rework · ${wf.clientName || 'client'}`,
+        body:  `Reason: "${String(reason).slice(0, 120)}"`,
+        entityId: String(wf._id), entityType: 'workflow',
+      });
+    }
+
     res.json(wf);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -312,11 +450,31 @@ export async function addNote(req: AuthRequest, res: Response): Promise<void> {
     if (!detail?.trim()) { res.status(400).json({ error: 'detail required' }); return; }
     const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
     if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
+    // AuthZ: prevent spam-notes from random employees in the org.
+    if (!canSeeWorkflow(wf, req.user!.id, req.user!.role)) {
+      res.status(403).json({ error: 'You do not have access to this client' });
+      return;
+    }
     wf.activity.push({
       actorId: req.user!.id, action: 'note',
       serviceType, detail: String(detail).slice(0, 1000),
     } as any);
     await wf.save();
+
+    // Notify everyone assigned to a service on this client — they all
+    // care about the latest note. Dedupe handled inside notify().
+    const io = req.app.get('io');
+    const assignees = wf.services.map(s => s.assignedTo).filter(Boolean) as string[];
+    if (wf.createdBy) assignees.push(wf.createdBy);
+    await notify({
+      io, organizationId: orgId, actorId: req.user!.id,
+      userIds: assignees,
+      type: 'workflow.note',
+      title: `New note on ${wf.clientName || 'client'}`,
+      body:  String(detail).slice(0, 160),
+      entityId: String(wf._id), entityType: 'workflow',
+    });
+
     res.json(wf);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -326,6 +484,7 @@ export async function reassignService(req: AuthRequest, res: Response): Promise<
   try {
     if (req.user!.role !== 'admin') { res.status(403).json({ error: 'Admin only' }); return; }
     const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     const { userId } = req.body || {};
     const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
     if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
@@ -338,6 +497,28 @@ export async function reassignService(req: AuthRequest, res: Response): Promise<
       serviceType: svc.serviceType, detail: `from ${before || 'unassigned'} to ${userId || 'unassigned'}`,
     } as any);
     await wf.save();
+
+    // Notify the new owner + (if any) the previous owner who lost the work.
+    const io = req.app.get('io');
+    if (userId) {
+      await notify({
+        io, organizationId: orgId, actorId: req.user!.id, userId,
+        type: 'workflow.assigned',
+        title: `New client work: ${svc.label}`,
+        body:  `${wf.clientName || 'A client'} — admin reassigned ${svc.label} to you.`,
+        entityId: String(wf._id), entityType: 'workflow',
+      });
+    }
+    if (before && before !== userId) {
+      await notify({
+        io, organizationId: orgId, actorId: req.user!.id, userId: before,
+        type: 'workflow.unassigned',
+        title: `Reassigned away from ${svc.label}`,
+        body:  `Admin moved ${svc.label} on ${wf.clientName || 'a client'} to someone else.`,
+        entityId: String(wf._id), entityType: 'workflow',
+      });
+    }
+
     res.json(wf);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
 import {
-  ArrowLeft, CheckCircle2, Circle, Clock, AlertCircle, ArrowRight,
-  Loader2, MessageSquare, Send, RotateCcw, UserCheck, Phone, Mail, Building2,
-  Lock, Sparkles,
+  ArrowLeft, CheckCircle2, Circle, Clock,
+  Loader2, MessageSquare, Send, RotateCcw, Phone, Mail,
+  Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -70,12 +70,32 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default function ClientWorkflowDetailPage() {
   const { id }     = useParams();
-  const { user }   = useAuth();
+  const { user, role } = useAuth();
+  const isAdmin = role === 'admin';
   const [wf, setWf]       = useState<Workflow | null>(null);
   const [loading, setL]   = useState(true);
   const [activeSvc, setActiveSvc] = useState<string>(''); // service _id
   const [note, setNote]   = useState('');
   const [busy, setBusy]   = useState(false);
+  // Admin reassign dropdown — list of teammates loaded once on mount.
+  const [teammates, setTeammates] = useState<Array<{ _id: string; name?: string; email: string }>>([]);
+  useEffect(() => {
+    if (!isAdmin) return;
+    api.listUsers({}).then((d: any[]) => {
+      setTeammates(Array.isArray(d) ? d.filter(u => ['admin', 'employee', 'sales'].includes(u.role)) : []);
+    }).catch(() => {});
+  }, [isAdmin]);
+
+  const reassign = async (svcId: string, userId: string) => {
+    if (!wf) return;
+    setBusy(true);
+    try {
+      const updated = await api.cwReassignService(wf._id, svcId, { userId });
+      setWf(updated);
+      toast.success('Reassigned');
+    } catch { /* interceptor toasts */ }
+    finally { setBusy(false); }
+  };
 
   const load = async () => {
     if (!id) return;
@@ -142,7 +162,10 @@ export default function ClientWorkflowDetailPage() {
     finally { setBusy(false); }
   };
 
-  const canEditActive = active && (active.assignedTo === user?.id || user && (user.role === 'admin'));
+  // Multi-role aware — primary role admin OR roles[] contains admin OR
+  // they're the assignee. Matches the server-side requireRole check.
+  const isAdminEffective = role === 'admin' || ((user as any)?.roles || []).includes('admin');
+  const canEditActive = active && (active.assignedTo === user?.id || isAdminEffective);
   const allItemsDone  = active && active.checklist.length > 0 && active.checklist.every(c => c.done);
 
   return (
@@ -208,15 +231,30 @@ export default function ClientWorkflowDetailPage() {
             <div className="px-4 py-3 border-b border-border flex items-center gap-3 flex-wrap">
               <div className="flex-1">
                 <p className="text-sm font-bold">{active.label}</p>
-                <p className="text-[11px] text-muted-foreground">
-                  {active.assignee?.name ? <>Owner: <strong>{active.assignee.name}</strong></> : 'Unassigned'}
-                  {active.status === 'blocked' && <> · waiting on an earlier service</>}
-                  {active.returnedReason && (
-                    <span className="block text-amber-700 mt-1">
-                      ⚠️ Returned: "{active.returnedReason}"
-                    </span>
+                <p className="text-[11px] text-muted-foreground flex items-center gap-1.5 flex-wrap">
+                  <span>
+                    {active.assignee?.name ? <>Owner: <strong className="text-foreground">{active.assignee.name}</strong></> : 'Unassigned'}
+                  </span>
+                  {/* Admin-only inline reassign — was the missing UI flagged in the audit. */}
+                  {isAdmin && (
+                    <select
+                      value={active.assignedTo || ''}
+                      onChange={e => reassign(active._id, e.target.value)}
+                      disabled={busy}
+                      className="text-[10px] px-1.5 py-0.5 bg-background border border-input rounded-md focus:outline-none focus:ring-1 focus:ring-ring"
+                      title="Reassign this service"
+                    >
+                      <option value="">— change owner —</option>
+                      {teammates.map(t => <option key={t._id} value={t._id}>{t.name || t.email}</option>)}
+                    </select>
                   )}
+                  {active.status === 'blocked' && <span>· waiting on an earlier service</span>}
                 </p>
+                {active.returnedReason && (
+                  <p className="text-[11px] text-amber-700 mt-1">
+                    ⚠️ Returned: "{active.returnedReason}"
+                  </p>
+                )}
               </div>
               {canEditActive && allItemsDone && active.status !== 'done' && (
                 <button onClick={() => completeService(active._id)} disabled={busy}
@@ -297,12 +335,14 @@ export default function ClientWorkflowDetailPage() {
             ) : (
               [...wf.activity].reverse().map((a, i) => (
                 <div key={i} className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
-                  <div className="h-6 w-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold shrink-0">
-                    {(a.actorName || a.actorId || '?').charAt(0).toUpperCase()}
+                  <div className="h-6 w-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold shrink-0"
+                    title={a.actorName || ''}>
+                    {(a.actorName || 'Someone').charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="leading-tight">
-                      <strong>{actionLabel(a.action)}</strong>
+                      {a.actorName && <span className="font-semibold">{a.actorName} </span>}
+                      <span>{actionLabel(a.action).toLowerCase()}</span>
                       {a.serviceType && <span className="text-muted-foreground"> · {a.serviceType.replace(/_/g, ' ')}</span>}
                       {a.detail && <span className="text-muted-foreground"> — {a.detail}</span>}
                     </p>

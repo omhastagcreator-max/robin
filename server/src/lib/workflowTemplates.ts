@@ -1,121 +1,67 @@
 /**
- * Workflow templates — default SOPs per service type.
+ * Workflow templates — lean SOPs for the three services Hastag Creator
+ * actually delivers.
  *
- * Each entry defines:
- *   - label, icon, color for the UI
- *   - team: which `team` slug the responsible employee belongs to (used
- *     to auto-pick an assignee when the workflow is created)
- *   - dependsOn: this service can't START until those services are 'done'.
- *     Empty = can start immediately, parallel with other independent ones.
- *   - checklist: ordered SOP items the assigned employee ticks off
+ *   1. shopify    — Shopify store build / setup. Most clients run on Shopify;
+ *                   the rare custom-dev exception can be handled as a one-off.
+ *   2. meta_ads   — Meta (Facebook + Instagram) ad management. Three stages:
+ *                   account setup → awareness → sales.
+ *   3. influencer — Influencer marketing. Four stages: find influencer →
+ *                   ship product → finalise script → deliver videos.
  *
- * These are intentionally hardcoded for now — the agency owner can edit
- * this file as a code change, and we can layer a per-org override in
- * MongoDB later without breaking anything that depends on the schema.
+ * Dependency rules:
+ *   - meta_ads can start once shopify is done (or the client confirms their
+ *     own store + Pixel is ready — captured as a single checklist item
+ *     rather than a separate service).
+ *   - influencer is independent — runs in parallel with everything.
  *
- * AI hook: the checklist + dependency graph here is the same shape that
- * an AI orchestrator would need to schedule work. When we add automation
- * later, it reads from this file too.
+ * Admin can override the label or checklist per-org via the SopOverride
+ * model. These defaults ship out of the box.
+ *
+ * AI hook: same {team, dependsOn, checklist} shape so an orchestrator can
+ * later auto-progress, summarise, or flag stalled services.
  */
 
-export type ServiceType =
-  | 'website_new'        // build new website
-  | 'website_edit'       // edit existing site
-  | 'website_handoff'    // share params, client builds it
-  | 'meta_ads'
-  | 'google_ads'
-  | 'influencer'
-  | 'ugc_video'
-  | 'content'
-  | 'design';
+export type ServiceType = 'shopify' | 'meta_ads' | 'influencer';
 
 export interface ServiceTemplate {
   label:        string;
-  shortLabel:   string;     // 1-2 words for compact UI
-  team:         string;     // matches USER_TEAMS in client/src/lib/enums.ts
+  shortLabel:   string;
+  team:         string;
   dependsOn:    ServiceType[];
-  checklist:    string[];   // ordered SOP items
+  checklist:    string[];
   color:        'blue' | 'pink' | 'purple' | 'teal' | 'emerald' | 'amber' | 'orange' | 'rose' | 'indigo' | 'slate';
 }
 
 export const SERVICE_TEMPLATES: Record<ServiceType, ServiceTemplate> = {
-  website_new: {
-    label: 'New Website Build',
-    shortLabel: 'Website',
+  shopify: {
+    label: 'Shopify Store',
+    shortLabel: 'Shopify',
     team: 'dev',
     dependsOn: [],
     color: 'emerald',
     checklist: [
-      'Kickoff call with client + scope confirmed',
-      'Wireframes drafted and approved',
-      'Design mockups approved',
-      'Frontend built and reviewed',
-      'Backend / CMS integration done',
-      'Content uploaded',
-      'SEO basics (titles, meta, sitemap, robots)',
-      'Mobile + cross-browser tested',
-      'Domain + SSL configured',
-      'Launched and client trained',
-    ],
-  },
-  website_edit: {
-    label: 'Website Edits',
-    shortLabel: 'Web edits',
-    team: 'dev',
-    dependsOn: [],
-    color: 'emerald',
-    checklist: [
-      'Edit list received from client',
-      'Estimate shared and approved',
-      'Edits implemented on staging',
-      'Client review and feedback',
-      'Pushed to production',
-      'Post-launch QA',
-    ],
-  },
-  website_handoff: {
-    label: 'Website Parameters Only',
-    shortLabel: 'Site brief',
-    team: 'dev',
-    dependsOn: [],
-    color: 'slate',
-    checklist: [
-      'Pixel ID + GA4 credentials handed over',
-      'Conversion events documented',
-      'UTM convention shared',
-      'Tracking spec PDF sent',
-      'Client confirms they have what they need',
+      'Kickoff call — scope, products, theme, timeline',
+      'Theme installed and brand colours/fonts applied',
+      'Products + variants uploaded with images and copy',
+      'Payment + shipping configured',
+      'Pixel + GA4 installed and firing',
+      'Test order placed end-to-end',
+      'Store handed over to client',
     ],
   },
   meta_ads: {
     label: 'Meta Ads',
-    shortLabel: 'Meta',
+    shortLabel: 'Meta Ads',
     team: 'meta',
-    // Meta needs the site / pixel to be set up before campaigns can run.
-    dependsOn: ['website_new', 'website_edit', 'website_handoff'],
+    // Shopify (or the equivalent handoff) needs to be done first so the
+    // Pixel and product catalogue are ready.
+    dependsOn: ['shopify'],
     color: 'blue',
     checklist: [
-      'Ad account access + Pixel verified',
-      'Conversion API set up (if applicable)',
-      'Campaign structure planned + approved',
-      'Creatives received (or briefed for UGC)',
-      'First campaigns built and launched',
-      'Day-1 spend + delivery sanity check',
-      'Weekly reporting cadence agreed',
-    ],
-  },
-  google_ads: {
-    label: 'Google Ads',
-    shortLabel: 'Google Ads',
-    team: 'ads',
-    dependsOn: ['website_new', 'website_edit', 'website_handoff'],
-    color: 'pink',
-    checklist: [
-      'Account access + conversion tracking verified',
-      'Keyword research done',
-      'Ad groups + copy approved',
-      'Campaigns launched',
-      'Negative keywords seeded',
+      'Account set up — BM access + Pixel verified',
+      'Awareness — top-of-funnel campaigns live, audience built',
+      'Sales — conversion campaigns live, tracking confirmed',
       'Weekly reporting cadence agreed',
     ],
   },
@@ -123,59 +69,14 @@ export const SERVICE_TEMPLATES: Record<ServiceType, ServiceTemplate> = {
     label: 'Influencer Marketing',
     shortLabel: 'Influencer',
     team: 'influencer',
-    // Independent of dev — can start in parallel.
+    // Runs in parallel — doesn't wait for Shopify or Meta.
     dependsOn: [],
     color: 'amber',
     checklist: [
-      'Brand brief locked',
-      'Shortlist of influencers shared',
-      'Influencers selected + contracts',
-      'Content brief + props shipped',
-      'Drafts received + approved',
-      'Content posted',
-      'Reach + engagement report shared',
-    ],
-  },
-  ugc_video: {
-    label: 'UGC Videos',
-    shortLabel: 'UGC',
-    team: 'content',
-    dependsOn: [],
-    color: 'purple',
-    checklist: [
-      'Hook + script directions agreed',
-      'Talent assigned',
-      'Drafts recorded',
-      'Edits + variations done',
-      'Final videos delivered',
-      'Ad-ready variants exported',
-    ],
-  },
-  content: {
-    label: 'Content / Social',
-    shortLabel: 'Content',
-    team: 'content',
-    dependsOn: [],
-    color: 'purple',
-    checklist: [
-      'Content calendar approved',
-      'Captions + creatives drafted',
-      'Approved by client',
-      'Scheduled or posted',
-      'Engagement responded to',
-    ],
-  },
-  design: {
-    label: 'Design',
-    shortLabel: 'Design',
-    team: 'design',
-    dependsOn: [],
-    color: 'teal',
-    checklist: [
-      'Brief received',
-      'First drafts shared',
-      'Revisions integrated',
-      'Final files delivered',
+      'Find influencer — shortlist shared and one selected',
+      'Product shipped to influencer',
+      'Script finalised with influencer',
+      'Videos delivered to client',
     ],
   },
 };

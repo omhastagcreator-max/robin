@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/authMiddleware';
 import LeaveApplication from '../models/LeaveApplication';
 import User from '../models/User';
 import ActivityLog from '../models/ActivityLog';
+import { notify } from '../services/notify';
 
 async function getOrgId(userId: string) {
   const u = await User.findById(userId).select('organizationId');
@@ -136,6 +137,17 @@ export async function createLeave(req: AuthRequest, res: Response): Promise<void
       entity: 'LeaveApplication',
       entityId: doc._id,
       metadata: { dayCount: cleaned.length },
+    });
+
+    // Ping every admin in this org — leave requests need quick action.
+    const applicant = await User.findById(req.user!.id).select('name email').lean();
+    await notify({
+      io: req.app.get('io'), organizationId: String(orgId), actorId: req.user!.id,
+      role: 'admin',
+      type: 'leave.applied',
+      title: `Leave request · ${applicant?.name || applicant?.email}`,
+      body:  `${cleaned.length} day${cleaned.length === 1 ? '' : 's'} · "${cleaned[0].reason.slice(0, 60)}"`,
+      entityId: String(doc._id), entityType: 'leave',
     });
 
     res.status(201).json(doc);
@@ -287,14 +299,18 @@ export async function approveLeave(req: AuthRequest, res: Response): Promise<voi
       metadata: { for: doc.userId, dayCount: doc.days.length },
     });
 
-    // Push a notification to the requester
+    // Persistent + live notification (was transient socket-only — would
+    // disappear after refresh and never showed up in the bell history).
     const io = req.app.get('io');
+    await notify({
+      io, organizationId: String(orgId), actorId: req.user!.id,
+      userId: doc.userId,
+      type: 'leave.approved',
+      title: 'Leave approved',
+      body:  `${doc.days.length} day${doc.days.length === 1 ? '' : 's'} approved${doc.reviewNote ? ` — ${doc.reviewNote}` : ''}`,
+      entityId: String(doc._id), entityType: 'leave',
+    });
     if (io) {
-      io.to(`user:${doc.userId}`).emit('notification:new', {
-        title: 'Leave approved',
-        body:  `${doc.days.length} day${doc.days.length === 1 ? '' : 's'} approved`,
-        type: 'success',
-      });
 
       // If today is among the approved days, push an immediate presence update
       // so the "on leave" badge appears across the org in real time.
@@ -342,14 +358,16 @@ export async function rejectLeave(req: AuthRequest, res: Response): Promise<void
       metadata: { for: doc.userId, note: doc.reviewNote },
     });
 
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`user:${doc.userId}`).emit('notification:new', {
-        title: 'Leave rejected',
-        body:  doc.reviewNote || 'Please contact admin for details',
-        type: 'warning',
-      });
-    }
+    // Persistent + live notification (was transient-only — disappeared
+    // after a refresh and never made it into the bell history).
+    await notify({
+      io: req.app.get('io'), organizationId: String(orgId), actorId: req.user!.id,
+      userId: doc.userId,
+      type: 'leave.rejected',
+      title: 'Leave rejected',
+      body:  doc.reviewNote || 'Please contact admin for details',
+      entityId: String(doc._id), entityType: 'leave',
+    });
 
     res.json(doc);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }

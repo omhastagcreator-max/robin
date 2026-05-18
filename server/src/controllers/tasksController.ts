@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/authMiddleware';
 import User from '../models/User';
 import ProjectTask from '../models/ProjectTask';
 import Project from '../models/Project';
+import { notify } from '../services/notify';
 
 /**
  * Tasks — STRICT org isolation. Every read, update and delete verifies the
@@ -65,6 +66,17 @@ export async function createTask(req: AuthRequest, res: Response): Promise<void>
       organizationId: orgId,
       assignedBy: req.user!.id,
     });
+    // Notify the assignee if it's someone OTHER than the creator.
+    if (finalAssignedTo && finalAssignedTo !== req.user!.id) {
+      await notify({
+        io: req.app.get('io'), organizationId: orgId, actorId: req.user!.id,
+        userId: finalAssignedTo,
+        type: 'task.assigned',
+        title: `New task: ${title}`,
+        body:  priority ? `Priority: ${priority}` : 'Check your task list when you can.',
+        entityId: String(task._id), entityType: 'task',
+      });
+    }
     // Update project task count
     if (task.projectId) {
       const count = await ProjectTask.countDocuments({ projectId: task.projectId, organizationId: orgId });
@@ -98,12 +110,25 @@ export async function updateTask(req: AuthRequest, res: Response): Promise<void>
     for (const k of allowed) if (req.body[k] !== undefined) patch[k] = req.body[k];
     if (patch.status === 'done' && !patch.completedAt) patch.completedAt = new Date();
 
+    // Snapshot the assignee BEFORE the update so we can detect a real change.
+    const before = await ProjectTask.findOne({ _id: req.params.id, organizationId: orgId }).select('assignedTo').lean();
     const task = await ProjectTask.findOneAndUpdate(
       { _id: req.params.id, organizationId: orgId },
       patch,
       { new: true },
     );
     if (!task) { res.status(404).json({ error: 'Task not found' }); return; }
+    // Reassignment notification — fires only when assignee actually changed.
+    if (patch.assignedTo && before?.assignedTo !== patch.assignedTo && patch.assignedTo !== req.user!.id) {
+      await notify({
+        io: req.app.get('io'), organizationId: orgId, actorId: req.user!.id,
+        userId: patch.assignedTo,
+        type: 'task.reassigned',
+        title: `Task moved to you: ${task.title}`,
+        body:  task.dueDate ? `Due ${new Date(task.dueDate as any).toDateString()}` : 'No due date set',
+        entityId: String(task._id), entityType: 'task',
+      });
+    }
 
     if (task.projectId) {
       const now = new Date();

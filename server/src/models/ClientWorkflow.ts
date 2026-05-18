@@ -85,4 +85,19 @@ ClientWorkflowSchema.index({ organizationId: 1, clientId: 1 }, { unique: true })
 // Phone search hits this index hard — used by the universal search bar.
 ClientWorkflowSchema.index({ organizationId: 1, clientPhone: 1 });
 
+/**
+ * Cap activity[] at the last 500 entries on every save so a chatty
+ * workflow can't blow past Mongo's 16MB document limit. 500 entries is
+ * months of normal use for any single client; older history is fine to
+ * archive later if we ever need it.
+ */
+ClientWorkflowSchema.pre('save', function (next) {
+  const ACTIVITY_CAP = 500;
+  const self = this as any;
+  if (self.activity && self.activity.length > ACTIVITY_CAP) {
+    self.activity = self.activity.slice(-ACTIVITY_CAP);
+  }
+  next();
+});
+
 export default model('ClientWorkflow', ClientWorkflowSchema);

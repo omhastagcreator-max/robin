@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
 import ClientSchedule from '../models/ClientSchedule';
 import User from '../models/User';
+import { notify } from '../services/notify';
 
 /**
  * Per-org client schedule — every read/write enforces organizationId AND
@@ -183,6 +184,18 @@ export async function createSchedule(req: AuthRequest, res: Response): Promise<v
         recurringKey,
         createdBy: req.user!.id,
       });
+      // If admin scheduled someone ELSE (vs. self), ping them.
+      if (targetUserId !== req.user!.id) {
+        const c = await User.findById(clientId).select('name').lean();
+        await notify({
+          io: req.app.get('io'), organizationId: orgId, actorId: req.user!.id,
+          userId: targetUserId,
+          type: 'schedule.assigned',
+          title: `New client slot · ${c?.name || 'Client'}`,
+          body:  `${(taskType || 'work')} on ${normalisedDate.toDateString()}${notes ? ` · ${String(notes).slice(0, 80)}` : ''}`,
+          entityId: String(item._id), entityType: 'schedule',
+        });
+      }
       res.status(201).json(item);
     } catch (e: any) {
       // Hit the unique index — same person/client/day already exists.
