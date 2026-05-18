@@ -128,6 +128,9 @@ export const sheetPreview      = (limit = 500) =>
 export const listErrorLogs = (params: { source?: 'server' | 'client'; limit?: number } = {}) =>
   api.get('/logs', { params }).then(r => r.data);
 
+// ── Seed (admin-only, one-shot helpers) ────────────────────────────────
+export const seedDemoClients = () => api.post('/seed/demo-clients', {}).then(r => r.data);
+
 // ── Client Workflow pipeline (services + SOP checklists per client) ────
 export const cwListWorkflows    = (params: { q?: string; mine?: '1' } = {}) =>
   api.get('/client-workflows', { params }).then(r => r.data);

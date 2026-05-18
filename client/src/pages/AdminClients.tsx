@@ -199,7 +199,8 @@ export default function AdminClients() {
             <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
             <p className="text-sm text-gray-500">{clients.length} active client accounts</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <SeedDemoClientsButton onDone={() => load()} />
             <BulkCreateMetaClientsButton onDone={() => load()} />
             <button onClick={() => setShowCreate(true)}
               className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 shadow-sm">
@@ -364,6 +365,37 @@ function BulkCreateMetaClientsButton({ onDone }: { onDone: () => void }) {
     >
       {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
       {busy ? 'Creating…' : 'Import from Meta'}
+    </button>
+  );
+}
+
+/**
+ * One-click demo seeder. Creates Velloer Living, History Life, Darpan as
+ * client accounts AND seeds their Client Workflow at early/mid/late stages.
+ * Idempotent — re-running skips clients that already exist.
+ */
+function SeedDemoClientsButton({ onDone }: { onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    if (!confirm('Seed 3 demo clients (Velloer Living, History Life, Darpan) with workflows at different stages?\n\nSafe to re-run — already-existing clients are skipped.')) return;
+    setBusy(true);
+    try {
+      const res = await api.seedDemoClients();
+      toast.success(res.message || 'Demo clients seeded', { duration: 6000 });
+      onDone();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Seed failed');
+    } finally { setBusy(false); }
+  };
+  return (
+    <button
+      onClick={run}
+      disabled={busy}
+      className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold disabled:opacity-50"
+      title="Seed Velloer Living + History Life + Darpan with workflows at 3 different stages"
+    >
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+      {busy ? 'Seeding…' : 'Seed 3 demo clients'}
     </button>
   );
 }

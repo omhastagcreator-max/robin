@@ -19,6 +19,7 @@ import { PresenceStrip } from '@/components/shared/PresenceStrip';
 import { SessionTopBar } from '@/components/shared/SessionTopBar';
 import { ScreenShareReminder } from '@/components/shared/ScreenShareReminder';
 import { ClientMeetingDock } from '@/components/shared/ClientMeetingDock';
+import { MeetingQuickFab } from '@/components/shared/MeetingQuickFab';
 import { ScheduleMeetingButton } from '@/components/shared/ScheduleMeetingButton';
 import { StartClientMeetingButton } from '@/components/shared/StartClientMeetingButton';
 
@@ -360,6 +361,10 @@ export function AppLayout({ children, requiredRole }: Props) {
 
       {/* Global command palette — Cmd-K / Ctrl-K from anywhere */}
       <CommandPalette />
+      {/* Floating "Start meeting" button — one tap from any page. Hidden
+          on the meeting page itself; collapses to a green "Back to meeting"
+          pill when a meeting is already in progress. */}
+      <MeetingQuickFab />
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import bcrypt from 'bcryptjs';
 
 // Inline all models
+import ClientWorkflow from '../models/ClientWorkflow';
+import { SERVICE_TEMPLATES } from '../lib/workflowTemplates';
 import User from '../models/User';
 import Organization from '../models/Organization';
 import Project from '../models/Project';
@@ -240,6 +242,188 @@ router.post('/reseed', authMiddleware, async (req: AuthRequest, res: Response) =
         real: ['rahul@hastag.in / Rahul@1234', 'rishi@hastag.in / Rishi@1234', 'sakshi@hastag.in / Sakshi@1234', 'priyanka@hastag.in / Priyanka@1234', 'om@hastag.in / Om@1234'],
         demo: ['admin@robin.app / Admin1234!', 'employee@robin.app / Employee1234!', 'client@robin.app / Client1234!', 'sales@robin.app / Sales1234!'],
       },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/seed/demo-clients
+ *
+ * Creates three demo clients in the admin's org and pre-populates each
+ * with a Client Workflow at a different stage of completion:
+ *
+ *   1. Velloer Living — EARLY stage (Shopify just kicked off, Meta is
+ *      blocked waiting for Shopify, Influencer barely started)
+ *   2. History Life   — MID stage  (Shopify done, Meta Ads in awareness
+ *      phase, Influencer at script stage)
+ *   3. Darpan         — LATE stage (everything mostly done — only the
+ *      weekly reporting cadence on Meta left to wrap)
+ *
+ * Auto-assigns the right teammates from the org via the same round-robin
+ * helper the real workflow uses. Idempotent-ish — re-running will skip
+ * any client that already exists (matched by phone).
+ *
+ * Admin-only. Safe to run on production to populate demo data.
+ */
+router.post('/demo-clients', authMiddleware, async (req: AuthRequest, res: Response) => {
+  if (req.user?.role !== 'admin') {
+    res.status(403).json({ error: 'Admin only' });
+    return;
+  }
+  try {
+    // Resolve the admin's org so seeded data lives in the right place.
+    const me = await User.findById(req.user.id).select('organizationId').lean();
+    if (!me?.organizationId) { res.status(400).json({ error: 'No organization' }); return; }
+    const orgId = me.organizationId;
+
+    /** Round-robin assignee pick — same logic the workflow controller uses. */
+    const pickAssignee = async (team: string): Promise<string | null> => {
+      const candidates = await User.find({
+        organizationId: orgId, isActive: true,
+        role: { $in: ['employee', 'sales', 'admin'] },
+        $or: [{ team }, { teams: team }],
+      }).select('_id').lean();
+      return candidates[0] ? String(candidates[0]._id) : null;
+    };
+
+    // The three brands + their target completion state.
+    const BRANDS: Array<{
+      name: string; phone: string; email: string;
+      // services + how-many-checklist-items-to-tick + done? returnedReason?
+      services: Array<{ type: 'shopify' | 'meta_ads' | 'influencer'; tickedItems: number; done: boolean; returnedReason?: string }>;
+    }> = [
+      {
+        name: 'Velloer Living',
+        phone: '+91 90000 00001',
+        email: 'hello@velloerliving.com',
+        services: [
+          { type: 'shopify',    tickedItems: 2, done: false }, // early — kickoff + theme
+          { type: 'meta_ads',   tickedItems: 0, done: false }, // blocked until shopify
+          { type: 'influencer', tickedItems: 1, done: false }, // shortlist sent
+        ],
+      },
+      {
+        name: 'History Life',
+        phone: '+91 90000 00002',
+        email: 'contact@historylife.in',
+        services: [
+          { type: 'shopify',    tickedItems: 7, done: true },  // fully done
+          { type: 'meta_ads',   tickedItems: 2, done: false }, // account setup + awareness done
+          { type: 'influencer', tickedItems: 3, done: false }, // find + ship + script done
+        ],
+      },
+      {
+        name: 'Darpan',
+        phone: '+91 90000 00003',
+        email: 'team@darpan.shop',
+        services: [
+          { type: 'shopify',    tickedItems: 7, done: true },
+          { type: 'meta_ads',   tickedItems: 3, done: false }, // setup + awareness + sales done, weekly reporting open
+          { type: 'influencer', tickedItems: 4, done: true },  // all 4 stages done
+        ],
+      },
+    ];
+
+    const created: any[] = [];
+    const skipped: string[] = [];
+
+    for (const brand of BRANDS) {
+      // Idempotent: re-find by phone first.
+      let clientUser = await User.findOne({ organizationId: orgId, role: 'client', phone: brand.phone }).lean();
+      if (!clientUser) {
+        const newClient = await User.create({
+          organizationId: orgId,
+          role: 'client',
+          name: brand.name,
+          phone: brand.phone,
+          email: brand.email,
+          passwordHash: await hash('Demo@1234'),  // demo cred so admin can log in as them
+          isActive: true,
+        });
+        clientUser = newClient.toObject();
+      }
+
+      // Skip workflow creation if one already exists for this client.
+      const existing = await ClientWorkflow.findOne({ organizationId: orgId, clientId: String(clientUser!._id) });
+      if (existing) { skipped.push(brand.name); continue; }
+
+      // Build services per brand spec.
+      const services = await Promise.all(brand.services.map(async (s) => {
+        const tpl = SERVICE_TEMPLATES[s.type];
+        const assignedTo = await pickAssignee(tpl.team);
+        const checklist = tpl.checklist.map((text, i) => ({
+          text,
+          done: i < s.tickedItems,
+          doneAt: i < s.tickedItems ? new Date(Date.now() - (s.tickedItems - i) * 86400_000) : undefined,
+          doneBy: i < s.tickedItems ? assignedTo : undefined,
+        }));
+        return {
+          serviceType: s.type,
+          label: tpl.label,
+          assignedTo,
+          status: s.done ? 'done' : (s.tickedItems > 0 ? 'in_progress' : 'pending'),
+          checklist,
+          startedAt: s.tickedItems > 0 ? new Date(Date.now() - s.tickedItems * 86400_000) : undefined,
+          completedAt: s.done ? new Date(Date.now() - 86400_000) : undefined,
+          returnedReason: s.returnedReason,
+          returnedAt: s.returnedReason ? new Date(Date.now() - 86400_000) : undefined,
+        };
+      }));
+
+      // Initial activity log.
+      const activity: any[] = [
+        { actorId: req.user.id, action: 'created', detail: `Pipeline created with: ${services.map(s => s.label).join(', ')}`, at: new Date(Date.now() - 14 * 86400_000) },
+      ];
+      services.forEach(s => {
+        s.checklist.forEach((c, i) => {
+          if (c.done) activity.push({
+            actorId: s.assignedTo || req.user.id,
+            action: 'item_checked',
+            serviceType: s.serviceType,
+            detail: c.text,
+            at: c.doneAt,
+          });
+        });
+        if (s.completedAt) activity.push({
+          actorId: s.assignedTo || req.user.id,
+          action: 'service_completed',
+          serviceType: s.serviceType,
+          detail: s.label,
+          at: s.completedAt,
+        });
+      });
+      // Sort activity chronologically.
+      activity.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+
+      // Recompute blocked status (Meta is blocked until Shopify done).
+      const doneTypes = new Set(services.filter(s => s.status === 'done').map(s => s.serviceType));
+      services.forEach(s => {
+        const tpl = SERVICE_TEMPLATES[s.serviceType as keyof typeof SERVICE_TEMPLATES];
+        const blockers = tpl.dependsOn.filter(d => services.some((x: any) => x.serviceType === d) && !doneTypes.has(d));
+        if (s.status !== 'done' && blockers.length > 0) (s as any).status = 'blocked';
+      });
+
+      const wf = await ClientWorkflow.create({
+        organizationId: orgId,
+        clientId: String(clientUser!._id),
+        clientName: brand.name,
+        clientPhone: brand.phone,
+        clientEmail: brand.email,
+        services,
+        activity,
+        createdBy: req.user.id,
+      });
+      created.push({ name: brand.name, workflowId: String(wf._id), phone: brand.phone });
+    }
+
+    res.json({
+      ok: true,
+      message: `Seeded ${created.length} new demo client${created.length === 1 ? '' : 's'}.`,
+      created,
+      skipped,
+      tip: 'Search for any of these in Client Pipeline by phone or name. Login as the client uses password Demo@1234.',
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

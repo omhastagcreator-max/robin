@@ -17,15 +17,45 @@ import * as api from '@/api';
  * in the meeting page and the host joins when ready.
  */
 
-export function StartClientMeetingButton() {
+interface Props {
+  /** When true, render as a compact icon-only button suited for topbars. */
+  compact?: boolean;
+}
+
+export function StartClientMeetingButton({ compact = false }: Props = {}) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [quickStarting, setQuickStarting] = useState(false);
   const [created, setCreated] = useState<{ slug: string; url: string; hostUrl: string; expiresAt: string } | null>(null);
   const [clientName, setClientName] = useState('');
   const [duration, setDuration] = useState(120);
 
   const reset = () => { setCreated(null); setClientName(''); setDuration(120); };
+
+  /**
+   * Quick-start path — one click, no modal. Creates a default 2-hour
+   * meeting and jumps straight to the host room. Link is also copied to
+   * clipboard so the host can share it as soon as they land in the room.
+   *
+   * Use case: in a call, need to spin up a meeting room RIGHT NOW. Skip
+   * the modal — Robin can recover from a too-long name later via the
+   * extend-meeting button in MeetHost.
+   */
+  const quickStart = async () => {
+    setQuickStarting(true);
+    try {
+      const res = await api.clientMeetingsCreate({ durationMinutes: 120 });
+      // Pre-copy the link so the host can paste it in chat immediately.
+      try { await navigator.clipboard.writeText(res.url); } catch { /* ignore */ }
+      toast.success('Meeting ready — link copied. Opening host room…');
+      navigate(`/meet/host/${res.slug}`);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Could not create meeting');
+    } finally {
+      setQuickStarting(false);
+    }
+  };
 
   const create = async () => {
     setCreating(true);
@@ -66,12 +96,31 @@ export function StartClientMeetingButton() {
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="h-9 px-3 flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 shadow-sm"
-      >
-        <UserPlus className="h-3.5 w-3.5" /> Start client meeting
-      </button>
+      {/* Two-tier button: PRIMARY action is quick-start (one tap → live
+          meeting). SECONDARY action (the ⚙ icon) opens the modal for
+          when the user wants to pick a duration / pre-fill a client name. */}
+      <div className={`inline-flex rounded-lg shadow-sm overflow-hidden ${compact ? '' : 'h-9'}`}>
+        <button
+          onClick={quickStart}
+          disabled={quickStarting}
+          title="One-tap: create a 2-hour meeting and open the host room"
+          className={`flex items-center gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 font-semibold ${
+            compact ? 'h-8 px-2.5 text-[11px]' : 'h-9 px-3 text-xs'
+          }`}
+        >
+          {quickStarting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />}
+          {compact ? 'Meeting' : 'Start client meeting'}
+        </button>
+        <button
+          onClick={() => setOpen(true)}
+          title="Open with options (set client name, duration)"
+          className={`bg-primary/80 text-primary-foreground hover:bg-primary/70 border-l border-white/15 px-2 flex items-center justify-center ${
+            compact ? 'h-8' : 'h-9'
+          }`}
+        >
+          <ArrowRight className="h-3.5 w-3.5 rotate-90" />
+        </button>
+      </div>
 
       {open && createPortal(
         <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-center justify-center p-4" onClick={() => { setOpen(false); reset(); }}>
