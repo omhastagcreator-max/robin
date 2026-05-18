@@ -23,6 +23,7 @@ import { ActiveClientMeetingsCard } from '@/components/dashboard/ActiveClientMee
 import { ScheduleMeetingsSection } from '@/components/dashboard/ScheduleMeetingsSection';
 import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
 import { TodayClientsCard } from '@/components/dashboard/TodayClientsCard';
+import { MyAssignedServicesCard } from '@/components/dashboard/MyAssignedServicesCard';
 import { TASK_STATUSES, TASK_TYPES, nextTaskStatus, type TaskStatus } from '@/lib/enums';
 
 
@@ -276,6 +277,11 @@ export default function EmployeeDashboard() {
             slots done without opening the full schedule page. Hidden on
             days with nothing scheduled so it doesn't clutter the dashboard. */}
         <TodayClientsCard />
+
+        {/* Your active client services — links straight into the pipeline
+            detail page so the employee can tick checklist items. Hidden
+            if they don't own any services. */}
+        <MyAssignedServicesCard />
 
         {/* Active sections — 2-column layout instead of stacked full-width cards.
             Left column = AI Morning Brief (if it has content). Right column =

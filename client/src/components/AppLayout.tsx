@@ -7,7 +7,7 @@ import {
   Bird, LayoutDashboard, ListTodo, Video, Bell, User, LogOut,
   Briefcase, Users, Building2, BarChart2, TrendingUp, Menu, X,
   MessageSquare, Monitor, MonitorOff, KeyRound, CalendarOff, Clock,
-  BarChart3, Calendar, Bug, CalendarDays,
+  BarChart3, Calendar, Bug, CalendarDays, Workflow,
 } from 'lucide-react';
 import { Avatar } from '@/components/shared/Avatar';
 import * as api from '@/api';
@@ -50,6 +50,9 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/team/calendar',    label: 'Team Calendar', icon: Calendar,       roles: ['admin', 'employee', 'sales'] },
   // Personal weekly client schedule — who you're serving on which day
   { to: '/client-schedule',  label: 'Client Schedule', icon: CalendarDays, roles: ['admin', 'employee', 'sales'] },
+  // Client pipeline — search any client by phone, see overall progress,
+  // tick SOP checklists, hand off between teams. The "where is X at?" view.
+  { to: '/clients/pipeline', label: 'Client Pipeline',  icon: Workflow,    roles: ['admin', 'employee', 'sales'] },
   // Client credential vault
   { to: '/vault',            label: 'Client Vault', icon: KeyRound,        roles: ['admin', 'employee', 'sales'] },
   // Group Chat — ALL internal roles

@@ -128,6 +128,24 @@ export const sheetPreview      = (limit = 500) =>
 export const listErrorLogs = (params: { source?: 'server' | 'client'; limit?: number } = {}) =>
   api.get('/logs', { params }).then(r => r.data);
 
+// ── Client Workflow pipeline (services + SOP checklists per client) ────
+export const cwListWorkflows    = (params: { q?: string; mine?: '1' } = {}) =>
+  api.get('/client-workflows', { params }).then(r => r.data);
+export const cwGetWorkflow      = (id: string) => api.get(`/client-workflows/${id}`).then(r => r.data);
+export const cwCreateWorkflow   = (body: { clientId: string; services: string[] }) =>
+  api.post('/client-workflows', body).then(r => r.data);
+export const cwToggleCheck      = (wid: string, sid: string, body: { index: number; done: boolean }) =>
+  api.put(`/client-workflows/${wid}/services/${sid}/check`, body).then(r => r.data);
+export const cwCompleteService  = (wid: string, sid: string) =>
+  api.put(`/client-workflows/${wid}/services/${sid}/complete`).then(r => r.data);
+export const cwReturnService    = (wid: string, body: { targetServiceType: string; reason: string }) =>
+  api.put(`/client-workflows/${wid}/return`, body).then(r => r.data);
+export const cwAddNote          = (wid: string, body: { detail: string; serviceType?: string }) =>
+  api.post(`/client-workflows/${wid}/notes`, body).then(r => r.data);
+export const cwReassignService  = (wid: string, sid: string, body: { userId: string }) =>
+  api.put(`/client-workflows/${wid}/services/${sid}/reassign`, body).then(r => r.data);
+export const cwGetTemplates     = () => api.get('/client-workflows/templates').then(r => r.data);
+
 // ── Client Schedule (per-employee weekly calendar of clients to serve) ──
 export const listClientSchedule = (params: { from?: string; to?: string; userId?: string } = {}) =>
   api.get('/client-schedule', { params }).then(r => r.data);
