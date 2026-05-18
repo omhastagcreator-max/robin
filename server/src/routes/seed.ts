@@ -141,7 +141,7 @@ router.post('/reseed', authMiddleware, async (req: AuthRequest, res: Response) =
     const [rahul, rishi, sakshi, priyanka, om, adminDemo, empDemo, clientUser, salesDemo] = await Promise.all([
       User.create({ email: 'rahul@hastag.in',    passwordHash: await hash('Rahul@1234'),    name: 'Rahul',    role: 'admin',    team: 'management', department: 'Management',      organizationId: org._id }),
       User.create({ email: 'rishi@hastag.in',    passwordHash: await hash('Rishi@1234'),    name: 'Rishi',    role: 'sales',    team: 'sales',      department: 'Sales',           organizationId: org._id }),
-      User.create({ email: 'sakshi@hastag.in',   passwordHash: await hash('Sakshi@1234'),   name: 'Sakshi',   role: 'employee', team: 'ads',        department: 'Meta Ads',        organizationId: org._id }),
+      User.create({ email: 'sakshi@hastag.in',   passwordHash: await hash('Sakshi@1234'),   name: 'Sakshi',   role: 'employee', team: 'meta', teams: ['meta', 'ads'], department: 'Meta Ads',        organizationId: org._id }),
       User.create({ email: 'priyanka@hastag.in', passwordHash: await hash('Priyanka@1234'), name: 'Priyanka', role: 'employee', team: 'influencer', department: 'Influencer Mktg', organizationId: org._id }),
       User.create({ email: 'om@hastag.in',       passwordHash: await hash('Om@1234'),       name: 'Om',       role: 'employee', team: 'dev',        department: 'Web Development', organizationId: org._id }),
       User.create({ email: 'admin@robin.app',    passwordHash: await hash('Admin1234!'),    name: 'Admin User',   role: 'admin',    team: '', organizationId: org._id }),

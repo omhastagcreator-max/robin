@@ -104,13 +104,16 @@ function AppRoutes() {
             their dashboard. Old auto-redirect to /login removed per req. */}
         <Route path="/"                 element={<BlankRoot />} />
 
-        {/* Employee / Sales / Admin — internal staff only.
-            Clients hitting these get bounced to /client (their own dashboard). */}
-        <Route path="/dashboard"        element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><EmployeeDashboard /></E></ProtectedRoute>} />
-        <Route path="/tasks"            element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TasksPage /></E></ProtectedRoute>} />
-        <Route path="/chat"             element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><GroupChat /></E></ProtectedRoute>} />
-        <Route path="/workroom"         element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><WorkRoom /></E></ProtectedRoute>} />
-        <Route path="/vault"            element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientVault /></E></ProtectedRoute>} />
+        {/* Internal staff areas. SALES is intentionally absent from most
+            of these — Rishi's scope is onboarding + workflow overview
+            only. URL-typing into /workroom or /chat as a sales user
+            bounces them back to dashboardForRole('sales') = pipeline. */}
+        <Route path="/dashboard"        element={<ProtectedRoute requiredRole={['admin', 'employee']}><E><EmployeeDashboard /></E></ProtectedRoute>} />
+        <Route path="/tasks"            element={<ProtectedRoute requiredRole={['admin', 'employee']}><E><TasksPage /></E></ProtectedRoute>} />
+        <Route path="/chat"             element={<ProtectedRoute requiredRole={['admin', 'employee']}><E><GroupChat /></E></ProtectedRoute>} />
+        <Route path="/workroom"         element={<ProtectedRoute requiredRole={['admin', 'employee']}><E><WorkRoom /></E></ProtectedRoute>} />
+        <Route path="/vault"            element={<ProtectedRoute requiredRole={['admin', 'employee']}><E><ClientVault /></E></ProtectedRoute>} />
+        {/* /leaves stays open to sales — they still need to apply for time off. */}
         <Route path="/leaves"           element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><LeavesPage /></E></ProtectedRoute>} />
         <Route path="/notifications"    element={<E><NotificationsPage /></E>} />
         <Route path="/profile"          element={<E><ProfilePage /></E>} />
@@ -124,18 +127,23 @@ function AppRoutes() {
         <Route path="/admin/leaves"     element={<ProtectedRoute requiredRole="admin"><E><AdminLeaves /></E></ProtectedRoute>} />
         <Route path="/admin/attendance" element={<ProtectedRoute requiredRole="admin"><E><AdminAttendance /></E></ProtectedRoute>} />
         <Route path="/admin/crash-logs" element={<ProtectedRoute requiredRole="admin"><E><AdminCrashLogs /></E></ProtectedRoute>} />
-        <Route path="/client-schedule"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientSchedulePage /></E></ProtectedRoute>} />
+        <Route path="/client-schedule"  element={<ProtectedRoute requiredRole={['admin', 'employee']}><E><ClientSchedulePage /></E></ProtectedRoute>} />
+        {/* Client Pipeline = sales' core scope. Admin + employee also need it. */}
         <Route path="/clients/pipeline"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientPipelinePage /></E></ProtectedRoute>} />
         <Route path="/clients/pipeline/:id" element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientWorkflowDetailPage /></E></ProtectedRoute>} />
-        <Route path="/ads/meta"         element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><MetaAdsReport /></E></ProtectedRoute>} />
-        <Route path="/team/calendar"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TeamCalendar /></E></ProtectedRoute>} />
+        <Route path="/ads/meta"         element={<ProtectedRoute requiredRole={['admin', 'employee']}><E><MetaAdsReport /></E></ProtectedRoute>} />
+        <Route path="/team/calendar"    element={<ProtectedRoute requiredRole={['admin', 'employee']}><E><TeamCalendar /></E></ProtectedRoute>} />
+        {/* Meeting host stays open to sales — they may host an onboarding
+            call. The dock + FAB still let them rejoin from any page. */}
         <Route path="/meet/host/:slug"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><MeetHost /></E></ProtectedRoute>} />
 
         {/* Client only */}
         <Route path="/client"           element={<ProtectedRoute requiredRole="client"><E><ClientDashboard /></E></ProtectedRoute>} />
 
         {/* Sales / Influencer */}
-        <Route path="/sales"            element={<ProtectedRoute requiredRole={['admin', 'sales']}><E><SalesDashboard /></E></ProtectedRoute>} />
+        {/* Legacy leads CRM — admin-only now. Sales role no longer manages
+            leads; they onboard confirmed clients via Client Pipeline. */}
+        <Route path="/sales"            element={<ProtectedRoute requiredRole="admin"><E><SalesDashboard /></E></ProtectedRoute>} />
         <Route path="/influencers"       element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><InfluencerSheet /></E></ProtectedRoute>} />
 
         {/* Catch-all */}

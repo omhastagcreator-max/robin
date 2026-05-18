@@ -190,46 +190,35 @@ export default function EmployeeDashboard() {
 
   return (
     <AppLayout>
-      <div className="max-w-5xl mx-auto space-y-5 page-transition-enter">
-        {/* Hero — big confident opening, status snapshot, day stamp */}
-        <div className="relative overflow-hidden rounded-2xl bg-card border border-border p-5 sm:p-6">
-          {/* Decorative accent stripe — saffron, very subtle */}
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-accent to-primary opacity-90" />
-
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] uppercase tracking-[0.18em] font-semibold text-muted-foreground">
-                {format(new Date(), 'EEEE · dd MMM yyyy')}
-              </p>
-              <h1 className="mt-1 text-3xl sm:text-4xl font-bold tracking-tight">
-                {(() => {
-                  const h = new Date().getHours();
-                  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-                })()},{' '}
-                <span className="text-primary">{user?.name?.split(' ')[0] || 'there'}</span>.
-              </h1>
-              <p className="mt-2 text-sm text-muted-foreground max-w-xl">
-                {(() => {
-                  const due = tasks.filter(t => t.dueDate && isToday(new Date(t.dueDate)) && t.status !== 'done').length;
-                  const overdue = overdueTasks.length;
-                  if (overdue > 0) return `You've got ${overdue} overdue ${overdue === 1 ? 'task' : 'tasks'} — clear those first.`;
-                  if (due > 0)     return `${due} ${due === 1 ? 'task is' : 'tasks are'} due today. Let's get to it.`;
-                  if (todayTasks.length > 0) return `${todayTasks.length} open ${todayTasks.length === 1 ? 'task' : 'tasks'} on your plate. Nothing on fire.`;
-                  return 'Inbox zero on tasks. A good day to ship something deep.';
-                })()}
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              {/* Date stamp tile — big day number */}
-              <div className="hidden sm:block text-center px-4 py-2 rounded-xl border border-border bg-background">
-                <p className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground leading-none">
-                  {format(new Date(), 'MMM')}
-                </p>
-                <p className="text-2xl font-black text-primary leading-none mt-1">{format(new Date(), 'dd')}</p>
-              </div>
-              <HuddleQuickPill />
-            </div>
+      <div className="max-w-5xl mx-auto space-y-6 page-transition-enter">
+        {/* Hero — slimmer header with the day, greeting, and one-line
+            status. Removed the card chrome (border + accent stripe + date
+            tile) so the page opens with breathing room instead of a heavy
+            "title block." */}
+        <div className="flex items-end justify-between gap-3 flex-wrap pt-1">
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] uppercase tracking-[0.18em] font-semibold text-muted-foreground">
+              {format(new Date(), 'EEEE · dd MMM yyyy')}
+            </p>
+            <h1 className="mt-0.5 text-2xl sm:text-3xl font-bold tracking-tight">
+              {(() => {
+                const h = new Date().getHours();
+                return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+              })()},{' '}
+              <span className="text-primary">{user?.name?.split(' ')[0] || 'there'}</span>.
+            </h1>
+            <p className="mt-1 text-xs text-muted-foreground max-w-xl">
+              {(() => {
+                const due = tasks.filter(t => t.dueDate && isToday(new Date(t.dueDate)) && t.status !== 'done').length;
+                const overdue = overdueTasks.length;
+                if (overdue > 0) return `${overdue} overdue ${overdue === 1 ? 'task' : 'tasks'} — clear those first.`;
+                if (due > 0)     return `${due} ${due === 1 ? 'task' : 'tasks'} due today.`;
+                if (todayTasks.length > 0) return `${todayTasks.length} open ${todayTasks.length === 1 ? 'task' : 'tasks'} on your plate.`;
+                return 'Inbox zero on tasks — a good day to ship something deep.';
+              })()}
+            </p>
           </div>
+          <HuddleQuickPill />
         </div>
 
         {/* Day-start gate — slim inline strip when locked, replaces the
@@ -250,45 +239,34 @@ export default function EmployeeDashboard() {
           )}
         </AnimatePresence>
 
-        {/* KPI strip — moved UP to be directly under hero. The numbers are the
-            most important thing on the page; everything else is secondary. */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* KPI strip — borderless, lightweight. Used to have hover-shadow
+            + colored dot + icon on every card; that made the dashboard feel
+            busy on landing. Now it's just numbers + labels. */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {[
-            { label: 'Open tasks', value: todayTasks.length,   hint: `${tasks.filter(t => t.dueDate && isToday(new Date(t.dueDate)) && t.status !== 'done').length} due today`, dot: 'bg-primary',  num: 'text-primary',   icon: Target },
-            { label: 'Completed',  value: doneTasks,           hint: 'all time',                                                                                              dot: 'bg-emerald-500', num: 'text-foreground', icon: CheckCircle2 },
-            { label: 'Overdue',    value: overdueTasks.length, hint: overdueTasks.length === 0 ? 'all clear' : 'fix today',                                                   dot: 'bg-red-500',  num: overdueTasks.length === 0 ? 'text-foreground' : 'text-red-500',     icon: AlertTriangle },
-            { label: 'Stuck',      value: stuckTasks,          hint: stuckTasks === 0 ? 'nothing stuck' : 'in-progress + overdue',                                            dot: 'bg-amber-500', num: stuckTasks === 0 ? 'text-foreground' : 'text-amber-500', icon: Zap },
+            { label: 'Open',       value: todayTasks.length,   num: 'text-primary' },
+            { label: 'Completed',  value: doneTasks,           num: 'text-foreground' },
+            { label: 'Overdue',    value: overdueTasks.length, num: overdueTasks.length ? 'text-red-500'    : 'text-foreground/60' },
+            { label: 'Stuck',      value: stuckTasks,          num: stuckTasks          ? 'text-amber-600'  : 'text-foreground/60' },
           ].map(k => (
-            <div key={k.label} className="group rounded-xl border border-border bg-card hover:border-primary/30 hover:shadow-sm transition-all p-4">
-              <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
-                  <span className={`h-1.5 w-1.5 rounded-full ${k.dot}`} />
-                  {k.label}
-                </span>
-                <k.icon className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
-              </div>
-              <p className={`mt-2 text-4xl font-black tabular-nums leading-none ${k.num}`}>{k.value}</p>
-              <p className="mt-1.5 text-[11px] text-muted-foreground">{k.hint}</p>
+            <div key={k.label} className="rounded-xl bg-muted/40 px-4 py-3">
+              <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">{k.label}</p>
+              <p className={`text-3xl font-black tabular-nums leading-none mt-1 ${k.num}`}>{k.value}</p>
             </div>
           ))}
         </div>
 
-        {/* Today's clients — mirrors the login reminder, lets the user mark
-            slots done without opening the full schedule page. Hidden on
-            days with nothing scheduled so it doesn't clutter the dashboard. */}
-        <TodayClientsCard />
+        {/* Two columns where possible — keeps the page from feeling like an
+            endless stack of cards. Each widget hides itself when empty so
+            the layout stays clean on quiet days. */}
+        <div className="grid lg:grid-cols-2 gap-4">
+          <TodayClientsCard />
+          <MyAssignedServicesCard />
+        </div>
 
-        {/* Your active client services — links straight into the pipeline
-            detail page so the employee can tick checklist items. Hidden
-            if they don't own any services. */}
-        <MyAssignedServicesCard />
-
-        {/* Active sections — 2-column layout instead of stacked full-width cards.
-            Left column = AI Morning Brief (if it has content). Right column =
-            live status (huddle + today's meetings + active client meetings).
-            Cards that only render conditionally (Meta Ads, Team Role) sit
-            below in their own row so they don't push the layout around. */}
-        <div className="grid lg:grid-cols-3 gap-3">
+        {/* AI brief on the left (when it has content), live status on the
+            right. Combined the three meeting widgets into a tighter stack. */}
+        <div className="grid lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">
             <AIMorningBrief />
           </div>

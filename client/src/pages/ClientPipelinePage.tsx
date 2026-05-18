@@ -91,15 +91,16 @@ export default function ClientPipelinePage() {
           )}
         </div>
 
-        {/* Search + filter */}
-        <div className="bg-card border border-border rounded-2xl p-3 flex items-center gap-2">
+        {/* Search — no card chrome, lives in the page flow. The "Only mine"
+            toggle moves alongside it for sales/employee, hidden for admin. */}
+        <div className="flex items-center gap-3">
           <div className="relative flex-1">
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="Search by phone, name or email…"
-              className="w-full pl-10 pr-9 py-2.5 bg-background border border-input rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full pl-10 pr-9 py-2.5 bg-card border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             />
             {query && (
               <button onClick={() => setQuery('')}
@@ -108,7 +109,7 @@ export default function ClientPipelinePage() {
               </button>
             )}
           </div>
-          <label className="flex items-center gap-1.5 text-xs px-2 cursor-pointer">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer shrink-0">
             <input type="checkbox" checked={mineOnly} onChange={e => setMineOnly(e.target.checked)}
               className="h-3.5 w-3.5 accent-primary" />
             Only mine
@@ -121,7 +122,9 @@ export default function ClientPipelinePage() {
         ) : list.length === 0 ? (
           <EmptyState query={query} isAdminOrSales={isAdminOrSales} onCreate={() => setShowCreate(true)} />
         ) : (
-          <div className="space-y-2">
+          // Grouped list: single bordered shell, dividers between rows.
+          // Reads as one cohesive list instead of dozens of competing cards.
+          <div className="rounded-2xl border border-border bg-card overflow-hidden divide-y divide-border/60">
             {list.map(wf => <WorkflowRow key={wf._id} wf={wf} />)}
           </div>
         )}
@@ -147,55 +150,55 @@ function WorkflowRow({ wf }: { wf: Workflow }) {
     wf.services.find(s => s.status === 'pending')?.label ||
     (wf.services.every(s => s.status === 'done') ? 'All done' : '—');
 
+  // Calmer row — single-line layout where possible, no competing card chrome.
+  // Border is now bottom-only inside a flat list (set on the parent map's
+  // first-child rule via Tailwind), no hover shadow, single accent on hover.
   return (
     <Link to={`/clients/pipeline/${wf._id}`}
-      className="block bg-card border border-border rounded-2xl p-4 hover:border-primary/30 hover:shadow-sm transition-all">
-      <div className="flex items-start gap-4 flex-wrap">
-        {/* Identity */}
-        <div className="flex-1 min-w-[200px]">
-          <p className="text-base font-bold truncate">{wf.clientName || 'Unnamed client'}</p>
-          <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-0.5 flex-wrap">
-            {wf.clientPhone && <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{wf.clientPhone}</span>}
-            {wf.clientEmail && <span className="flex items-center gap-1 truncate"><Mail className="h-3 w-3 shrink-0" />{wf.clientEmail}</span>}
+      className="block bg-card rounded-xl px-4 py-3 hover:bg-muted/40 transition-colors group">
+      <div className="flex items-center gap-4">
+        {/* LEFT — name + the big number side-by-side */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-3">
+            <p className="text-base font-bold truncate">{wf.clientName || 'Unnamed client'}</p>
+            <span className="text-xs text-muted-foreground tabular-nums shrink-0">{pct}%</span>
           </div>
+          <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+            {wf.clientPhone && <>{wf.clientPhone} · </>}Now: <span className="text-foreground/80">{currentStage}</span>
+          </p>
         </div>
 
-        {/* Progress + stage */}
-        <div className="min-w-[180px] flex-1">
-          <div className="flex items-baseline justify-between gap-2 mb-1">
-            <span className="text-[11px] uppercase tracking-wide font-semibold text-muted-foreground">Progress</span>
-            <span className="text-xs font-bold tabular-nums">{pct}%</span>
-          </div>
-          <div className="h-2 rounded-full bg-muted/30 overflow-hidden">
+        {/* MIDDLE — slim progress bar */}
+        <div className="hidden sm:block w-32 shrink-0">
+          <div className="h-1.5 rounded-full bg-muted/40 overflow-hidden">
             <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
           </div>
-          <p className="text-[11px] text-muted-foreground mt-1.5">Now: <strong className="text-foreground">{currentStage}</strong></p>
         </div>
 
-        {/* Service chips */}
-        <div className="flex items-center gap-1 flex-wrap">
+        {/* RIGHT — service chips (more compact) */}
+        <div className="hidden md:flex items-center gap-1 shrink-0">
           {wf.services.map(s => <ServiceChip key={s.serviceType} svc={s} />)}
         </div>
 
-        <ChevronRight className="h-4 w-4 text-muted-foreground self-center" />
+        <ChevronRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-foreground transition-colors shrink-0" />
       </div>
     </Link>
   );
 }
 
 function ServiceChip({ svc }: { svc: ServiceSummary }) {
-  const tone =
-    svc.status === 'done'        ? 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30' :
-    svc.status === 'in_progress' ? 'bg-blue-500/15    text-blue-700    border-blue-500/30'    :
-    svc.status === 'blocked'     ? 'bg-slate-500/15   text-slate-700   border-slate-500/30'   :
-                                    'bg-muted          text-muted-foreground border-border';
-  const Icon =
-    svc.status === 'done'    ? CheckCircle2 :
-    svc.status === 'blocked' ? AlertCircle  :
-                                Clock;
+  // Calmer chips — solid dot + label, no border. Status is conveyed by the
+  // dot colour alone; reading the row is fast because nothing competes for
+  // attention with the client name.
+  const dot =
+    svc.status === 'done'        ? 'bg-emerald-500' :
+    svc.status === 'in_progress' ? 'bg-blue-500'    :
+    svc.status === 'blocked'     ? 'bg-slate-400'   :
+                                    'bg-muted-foreground/40';
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${tone}`}>
-      <Icon className="h-3 w-3" /> {svc.label}
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] text-muted-foreground bg-muted/30">
+      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+      {svc.label}
     </span>
   );
 }

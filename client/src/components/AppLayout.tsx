@@ -10,6 +10,7 @@ import {
   BarChart3, Calendar, Bug, CalendarDays, Workflow,
 } from 'lucide-react';
 import { Avatar } from '@/components/shared/Avatar';
+import { dashboardForRole } from '@/components/ProtectedRoute';
 import * as api from '@/api';
 import { useSocket } from '@/hooks/useSocket';
 import { useScreenShare } from '@/contexts/ScreenShareContext';
@@ -26,43 +27,43 @@ import { StartClientMeetingButton } from '@/components/shared/StartClientMeeting
 interface NavItem { to: string; label: string; icon: React.ElementType; roles?: string[]; team?: string; anyTeam?: string[]; }
 
 const NAV_ITEMS: NavItem[] = [
-  // Role dashboards
-  { to: '/dashboard',        label: 'Dashboard',    icon: LayoutDashboard, roles: ['employee'] },
-  { to: '/admin',            label: 'Dashboard',    icon: LayoutDashboard, roles: ['admin'] },
-  { to: '/client',           label: 'Dashboard',    icon: LayoutDashboard, roles: ['client'] },
-  { to: '/sales',            label: 'Dashboard',    icon: LayoutDashboard, roles: ['sales'] },
-  // Shared tools
-  { to: '/tasks',            label: 'My Tasks',     icon: ListTodo,        roles: ['employee', 'admin', 'sales'] },
-  // Admin management
-  { to: '/admin/projects',   label: 'Projects',     icon: Briefcase,       roles: ['admin'] },
-  { to: '/admin/employees',  label: 'Employees',    icon: Users,           roles: ['admin'] },
-  { to: '/admin/clients',    label: 'Clients',      icon: Building2,       roles: ['admin'] },
-  // Sales CRM — admin can view + manage leads alongside the sales team
-  { to: '/sales',            label: 'Sales CRM',    icon: BarChart2,       roles: ['admin'] },
-  { to: '/admin/reports',    label: 'Reports',      icon: BarChart2,       roles: ['admin'] },
-  { to: '/admin/leaves',     label: 'Leave Approvals', icon: CalendarOff,  roles: ['admin'] },
-  { to: '/admin/attendance', label: 'Attendance',      icon: Clock,        roles: ['admin'] },
-  { to: '/admin/crash-logs', label: 'Crash Logs',      icon: Bug,          roles: ['admin'] },
-  // Leave applications — employees and sales (private to each user)
-  { to: '/leaves',           label: 'My Leaves',    icon: CalendarOff,     roles: ['employee', 'sales'] },
-  // Work room
-  { to: '/workroom',         label: 'Work Room',    icon: Video,           roles: ['admin', 'employee', 'sales'] },
-  // Shared team calendar — busy/free visibility for everyone
-  { to: '/team/calendar',    label: 'Team Calendar', icon: Calendar,       roles: ['admin', 'employee', 'sales'] },
-  // Personal weekly client schedule — who you're serving on which day
-  { to: '/client-schedule',  label: 'Client Schedule', icon: CalendarDays, roles: ['admin', 'employee', 'sales'] },
-  // Client pipeline — search any client by phone, see overall progress,
-  // tick SOP checklists, hand off between teams. The "where is X at?" view.
-  { to: '/clients/pipeline', label: 'Client Pipeline',  icon: Workflow,    roles: ['admin', 'employee', 'sales'] },
-  // Client credential vault
-  { to: '/vault',            label: 'Client Vault', icon: KeyRound,        roles: ['admin', 'employee', 'sales'] },
-  // Group Chat — ALL internal roles
-  { to: '/chat',             label: 'Group Chat',      icon: MessageSquare,  roles: ['admin', 'employee', 'sales'] },
-  // Influencer Sheet — only for influencer team
-  { to: '/influencers',      label: 'Influencer Sheet', icon: Users,         roles: ['employee'], team: 'influencer' },
-  // Meta Ads — admin always; OR any employee/sales whose primary team or
-  // teams[] includes 'meta' or 'ads'. Single nav entry, multi-team aware.
-  { to: '/ads/meta',         label: 'Meta Ads',     icon: BarChart3,        roles: ['admin'] },
+  // ── Role dashboards ────────────────────────────────────────────────
+  { to: '/dashboard',         label: 'Dashboard',    icon: LayoutDashboard, roles: ['employee'] },
+  { to: '/admin',             label: 'Dashboard',    icon: LayoutDashboard, roles: ['admin'] },
+  { to: '/client',            label: 'Dashboard',    icon: LayoutDashboard, roles: ['client'] },
+  // Sales role's "Dashboard" entry now points at Client Pipeline — sales is
+  // scoped to onboarding + workflow overview only, so that IS the dashboard.
+  { to: '/clients/pipeline',  label: 'Dashboard',    icon: LayoutDashboard, roles: ['sales'] },
+
+  // ── Sales-only menu — deliberately minimal ─────────────────────────
+  // Per agency policy: sales onboards clients and reviews progress.
+  // Nothing else. Tasks, Vault, Workroom, Chat, Schedule, Meta Ads,
+  // Calendar etc are all hidden for the sales role to keep it focused.
+  { to: '/leaves',            label: 'My Leaves',    icon: CalendarOff,     roles: ['sales'] },
+
+  // ── Employee + admin tools ─────────────────────────────────────────
+  { to: '/tasks',             label: 'My Tasks',     icon: ListTodo,        roles: ['employee', 'admin'] },
+  { to: '/admin/projects',    label: 'Projects',     icon: Briefcase,       roles: ['admin'] },
+  { to: '/admin/employees',   label: 'Employees',    icon: Users,           roles: ['admin'] },
+  { to: '/admin/clients',     label: 'Clients',      icon: Building2,       roles: ['admin'] },
+  // Sales CRM (legacy leads kanban) — admin-only now. Sales doesn't manage
+  // leads anymore; they just onboard confirmed clients via Client Pipeline.
+  { to: '/sales',             label: 'Sales CRM',    icon: BarChart2,       roles: ['admin'] },
+  { to: '/admin/reports',     label: 'Reports',      icon: BarChart2,       roles: ['admin'] },
+  { to: '/admin/leaves',      label: 'Leave Approvals', icon: CalendarOff,  roles: ['admin'] },
+  { to: '/admin/attendance',  label: 'Attendance',   icon: Clock,           roles: ['admin'] },
+  { to: '/admin/crash-logs',  label: 'Crash Logs',   icon: Bug,             roles: ['admin'] },
+  { to: '/leaves',            label: 'My Leaves',    icon: CalendarOff,     roles: ['employee'] },
+  { to: '/workroom',          label: 'Work Room',    icon: Video,           roles: ['admin', 'employee'] },
+  { to: '/team/calendar',     label: 'Team Calendar', icon: Calendar,       roles: ['admin', 'employee'] },
+  { to: '/client-schedule',   label: 'Client Schedule', icon: CalendarDays, roles: ['admin', 'employee'] },
+  // Client Pipeline — admin + employee see this; sales gets it via the
+  // 'Dashboard' entry above so it doesn't duplicate.
+  { to: '/clients/pipeline',  label: 'Client Pipeline', icon: Workflow,     roles: ['admin', 'employee'] },
+  { to: '/vault',             label: 'Client Vault', icon: KeyRound,        roles: ['admin', 'employee'] },
+  { to: '/chat',              label: 'Group Chat',   icon: MessageSquare,   roles: ['admin', 'employee'] },
+  { to: '/influencers',       label: 'Influencer Sheet', icon: Users,       roles: ['employee'], team: 'influencer' },
+  { to: '/ads/meta',          label: 'Meta Ads',     icon: BarChart3,       roles: ['admin'] },
   { to: '/ads/meta',         label: 'Meta Ads',     icon: BarChart3,        roles: ['employee', 'sales'], anyTeam: ['meta', 'ads'] },
   // Bottom nav
   { to: '/notifications',    label: 'Notifications', icon: Bell },
@@ -201,45 +202,53 @@ export function AppLayout({ children, requiredRole }: Props) {
 
     return (
       <Link to={item.to} onClick={() => setSidebarOpen(false)}
-        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group relative ${
+        className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors group relative ${
           active
-            ? 'bg-primary/12 text-primary shadow-sm'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted/70'
+            ? 'bg-primary/10 text-primary'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
         }`}>
-        <item.icon className={`h-4 w-4 shrink-0 ${active ? 'text-primary' : ''}`} />
-        <span className="flex-1">{item.label}</span>
+        <item.icon className={`h-[15px] w-[15px] shrink-0 ${active ? 'text-primary' : ''}`} />
+        <span className="flex-1 truncate">{item.label}</span>
         {badge > 0 && (
           <span className={`min-w-[18px] h-[18px] rounded-full text-[10px] text-white font-bold flex items-center justify-center px-1 ${isChat ? 'bg-green-500' : 'bg-primary'}`}>
             {badge > 99 ? '99+' : badge}
           </span>
         )}
-        {active && <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary rounded-full" />}
       </Link>
     );
   };
 
+  /**
+   * Cleaner sidebar — calm, single-color, minimal chrome.
+   * - Logo gets real breathing room (was crammed into 3 rows of header text).
+   * - Nav items lose the shadow + accent bar; the active state is just a
+   *   tint of primary — quieter, easier to scan.
+   * - Quick actions section + ⌘K hint kept but visually de-emphasised.
+   * - User block at the bottom no longer has a hard border separator —
+   *   the natural whitespace does the job.
+   */
   const Sidebar = ({ mobile = false }: { mobile?: boolean }) => (
-    <div className={`h-full flex flex-col ${mobile ? 'p-4' : 'p-5'} gap-2`}>
-      {/* Logo */}
-      <div className="flex items-center gap-3 px-3 py-3 mb-2">
-        <div className="h-8 w-8 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center">
-          <Bird className="h-4 w-4 text-primary" />
+    <div className={`h-full flex flex-col ${mobile ? 'p-4' : 'p-4'} gap-1`}>
+      {/* Logo — single line, more confident */}
+      <Link to={dashboardForRole(role)} className="flex items-center gap-2.5 px-2 py-3 mb-3 rounded-lg hover:bg-muted/40 transition-colors">
+        <div className="h-9 w-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-sm">
+          <Bird className="h-4 w-4" />
         </div>
-        <div>
-          <p className="font-bold text-sm text-foreground">Robin</p>
-          <p className="text-[10px] text-muted-foreground capitalize">{role}</p>
+        <div className="min-w-0">
+          <p className="font-black text-base text-foreground leading-tight">Robin</p>
+          <p className="text-[10px] text-muted-foreground capitalize leading-tight">{role || 'guest'}</p>
         </div>
-      </div>
+      </Link>
 
       {/* Nav */}
-      <nav className="flex-1 space-y-0.5 overflow-y-auto">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto -mx-1 px-1">
         {visibleNav.map(item => <NavLink key={item.to} item={item} />)}
       </nav>
 
-      {/* Quick actions — meeting shortcuts available from every page */}
-      {['admin', 'employee', 'sales'].includes(role) && (
-        <div className="space-y-1.5 mb-2 px-1">
-          <p className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground px-2">Quick actions</p>
+      {/* Quick actions — admin + employee only. Smaller, less visual weight. */}
+      {['admin', 'employee'].includes(role) && (
+        <div className="space-y-1 mt-3 mb-1 px-1">
+          <p className="text-[9px] uppercase font-semibold tracking-[0.14em] text-muted-foreground/70 px-2 mb-1">Quick actions</p>
           <div className="flex flex-col gap-1">
             <ScheduleMeetingButton />
             <StartClientMeetingButton />
@@ -247,31 +256,28 @@ export function AppLayout({ children, requiredRole }: Props) {
         </div>
       )}
 
-      {/* Quick keyboard shortcut hint — clickable for mouse users, also opens via Cmd/Ctrl-K */}
+      {/* ⌘K hint — calmer; no dashed border noise */}
       <button
         onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
-        className="flex items-center gap-2 px-3 py-2 mb-2 rounded-xl border border-dashed border-border text-xs text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-colors"
+        className="flex items-center gap-2 px-3 py-1.5 mb-2 rounded-lg text-xs text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
         title="Open the command palette"
       >
         <span className="flex-1 text-left">Jump anywhere</span>
-        <kbd className="px-1.5 py-0.5 rounded bg-muted border border-border font-mono text-[10px]">⌘K</kbd>
+        <kbd className="px-1.5 py-0.5 rounded bg-muted font-mono text-[10px]">⌘K</kbd>
       </button>
 
-      {/* Session controls now live in the top bar (SessionTopBar) so they
-          stay reachable on every screen size, including mobile. */}
-
-      {/* User + Logout */}
-      <div className="border-t border-border pt-3 mt-2">
-        <div className="flex items-center gap-3 px-3 py-2 mb-1">
+      {/* User + Logout — no hard divider, breathing room does the job */}
+      <div className="pt-2 mt-1">
+        <div className="flex items-center gap-2.5 px-2 py-2">
           <Avatar name={user?.name} email={user?.email} url={user?.avatarUrl} size="sm" tone="primary" />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold truncate text-foreground">{user?.name || 'User'}</p>
-            <p className="text-[10px] text-muted-foreground truncate">{user?.email}</p>
+            <p className="text-[13px] font-semibold truncate text-foreground leading-tight">{user?.name || 'User'}</p>
+            <p className="text-[10px] text-muted-foreground truncate leading-tight">{user?.email}</p>
           </div>
         </div>
         <button onClick={logout}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all">
-          <LogOut className="h-4 w-4" />
+          className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-[13px] text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
+          <LogOut className="h-[15px] w-[15px]" />
           <span>Sign out</span>
         </button>
       </div>
