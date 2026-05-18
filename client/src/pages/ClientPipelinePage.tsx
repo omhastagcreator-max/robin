@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search, Plus, Loader2, Phone, Mail, Building2, CheckCircle2, Clock,
-  AlertCircle, ChevronRight, X, Sparkles, Workflow,
+  Search, Plus, Loader2, X, Sparkles, Workflow,
+  ChevronDown, ChevronRight, CheckCircle2, Circle, AlertTriangle,
+  MoreVertical, ArrowRight, TrendingUp, Users, Activity,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useVisiblePoll } from '@/hooks/useVisiblePoll';
@@ -27,10 +27,11 @@ import { useVisiblePoll } from '@/hooks/useVisiblePoll';
  */
 
 interface ServiceSummary {
+  _id?: string;
   serviceType: string;
   label: string;
   status: 'pending' | 'in_progress' | 'done' | 'blocked';
-  checklist: Array<{ done: boolean }>;
+  checklist: Array<{ _id?: string; title?: string; done: boolean }>;
   assignedTo?: string;
 }
 interface Workflow {
@@ -116,17 +117,25 @@ export default function ClientPipelinePage() {
           </label>
         </div>
 
-        {/* List */}
+        {/* Overview report — always upfront. Quick scan of where things
+            stand BEFORE diving into individual cards. */}
+        {!loading && list.length > 0 && <OverviewReport list={list} />}
+
+        {/* Kanban board — one column per service stage with pipe-style
+            connectors between them so you can FEEL the flow:
+            Website → Meta → Influencer → Done.  Each card shows the clients
+            currently at that stage and (on click) what's left to do. */}
         {loading && list.length === 0 ? (
           <div className="py-16 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : list.length === 0 ? (
           <EmptyState query={query} isAdminOrSales={isAdminOrSales} onCreate={() => setShowCreate(true)} />
         ) : (
-          // Grouped list: single bordered shell, dividers between rows.
-          // Reads as one cohesive list instead of dozens of competing cards.
-          <div className="rounded-2xl border border-border bg-card overflow-hidden divide-y divide-border/60">
-            {list.map(wf => <WorkflowRow key={wf._id} wf={wf} />)}
-          </div>
+          <PipelineKanban
+            list={list}
+            isAdminOrSales={isAdminOrSales}
+            onAdd={() => setShowCreate(true)}
+            onMutated={load}
+          />
         )}
       </div>
 
@@ -138,68 +147,407 @@ export default function ClientPipelinePage() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Row — one client per row with progress + service chips
+// OverviewReport — top-of-page summary so the user doesn't HAVE to scan
+// every card to feel the state of the agency. Click "View details" to
+// drop into the kanban below.
 // ─────────────────────────────────────────────────────────────────────────
-function WorkflowRow({ wf }: { wf: Workflow }) {
+function OverviewReport({ list }: { list: Workflow[] }) {
+  const stats = useMemo(() => {
+    let total = 0, done = 0, blocked = 0;
+    let totalItems = 0, doneItems = 0;
+    for (const wf of list) {
+      total += 1;
+      const allDone = wf.services.length > 0 && wf.services.every(s => s.status === 'done');
+      if (allDone) done += 1;
+      if (wf.services.some(s => s.status === 'blocked')) blocked += 1;
+      for (const s of wf.services) {
+        totalItems += s.checklist?.length || 0;
+        doneItems  += s.checklist?.filter(c => c.done).length || 0;
+      }
+    }
+    const pct = totalItems ? Math.round((doneItems / totalItems) * 100) : 0;
+    const active = total - done;
+    return { total, done, active, blocked, pct, totalItems, doneItems };
+  }, [list]);
+
+  return (
+    <div className="rounded-2xl border border-border bg-card overflow-hidden">
+      <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center gap-2">
+        <Activity className="h-4 w-4 text-primary" />
+        <p className="text-xs uppercase tracking-[0.14em] font-semibold text-muted-foreground">Overview</p>
+        <span className="text-[11px] text-muted-foreground ml-auto">Click any column below for what's left</span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-border">
+        <Stat icon={<Users className="h-4 w-4" />} label="Active clients" value={stats.active} sub={`${stats.total} total`} />
+        <Stat icon={<TrendingUp className="h-4 w-4 text-primary" />} label="Overall progress" value={`${stats.pct}%`} sub={`${stats.doneItems}/${stats.totalItems} steps`} />
+        <Stat icon={<CheckCircle2 className="h-4 w-4 text-emerald-600" />} label="Completed" value={stats.done} sub="pipelines done" />
+        <Stat icon={<AlertTriangle className="h-4 w-4 text-amber-600" />} label="Needs attention" value={stats.blocked} sub="blocked services" />
+      </div>
+    </div>
+  );
+}
+
+function Stat({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: React.ReactNode; sub: string }) {
+  return (
+    <div className="px-4 py-3 flex flex-col gap-0.5">
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+        {icon}<span>{label}</span>
+      </div>
+      <p className="text-xl font-bold tabular-nums leading-tight">{value}</p>
+      <p className="text-[11px] text-muted-foreground">{sub}</p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Kanban — one column per service stage, matching the Client Schedule
+// design. Each column is a card with a header (+ add button) and a list
+// of clients currently at that service. Empty columns show a dashed
+// "No clients yet" placeholder.
+// ─────────────────────────────────────────────────────────────────────────
+
+interface ColumnDef {
+  key:         string;
+  label:       string;
+  matches:     (wf: Workflow) => boolean;
+  serviceType?: string;   // for highlighting the relevant service inside
+  accent?:     string;    // header accent class (active column)
+}
+
+const PIPELINE_COLUMNS: ColumnDef[] = [
+  {
+    key: 'shopify',
+    label: 'Website Work',
+    serviceType: 'shopify',
+    matches: (wf) => wf.services.some(s => s.serviceType === 'shopify' && s.status !== 'done'),
+    accent: 'text-emerald-700',
+  },
+  {
+    key: 'meta',
+    label: 'Meta Work',
+    serviceType: 'meta_ads',
+    matches: (wf) => wf.services.some(s => s.serviceType === 'meta_ads' && (s.status === 'in_progress' || s.status === 'pending')),
+    accent: 'text-blue-700',
+  },
+  {
+    key: 'influencer',
+    label: 'Influencer Work',
+    serviceType: 'influencer',
+    matches: (wf) => wf.services.some(s => s.serviceType === 'influencer' && s.status !== 'done'),
+    accent: 'text-amber-700',
+  },
+  {
+    key: 'done',
+    label: 'All Done',
+    matches: (wf) => wf.services.length > 0 && wf.services.every(s => s.status === 'done'),
+    accent: 'text-foreground',
+  },
+];
+
+function PipelineKanban({ list, isAdminOrSales, onAdd, onMutated }: {
+  list: Workflow[]; isAdminOrSales: boolean; onAdd: () => void; onMutated: () => void;
+}) {
+  // Bucket each workflow into the FIRST matching column so a client only
+  // appears once on the board. Order matters — Website before Meta means
+  // a client mid-build with both services shows in Website (its blocker).
+  const byColumn = useMemo(() => {
+    const buckets: Record<string, Workflow[]> = {};
+    for (const col of PIPELINE_COLUMNS) buckets[col.key] = [];
+    for (const wf of list) {
+      const col = PIPELINE_COLUMNS.find(c => c.matches(wf));
+      if (col) buckets[col.key].push(wf);
+    }
+    return buckets;
+  }, [list]);
+
+  return (
+    <>
+      {/* DESKTOP / TABLET — kanban with pipe-style flow connectors between
+          columns. The chevrons sit BETWEEN cards (negative offsets) so it
+          reads as a single pipeline of stages, not 4 unrelated cards. */}
+      <div className="hidden sm:grid sm:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] gap-1 items-stretch">
+        {PIPELINE_COLUMNS.map((col, i) => (
+          <Fragment key={col.key}>
+            <Column
+              col={col}
+              clients={byColumn[col.key]}
+              isAdminOrSales={isAdminOrSales}
+              onAdd={onAdd}
+              onMutated={onMutated}
+            />
+            {i < PIPELINE_COLUMNS.length - 1 && (
+              <div className="flex items-center justify-center px-0.5">
+                <div className="flex flex-col items-center gap-1">
+                  <div className="h-[2px] w-3 bg-border" />
+                  <div className={`h-7 w-7 rounded-full border-2 border-border bg-card flex items-center justify-center ${
+                    i === PIPELINE_COLUMNS.length - 2 ? 'border-emerald-300 bg-emerald-50' : ''
+                  }`}>
+                    <ArrowRight className={`h-3.5 w-3.5 ${
+                      i === PIPELINE_COLUMNS.length - 2 ? 'text-emerald-600' : 'text-muted-foreground'
+                    }`} />
+                  </div>
+                  <div className="h-[2px] w-3 bg-border" />
+                </div>
+              </div>
+            )}
+          </Fragment>
+        ))}
+      </div>
+
+      {/* MOBILE — stacked columns with a vertical pipe between them */}
+      <div className="sm:hidden space-y-1">
+        {PIPELINE_COLUMNS.map((col, i) => (
+          <div key={col.key}>
+            <Column
+              col={col}
+              clients={byColumn[col.key]}
+              isAdminOrSales={isAdminOrSales}
+              onAdd={onAdd}
+              onMutated={onMutated}
+            />
+            {i < PIPELINE_COLUMNS.length - 1 && (
+              <div className="flex items-center justify-center py-1.5">
+                <div className="h-6 w-[2px] bg-border" />
+                <div className="h-6 w-6 -ml-3 -mr-3 rounded-full border-2 border-border bg-card flex items-center justify-center">
+                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                </div>
+                <div className="h-6 w-[2px] bg-border" />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function Column({ col, clients, isAdminOrSales, onAdd, onMutated }: {
+  col: ColumnDef; clients: Workflow[]; isAdminOrSales: boolean; onAdd: () => void; onMutated: () => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-border bg-card overflow-hidden flex flex-col min-h-[300px]">
+      {/* Header — service label + count + (admin/sales only) add button */}
+      <div className="px-3 py-2.5 border-b border-border bg-muted/30 flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <p className={`text-[10px] uppercase tracking-[0.14em] font-semibold ${col.accent || 'text-muted-foreground'}`}>
+            {col.label}
+          </p>
+          <p className="text-base font-bold mt-0.5">{clients.length} {clients.length === 1 ? 'client' : 'clients'}</p>
+        </div>
+        {isAdminOrSales && col.key !== 'done' && (
+          <button onClick={onAdd}
+            title="Onboard a new client"
+            className="h-7 w-7 rounded-lg bg-muted text-primary hover:bg-primary/10 flex items-center justify-center transition-colors">
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
+      {/* Cards inside the column */}
+      <div className="p-2 space-y-1.5 flex-1 overflow-y-auto">
+        {clients.length === 0 ? (
+          <div className="h-24 rounded-xl border border-dashed border-border bg-muted/10 flex items-center justify-center">
+            <p className="text-[11px] text-muted-foreground">No clients yet</p>
+          </div>
+        ) : (
+          clients.map(wf => (
+            <ClientCard key={wf._id} wf={wf} highlightServiceType={col.serviceType} onMutated={onMutated} />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ClientCard({ wf, highlightServiceType, onMutated }: {
+  wf: Workflow; highlightServiceType?: string; onMutated: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Close the popover when clicking outside
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
+
+  // Overall % across all services
   const totalItems = wf.services.reduce((n, s) => n + (s.checklist?.length || 0), 0);
   const doneItems  = wf.services.reduce((n, s) => n + (s.checklist?.filter(c => c.done).length || 0), 0);
   const pct        = totalItems ? Math.round((doneItems / totalItems) * 100) : 0;
 
-  const currentStage =
-    wf.services.find(s => s.status === 'in_progress')?.label ||
-    wf.services.find(s => s.status === 'pending')?.label ||
-    (wf.services.every(s => s.status === 'done') ? 'All done' : '—');
+  // The service relevant to THIS column (if any) — show its progress
+  // inline so you can see "Website: 2/7" without opening the workflow.
+  const relevant = highlightServiceType ? wf.services.find(s => s.serviceType === highlightServiceType) : undefined;
+  const relTicked = relevant?.checklist.filter(c => c.done).length || 0;
+  const relTotal  = relevant?.checklist.length || 0;
 
-  // Calmer row — single-line layout where possible, no competing card chrome.
-  // Border is now bottom-only inside a flat list (set on the parent map's
-  // first-child rule via Tailwind), no hover shadow, single accent on hover.
+  // The "what's left" list — pending checklist items on the relevant
+  // service (or overall pending across all services if no column-specific
+  // service was found, e.g. the All Done column).
+  const remaining = useMemo(() => {
+    const src = relevant ? [relevant] : wf.services;
+    const items: { service: string; title: string }[] = [];
+    for (const s of src) {
+      for (const c of (s.checklist || [])) {
+        if (!c.done) items.push({ service: s.label || s.serviceType, title: c.title || 'Untitled step' });
+      }
+    }
+    return items;
+  }, [relevant, wf.services]);
+
+  // Status pill colour for the relevant service (or overall completion if none)
+  const status = relevant?.status || (wf.services.every(s => s.status === 'done') ? 'done' : 'in_progress');
+  const statusStyle =
+    status === 'done'        ? 'bg-emerald-500/15 text-emerald-700' :
+    status === 'blocked'     ? 'bg-rose-500/15 text-rose-700' :
+    status === 'in_progress' ? 'bg-blue-500/15 text-blue-700' :
+                               'bg-amber-500/15 text-amber-700';
+  const statusLabel =
+    status === 'done'        ? 'Done' :
+    status === 'blocked'     ? 'Blocked' :
+    status === 'in_progress' ? 'In progress' :
+                               'Pending';
+
+  const markDone = async () => {
+    if (!relevant?._id || busy) return;
+    setBusy(true);
+    setMenuOpen(false);
+    try {
+      await api.cwCompleteService(wf._id, relevant._id);
+      toast.success(`${relevant.label || 'Service'} marked done`);
+      onMutated();
+    } catch { /* axios interceptor */ }
+    finally { setBusy(false); }
+  };
+
   return (
-    <Link to={`/clients/pipeline/${wf._id}`}
-      className="block bg-card rounded-xl px-4 py-3 hover:bg-muted/40 transition-colors group">
-      <div className="flex items-center gap-4">
-        {/* LEFT — name + the big number side-by-side */}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-3">
-            <p className="text-base font-bold truncate">{wf.clientName || 'Unnamed client'}</p>
-            <span className="text-xs text-muted-foreground tabular-nums shrink-0">{pct}%</span>
+    <div className="bg-background border border-border rounded-xl overflow-hidden">
+      {/* Top row — name + status pill + action menu */}
+      <div className="px-3 py-2.5">
+        <div className="flex items-start gap-2">
+          <button
+            onClick={() => setExpanded(e => !e)}
+            className="flex-1 min-w-0 text-left"
+            title={expanded ? 'Hide what\'s left' : 'See what\'s left'}
+          >
+            <div className="flex items-center gap-1">
+              {expanded
+                ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+              <p className="text-sm font-semibold truncate">{wf.clientName || 'Unnamed client'}</p>
+            </div>
+            {wf.clientPhone && (
+              <p className="text-[10px] text-muted-foreground truncate mt-0.5 pl-4">{wf.clientPhone}</p>
+            )}
+          </button>
+
+          {/* Stage dropdown — change the service status without leaving the
+              board. Mark done, bounce back, or jump to full detail. */}
+          <div className="relative shrink-0" ref={menuRef}>
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMenuOpen(v => !v); }}
+              className={`px-1.5 h-6 rounded-md text-[10px] font-semibold flex items-center gap-0.5 ${statusStyle} hover:opacity-90 transition`}
+              title="Update stage"
+            >
+              {statusLabel}
+              <ChevronDown className="h-3 w-3" />
+            </button>
+            <AnimatePresence>
+              {menuOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                  className="absolute right-0 top-full mt-1 w-44 bg-card border border-border rounded-lg shadow-lg z-20 overflow-hidden"
+                >
+                  {relevant && relevant.status !== 'done' && (
+                    <button
+                      onClick={markDone}
+                      disabled={busy}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-muted flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                      Mark this stage done
+                    </button>
+                  )}
+                  <Link
+                    to={`/clients/pipeline/${wf._id}`}
+                    className="w-full text-left px-3 py-2 text-xs hover:bg-muted flex items-center gap-2"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    <MoreVertical className="h-3.5 w-3.5 text-muted-foreground" />
+                    Open full pipeline
+                  </Link>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
-          <p className="text-[11px] text-muted-foreground truncate mt-0.5">
-            {wf.clientPhone && <>{wf.clientPhone} · </>}Now: <span className="text-foreground/80">{currentStage}</span>
-          </p>
         </div>
 
-        {/* MIDDLE — slim progress bar */}
-        <div className="hidden sm:block w-32 shrink-0">
-          <div className="h-1.5 rounded-full bg-muted/40 overflow-hidden">
-            <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+        {/* Mini progress bar for the relevant service, OR overall if no
+            service highlight (e.g. the Done column). */}
+        <div className="mt-2 flex items-center gap-2">
+          <div className="flex-1 h-1 rounded-full bg-muted/40 overflow-hidden">
+            <div className="h-full bg-primary transition-all"
+              style={{ width: `${relevant ? (relTotal ? (relTicked / relTotal) * 100 : 0) : pct}%` }} />
           </div>
+          <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
+            {relevant ? `${relTicked}/${relTotal}` : `${pct}%`}
+          </span>
         </div>
-
-        {/* RIGHT — service chips (more compact) */}
-        <div className="hidden md:flex items-center gap-1 shrink-0">
-          {wf.services.map(s => <ServiceChip key={s.serviceType} svc={s} />)}
-        </div>
-
-        <ChevronRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-foreground transition-colors shrink-0" />
       </div>
-    </Link>
-  );
-}
 
-function ServiceChip({ svc }: { svc: ServiceSummary }) {
-  // Calmer chips — solid dot + label, no border. Status is conveyed by the
-  // dot colour alone; reading the row is fast because nothing competes for
-  // attention with the client name.
-  const dot =
-    svc.status === 'done'        ? 'bg-emerald-500' :
-    svc.status === 'in_progress' ? 'bg-blue-500'    :
-    svc.status === 'blocked'     ? 'bg-slate-400'   :
-                                    'bg-muted-foreground/40';
-  return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] text-muted-foreground bg-muted/30">
-      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
-      {svc.label}
-    </span>
+      {/* Expandable "what's left" — checklist of pending items so you can
+          see EXACTLY what's blocking the move to the next stage without
+          having to open the workflow detail page. */}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="expand"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden border-t border-border bg-muted/20"
+          >
+            <div className="px-3 py-2 space-y-1">
+              {remaining.length === 0 ? (
+                <div className="flex items-center gap-1.5 text-[11px] text-emerald-700">
+                  <CheckCircle2 className="h-3 w-3" /> Nothing left in this stage — ready to advance.
+                </div>
+              ) : (
+                <>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">
+                    {remaining.length} step{remaining.length === 1 ? '' : 's'} left
+                  </p>
+                  {remaining.slice(0, 5).map((r, idx) => (
+                    <div key={idx} className="flex items-start gap-1.5 text-[11px] text-foreground/80">
+                      <Circle className="h-2.5 w-2.5 mt-0.5 text-muted-foreground shrink-0" />
+                      <span className="truncate" title={r.title}>{r.title}</span>
+                    </div>
+                  ))}
+                  {remaining.length > 5 && (
+                    <Link to={`/clients/pipeline/${wf._id}`} className="block text-[10px] text-primary hover:underline mt-1">
+                      View all {remaining.length} →
+                    </Link>
+                  )}
+                </>
+              )}
+              <Link
+                to={`/clients/pipeline/${wf._id}`}
+                className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline mt-1.5"
+              >
+                Click for details <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
