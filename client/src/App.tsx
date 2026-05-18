@@ -1,10 +1,12 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { FullPageSpinner } from '@/components/shared/Spinner';
 import { PageErrorBoundary } from '@/components/shared/PageErrorBoundary';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { PersistentAppLayout } from '@/components/AppLayout';
+import { Loader2 } from 'lucide-react';
 
 const Login             = lazy(() => import('@/pages/Login'));
 const UpdatePassword    = lazy(() => import('@/pages/UpdatePassword'));
@@ -89,11 +91,34 @@ function MeetingNotFound() {
   );
 }
 
+/**
+ * AppShell — parent layout route that mounts the persistent AppLayout
+ * exactly ONCE for every authenticated page. Inner pages still render
+ * their own `<AppLayout>` (which becomes a no-op pass-through via the
+ * AppLayoutNestedCtx). The Suspense for lazy chunks lives INSIDE the
+ * shell — so when the user navigates between sections, only the inner
+ * content swaps. The sidebar, top bar, huddle dock, etc. stay mounted.
+ * That's what kills the blank-screen flash on navigation.
+ */
+function AppShell() {
+  return (
+    <PersistentAppLayout>
+      <Suspense fallback={
+        <div className="min-h-[40vh] flex items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      }>
+        <Outlet />
+      </Suspense>
+    </PersistentAppLayout>
+  );
+}
+
 function AppRoutes() {
   return (
     <Suspense fallback={<FullPageSpinner />}>
       <Routes>
-        {/* Public */}
+        {/* ── Public routes — no chrome ──────────────────────────────── */}
         <Route path="/login"            element={<E><Login /></E>} />
         <Route path="/update-password"  element={<E><UpdatePassword /></E>} />
         {/* Public read-only Meta Ads share — no Robin login required */}
@@ -105,40 +130,45 @@ function AppRoutes() {
             their dashboard. Old auto-redirect to /login removed per req. */}
         <Route path="/"                 element={<BlankRoot />} />
 
-        {/* Employee / Sales / Admin — internal staff only.
-            Clients hitting these get bounced to /client (their own dashboard). */}
-        <Route path="/dashboard"        element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><EmployeeDashboard /></E></ProtectedRoute>} />
-        <Route path="/tasks"            element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TasksPage /></E></ProtectedRoute>} />
-        <Route path="/chat"             element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><GroupChat /></E></ProtectedRoute>} />
-        <Route path="/workroom"         element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><WorkRoom /></E></ProtectedRoute>} />
-        <Route path="/workroom-home"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><WorkroomHome /></E></ProtectedRoute>} />
-        <Route path="/vault"            element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientVault /></E></ProtectedRoute>} />
-        <Route path="/leaves"           element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><LeavesPage /></E></ProtectedRoute>} />
-        <Route path="/notifications"    element={<E><NotificationsPage /></E>} />
-        <Route path="/profile"          element={<E><ProfilePage /></E>} />
+        {/* ── Authenticated routes — persistent chrome via <AppShell /> ─
+            All inner routes share a single AppLayout instance, so the
+            sidebar/header don't unmount on navigation. */}
+        <Route element={<AppShell />}>
+          {/* Employee / Sales / Admin — internal staff only.
+              Clients hitting these get bounced to /client. */}
+          <Route path="/dashboard"        element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><EmployeeDashboard /></E></ProtectedRoute>} />
+          <Route path="/tasks"            element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TasksPage /></E></ProtectedRoute>} />
+          <Route path="/chat"             element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><GroupChat /></E></ProtectedRoute>} />
+          <Route path="/workroom"         element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><WorkRoom /></E></ProtectedRoute>} />
+          <Route path="/workroom-home"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><WorkroomHome /></E></ProtectedRoute>} />
+          <Route path="/vault"            element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientVault /></E></ProtectedRoute>} />
+          <Route path="/leaves"           element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><LeavesPage /></E></ProtectedRoute>} />
+          <Route path="/notifications"    element={<E><NotificationsPage /></E>} />
+          <Route path="/profile"          element={<E><ProfilePage /></E>} />
 
-        {/* Admin only */}
-        <Route path="/admin"            element={<ProtectedRoute requiredRole="admin"><E><AdminDashboard /></E></ProtectedRoute>} />
-        <Route path="/admin/projects"   element={<ProtectedRoute requiredRole="admin"><E><AdminProjects /></E></ProtectedRoute>} />
-        <Route path="/admin/employees"  element={<ProtectedRoute requiredRole="admin"><E><AdminEmployees /></E></ProtectedRoute>} />
-        <Route path="/admin/clients"    element={<ProtectedRoute requiredRole="admin"><E><AdminClients /></E></ProtectedRoute>} />
-        <Route path="/admin/reports"    element={<ProtectedRoute requiredRole="admin"><E><AdminReports /></E></ProtectedRoute>} />
-        <Route path="/admin/leaves"     element={<ProtectedRoute requiredRole="admin"><E><AdminLeaves /></E></ProtectedRoute>} />
-        <Route path="/admin/attendance" element={<ProtectedRoute requiredRole="admin"><E><AdminAttendance /></E></ProtectedRoute>} />
-        <Route path="/admin/crash-logs" element={<ProtectedRoute requiredRole="admin"><E><AdminCrashLogs /></E></ProtectedRoute>} />
-        <Route path="/client-schedule"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientSchedulePage /></E></ProtectedRoute>} />
-        <Route path="/clients/pipeline"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientPipelinePage /></E></ProtectedRoute>} />
-        <Route path="/clients/pipeline/:id" element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientWorkflowDetailPage /></E></ProtectedRoute>} />
-        <Route path="/ads/meta"         element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><MetaAdsReport /></E></ProtectedRoute>} />
-        <Route path="/team/calendar"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TeamCalendar /></E></ProtectedRoute>} />
-        <Route path="/meet/host/:slug"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><MeetHost /></E></ProtectedRoute>} />
+          {/* Admin only */}
+          <Route path="/admin"            element={<ProtectedRoute requiredRole="admin"><E><AdminDashboard /></E></ProtectedRoute>} />
+          <Route path="/admin/projects"   element={<ProtectedRoute requiredRole="admin"><E><AdminProjects /></E></ProtectedRoute>} />
+          <Route path="/admin/employees"  element={<ProtectedRoute requiredRole="admin"><E><AdminEmployees /></E></ProtectedRoute>} />
+          <Route path="/admin/clients"    element={<ProtectedRoute requiredRole="admin"><E><AdminClients /></E></ProtectedRoute>} />
+          <Route path="/admin/reports"    element={<ProtectedRoute requiredRole="admin"><E><AdminReports /></E></ProtectedRoute>} />
+          <Route path="/admin/leaves"     element={<ProtectedRoute requiredRole="admin"><E><AdminLeaves /></E></ProtectedRoute>} />
+          <Route path="/admin/attendance" element={<ProtectedRoute requiredRole="admin"><E><AdminAttendance /></E></ProtectedRoute>} />
+          <Route path="/admin/crash-logs" element={<ProtectedRoute requiredRole="admin"><E><AdminCrashLogs /></E></ProtectedRoute>} />
+          <Route path="/client-schedule"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientSchedulePage /></E></ProtectedRoute>} />
+          <Route path="/clients/pipeline"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientPipelinePage /></E></ProtectedRoute>} />
+          <Route path="/clients/pipeline/:id" element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientWorkflowDetailPage /></E></ProtectedRoute>} />
+          <Route path="/ads/meta"         element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><MetaAdsReport /></E></ProtectedRoute>} />
+          <Route path="/team/calendar"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TeamCalendar /></E></ProtectedRoute>} />
+          <Route path="/meet/host/:slug"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><MeetHost /></E></ProtectedRoute>} />
 
-        {/* Client only */}
-        <Route path="/client"           element={<ProtectedRoute requiredRole="client"><E><ClientDashboard /></E></ProtectedRoute>} />
+          {/* Client only */}
+          <Route path="/client"           element={<ProtectedRoute requiredRole="client"><E><ClientDashboard /></E></ProtectedRoute>} />
 
-        {/* Sales / Influencer */}
-        <Route path="/sales"            element={<ProtectedRoute requiredRole={['admin', 'sales']}><E><SalesDashboard /></E></ProtectedRoute>} />
-        <Route path="/influencers"       element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><InfluencerSheet /></E></ProtectedRoute>} />
+          {/* Sales / Influencer */}
+          <Route path="/sales"            element={<ProtectedRoute requiredRole={['admin', 'sales']}><E><SalesDashboard /></E></ProtectedRoute>} />
+          <Route path="/influencers"      element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><InfluencerSheet /></E></ProtectedRoute>} />
+        </Route>
 
         {/* Catch-all */}
         <Route path="*"                 element={<Navigate to="/" replace />} />

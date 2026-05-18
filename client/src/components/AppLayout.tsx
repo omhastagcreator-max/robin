@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, createContext, useContext, type ReactNode } from 'react';
 import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -71,7 +71,40 @@ const NAV_ITEMS: NavItem[] = [
 
 interface Props { children: ReactNode; requiredRole?: string | string[]; }
 
+/**
+ * Nesting guard — when the layout is already mounted higher in the tree
+ * (i.e. a parent route renders it persistently), inner `<AppLayout>`
+ * wrappers inside pages become pass-throughs. This is what kills the
+ * "screen goes blank on every nav" flash: the chrome (sidebar, top bar,
+ * huddle dock) stays mounted once, and only the inner content swaps when
+ * the user navigates.
+ *
+ * Pages don't need to know about this — they keep their existing
+ * `<AppLayout>...</AppLayout>` wrappers; this context just makes those
+ * inner wrappers no-op when the persistent shell is already rendering.
+ */
+const AppLayoutNestedCtx = createContext(false);
+
 export function AppLayout({ children, requiredRole }: Props) {
+  const isNested = useContext(AppLayoutNestedCtx);
+  if (isNested) {
+    // Already inside a persistent AppLayout shell — just render children.
+    // The shell handles all the chrome and role gating.
+    return <>{children}</>;
+  }
+  return <AppLayoutInner requiredRole={requiredRole}>{children}</AppLayoutInner>;
+}
+
+/**
+ * Render-prop helper for the persistent shell. Used by the parent layout
+ * route in App.tsx — it renders the chrome ONCE and yields an <Outlet />
+ * via children, so navigations swap only the inner content.
+ */
+export function PersistentAppLayout({ children }: { children: ReactNode }) {
+  return <AppLayoutInner>{children}</AppLayoutInner>;
+}
+
+function AppLayoutInner({ children, requiredRole }: Props) {
   const { user, role, logout } = useAuth();
   const location = useLocation();
   const socket = useSocket();
@@ -295,6 +328,7 @@ export function AppLayout({ children, requiredRole }: Props) {
   );
 
   return (
+    <AppLayoutNestedCtx.Provider value={true}>
     <div className="min-h-screen bg-background flex">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex flex-col w-60 xl:w-64 border-r border-border shrink-0 sticky top-0 h-screen overflow-y-auto bg-card shadow-sm">
@@ -382,5 +416,6 @@ export function AppLayout({ children, requiredRole }: Props) {
           pill when a meeting is already in progress. */}
       <MeetingQuickFab />
     </div>
+    </AppLayoutNestedCtx.Provider>
   );
 }
