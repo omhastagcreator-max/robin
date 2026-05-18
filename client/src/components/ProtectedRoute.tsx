@@ -16,10 +16,7 @@ export function dashboardForRole(role: string): string {
   switch (role) {
     case 'admin':    return '/admin';
     case 'client':   return '/client';
-    // Sales role is now scoped to onboarding + workflow overview only —
-    // Client Pipeline is their home. The old /sales leads-CRM kanban is
-    // archived behind admin-only access.
-    case 'sales':    return '/clients/pipeline';
+    case 'sales':    return '/sales';
     case 'employee': return '/dashboard';
     default:         return '/dashboard';
   }

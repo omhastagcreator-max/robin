@@ -198,37 +198,46 @@ export default function ClientWorkflowDetailPage() {
           </div>
         </div>
 
-        {/* Service tabs */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        {/* Service tabs — single muted strip with simple text labels.
+            Was 3 large coloured cards each with their own border + ring +
+            status icon + count + 'you' badge stacking up. Now: just the
+            label + count, active tab gets a subtle bottom underline. */}
+        <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 border-b border-border">
           {wf.services.map(s => {
-            const Icon = STATUS_ICON[s.status];
             const isActive = activeSvc === s._id;
             const isMine = s.assignedTo === user?.id;
             const ticked = s.checklist.filter(c => c.done).length;
+            const dot =
+              s.status === 'done'        ? 'bg-emerald-500' :
+              s.status === 'in_progress' ? 'bg-blue-500'    :
+              s.status === 'blocked'     ? 'bg-slate-400'   :
+                                            'bg-muted-foreground/40';
             return (
               <button key={s._id} onClick={() => setActiveSvc(s._id)}
-                className={`shrink-0 rounded-xl border px-3 py-2 text-left transition-all ${
-                  isActive ? 'border-primary bg-primary/10 ring-1 ring-primary/30' : `${STATUS_TONE[s.status]} hover:opacity-90`
+                className={`shrink-0 px-3 py-2.5 text-left transition-colors -mb-px border-b-2 ${
+                  isActive
+                    ? 'border-primary text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}>
-                <div className="flex items-center gap-1.5">
-                  <Icon className="h-3.5 w-3.5" />
-                  <span className="text-xs font-bold">{s.label}</span>
-                  {isMine && <span className="text-[9px] font-bold uppercase tracking-wider bg-primary/20 text-primary px-1 rounded">you</span>}
+                <div className="flex items-center gap-2">
+                  <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+                  <span className="text-sm font-semibold">{s.label}</span>
+                  {isMine && <span className="text-[9px] font-bold uppercase tracking-wider bg-primary/15 text-primary px-1 rounded">you</span>}
+                  <span className="text-[11px] text-muted-foreground tabular-nums">{ticked}/{s.checklist.length}</span>
                 </div>
-                <p className="text-[10px] mt-0.5">
-                  {ticked}/{s.checklist.length} · {STATUS_LABEL[s.status]}
-                </p>
               </button>
             );
           })}
         </div>
 
-        {/* Active service detail */}
+        {/* Active service detail — no card chrome, lives in page flow.
+            The owner + complete-button row separates from the checklist
+            by spacing alone, no border. */}
         {active && (
           <motion.div key={active._id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl border border-border bg-card overflow-hidden">
-            {/* Header */}
-            <div className="px-4 py-3 border-b border-border flex items-center gap-3 flex-wrap">
+            className="space-y-3">
+            {/* Header row */}
+            <div className="flex items-center gap-3 flex-wrap pt-2">
               <div className="flex-1">
                 <p className="text-sm font-bold">{active.label}</p>
                 <p className="text-[11px] text-muted-foreground flex items-center gap-1.5 flex-wrap">
@@ -264,22 +273,23 @@ export default function ClientWorkflowDetailPage() {
               )}
             </div>
 
-            {/* Checklist */}
-            <div className="p-4 space-y-1.5">
+            {/* Checklist — bare items, hover-only background, no per-item
+                container chrome. Reads as a clean list. */}
+            <div className="space-y-0.5">
               {active.checklist.length === 0 ? (
                 <p className="text-xs text-muted-foreground py-4 text-center">No SOP items for this service.</p>
               ) : (
                 active.checklist.map((c, i) => (
                   <label key={i}
-                    className={`flex items-start gap-3 p-2.5 rounded-lg transition-colors ${
-                      canEditActive && active.status !== 'blocked' ? 'hover:bg-muted/30 cursor-pointer' : 'opacity-80'
+                    className={`flex items-start gap-3 px-2 py-2 rounded-lg transition-colors ${
+                      canEditActive && active.status !== 'blocked' ? 'hover:bg-muted/40 cursor-pointer' : 'opacity-80'
                     }`}>
                     <input type="checkbox" checked={c.done}
                       disabled={!canEditActive || active.status === 'blocked' || busy}
                       onChange={e => toggleItem(active._id, i, e.target.checked)}
-                      className="mt-0.5 h-4 w-4 accent-primary shrink-0" />
+                      className="mt-0.5 h-[18px] w-[18px] accent-primary shrink-0 cursor-pointer" />
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm ${c.done ? 'line-through text-muted-foreground' : 'font-medium'}`}>{c.text}</p>
+                      <p className={`text-sm leading-snug ${c.done ? 'line-through text-muted-foreground' : ''}`}>{c.text}</p>
                       {c.done && c.doneAt && (
                         <p className="text-[10px] text-muted-foreground mt-0.5">
                           Ticked {formatDistanceToNow(new Date(c.doneAt), { addSuffix: true })}
@@ -291,11 +301,11 @@ export default function ClientWorkflowDetailPage() {
               )}
             </div>
 
-            {/* Return to a previous service */}
+            {/* Return to a previous service — single quiet text row */}
             {canEditActive && active.status !== 'done' && active.status !== 'blocked' && (
-              <div className="px-4 pb-4 flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+              <div className="pt-2 flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
                 <RotateCcw className="h-3.5 w-3.5" />
-                <span>Something needs rework? Return to:</span>
+                <span>Needs rework? Return to:</span>
                 {wf.services
                   .filter(s => s.status === 'done' || s.status === 'in_progress')
                   .filter(s => s._id !== active._id)

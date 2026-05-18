@@ -31,40 +31,36 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/dashboard',         label: 'Dashboard',    icon: LayoutDashboard, roles: ['employee'] },
   { to: '/admin',             label: 'Dashboard',    icon: LayoutDashboard, roles: ['admin'] },
   { to: '/client',            label: 'Dashboard',    icon: LayoutDashboard, roles: ['client'] },
-  // Sales role's "Dashboard" entry now points at Client Pipeline — sales is
-  // scoped to onboarding + workflow overview only, so that IS the dashboard.
-  { to: '/clients/pipeline',  label: 'Dashboard',    icon: LayoutDashboard, roles: ['sales'] },
+  { to: '/sales',             label: 'Dashboard',    icon: LayoutDashboard, roles: ['sales'] },
 
-  // ── Sales-only menu — deliberately minimal ─────────────────────────
-  // Per agency policy: sales onboards clients and reviews progress.
-  // Nothing else. Tasks, Vault, Workroom, Chat, Schedule, Meta Ads,
-  // Calendar etc are all hidden for the sales role to keep it focused.
-  { to: '/leaves',            label: 'My Leaves',    icon: CalendarOff,     roles: ['sales'] },
-
-  // ── Employee + admin tools ─────────────────────────────────────────
-  { to: '/tasks',             label: 'My Tasks',     icon: ListTodo,        roles: ['employee', 'admin'] },
+  // ── Employee + admin + sales shared tools ─────────────────────────
+  // Restored to pre-restriction state: sales sees everything except the
+  // admin-only management pages.
+  { to: '/tasks',             label: 'My Tasks',     icon: ListTodo,        roles: ['employee', 'admin', 'sales'] },
   { to: '/admin/projects',    label: 'Projects',     icon: Briefcase,       roles: ['admin'] },
   { to: '/admin/employees',   label: 'Employees',    icon: Users,           roles: ['admin'] },
   { to: '/admin/clients',     label: 'Clients',      icon: Building2,       roles: ['admin'] },
-  // Sales CRM (legacy leads kanban) — admin-only now. Sales doesn't manage
-  // leads anymore; they just onboard confirmed clients via Client Pipeline.
+  // Sales CRM (leads kanban) — admin + sales both see it.
   { to: '/sales',             label: 'Sales CRM',    icon: BarChart2,       roles: ['admin'] },
   { to: '/admin/reports',     label: 'Reports',      icon: BarChart2,       roles: ['admin'] },
   { to: '/admin/leaves',      label: 'Leave Approvals', icon: CalendarOff,  roles: ['admin'] },
   { to: '/admin/attendance',  label: 'Attendance',   icon: Clock,           roles: ['admin'] },
   { to: '/admin/crash-logs',  label: 'Crash Logs',   icon: Bug,             roles: ['admin'] },
-  { to: '/leaves',            label: 'My Leaves',    icon: CalendarOff,     roles: ['employee'] },
-  { to: '/workroom',          label: 'Work Room',    icon: Video,           roles: ['admin', 'employee'] },
-  { to: '/team/calendar',     label: 'Team Calendar', icon: Calendar,       roles: ['admin', 'employee'] },
-  { to: '/client-schedule',   label: 'Client Schedule', icon: CalendarDays, roles: ['admin', 'employee'] },
-  // Client Pipeline — admin + employee see this; sales gets it via the
-  // 'Dashboard' entry above so it doesn't duplicate.
-  { to: '/clients/pipeline',  label: 'Client Pipeline', icon: Workflow,     roles: ['admin', 'employee'] },
-  { to: '/vault',             label: 'Client Vault', icon: KeyRound,        roles: ['admin', 'employee'] },
-  { to: '/chat',              label: 'Group Chat',   icon: MessageSquare,   roles: ['admin', 'employee'] },
+  { to: '/leaves',            label: 'My Leaves',    icon: CalendarOff,     roles: ['employee', 'sales'] },
+  { to: '/workroom',          label: 'Work Room',    icon: Video,           roles: ['admin', 'employee', 'sales'] },
+  { to: '/team/calendar',     label: 'Team Calendar', icon: Calendar,       roles: ['admin', 'employee', 'sales'] },
+  { to: '/client-schedule',   label: 'Client Schedule', icon: CalendarDays, roles: ['admin', 'employee', 'sales'] },
+  { to: '/clients/pipeline',  label: 'Client Pipeline', icon: Workflow,     roles: ['admin', 'employee', 'sales'] },
+  { to: '/vault',             label: 'Client Vault', icon: KeyRound,        roles: ['admin', 'employee', 'sales'] },
+  { to: '/chat',              label: 'Group Chat',   icon: MessageSquare,   roles: ['admin', 'employee', 'sales'] },
   { to: '/influencers',       label: 'Influencer Sheet', icon: Users,       roles: ['employee'], team: 'influencer' },
+  // Meta Ads — admin sees it always; employees ONLY when their primary
+  // team OR teams[] contains 'meta' / 'ads'. If a dev (like Om) is seeing
+  // it, an admin previously granted them 'meta' or 'ads' as a secondary
+  // team chip — clean it up in Admin → Employees by un-ticking that chip.
+  // 'sales' deliberately excluded — that role no longer manages campaigns.
   { to: '/ads/meta',          label: 'Meta Ads',     icon: BarChart3,       roles: ['admin'] },
-  { to: '/ads/meta',         label: 'Meta Ads',     icon: BarChart3,        roles: ['employee', 'sales'], anyTeam: ['meta', 'ads'] },
+  { to: '/ads/meta',          label: 'Meta Ads',     icon: BarChart3,       roles: ['employee'], anyTeam: ['meta', 'ads'] },
   // Bottom nav
   { to: '/notifications',    label: 'Notifications', icon: Bell },
   { to: '/profile',          label: 'Profile',      icon: User },
@@ -176,18 +172,25 @@ export function AppLayout({ children, requiredRole }: Props) {
     if (location.pathname.startsWith('/chat')) setChatUnread(0);
   }, [location.pathname]);
 
-  const visibleNav = NAV_ITEMS.filter(item => {
-    if (item.roles && !item.roles.includes(role)) return false;
-    if (item.team) {
-      const userTeams = [user?.team, ...((user as any)?.teams || [])].filter(Boolean);
-      if (!userTeams.includes(item.team)) return false;
-    }
-    if (item.anyTeam) {
-      const userTeams = [user?.team, ...((user as any)?.teams || [])].filter(Boolean);
-      if (!item.anyTeam.some(t => userTeams.includes(t))) return false;
-    }
-    return true;
-  });
+  const visibleNav = (() => {
+    const matched = NAV_ITEMS.filter(item => {
+      if (item.roles && !item.roles.includes(role)) return false;
+      if (item.team) {
+        const userTeams = [user?.team, ...((user as any)?.teams || [])].filter(Boolean);
+        if (!userTeams.includes(item.team)) return false;
+      }
+      if (item.anyTeam) {
+        const userTeams = [user?.team, ...((user as any)?.teams || [])].filter(Boolean);
+        if (!item.anyTeam.some(t => userTeams.includes(t))) return false;
+      }
+      return true;
+    });
+    // Dedupe by URL — some pages (e.g. Meta Ads) have two entries so a
+    // user can match via admin role OR team-grant. Without this, an admin
+    // who's also granted the 'meta' team would see 'Meta Ads' twice.
+    const seen = new Set<string>();
+    return matched.filter(i => seen.has(i.to) ? false : (seen.add(i.to), true));
+  })();
 
   const NavLink = ({ item }: { item: NavItem }) => {
     const active = item.to === '/admin'
@@ -245,8 +248,8 @@ export function AppLayout({ children, requiredRole }: Props) {
         {visibleNav.map(item => <NavLink key={item.to} item={item} />)}
       </nav>
 
-      {/* Quick actions — admin + employee only. Smaller, less visual weight. */}
-      {['admin', 'employee'].includes(role) && (
+      {/* Quick actions — meeting shortcuts available from every page */}
+      {['admin', 'employee', 'sales'].includes(role) && (
         <div className="space-y-1 mt-3 mb-1 px-1">
           <p className="text-[9px] uppercase font-semibold tracking-[0.14em] text-muted-foreground/70 px-2 mb-1">Quick actions</p>
           <div className="flex flex-col gap-1">
