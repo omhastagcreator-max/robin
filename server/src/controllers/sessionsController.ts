@@ -304,7 +304,7 @@ export async function getTeamSessionStatus(req: AuthRequest, res: Response): Pro
     const orgId = await getOrgId(req.user!.id);
     const staff = await User.find({
       organizationId: orgId,
-      role: { $in: ['employee', 'sales', 'admin'] },
+      role: { $in: ['employee', 'sales', 'admin', 'workroom'] },
       isActive: true,
     }).select('_id name email role team').lean();
 

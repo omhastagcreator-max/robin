@@ -225,10 +225,11 @@ export async function getAttendance(req: AuthRequest, res: Response): Promise<vo
     const dayEndIstUtc   = new Date(dayStartIstUtc.getTime() + 24 * 3600 * 1000);
     const now = Date.now();
 
-    // Pull every internal staff member.
+    // Pull every internal staff member (includes 'workroom' role — they
+    // can clock in via huddle attendance, so they belong in the report).
     const staff = await User.find({
       organizationId: orgId,
-      role: { $in: ['admin', 'employee', 'sales'] },
+      role: { $in: ['admin', 'employee', 'sales', 'workroom'] },
       isActive: true,
     }).select('_id name email role team avatarUrl').sort({ name: 1 }).lean();
 

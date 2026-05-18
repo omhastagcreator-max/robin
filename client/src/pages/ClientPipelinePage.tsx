@@ -256,7 +256,10 @@ const PIPELINE_COLUMNS: ColumnDef[] = [
     key: 'meta',
     label: 'Meta Work',
     serviceType: 'meta_ads',
-    matches: (wf) => wf.services.some(s => s.serviceType === 'meta_ads' && (s.status === 'in_progress' || s.status === 'pending')),
+    // Anything that's not 'done' on Meta belongs in this column — including
+    // 'blocked' (was previously dropping off the board when meta got stuck
+    // after shopify finished). Now stuck clients stay visible.
+    matches: (wf) => wf.services.some(s => s.serviceType === 'meta_ads' && s.status !== 'done'),
     accent: 'text-blue-700',
   },
   {
@@ -285,6 +288,11 @@ function PipelineKanban({ list, isAdminOrSales, onAdd, onMutated }: {
     for (const col of PIPELINE_COLUMNS) buckets[col.key] = [];
     for (const wf of list) {
       const col = PIPELINE_COLUMNS.find(c => c.matches(wf));
+      // After the meta-matcher fix the only thing that drops here is a
+      // workflow with services=[] (i.e. half-onboarded, no real work yet)
+      // — fine to leave invisible. If a column-less workflow ever shows
+      // up in practice, the OverviewReport's "Active clients" count and
+      // sum will surface the discrepancy.
       if (col) buckets[col.key].push(wf);
     }
     return buckets;

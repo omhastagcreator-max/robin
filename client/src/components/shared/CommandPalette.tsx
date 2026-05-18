@@ -62,7 +62,7 @@ export function CommandPalette() {
         visibleFor: ['admin', 'employee', 'sales'], action: goto('/vault'),
         keywords: 'credentials passwords accounts' },
       { id: 'go-workroom', label: 'Work Room',   hint: 'Huddle & screens',  group: 'go', icon: Video,
-        visibleFor: ['admin', 'employee', 'sales'], action: goto('/workroom'),
+        visibleFor: ['admin', 'employee', 'sales', 'workroom'], action: goto('/workroom'),
         keywords: 'meeting screen share huddle voice mic' },
       { id: 'go-chat', label: 'Group Chat',      hint: 'Team messages',     group: 'go', icon: MessageSquare,
         visibleFor: ['admin', 'employee', 'sales'], action: goto('/chat') },
@@ -94,7 +94,7 @@ export function CommandPalette() {
       { id: 'do-apply-leave', label: 'Apply for leave', hint: 'Pick days and submit', group: 'do', icon: CalendarOff,
         visibleFor: ['employee', 'sales'], action: goto('/leaves') },
       { id: 'do-join-huddle', label: 'Join the huddle', hint: 'Open Work Room and connect', group: 'do', icon: Video,
-        visibleFor: ['admin', 'employee', 'sales'], action: goto('/workroom') },
+        visibleFor: ['admin', 'employee', 'sales', 'workroom'], action: goto('/workroom') },
 
       { id: 'do-start-day', label: 'Log in for the day', hint: 'Start tracking your work hours', group: 'do', icon: Play,
         visibleFor: ['employee', 'sales'],

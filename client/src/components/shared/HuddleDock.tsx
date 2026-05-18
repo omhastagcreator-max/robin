@@ -25,7 +25,10 @@ import { RemoteAudio } from '@/components/shared/RemoteAudio';
  */
 export function HuddleDock() {
   const { user, role } = useAuth();
-  const internal = role === 'admin' || role === 'employee' || role === 'sales';
+  // 'workroom' role is huddle-only — they MUST see the floating dock once
+  // they've joined, otherwise they can't mute/leave without going back to
+  // the WorkRoom page.
+  const internal = role === 'admin' || role === 'employee' || role === 'sales' || role === 'workroom';
   const location = useLocation();
   const onWorkRoom = location.pathname.startsWith('/workroom');
 

@@ -188,13 +188,14 @@ export const createAlert       = (d: Record<string, unknown>)       => api.post(
 // ── Notifications ─────────────────────────────────────────────────────────────
 export const listNotifications    = (params?: Record<string, unknown> & { silent?: boolean }) => {
   // Background polls can pass { silent: true } so a transient 401 / 5xx
-  // doesn't trigger a toast OR boot the user to /login.
-  const silent = params?.silent === true;
-  const { silent: _omit, ...rest } = (params || {}) as any;
-  void _omit;
+  // doesn't trigger a toast OR boot the user to /login. We strip the flag
+  // before sending so it doesn't end up as a URL query param.
+  const isSilent = params?.silent === true;
+  const { silent: _stripped, ...rest } = (params || {}) as any;
+  void _stripped;
   return api.get('/notifications', {
     params: rest,
-    headers: silent ? { 'X-Silent': '1' } : undefined,
+    headers: isSilent ? { 'X-Silent': '1' } : undefined,
   }).then(r => r.data);
 };
 export const readAllNotifications = ()                                  => api.put('/notifications/read-all', {}).then(r => r.data);

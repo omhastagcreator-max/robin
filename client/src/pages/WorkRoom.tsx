@@ -17,7 +17,10 @@ import { HuddleStage } from '@/components/shared/HuddleStage';
  */
 export default function WorkRoom() {
   const { role } = useAuth();
-  const isInternal = role === 'admin' || role === 'employee' || role === 'sales';
+  // Treat workroom-only employees as internal too — they need to see who's
+  // around in the team roster, otherwise the page is just a HuddleStage in
+  // isolation with no context.
+  const isInternal = role === 'admin' || role === 'employee' || role === 'sales' || role === 'workroom';
 
   const presence = useTeamPresence();
 
