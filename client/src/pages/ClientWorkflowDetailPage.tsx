@@ -176,25 +176,25 @@ export default function ClientWorkflowDetailPage() {
           <ArrowLeft className="h-3 w-3" /> Back to pipeline
         </Link>
 
-        <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div className="flex-1 min-w-0">
-              <h1 className="text-2xl font-bold truncate">{wf.clientName || 'Client'}</h1>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1 flex-wrap">
-                {wf.clientPhone && <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{wf.clientPhone}</span>}
-                {wf.clientEmail && <span className="flex items-center gap-1 truncate"><Mail className="h-3 w-3 shrink-0" />{wf.clientEmail}</span>}
-              </div>
+        {/* Client header — no card chrome, lives in page flow. The slim
+            progress bar sits inline with the name + meta. */}
+        <div className="flex items-start justify-between gap-4 flex-wrap pt-1">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-2xl font-bold tracking-tight truncate">{wf.clientName || 'Client'}</h1>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5 flex-wrap">
+              {wf.clientPhone && <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{wf.clientPhone}</span>}
+              {wf.clientEmail && <span className="flex items-center gap-1 truncate"><Mail className="h-3 w-3 shrink-0" />{wf.clientEmail}</span>}
             </div>
-            <div className="min-w-[160px]">
-              <div className="flex items-baseline justify-between gap-2 mb-1">
-                <span className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground">Overall</span>
-                <span className="text-base font-black tabular-nums">{pct}%</span>
-              </div>
-              <div className="h-2 rounded-full bg-muted/30 overflow-hidden">
-                <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
-              </div>
-              <p className="text-[10px] text-muted-foreground mt-1">{doneItems} of {totalItems} steps done</p>
+          </div>
+          <div className="min-w-[180px]">
+            <div className="flex items-baseline justify-between gap-2 mb-1">
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Overall</span>
+              <span className="text-sm font-bold tabular-nums">{pct}%</span>
             </div>
+            <div className="h-1.5 rounded-full bg-muted/40 overflow-hidden">
+              <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1">{doneItems} of {totalItems} steps done</p>
           </div>
         </div>
 

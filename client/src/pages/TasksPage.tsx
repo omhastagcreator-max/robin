@@ -125,23 +125,25 @@ export default function TasksPage() {
   return (
     <AppLayout>
       <div className="max-w-5xl mx-auto space-y-5 page-transition-enter">
-        {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
+        {/* Header — calmer view toggle (no nested bordered pill), single
+            primary action. */}
+        <div className="flex items-end justify-between flex-wrap gap-3 pt-1">
           <div>
-            <h1 className="text-2xl font-bold">My Tasks</h1>
-            <p className="text-sm text-muted-foreground">{tasks.filter(t => t.status !== 'done').length} remaining</p>
+            <h1 className="text-2xl font-bold tracking-tight">My Tasks</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">{tasks.filter(t => t.status !== 'done').length} remaining</p>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex rounded-xl border border-border p-0.5 bg-card">
-              {(['list', 'board'] as const).map(v => (
-                <button key={v} onClick={() => setView(v)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${view === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                  {v === 'list' ? <List className="h-3.5 w-3.5" /> : <CalIcon className="h-3.5 w-3.5" />}
-                </button>
-              ))}
-            </div>
+          <div className="flex items-center gap-1">
+            {(['list', 'board'] as const).map(v => (
+              <button key={v} onClick={() => setView(v)}
+                title={v === 'list' ? 'List view' : 'Board view'}
+                className={`h-8 w-8 rounded-lg flex items-center justify-center transition-colors ${
+                  view === v ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted/60'
+                }`}>
+                {v === 'list' ? <List className="h-3.5 w-3.5" /> : <CalIcon className="h-3.5 w-3.5" />}
+              </button>
+            ))}
             <button onClick={() => setAdding(v => !v)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-medium hover:bg-primary/90 transition-all">
+              className="ml-2 flex items-center gap-1.5 h-8 px-3 bg-primary text-primary-foreground rounded-lg text-xs font-semibold hover:bg-primary/90">
               <Plus className="h-3.5 w-3.5" /> Add Task
             </button>
           </div>

@@ -173,57 +173,32 @@ export function SessionTopBar() {
             </button>
           )}
 
+          {/* Calmer action row — icon-only buttons, no border outline,
+              the tone (amber/red/green) is conveyed by a subtle bg tint
+              that only appears on hover. Was pretty noisy before. */}
           {isActive && (
             <>
-              <button
-                onClick={handleOnCall}
-                className={`h-8 px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-                  isOnCall
-                    ? 'bg-primary/15 text-primary border-primary/40 hover:bg-primary/25'
-                    : 'bg-card text-foreground border-border hover:bg-muted'
-                }`}
-                title={isOnCall ? 'You are marked as on a call — click to clear' : 'Mark yourself on a call (do not disturb)'}
-              >
+              <IconBtn onClick={handleOnCall} active={isOnCall}
+                title={isOnCall ? 'On a call — click to clear' : 'Mark yourself on a call'}>
                 {isOnCall ? <PhoneOff className="h-3.5 w-3.5" /> : <Phone className="h-3.5 w-3.5" />}
-                <span className="hidden sm:inline">{isOnCall ? 'On call' : 'Call'}</span>
-              </button>
-              <button
-                onClick={handleBreak}
-                className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-amber-500/15 text-amber-700 border border-amber-500/30 text-xs font-semibold hover:bg-amber-500/25 transition-colors"
-                title="Take a break"
-              >
+              </IconBtn>
+              <IconBtn onClick={handleBreak} hoverTone="amber" title="Take a break">
                 <Pause className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Break</span>
-              </button>
-              <button
-                onClick={handleEnd}
-                className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-red-500/15 text-red-600 border border-red-500/30 text-xs font-semibold hover:bg-red-500/25 transition-colors"
-                title="Log out for the day"
-              >
+              </IconBtn>
+              <IconBtn onClick={handleEnd} hoverTone="red" title="Log out for the day">
                 <StopCircle className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">End</span>
-              </button>
+              </IconBtn>
             </>
           )}
 
           {isOnBreak && (
             <>
-              <button
-                onClick={handleResume}
-                className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-green-500/15 text-green-700 border border-green-500/30 text-xs font-semibold hover:bg-green-500/25 transition-colors"
-                title="Resume work"
-              >
+              <IconBtn onClick={handleResume} hoverTone="green" title="Resume work">
                 <Play className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Resume</span>
-              </button>
-              <button
-                onClick={handleEnd}
-                className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-red-500/15 text-red-600 border border-red-500/30 text-xs font-semibold hover:bg-red-500/25 transition-colors"
-                title="Log out for the day"
-              >
+              </IconBtn>
+              <IconBtn onClick={handleEnd} hoverTone="red" title="Log out for the day">
                 <StopCircle className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">End</span>
-              </button>
+              </IconBtn>
             </>
           )}
         </div>
@@ -245,6 +220,37 @@ export function SessionTopBar() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * IconBtn — calmer top-bar action button. Just an icon with a tint that
+ * only kicks in on hover, plus a tooltip. Was previously a full
+ * bordered/coloured pill for every state, which made the top bar feel
+ * busy on every single page.
+ */
+function IconBtn({
+  onClick, title, children, active = false, hoverTone,
+}: {
+  onClick: () => void;
+  title: string;
+  children: React.ReactNode;
+  active?: boolean;
+  hoverTone?: 'amber' | 'red' | 'green';
+}) {
+  const hover =
+    hoverTone === 'amber' ? 'hover:bg-amber-500/15 hover:text-amber-700' :
+    hoverTone === 'red'   ? 'hover:bg-red-500/15   hover:text-red-600'   :
+    hoverTone === 'green' ? 'hover:bg-green-500/15 hover:text-green-700' :
+                            'hover:bg-primary/10 hover:text-primary';
+  const tone = active
+    ? 'bg-primary/15 text-primary'
+    : `text-muted-foreground ${hover}`;
+  return (
+    <button onClick={onClick} title={title}
+      className={`h-8 w-8 rounded-lg flex items-center justify-center transition-colors ${tone}`}>
+      {children}
+    </button>
   );
 }
 

@@ -154,38 +154,33 @@ export default function AdminDashboard() {
   return (
     <AppLayout requiredRole="admin">
       <div className="max-w-6xl mx-auto space-y-5 page-transition-enter">
-        {/* Branded hero — consistent with employee/sales/client dashboards */}
-        <div className="relative overflow-hidden rounded-2xl bg-card border border-border p-5 sm:p-6">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-accent to-primary opacity-90" />
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] uppercase tracking-[0.18em] font-semibold text-muted-foreground">
-                {format(new Date(), 'EEEE · dd MMM yyyy')} · Admin
-              </p>
-              <h1 className="mt-1 text-3xl sm:text-4xl font-bold tracking-tight">
-                Hello, <span className="text-primary">{user?.name?.split(' ')[0] || 'Manager'}</span>.
-              </h1>
-              <p className="mt-2 text-sm text-muted-foreground max-w-xl">
-                {(() => {
-                  const parts: string[] = [];
-                  if (presence.active.length > 0)            parts.push(`${presence.active.length} working`);
-                  if (presence.onBreak.length > 0)           parts.push(`${presence.onBreak.length} on break`);
-                  if ((presence.onLeave?.length || 0) > 0)   parts.push(`${presence.onLeave?.length} on leave`);
-                  if (pendingLeaveCount > 0)                 parts.push(`${pendingLeaveCount} leave approval${pendingLeaveCount === 1 ? '' : 's'} waiting`);
-                  return parts.length > 0 ? parts.join(' · ') : 'Quiet morning. Good time to plan the week.';
-                })()}
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="hidden sm:block text-center px-4 py-2 rounded-xl border border-border bg-background">
-                <p className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground leading-none">{format(new Date(), 'MMM')}</p>
-                <p className="text-2xl font-black text-primary leading-none mt-1">{format(new Date(), 'dd')}</p>
-              </div>
-              <HuddleQuickPill />
-              <Link to="/admin/reports" className="hidden sm:flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors">
-                Full report <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
+        {/* Decluttered hero — no card chrome, no gradient stripe, no date
+            tile. The page opens with breathing room. The day badge sits
+            inline as small muted text instead of a separate tile. */}
+        <div className="flex items-end justify-between gap-3 flex-wrap pt-1">
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] uppercase tracking-[0.18em] font-semibold text-muted-foreground">
+              {format(new Date(), 'EEEE · dd MMM yyyy')} · Admin
+            </p>
+            <h1 className="mt-0.5 text-2xl sm:text-3xl font-bold tracking-tight">
+              Hello, <span className="text-primary">{user?.name?.split(' ')[0] || 'Manager'}</span>.
+            </h1>
+            <p className="mt-1 text-xs text-muted-foreground max-w-xl">
+              {(() => {
+                const parts: string[] = [];
+                if (presence.active.length > 0)            parts.push(`${presence.active.length} working`);
+                if (presence.onBreak.length > 0)           parts.push(`${presence.onBreak.length} on break`);
+                if ((presence.onLeave?.length || 0) > 0)   parts.push(`${presence.onLeave?.length} on leave`);
+                if (pendingLeaveCount > 0)                 parts.push(`${pendingLeaveCount} leave approval${pendingLeaveCount === 1 ? '' : 's'} waiting`);
+                return parts.length > 0 ? parts.join(' · ') : 'Quiet morning. Good time to plan the week.';
+              })()}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <HuddleQuickPill />
+            <Link to="/admin/reports" className="hidden sm:flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors">
+              Full report <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
           </div>
         </div>
 

@@ -21,25 +21,29 @@
  * Indian colour signal. Together: Indian agency tooling, considered.
  */
 :root {
+  /* Declutter palette — softer borders, calmer muted greys.
+   * Borders shifted up in lightness so cards stop fighting each other.
+   * Muted background slightly cooler so the page reads as quieter overall.
+   */
   --background:          36 30% 97%;        /* bone cream */
   --foreground:          218 20% 14%;       /* deep charcoal-ink */
   --card:                0 0% 100%;
   --card-foreground:     218 20% 14%;
   --popover:             0 0% 100%;
   --popover-foreground:  218 20% 14%;
-  --border:              35 14% 87%;
-  --input:               35 14% 87%;
+  --border:              35 14% 91%;        /* softer — was 87% */
+  --input:               35 14% 89%;        /* slightly stronger than border for inputs */
   --primary:             178 65% 26%;       /* deep teal — Robin's egg */
   --primary-foreground:  36 30% 98%;
-  --muted:               36 22% 93%;
-  --muted-foreground:    218 8% 40%;
+  --muted:               36 22% 95%;        /* paler — was 93% */
+  --muted-foreground:    218 8% 44%;        /* slightly lighter than before */
   --accent:              38 88% 52%;        /* saffron gold */
   --accent-foreground:   218 20% 14%;
   --ring:                178 65% 26%;
   --destructive:         358 65% 50%;
   --success:             158 50% 32%;
-  --warning:             38 88% 52%;        /* matches accent — one less colour to track */
-  --radius:              0.625rem;          /* slightly less round than default */
+  --warning:             38 88% 52%;
+  --radius:              0.75rem;           /* a touch rounder for a softer feel */
   color-scheme: light;
 }
 
