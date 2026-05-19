@@ -7,7 +7,7 @@ import {
   Bird, LayoutDashboard, ListTodo, Video, Bell, User, LogOut,
   Briefcase, Users, Building2, BarChart2, TrendingUp, Menu, X,
   MessageSquare, Monitor, MonitorOff, KeyRound, CalendarOff, Clock,
-  BarChart3, Calendar, Bug, CalendarDays, Workflow, UserPlus,
+  BarChart3, Calendar, Bug, CalendarDays, Workflow, UserPlus, AlertTriangle,
 } from 'lucide-react';
 import { Avatar } from '@/components/shared/Avatar';
 import { dashboardForRole } from '@/components/ProtectedRoute';
@@ -23,6 +23,7 @@ import { ClientMeetingDock } from '@/components/shared/ClientMeetingDock';
 import { MeetingQuickFab } from '@/components/shared/MeetingQuickFab';
 import { ScheduleMeetingButton } from '@/components/shared/ScheduleMeetingButton';
 import { StartClientMeetingButton } from '@/components/shared/StartClientMeetingButton';
+import { HelpBubble } from '@/components/shared/HelpBubble';
 
 interface NavItem {
   to: string;
@@ -58,6 +59,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/admin/leaves',      label: 'Leave Approvals', icon: CalendarOff,  roles: ['admin'] },
   { to: '/admin/attendance',  label: 'Attendance',   icon: Clock,           roles: ['admin'] },
   { to: '/admin/crash-logs',  label: 'Crash Logs',   icon: Bug,             roles: ['admin'] },
+  { to: '/admin/issues',      label: 'Issues + AI',  icon: AlertTriangle,   roles: ['admin'] },
   // Onboard a workroom teammate — admin always, employees/sales only when
   // admin has flipped canManageWorkroom on their profile. Same nav entry
   // surfaces in both cases via the `requiresFlag` shortcut below.
@@ -440,6 +442,9 @@ function AppLayoutInner({ children, requiredRole }: Props) {
           on the meeting page itself; collapses to a green "Back to meeting"
           pill when a meeting is already in progress. */}
       <MeetingQuickFab />
+      {/* Floating help / issue-report / Ask-Robin bubble — bottom-right on
+          every authenticated page. AI-backed via Gemini server-side. */}
+      <HelpBubble />
     </div>
     </AppLayoutNestedCtx.Provider>
   );

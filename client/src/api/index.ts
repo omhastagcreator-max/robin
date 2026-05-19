@@ -218,6 +218,21 @@ export const adminSetCanManageWorkroom = (id: string, enabled: boolean) =>
 // Create a new role='workroom' teammate. Admin OR canManageWorkroom users.
 export const onboardWorkroomUser = (body: { email: string; name?: string; password?: string }) =>
   api.post('/workroom-onboard', body).then(r => r.data);
+
+// ── Issue reporter + Ask Robin (AI helper) ────────────────────────────
+export const reportIssue = (body: {
+  description: string;
+  screenshotData?: string;
+  context?: Record<string, unknown>;
+}) => api.post('/issues', body).then(r => r.data);
+export const askRobin = (body: { question: string; context?: Record<string, unknown> }) =>
+  api.post('/issues/ask', body).then(r => r.data);
+export const listIssues    = (params?: { status?: string; area?: string; limit?: number }) =>
+  api.get('/issues', { params }).then(r => r.data);
+export const getIssue      = (id: string) => api.get(`/issues/${id}`).then(r => r.data);
+export const updateIssue   = (id: string, body: { status?: string; resolution?: string }) =>
+  api.put(`/issues/${id}`, body).then(r => r.data);
+export const issueClusters = () => api.get('/issues/clusters').then(r => r.data);
 export const adminRemoveUser = (id: string)                              => api.delete(`/admin/users/${id}`).then(r => r.data);
 export const adminEmployeeReport = (employeeId: string, period: 'daily' | 'weekly' | 'monthly' = 'daily') =>
   api.get(`/admin/employees/${employeeId}/report`, { params: { period } }).then(r => r.data);

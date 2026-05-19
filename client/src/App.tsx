@@ -39,6 +39,7 @@ const MeetGuest         = lazy(() => import('@/pages/MeetGuest'));
 const MeetHost          = lazy(() => import('@/pages/MeetHost'));
 const WorkroomHome      = lazy(() => import('@/pages/WorkroomHome'));
 const WorkroomOnboardPage = lazy(() => import('@/pages/WorkroomOnboardPage'));
+const AdminIssues       = lazy(() => import('@/pages/AdminIssues'));
 
 /**
  * BlankRoot — the public root (robin.hastagcreator.com/) renders nothing.
@@ -160,6 +161,7 @@ function AppRoutes() {
           <Route path="/admin/leaves"     element={<ProtectedRoute requiredRole="admin"><E><AdminLeaves /></E></ProtectedRoute>} />
           <Route path="/admin/attendance" element={<ProtectedRoute requiredRole="admin"><E><AdminAttendance /></E></ProtectedRoute>} />
           <Route path="/admin/crash-logs" element={<ProtectedRoute requiredRole="admin"><E><AdminCrashLogs /></E></ProtectedRoute>} />
+          <Route path="/admin/issues"     element={<ProtectedRoute requiredRole="admin"><E><AdminIssues /></E></ProtectedRoute>} />
           <Route path="/client-schedule"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientSchedulePage /></E></ProtectedRoute>} />
           <Route path="/clients/pipeline"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientPipelinePage /></E></ProtectedRoute>} />
           <Route path="/clients/pipeline/:id" element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientWorkflowDetailPage /></E></ProtectedRoute>} />
