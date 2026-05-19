@@ -362,6 +362,22 @@ export default function SalesDashboard() {
           )}
         </button>
 
+        {/* AI score chip — populated automatically on lead create via
+            Gemini. Shows hot/warm/cold + the recommended next action so
+            Rishi sees what to do without opening the lead detail. */}
+        {lead.aiScore && (
+          <div className={`flex items-start gap-1.5 mt-1 px-2 py-1 rounded-md text-[10px] ${
+            lead.aiScore === 'hot'  ? 'bg-rose-500/10 text-rose-700' :
+            lead.aiScore === 'warm' ? 'bg-amber-500/10 text-amber-700' :
+                                       'bg-muted/40 text-muted-foreground'
+          }`}>
+            <span className="font-bold uppercase shrink-0">{lead.aiScore}</span>
+            {lead.aiNextAction && (
+              <span className="line-clamp-2 leading-tight">{lead.aiNextAction}</span>
+            )}
+          </div>
+        )}
+
         {/* Phone — tappable on mobile to call directly. Single tap = action. */}
         {lead.contact && (
           <a

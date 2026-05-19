@@ -206,30 +206,45 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
     const filter: any = { organizationId: orgId };
     const { q, mine } = req.query as Record<string, string>;
 
+    // We compose multiple $or groups via $and to avoid one section
+    // (e.g. search) silently overwriting another (e.g. the "mine" gate).
+    // Previously assigning filter.$or twice meant employees searching by
+    // phone lost their mine-gate and saw the whole org.
+    const andGroups: any[] = [];
+
     // Non-admins/sales are FORCED to their own pipelines (created or
-    // assigned). Without this, an employee could untick "Only mine" in
-    // the UI and see every client in the org — the gate has to be on the
-    // server, not in the React state.
+    // assigned). The gate is on the server so a client-side toggle can't
+    // bypass it.
     const role = req.user!.role;
     if (role !== 'admin' && role !== 'sales') {
-      filter.$or = [
+      andGroups.push({ $or: [
         { 'services.assignedTo': req.user!.id },
         { createdBy: req.user!.id },
-      ];
+      ]});
     } else if (mine === '1') {
       filter['services.assignedTo'] = req.user!.id;
     }
 
     if (q && q.trim()) {
       const trimmed = q.trim();
+      // Match phone forgivingly: strip everything except digits so
+      // "+91 99887-66554" and "9988766554" both match the same stored
+      // phone. Mongo regex on digits only.
       const digits = trimmed.replace(/\D/g, '');
-      filter.$or = [];
-      // Phone search — match last-10-digits or substring
-      if (digits.length >= 4) filter.$or.push({ clientPhone: { $regex: digits, $options: 'i' } });
-      // Name + email partial match
-      filter.$or.push({ clientName:  { $regex: trimmed, $options: 'i' } });
-      filter.$or.push({ clientEmail: { $regex: trimmed, $options: 'i' } });
+      const searchOr: any[] = [];
+      if (digits.length >= 4) {
+        // Strip non-digit chars in the stored value via a regex that
+        // walks through optional separators between each digit. Slower
+        // than a plain regex but actually matches "+91 99887 66554".
+        const looseDigits = digits.split('').join('[^0-9]*');
+        searchOr.push({ clientPhone: { $regex: looseDigits, $options: 'i' } });
+      }
+      searchOr.push({ clientName:  { $regex: trimmed, $options: 'i' } });
+      searchOr.push({ clientEmail: { $regex: trimmed, $options: 'i' } });
+      andGroups.push({ $or: searchOr });
     }
+
+    if (andGroups.length) filter.$and = andGroups;
 
     const list = await ClientWorkflow.find(filter).sort({ updatedAt: -1 }).limit(200).lean();
     res.json(list);
@@ -295,12 +310,28 @@ export async function getWorkflow(req: AuthRequest, res: Response): Promise<void
 }
 
 // ── Tick / untick a checklist item ───────────────────────────────────────
-/** PUT /api/client-workflows/:id/services/:sid/check  { index, done } */
+/**
+ * PUT /api/client-workflows/:id/services/:sid/check  { index, done, comment }
+ *
+ * A comment is REQUIRED on every check / uncheck. Owner ask: "when any
+ * employee checks or unchecks anything in client pipeline they need to add
+ * a comment." The comment lands in the activity log alongside the action
+ * so admin can audit who said what, when.
+ */
 export async function toggleChecklist(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
-    const { index, done } = req.body || {};
+    const { index, done, comment } = req.body || {};
+    const note = String(comment || '').trim();
+    if (note.length < 3) {
+      res.status(400).json({ error: 'Add a short comment (at least 3 characters) explaining the change.' });
+      return;
+    }
+    if (note.length > 600) {
+      res.status(400).json({ error: 'Comment is too long (max 600 characters).' });
+      return;
+    }
     const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
     if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
     const svc = wf.services.id(req.params.sid);
@@ -321,7 +352,8 @@ export async function toggleChecklist(req: AuthRequest, res: Response): Promise<
     recomputeServiceStatuses(wf);
     wf.activity.push({
       actorId: req.user!.id, action: done ? 'item_checked' : 'item_unchecked',
-      serviceType: svc.serviceType, detail: item.text,
+      serviceType: svc.serviceType,
+      detail: `${item.text} — "${note}"`,
     } as any);
     await wf.save();
     res.json(wf);
@@ -329,10 +361,24 @@ export async function toggleChecklist(req: AuthRequest, res: Response): Promise<
 }
 
 // ── Mark a whole service done (and unlock dependents) ───────────────────
+/**
+ * PUT /api/client-workflows/:id/services/:sid/complete  { comment }
+ *
+ * Comment is REQUIRED — same audit-trail rule as toggleChecklist.
+ */
 export async function completeService(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const note = String(req.body?.comment || '').trim();
+    if (note.length < 3) {
+      res.status(400).json({ error: 'Add a short comment explaining what was done before marking the stage complete.' });
+      return;
+    }
+    if (note.length > 600) {
+      res.status(400).json({ error: 'Comment is too long (max 600 characters).' });
+      return;
+    }
     const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
     if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
     const svc = wf.services.id(req.params.sid);
@@ -361,7 +407,8 @@ export async function completeService(req: AuthRequest, res: Response): Promise<
     svc.completedAt = new Date();
     wf.activity.push({
       actorId: req.user!.id, action: 'service_completed',
-      serviceType: svc.serviceType, detail: svc.label,
+      serviceType: svc.serviceType,
+      detail: `${svc.label} — "${note}"`,
     } as any);
     recomputeServiceStatuses(wf);
     await wf.save();

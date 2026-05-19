@@ -36,6 +36,7 @@ import errorLogRoutes     from './routes/errorLogs';
 import integrationsRoutes from './routes/integrations';
 import workroomOnboardRoutes from './routes/workroomOnboard';
 import issuesRoutes        from './routes/issues';
+import aiAutomationRoutes  from './routes/aiAutomation';
 import { startSheetSyncJob } from './jobs/sheetSyncJob';
 import credentialsRoutes  from './routes/credentials';
 import leavesRoutes       from './routes/leaves';
@@ -52,6 +53,7 @@ import clientMeetingsRoutes, { publicClientMeetingsRouter } from './routes/clien
 import { startClientMeetingExpiryJob } from './jobs/clientMeetingExpiry';
 import { startDailyAutoCloseJob } from './jobs/dailyAutoClose';
 import { grantWorkroomManagerPermissions } from './jobs/grantWorkroomManagerPermissions';
+import { startMorningBriefCron } from './jobs/morningBriefCron';
 import { startIdleAutoCloseJob } from './jobs/idleAutoClose';
 
 const app = express();
@@ -421,6 +423,7 @@ app.use('/api/logs',            errorLogRoutes);
 app.use('/api/integrations',    integrationsRoutes);
 app.use('/api/workroom-onboard', workroomOnboardRoutes); // admin OR canManageWorkroom-flagged users
 app.use('/api/issues',          issuesRoutes);            // bug reports + Ask Robin AI helper
+app.use('/api/ai-automation',   aiAutomationRoutes);      // lead scoring, workflow summary, morning brief
 
 // ── 404 + Error handler ───────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
@@ -454,6 +457,10 @@ connectDB().then(() => {
     // his canManageWorkroom toggle. See jobs/grantWorkroomManagerPermissions
     // for the matching rules.
     grantWorkroomManagerPermissions();
+
+    // Daily 8 AM IST morning brief — Gemini-generated executive summary
+    // of yesterday's activity per organization.
+    startMorningBriefCron();
   });
 });
 

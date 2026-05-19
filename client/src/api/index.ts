@@ -140,10 +140,13 @@ export const cwListWorkflows    = (params: { q?: string; mine?: '1' } = {}) =>
 export const cwGetWorkflow      = (id: string) => api.get(`/client-workflows/${id}`).then(r => r.data);
 export const cwCreateWorkflow   = (body: { clientId: string; services: string[] }) =>
   api.post('/client-workflows', body).then(r => r.data);
-export const cwToggleCheck      = (wid: string, sid: string, body: { index: number; done: boolean }) =>
+// A short `comment` is now REQUIRED on every check / uncheck and on
+// completeService — captured for the activity log so admin can audit who
+// said what when changing pipeline state.
+export const cwToggleCheck      = (wid: string, sid: string, body: { index: number; done: boolean; comment: string }) =>
   api.put(`/client-workflows/${wid}/services/${sid}/check`, body).then(r => r.data);
-export const cwCompleteService  = (wid: string, sid: string) =>
-  api.put(`/client-workflows/${wid}/services/${sid}/complete`).then(r => r.data);
+export const cwCompleteService  = (wid: string, sid: string, body: { comment: string }) =>
+  api.put(`/client-workflows/${wid}/services/${sid}/complete`, body).then(r => r.data);
 export const cwReturnService    = (wid: string, body: { targetServiceType: string; reason: string }) =>
   api.put(`/client-workflows/${wid}/return`, body).then(r => r.data);
 export const cwAddNote          = (wid: string, body: { detail: string; serviceType?: string }) =>
@@ -233,6 +236,14 @@ export const getIssue      = (id: string) => api.get(`/issues/${id}`).then(r => 
 export const updateIssue   = (id: string, body: { status?: string; resolution?: string }) =>
   api.put(`/issues/${id}`, body).then(r => r.data);
 export const issueClusters = () => api.get('/issues/clusters').then(r => r.data);
+
+// ── AI Automation (lead scoring, workflow summary, org-wide morning brief)
+// Note: distinct from the existing per-user `aiMorningBrief` (Claude-based,
+// individualised). These call the new Gemini-backed automation routes.
+export const aiRescoreLead          = (id: string) => api.post(`/ai-automation/score-lead/${id}`).then(r => r.data);
+export const aiSummarizeWorkflow    = (id: string) => api.post(`/ai-automation/summarize-workflow/${id}`).then(r => r.data);
+export const aiOrgMorningBrief      = ()           => api.get('/ai-automation/morning-brief').then(r => r.data);
+export const aiRegenerateOrgBrief   = ()           => api.post('/ai-automation/morning-brief', {}).then(r => r.data);
 export const adminRemoveUser = (id: string)                              => api.delete(`/admin/users/${id}`).then(r => r.data);
 export const adminEmployeeReport = (employeeId: string, period: 'daily' | 'weekly' | 'monthly' = 'daily') =>
   api.get(`/admin/employees/${employeeId}/report`, { params: { period } }).then(r => r.data);

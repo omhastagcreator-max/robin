@@ -35,6 +35,41 @@ export async function createLead(req: AuthRequest, res: Response): Promise<void>
     const body: Record<string, any> = {};
     for (const k of allowed) if (req.body[k] !== undefined) body[k] = req.body[k];
     const lead = await Lead.create({ ...body, organizationId: orgId, assignedTo: req.user!.id });
+
+    // Fire-and-forget AI scoring so the kanban shows hot/warm/cold + a
+    // next-action suggestion within seconds of lead creation. We deliberately
+    // don't `await` this — the create response goes back fast, and the score
+    // populates shortly after via a background save.
+    (async () => {
+      try {
+        const { scoreLead } = await import('../services/aiTriage');
+        const noteText = Array.isArray((lead as any).notes) && (lead as any).notes.length
+          ? (lead as any).notes.map((n: any) => n?.content || '').join('\n')
+          : '';
+        const ai = await scoreLead({
+          name:           (lead as any).name,
+          email:          (lead as any).email,
+          phone:          (lead as any).contact,
+          source:         (lead as any).source,
+          stage:          (lead as any).stage,
+          estimatedValue: (lead as any).estimatedValue,
+          notes:          noteText,
+          createdAt:      (lead as any).createdAt,
+        });
+        if (ai.aiUsed) {
+          await Lead.findByIdAndUpdate(lead._id, {
+            aiScore:      ai.score,
+            aiReason:     ai.reason,
+            aiNextAction: ai.nextAction,
+            aiScoredAt:   new Date(),
+          });
+        }
+      } catch (err) {
+        // Non-fatal — lead is already saved. Just log.
+        console.error('[ai-score-on-create] failed:', (err as Error).message);
+      }
+    })();
+
     res.status(201).json(lead);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }

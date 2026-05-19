@@ -66,6 +66,16 @@ const LeadSchema = new Schema({
   rawData:      { type: Schema.Types.Mixed },
   // Where this lead came from — useful for filtering "show me only Meta leads".
   importedFrom: { type: String, enum: ['manual', 'google-sheet', 'meta-leadgen', 'csv'], default: 'manual' },
+
+  // ── AI lead scoring (Gemini-backed) ───────────────────────────────────
+  // Populated automatically on create + on demand via /api/ai/score-lead.
+  // The sales kanban renders the score as a coloured chip and uses
+  // `aiNextAction` as the row's primary suggestion. Stale-but-present is
+  // fine — UI shows scoredAt so the user knows freshness.
+  aiScore:      { type: String, enum: ['hot', 'warm', 'cold', ''], default: '' },
+  aiReason:     { type: String, default: '' },
+  aiNextAction: { type: String, default: '' },
+  aiScoredAt:   { type: Date, default: null },
 }, { timestamps: true });
 
 // Keep status in sync with stage

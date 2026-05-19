@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
-import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2, X, Coffee, CalendarOff, ClipboardCheck, KeyRound, ListTodo, Pin, MoreVertical, Trash2, VolumeX, Calendar } from 'lucide-react';
+import { BarChart2, Users, Briefcase, CheckCircle2, AlertTriangle, Clock, TrendingUp, ArrowRight, Activity, Monitor, MonitorOff, Video, Loader2, X, Coffee, CalendarOff, ClipboardCheck, KeyRound, ListTodo, Pin, MoreVertical, Trash2, VolumeX, Calendar, Sparkles, RefreshCw } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSocket } from '@/hooks/useSocket';
@@ -218,6 +218,11 @@ export default function AdminDashboard() {
             </Link>
           </div>
         </div>
+
+        {/* AI morning brief — generated at 08:00 IST every day by Gemini.
+            Cron-fed; admin can also regenerate manually. Card hides itself
+            if there's no brief yet so we don't show an empty placeholder. */}
+        <MorningBriefCard />
 
         {/* Today's meetings — hidden when admin has no meetings */}
         <TodayMeetingsStrip />
@@ -619,5 +624,78 @@ export default function AdminDashboard() {
         </div>
       )}
     </AppLayout>
+  );
+}
+
+/**
+ * MorningBriefCard — small hero card just below the welcome line that
+ * shows Gemini's daily executive summary. Has a "Regenerate" button so
+ * admin can pull a fresh brief on demand (useful after a flurry of new
+ * leads / closed deals later in the day).
+ */
+function MorningBriefCard() {
+  const [brief, setBrief] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [regenerating, setRegenerating] = useState(false);
+
+  const load = async () => {
+    try {
+      const r = await api.aiOrgMorningBrief();
+      setBrief(r);
+    } catch { /* swallow — card hides itself when no data */ }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const regenerate = async () => {
+    setRegenerating(true);
+    try {
+      const r = await api.aiRegenerateOrgBrief();
+      setBrief(r);
+      toast.success('Brief refreshed');
+    } catch { /* axios interceptor */ }
+    finally { setRegenerating(false); }
+  };
+
+  if (loading) return null;
+  if (!brief && !loading) {
+    // Empty state — first-time / no data yet. Give the admin a hint how to wake it up.
+    return (
+      <div className="rounded-2xl border border-dashed border-border bg-card p-4 flex items-center gap-3 flex-wrap">
+        <Sparkles className="h-4 w-4 text-primary" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold">AI morning brief</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            A summary of yesterday's activity will appear here every morning at 8 AM IST.
+            Click below to generate today's brief now.
+          </p>
+        </div>
+        <button onClick={regenerate} disabled={regenerating}
+          className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 disabled:opacity-50">
+          {regenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          Generate now
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-primary/20 bg-primary/[0.04] p-4 space-y-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Sparkles className="h-4 w-4 text-primary" />
+        <p className="text-[10px] uppercase tracking-[0.14em] font-semibold text-primary/80">Morning brief</p>
+        <span className="text-[10px] text-muted-foreground ml-1">{brief.istDate}</span>
+        {brief.aiUsed === false && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">fallback (no AI key)</span>
+        )}
+        <button onClick={regenerate} disabled={regenerating}
+          className="ml-auto inline-flex items-center gap-1 text-[11px] text-primary hover:text-primary/80">
+          {regenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+          {regenerating ? 'Refreshing' : 'Refresh'}
+        </button>
+      </div>
+      <p className="text-sm whitespace-pre-wrap leading-relaxed text-foreground">{brief.summary || '—'}</p>
+    </div>
   );
 }

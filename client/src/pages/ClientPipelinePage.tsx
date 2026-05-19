@@ -455,10 +455,17 @@ function ClientCard({ wf, highlightServiceType, onMutated }: {
 
   const markDone = async () => {
     if (!relevant?._id || busy) return;
+    // Required comment — owner ask: any pipeline action must carry a note
+    // so admin can audit who said what. We use a window.prompt here to
+    // keep the change small; the full per-card comment modal lives on
+    // the workflow detail page.
+    const note = window.prompt(`Add a short note before marking "${relevant.label || 'this service'}" done (visible to admin):`, '');
+    if (note === null) return;                                 // user cancelled
+    if (note.trim().length < 3) { toast.error('Please write a few words.'); return; }
     setBusy(true);
     setMenuOpen(false);
     try {
-      await api.cwCompleteService(wf._id, relevant._id);
+      await api.cwCompleteService(wf._id, relevant._id, { comment: note.trim() });
       toast.success(`${relevant.label || 'Service'} marked done`);
       onMutated();
     } catch { /* axios interceptor */ }
