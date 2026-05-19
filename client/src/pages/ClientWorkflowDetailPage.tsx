@@ -7,6 +7,7 @@ import {
   Loader2, MessageSquare, Send, RotateCcw, Phone, Mail,
   Lock, Sparkles,
 } from 'lucide-react';
+import { CommentRequiredModal } from '@/components/shared/CommentRequiredModal';
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
 import * as api from '@/api';
@@ -77,6 +78,21 @@ export default function ClientWorkflowDetailPage() {
   const [activeSvc, setActiveSvc] = useState<string>(''); // service _id
   const [note, setNote]   = useState('');
   const [busy, setBusy]   = useState(false);
+  // CRITICAL: every useState/useEffect/useMemo for this component MUST be
+  // declared HERE — above the early returns for `loading` / `!wf` below.
+  // Adding hooks after an early return is a "conditional hook" and triggers
+  // React error #310 ("Rendered more hooks than during the previous render")
+  // the moment the component mounts with one branch and re-renders with the
+  // other. Hard lesson learned.
+  const [pendingAction, setPendingAction] = useState<null | {
+    kind: 'tick' | 'untick' | 'complete';
+    svcId: string;
+    serviceLabel: string;
+    index?: number;
+    itemText?: string;
+  }>(null);
+  const [aiSummary, setAiSummary] = useState<{ text: string; aiUsed: boolean } | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
   // Admin reassign dropdown — list of teammates loaded once on mount.
   const [teammates, setTeammates] = useState<Array<{ _id: string; name?: string; email: string }>>([]);
   useEffect(() => {
@@ -122,38 +138,40 @@ export default function ClientWorkflowDetailPage() {
 
   // ── Checklist actions ────────────────────────────────────────────────
   // Every action requires a short comment that lands in the activity log
-  // for admin audit. We use window.prompt for minimum-friction capture;
-  // the comment is part of the request body and is validated server-side.
-  const toggleItem = async (svcId: string, index: number, done: boolean) => {
-    if (!wf) return;
-    const verb = done ? 'tick' : 'untick';
-    const note = window.prompt(`Add a quick note for this ${verb}:`, '');
-    if (note === null) return;
-    if (note.trim().length < 3) { toast.error('Please write a few words.'); return; }
-    setBusy(true);
-    try {
-      const updated = await api.cwToggleCheck(wf._id, svcId, { index, done, comment: note.trim() });
-      setWf(updated);
-    } catch { /* interceptor toasts */ }
-    finally { setBusy(false); }
+  // for admin audit. We capture the comment via a proper styled modal
+  // (CommentRequiredModal) — was window.prompt, replaced because Robin's
+  // own audit trail deserves something better than a browser dialog.
+  // (`pendingAction` state declared at the top of the component, above
+  // the loading-early-returns, to keep the hooks call order stable.)
+  const toggleItem = (svcId: string, index: number, done: boolean, itemText: string, serviceLabel: string) => {
+    setPendingAction({ kind: done ? 'tick' : 'untick', svcId, index, itemText, serviceLabel });
   };
-  const completeService = async (svcId: string) => {
-    if (!wf) return;
-    const note = window.prompt('Add a comment explaining what was completed (visible to admin):', '');
-    if (note === null) return;
-    if (note.trim().length < 3) { toast.error('Please write a few words.'); return; }
+  const completeService = (svcId: string, serviceLabel: string) => {
+    setPendingAction({ kind: 'complete', svcId, serviceLabel });
+  };
+
+  const submitPending = async (comment: string) => {
+    if (!wf || !pendingAction) return;
     setBusy(true);
     try {
-      const updated = await api.cwCompleteService(wf._id, svcId, { comment: note.trim() });
-      setWf(updated);
-      toast.success('Service completed');
-    } catch { /* interceptor */ }
+      if (pendingAction.kind === 'complete') {
+        const updated = await api.cwCompleteService(wf._id, pendingAction.svcId, { comment });
+        setWf(updated);
+        toast.success('Service completed');
+      } else {
+        const done = pendingAction.kind === 'tick';
+        const updated = await api.cwToggleCheck(wf._id, pendingAction.svcId, {
+          index: pendingAction.index!, done, comment,
+        });
+        setWf(updated);
+      }
+    } catch { /* axios interceptor */ }
     finally { setBusy(false); }
   };
 
   // ── AI: "Where is this client?" summary ─────────────────────────────
-  const [aiSummary, setAiSummary] = useState<{ text: string; aiUsed: boolean } | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
+  // (`aiSummary` and `aiLoading` state declared at the top of the
+  // component above the early-returns — same hooks-order reason.)
   const generateAiSummary = async () => {
     if (!wf || aiLoading) return;
     setAiLoading(true);
@@ -310,7 +328,7 @@ export default function ClientWorkflowDetailPage() {
                 )}
               </div>
               {canEditActive && allItemsDone && active.status !== 'done' && (
-                <button onClick={() => completeService(active._id)} disabled={busy}
+                <button onClick={() => completeService(active._id, active.label)} disabled={busy}
                   className="h-9 px-3 flex items-center gap-1.5 rounded-lg bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600 disabled:opacity-50">
                   <CheckCircle2 className="h-4 w-4" /> Mark service done
                 </button>
@@ -330,7 +348,7 @@ export default function ClientWorkflowDetailPage() {
                     }`}>
                     <input type="checkbox" checked={c.done}
                       disabled={!canEditActive || active.status === 'blocked' || busy}
-                      onChange={e => toggleItem(active._id, i, e.target.checked)}
+                      onChange={e => toggleItem(active._id, i, e.target.checked, c.text, active.label)}
                       className="mt-0.5 h-[18px] w-[18px] accent-primary shrink-0 cursor-pointer" />
                     <div className="flex-1 min-w-0">
                       <p className={`text-sm leading-snug ${c.done ? 'line-through text-muted-foreground' : ''}`}>{c.text}</p>
@@ -410,6 +428,34 @@ export default function ClientWorkflowDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Comment-required modal — replaces the old window.prompt() for
+          every pipeline mutation (tick / untick / mark service done). */}
+      {pendingAction && (
+        <CommentRequiredModal
+          title={
+            pendingAction.kind === 'complete'
+              ? `Mark "${pendingAction.serviceLabel}" complete`
+              : pendingAction.kind === 'tick'
+              ? `Tick: ${pendingAction.itemText}`
+              : `Untick: ${pendingAction.itemText}`
+          }
+          description="A short note keeps the audit log honest. Cmd-Enter to save."
+          placeholder={
+            pendingAction.kind === 'complete'
+              ? 'e.g. Shopify store live, products imported, payments tested.'
+              : 'What did you finish?'
+          }
+          primaryLabel={
+            pendingAction.kind === 'complete' ? 'Mark complete' :
+            pendingAction.kind === 'tick'     ? 'Tick' :
+                                                'Untick'
+          }
+          tone={pendingAction.kind === 'untick' ? 'danger' : pendingAction.kind === 'complete' ? 'success' : 'primary'}
+          onSubmit={submitPending}
+          onClose={() => setPendingAction(null)}
+        />
+      )}
     </AppLayout>
   );
 }

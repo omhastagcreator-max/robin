@@ -10,21 +10,18 @@
   ],
   "headers": [
     {
-      "//": "Hashed asset bundles are content-addressed; cache them forever.",
       "source": "/assets/(.*)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
       ]
     },
     {
-      "//": "Static files at the root (favicon, robots, etc.) are content-stable but small — long cache with revalidation.",
       "source": "/(.*\\.(?:png|jpg|jpeg|svg|webp|ico|woff2|woff))",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=604800, must-revalidate" }
       ]
     },
     {
-      "//": "index.html MUST never be cached by anything — even one stale copy out there means the user's browser will request asset hashes that no longer exist, producing the blank-page bug.",
       "source": "/",
       "headers": [
         { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate, proxy-revalidate" },
@@ -33,7 +30,6 @@
       ]
     },
     {
-      "//": "Same no-store rule for any non-asset, non-static path (every SPA route falls back to index.html).",
       "source": "/((?!assets/).*)",
       "headers": [
         { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate, proxy-revalidate" }
