@@ -347,6 +347,28 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
   // synchronously inside the click handler so the browser sees a valid user
   // activation. (Open later in a useEffect → "Transient activation required".)
   const join = useCallback(() => {
+    // ── Safari mic-permission prime ─────────────────────────────────────
+    // Safari ties the mic permission prompt to the user-activation token of
+    // the originating click. By the time joinMeeting() awaits the JWT,
+    // then awaits room.connect(), then asks LiveKit to publish audio, the
+    // activation has expired and Safari silently drops the prompt → no
+    // popup, no error, Janvi never gets in. Chrome / Firefox are lenient
+    // and still show the prompt; Safari is strict.
+    //
+    // Calling getUserMedia synchronously in the click handler pops the
+    // permission UI immediately. We stop the resulting tracks right away
+    // — LiveKit re-acquires the mic later and reuses the now-granted
+    // permission. On non-Safari browsers this is harmless; on Safari it
+    // is the difference between "join works" and "nothing happens".
+    try {
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+        navigator.mediaDevices
+          .getUserMedia({ audio: true })
+          .then(stream => { stream.getTracks().forEach(t => t.stop()); })
+          .catch(() => { /* user denied / no mic — LiveKit will surface a clearer error */ });
+      }
+    } catch { /* unsupported (very old Safari, in-app webview, etc.) */ }
+
     setMode(m => (m === 'idle' ? 'joining' : m));
     if (pipAutoEnabled && pipSupported && !pipWindowRef.current) {
       // Fire-and-forget; the click activation flows into requestWindow.
