@@ -30,6 +30,22 @@ function getSocket(userId: string): Socket | null {
 // ── Sender (Employee broadcasting their screen) ──────────────────────────────
 export function useWebRTCSender(userId: string) {
   const [isSharing, setIsSharing] = useState(false);
+  // "Brute-force keep alive" — once the user has consciously started a
+  // share, this stays true until they explicitly stop. If sharing dies
+  // for ANY reason other than their click (OS sleep, Chrome Stop pill,
+  // tab discard, etc.), the UI keeps showing the "Resume sharing" pill
+  // and the next click anywhere on the page is treated as a retry
+  // gesture for getDisplayMedia. Persisted in localStorage so a reload
+  // doesn't lose the intent.
+  const PERSIST_KEY = `robin.screenShare.persist.${userId}`;
+  const [persistentIntent, setPersistentIntentState] = useState<boolean>(() => {
+    try { return localStorage.getItem(PERSIST_KEY) === '1'; } catch { return false; }
+  });
+  const setPersistentIntent = useCallback((on: boolean) => {
+    setPersistentIntentState(on);
+    try { on ? localStorage.setItem(PERSIST_KEY, '1') : localStorage.removeItem(PERSIST_KEY); }
+    catch { /* private mode */ }
+  }, [PERSIST_KEY]);
   // Sender keeps one PC per admin watching, so multiple admins can view at once.
   const pcMap = useRef<Map<string, RTCPeerConnection>>(new Map());
   const streamRef = useRef<MediaStream | null>(null);
@@ -70,6 +86,9 @@ export function useWebRTCSender(userId: string) {
     if (stoppingRef.current) return;
     stoppingRef.current = true;
     manualStopRef.current = true;
+    // User clicked stop on PURPOSE → clear the persistent-intent flag so
+    // the resume banner / click-armed retry don't trigger.
+    setPersistentIntent(false);
     console.log('[screen-share] stopSharing called');
     try {
       // Clear watchdog before tearing down tracks so it doesn't fire
@@ -223,15 +242,37 @@ export function useWebRTCSender(userId: string) {
           wasManual, readyState: track.readyState, muted: track.muted,
         });
         document.removeEventListener('visibilitychange', onVis);
-        stopSharing();
-        if (!wasManual) {
-          toast('Screen sharing stopped', {
-            description: 'Most common Mac cause: display went to sleep, the captured window was closed, or Chrome\'s Stop pill was clicked.',
+        // Note: do NOT call stopSharing here when wasManual=false, because
+        // stopSharing clears persistentIntent. Instead, just tear down the
+        // stream + PCs but leave the intent so the resume banner / click-
+        // armed retry kick in immediately.
+        if (wasManual) {
+          stopSharing();
+        } else {
+          // Non-manual end (OS sleep, Chrome Stop pill, tab discard, etc.) —
+          // tear down WITHOUT killing the intent.
+          if (watchdogRef.current) { clearInterval(watchdogRef.current); watchdogRef.current = null; }
+          if (wakeLockRef.current) {
+            try { wakeLockRef.current.release(); } catch { /* ignore */ }
+            wakeLockRef.current = null;
+          }
+          streamRef.current?.getTracks().forEach(t => { t.onended = null; try { t.stop(); } catch {} });
+          streamRef.current = null;
+          stopAllPCs();
+          setIsSharing(false);
+          api.updateScreenStatus({ status: 'inactive' }).catch(() => {});
+          socketRef.current?.emit('screen:stop', { userId });
+          // Loud sticky toast — auto-resume happens via click-armed retry
+          // (any click on the page within the next 60s re-prompts the
+          // browser picker). See the resumeArmedRef effect below.
+          toast.error('Screen sharing stopped — click anywhere to resume', {
+            description: 'Common cause: display sleep, Chrome\'s Stop pill, or the source window closed. The next click anywhere on Robin will re-pop the picker.',
             action: {
-              label: 'Share again',
+              label: 'Resume now',
               onClick: () => { startSharingRef.current?.(); },
             },
-            duration: 10000,
+            duration: Infinity,
+            id: 'screen-share-resume',                       // single toast at a time
           });
         }
       };
@@ -256,6 +297,7 @@ export function useWebRTCSender(userId: string) {
       }, 2000);
 
       setIsSharing(true);
+      setPersistentIntent(true);                   // user wants this on; keep it on
       try { await api.updateScreenStatus({ status: 'active', startedAt: new Date().toISOString() }); } catch { /* ignore */ }
       socketRef.current?.emit('screen:start', { userId });
     } catch (err: any) {
@@ -278,7 +320,36 @@ export function useWebRTCSender(userId: string) {
   const startSharingRef = useRef(startSharing);
   useEffect(() => { startSharingRef.current = startSharing; }, [startSharing]);
 
-  return { isSharing, startSharing, stopSharing };
+  // ── Click-armed auto-resume ─────────────────────────────────────────
+  // When persistentIntent is true but we're NOT sharing, listen for ANY
+  // pointerdown anywhere on the document. That click counts as a fresh
+  // user activation for getDisplayMedia, so we use it to silently kick
+  // off startSharing — the picker pops, the user picks the source, share
+  // resumes. Browsers won't let us bypass the picker (security), but
+  // we can make sure every click is a retry opportunity.
+  useEffect(() => {
+    if (!persistentIntent || isSharing) return;
+    // Suppress retries for 10s after manual stop / page load to avoid an
+    // immediate auto-re-prompt the user didn't expect.
+    let armedAt = Date.now() + 1500;
+    let retrying = false;
+    const onClick = async () => {
+      if (Date.now() < armedAt || retrying) return;
+      // Ignore clicks on the resume toast / banner — those have their own
+      // onClick handlers already. We're catching "ambient" clicks.
+      retrying = true;
+      try { await startSharingRef.current?.(); }
+      catch { /* user dismissed picker; we'll try again on next click */ }
+      // Re-arm with a short cooldown so a double-click doesn't double-fire.
+      armedAt = Date.now() + 2000;
+      // Allow another retry attempt next time isSharing is still false.
+      setTimeout(() => { retrying = false; }, 2000);
+    };
+    document.addEventListener('pointerdown', onClick, { capture: false });
+    return () => document.removeEventListener('pointerdown', onClick);
+  }, [persistentIntent, isSharing]);
+
+  return { isSharing, startSharing, stopSharing, persistentIntent, setPersistentIntent };
 }
 
 // ── Receiver (Admin or teammate watching someone's screen) ───────────────────

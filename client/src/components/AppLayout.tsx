@@ -19,6 +19,7 @@ import { CommandPalette } from '@/components/shared/CommandPalette';
 import { PresenceStrip } from '@/components/shared/PresenceStrip';
 import { SessionTopBar } from '@/components/shared/SessionTopBar';
 import { ScreenShareReminder } from '@/components/shared/ScreenShareReminder';
+import { ScreenShareResumeBanner } from '@/components/shared/ScreenShareResumeBanner';
 import { ClientMeetingDock } from '@/components/shared/ClientMeetingDock';
 import { MeetingQuickFab } from '@/components/shared/MeetingQuickFab';
 import { ScheduleMeetingButton } from '@/components/shared/ScheduleMeetingButton';
@@ -417,6 +418,9 @@ function AppLayoutInner({ children, requiredRole }: Props) {
             clock, not on break, and not currently sharing. employee/sales
             roles only (admins/clients aren't expected to share). */}
         <ScreenShareReminder />
+        {/* Sticky red banner when sharing was on but the browser killed
+            it — pairs with the click-armed auto-resume in useWebRTC. */}
+        <ScreenShareResumeBanner />
 
         {isSharing && (
           <div className="bg-green-500/10 border-b border-green-500/20 px-4 py-2 flex items-center justify-between sticky top-0 z-20 w-full animate-in slide-in-from-top-4">

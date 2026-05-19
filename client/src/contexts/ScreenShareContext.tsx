@@ -6,6 +6,10 @@ interface ScreenShareContextValue {
   isSharing: boolean;
   startSharing: () => Promise<void>;
   stopSharing: () => Promise<void>;
+  /** True when the user has consciously turned sharing on; only the user
+   *  clicking Stop clears it. Drives the sticky "Resume sharing" banner. */
+  persistentIntent: boolean;
+  setPersistentIntent: (on: boolean) => void;
 }
 
 const ScreenShareContext = createContext<ScreenShareContextValue | null>(null);
@@ -13,10 +17,10 @@ const ScreenShareContext = createContext<ScreenShareContextValue | null>(null);
 export function ScreenShareProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   // We invoke the sender hook globally so the stream and socket persist across routing
-  const { isSharing, startSharing, stopSharing } = useWebRTCSender(user?.id || '');
+  const { isSharing, startSharing, stopSharing, persistentIntent, setPersistentIntent } = useWebRTCSender(user?.id || '');
 
   return (
-    <ScreenShareContext.Provider value={{ isSharing, startSharing, stopSharing }}>
+    <ScreenShareContext.Provider value={{ isSharing, startSharing, stopSharing, persistentIntent, setPersistentIntent }}>
       {children}
     </ScreenShareContext.Provider>
   );
