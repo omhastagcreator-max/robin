@@ -40,8 +40,19 @@ export function getSharedSocket(user: {
     //   - reconnection: yes, infinitely (don't give up if user is on a train)
     //   - reconnectionDelay 500ms → reconnectionDelayMax 30s with jitter
     //   - timeout 20s before giving up on a single connection attempt
+    // Audit fix CRIT-1: server-side socket auth now requires a JWT — we
+    // send it in `auth.token` (the recommended way) and ALSO in the
+    // `token` query param so older clients still in flight during deploy
+    // keep working until they refresh. The userId/userName/userRole
+    // query params remain for legacy debug logs but are NOT trusted by
+    // the server anymore.
+    const token = (() => {
+      try { return localStorage.getItem('robin_token') || ''; } catch { return ''; }
+    })();
     _socket = io(SOCKET_URL, {
+      auth: { token },
       query: {
+        token,
         userId:   uid,
         userName: user.name || user.email || 'Unknown',
         userRole: user.role || 'employee',
@@ -50,12 +61,28 @@ export function getSharedSocket(user: {
       withCredentials: true,
       reconnection:         true,
       reconnectionAttempts: Infinity,
-      reconnectionDelay:    500,
-      reconnectionDelayMax: 30_000,
-      randomizationFactor:  0.5,
+      // Wider jitter (1.0 = ±100%) spreads reconnects after a Render
+      // cold-start so the API isn't hit by a thundering herd. Audit
+      // finding REAL-4.
+      reconnectionDelay:    1000,
+      reconnectionDelayMax: 60_000,
+      randomizationFactor:  1.0,
       timeout:              20_000,
     });
     _socketUserId = uid;
+
+    // Audit finding REAL-8: the JWT is read ONCE at socket-create time.
+    // If the AuthContext refreshes the token (sliding-refresh window)
+    // and the socket then reconnects, it'd reuse the stale token and
+    // silently fail. On every reconnect attempt, re-read the fresh
+    // token from localStorage and update the auth payload.
+    _socket.io.on('reconnect_attempt', () => {
+      try {
+        const fresh = localStorage.getItem('robin_token') || '';
+        // socket.auth is a writable object on the socket instance.
+        (_socket as any).auth = { token: fresh };
+      } catch { /* localStorage unavailable — let it fail with stale token */ }
+    });
   }
   return _socket;
 }

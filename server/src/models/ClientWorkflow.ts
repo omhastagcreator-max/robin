@@ -75,7 +75,77 @@ const ClientWorkflowSchema = new Schema({
   },
 
   // Full ordered activity log — append-only.
+  // LEGACY: kept as a temporary backstop until the WorkflowActivity
+  // collection (Pipeline 2.0) is fully backfilled. New writes go to BOTH
+  // here AND the collection during the transition window. A follow-up
+  // migration will drop this array once the collection is canonical.
   activity:       { type: [ActivitySchema], default: [] },
+
+  // ── Pipeline 2.0 health & ETA system (all default-safe; non-breaking).
+  // Auto-computed by jobs/healthInference + the workflowActions wrapper.
+  // The UI reads `health` + `healthReason` to render the prominent status
+  // pill on every project card.
+  health: {
+    type: String,
+    enum: [
+      'healthy', 'at_risk', 'delayed', 'blocked',
+      'waiting_client', 'waiting_internal', 'revision',
+      'final_qa', 'ready_to_deliver',
+    ],
+    default: 'healthy',
+    index: true,
+  },
+  healthReason:     { type: String, default: '' },
+  healthComputedAt: { type: Date, default: null },
+
+  // Overall project ETA. Set by sales at handoff, refined by team leads,
+  // re-predicted by AI on demand.
+  eta:            { type: Date, default: null },
+  etaConfidence:  { type: String, enum: ['high', 'medium', 'low', ''], default: '' },
+  etaHistory:     { type: [{
+    at: Date, value: Date, by: { type: Types.ObjectId, ref: 'User' }, reason: String,
+  }], default: [] },
+
+  // Denormalized rollup of the latest activity entry — refreshed by the
+  // action wrapper on every mutation so the list endpoint doesn't need
+  // to join against WorkflowActivity. Massively cheaper for the kanban /
+  // table list views.
+  lastActivityAt:      { type: Date, default: null, index: true },
+  lastActivitySummary: { type: String, default: '' },
+  lastActorId:         { type: Types.ObjectId, ref: 'User', default: null },
+  daysInactive:        { type: Number, default: 0 },
+
+  // Ownership at the project level (per-service `assignedTo` still lives
+  // inside the services[] subdocs). `currentOwnerTeam` is the team that
+  // currently owns forward motion; `nextActionOwnerId` is the specific
+  // person waited on for the next move.
+  currentOwnerId:    { type: Types.ObjectId, ref: 'User', default: null },
+  currentOwnerTeam:  {
+    type: String,
+    enum: ['sales', 'development', 'meta', 'influencer', 'qa', ''],
+    default: '',
+  },
+  nextActionOwnerId: { type: Types.ObjectId, ref: 'User', default: null },
+
+  // Blocker structured fields — replaces the old free-text returnedReason.
+  blockedSince:  { type: Date, default: null },
+  blockerReason: { type: String, default: '' },
+  blockerOwner:  { type: Types.ObjectId, ref: 'User', default: null },
+  blockerType: {
+    type: String,
+    enum: ['waiting_client_input', 'waiting_internal_approval', 'dependency', 'technical', 'budget', ''],
+    default: '',
+  },
+
+  // AI-generated client-facing paragraph. Managers click "Generate client
+  // update" → Gemini produces this text → manager pastes verbatim to the
+  // client. Cached so repeated reads don't re-bill Gemini.
+  clientSummary:           { type: String, default: '' },
+  clientSummaryUpdatedAt:  { type: Date,   default: null },
+
+  // Priority + tags — for filtering and prioritization in the table view.
+  priority: { type: String, enum: ['low', 'medium', 'high', 'urgent'], default: 'medium' },
+  tags:     { type: [String], default: [] },
 
   createdBy:      { type: String, required: true },
 }, { timestamps: true });
@@ -84,6 +154,10 @@ const ClientWorkflowSchema = new Schema({
 ClientWorkflowSchema.index({ organizationId: 1, clientId: 1 }, { unique: true });
 // Phone search hits this index hard — used by the universal search bar.
 ClientWorkflowSchema.index({ organizationId: 1, clientPhone: 1 });
+// Pipeline 2.0 — table-view filtering by health / team / inactivity.
+ClientWorkflowSchema.index({ organizationId: 1, health: 1, lastActivityAt: -1 });
+ClientWorkflowSchema.index({ organizationId: 1, currentOwnerTeam: 1, lastActivityAt: -1 });
+ClientWorkflowSchema.index({ organizationId: 1, eta: 1 });
 
 /**
  * Cap activity[] at the last 500 entries on every save so a chatty

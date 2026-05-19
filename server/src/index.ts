@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import mongoSanitize from 'express-mongo-sanitize';
+import jwt from 'jsonwebtoken';
 import { createServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
 import { connectDB } from './config/db';
@@ -84,7 +85,19 @@ const corsOrigin = (origin: string | undefined, cb: (e: Error | null, allow?: bo
 app.set('trust proxy', 1);
 
 app.use(cors({ origin: corsOrigin, credentials: true }));
-app.use(express.json({ limit: '50mb' }));
+
+// Audit finding CRIT-2: a 50 MB JSON limit was a DoS vector — a handful of
+// concurrent oversized requests could OOM the Render free instance. We now
+// use a tight default (500 KB — comfortably covers any normal POST body)
+// and override per-route ONLY where larger payloads are legitimately
+// needed (e.g. the issue reporter which accepts inline screenshots).
+//
+// Order matters: this body parser runs AFTER `trust proxy` + CORS so
+// invalid Origin or proxy-stripped requests are rejected before body
+// parsing. The /api/issues override below runs ABOVE the global one so
+// it takes precedence for that prefix only.
+app.use('/api/issues', express.json({ limit: '4mb' }));
+app.use(express.json({ limit: '500kb' }));
 
 // ── Security middleware ─────────────────────────────────────────────────────
 //
@@ -182,43 +195,89 @@ function broadcastRoomParticipants(io: SocketServer, roomId: string) {
   io.to(`meeting:${roomId}`).emit('meeting:participants', { roomId, participants: members });
 }
 
+/**
+ * Socket-level JWT authentication.
+ *
+ * Audit finding CRIT-1: prior versions trusted `socket.handshake.query.userId`
+ * directly, letting any anonymous browser tab spoof another user's identity by
+ * setting the query param. That gave the attacker full access to:
+ *   - the victim's `user:<userId>` private room (notifications, webrtc:offers)
+ *   - the victim's `org:<orgId>` room (every org-scoped event)
+ *
+ * Now: an `io.use()` middleware verifies a JWT in `socket.handshake.auth.token`
+ * (falls back to a query-param token for very old clients still in flight
+ * during deploy). The verified userId / role / orgId are stashed on
+ * `socket.data` — the downstream connection handler uses ONLY those values
+ * and ignores the original query params.
+ *
+ * If the JWT is missing or invalid the socket connection is rejected outright.
+ * Existing API endpoints already require JWT, so anyone connecting a socket
+ * is by definition logged in — there's no legitimate flow that breaks.
+ */
+io.use(async (socket, next) => {
+  try {
+    const auth  = (socket.handshake.auth || {}) as { token?: string };
+    const query = (socket.handshake.query || {}) as { token?: string };
+    const token = auth.token || (typeof query.token === 'string' ? query.token : '');
+    if (!token) return next(new Error('socket_no_token'));
+    const payload = jwt.verify(token, process.env.JWT_SECRET!) as { id?: string; userId?: string };
+    const verifiedUserId = payload.id || payload.userId;
+    if (!verifiedUserId) return next(new Error('socket_bad_payload'));
+    const u = await User.findById(verifiedUserId).select('_id name email role organizationId isActive').lean();
+    if (!u || u.isActive === false) return next(new Error('socket_user_inactive'));
+    socket.data.userId = String(u._id);
+    socket.data.name   = u.name || u.email || 'Unknown';
+    socket.data.role   = u.role || 'employee';
+    socket.data.orgId  = u.organizationId ? String(u.organizationId) : null;
+    next();
+  } catch {
+    next(new Error('socket_invalid_token'));
+  }
+});
+
 io.on('connection', (socket) => {
-  const userId   = socket.handshake.query.userId   as string;
-  const userName = socket.handshake.query.userName as string;
-  const userRole = socket.handshake.query.userRole as string;
+  // Use ONLY the verified identity from socket.data — never the original
+  // query string. See CRIT-1 in the audit doc for the history.
+  const userId       = String(socket.data.userId);
+  const userName     = String(socket.data.name);
+  const userRole     = String(socket.data.role);
+  const verifiedOrg  = socket.data.orgId as string | null;
 
-  // Ignore sockets that arrive without a real userId (public meet pages,
-  // accidental connections, etc.) — they'd otherwise show as "undefined"
-  // entries in the online list.
-  const validUser = userId && userId !== 'undefined' && userId !== 'null';
+  // Defensive — the auth middleware above guarantees userId is set; this
+  // would only fail if someone bypassed `io.use` (impossible from outside
+  // the codebase).
+  const validUser = !!userId;
 
-  // Look up organizationId once per connection so we can scope rooms.
-  // Stored on the socket data, not in any global map — survives reconnects
-  // because each new connection re-runs this handler.
-  let socketOrgId: string | null = null;
+  let socketOrgId: string | null = verifiedOrg;
 
   if (validUser) {
     socket.join(`user:${userId}`);
     onlineUsers.set(socket.id, {
       userId,
-      name: userName && userName !== 'undefined' ? userName : 'Unknown',
-      role: userRole && userRole !== 'undefined' ? userRole : 'employee',
-      orgId: null, // filled in once User lookup resolves
+      name:  userName,
+      role:  userRole,
+      orgId: verifiedOrg,
     });
-    // Resolve the user's org synchronously-ish so subsequent broadcasts
-    // can scope by org. Failures are non-fatal — they just won't be able
-    // to send chat messages, but other socket features still work.
-    User.findById(userId).select('organizationId').lean()
-      .then(u => {
-        socketOrgId = u?.organizationId ? String(u.organizationId) : null;
-        if (socketOrgId) {
-          socket.join(`org:${socketOrgId}`);            // for org-scoped emits
-          const cur = onlineUsers.get(socket.id);
-          if (cur) cur.orgId = socketOrgId;
-          emitPresenceForOrg(socketOrgId);
-        }
-      })
-      .catch(() => {/* ignore */});
+    // Org room — joined eagerly from the JWT-verified org. No extra DB
+    // read in the happy path.
+    if (verifiedOrg) {
+      socket.join(`org:${verifiedOrg}`);
+      emitPresenceForOrg(verifiedOrg);
+    } else {
+      // Defensive fallback if the User record somehow lacked an org at
+      // auth time (shouldn't happen for staff).
+      User.findById(userId).select('organizationId').lean()
+        .then(u => {
+          socketOrgId = u?.organizationId ? String(u.organizationId) : null;
+          if (socketOrgId) {
+            socket.join(`org:${socketOrgId}`);
+            const cur = onlineUsers.get(socket.id);
+            if (cur) cur.orgId = socketOrgId;
+            emitPresenceForOrg(socketOrgId);
+          }
+        })
+        .catch(() => {/* ignore */});
+    }
   }
 
   // ── WebRTC Screen Share ──────────────────────────────────────────────────
@@ -461,6 +520,31 @@ connectDB().then(() => {
     // Daily 8 AM IST morning brief — Gemini-generated executive summary
     // of yesterday's activity per organization.
     startMorningBriefCron();
+
+    // Stale-socket sweep — runs every 10 minutes.
+    //
+    // Realtime audit finding REAL-1: the `onlineUsers` Map leaks entries
+    // when a `disconnect` event is missed (proxy hiccup, force-killed
+    // tab, mobile network drop). Ghost users would then show as
+    // "online" forever in the presence broadcast. This sweep prunes
+    // entries whose underlying socket reports `connected === false`
+    // and re-emits presence for affected orgs.
+    setInterval(() => {
+      let pruned = 0;
+      const affectedOrgs = new Set<string>();
+      for (const [sid, info] of onlineUsers.entries()) {
+        const sock = io.sockets.sockets.get(sid);
+        if (!sock || sock.connected === false) {
+          onlineUsers.delete(sid);
+          pruned += 1;
+          if (info.orgId) affectedOrgs.add(info.orgId);
+        }
+      }
+      if (pruned > 0) {
+        console.log(`[presence-sweep] pruned ${pruned} stale socket(s); refreshing ${affectedOrgs.size} org(s)`);
+        affectedOrgs.forEach(emitPresenceForOrg);
+      }
+    }, 600_000);
   });
 });
 

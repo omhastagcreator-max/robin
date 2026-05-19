@@ -21,30 +21,64 @@
  * Indian colour signal. Together: Indian agency tooling, considered.
  */
 :root {
-  /* Declutter palette — softer borders, calmer muted greys.
-   * Borders shifted up in lightness so cards stop fighting each other.
-   * Muted background slightly cooler so the page reads as quieter overall.
+  /* ── Robin "Rani Pink" theme (UI redesign v2) ─────────────────────────
+   *
+   * Owner-asked rebrand from teal/saffron to a premium Rani Pink palette.
+   * Goals: feel premium and energetic; never childish or neon-bright.
+   *
+   * Primary       Rani Pink — vivid magenta-pink, dialled DOWN from pure
+   *               saturated to feel grown-up. Reads as creative + high-end,
+   *               not toy-store.
+   * Accent        Deep magenta — used sparingly for secondary actions.
+   * Background    Warm off-white — cooler than the previous bone cream so
+   *               the pink primary pops cleanly without fighting.
+   * Foreground    Near-black with a hint of cool blue — easy on the eyes
+   *               for 8-hour sessions.
+   * Border        Neutral cool grey (was warm) — pairs better with pink
+   *               than the previous warm grey did.
+   *
+   * The previous teal/saffron palette is preserved as a `data-theme`
+   * variant; flip back via <html data-theme="classic"> if needed.
    */
-  --background:          36 30% 97%;        /* bone cream */
-  --foreground:          218 20% 14%;       /* deep charcoal-ink */
+  --background:          30 6% 99%;
+  --foreground:          220 20% 10%;
   --card:                0 0% 100%;
-  --card-foreground:     218 20% 14%;
+  --card-foreground:     220 20% 10%;
   --popover:             0 0% 100%;
-  --popover-foreground:  218 20% 14%;
-  --border:              35 14% 91%;        /* softer — was 87% */
-  --input:               35 14% 89%;        /* slightly stronger than border for inputs */
-  --primary:             178 65% 26%;       /* deep teal — Robin's egg */
+  --popover-foreground:  220 20% 10%;
+  --border:              220 8% 90%;
+  --input:               220 8% 88%;
+  --primary:             340 82% 52%;       /* Rani Pink */
+  --primary-foreground:  0 0% 100%;
+  --muted:               220 8% 94%;
+  --muted-foreground:    220 8% 44%;
+  --accent:              280 65% 60%;       /* deep magenta */
+  --accent-foreground:   0 0% 100%;
+  --ring:                340 82% 52%;
+  --destructive:         354 75% 55%;
+  --success:             142 60% 42%;
+  --warning:             35 90% 55%;
+  --radius:              0.625rem;          /* tighter — denser feel */
+  color-scheme: light;
+}
+
+/* Optional classic theme — opt-in via <html data-theme="classic">. */
+:root[data-theme='classic'] {
+  --background:          36 30% 97%;
+  --foreground:          218 20% 14%;
+  --border:              35 14% 91%;
+  --input:               35 14% 89%;
+  --primary:             178 65% 26%;
   --primary-foreground:  36 30% 98%;
-  --muted:               36 22% 95%;        /* paler — was 93% */
-  --muted-foreground:    218 8% 44%;        /* slightly lighter than before */
-  --accent:              38 88% 52%;        /* saffron gold */
+  --muted:               36 22% 95%;
+  --muted-foreground:    218 8% 44%;
+  --accent:              38 88% 52%;
   --accent-foreground:   218 20% 14%;
   --ring:                178 65% 26%;
   --destructive:         358 65% 50%;
   --success:             158 50% 32%;
   --warning:             38 88% 52%;
-  --radius:              0.75rem;           /* a touch rounder for a softer feel */
-  color-scheme: light;
+  --radius:              0.75rem;
 }
 
 * { box-sizing: border-box; }
