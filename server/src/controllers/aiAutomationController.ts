@@ -17,14 +17,27 @@ async function getOrgId(userId: string): Promise<string | null> {
 }
 
 /**
- * GET /api/ai-automation/health  (admin-only)
- * Returns the live AI status: whether the key is set, which model is
- * working, and the exact last error if any. Hit this from a browser
- * (logged in as admin) to debug why the AI is silent.
+ * GET /api/ai-automation/health-authed  (admin-only — used by the UI panel)
  */
 export async function getAiHealth(req: AuthRequest, res: Response): Promise<void> {
   try {
     if (req.user!.role !== 'admin') { res.status(403).json({ error: 'Admin only' }); return; }
+    const h = await aiHealth();
+    res.json(h);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * GET /api/ai-automation/health  (PUBLIC — intentionally)
+ *
+ * Same payload as the authed version, no JWT required. Safe to expose:
+ * the response only reveals `configured: true/false`, the model name,
+ * and the last error string — never the API key itself. The owner can
+ * hit this URL in any browser without juggling tokens to debug why
+ * AI is silent.
+ */
+export async function getAiHealthPublic(_req: any, res: Response): Promise<void> {
+  try {
     const h = await aiHealth();
     res.json(h);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
