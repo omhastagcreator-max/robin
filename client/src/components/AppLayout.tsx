@@ -25,8 +25,9 @@ import { MeetingQuickFab } from '@/components/shared/MeetingQuickFab';
 import { ScheduleMeetingButton } from '@/components/shared/ScheduleMeetingButton';
 import { StartClientMeetingButton } from '@/components/shared/StartClientMeetingButton';
 import { HelpBubble } from '@/components/shared/HelpBubble';
-import { SlimSidebar } from '@/components/v2/SlimSidebar';
-import { TopBar }      from '@/components/v2/TopBar';
+import { SlimSidebar }     from '@/components/v2/SlimSidebar';
+import { TopBar }          from '@/components/v2/TopBar';
+import { GlobalShortcuts } from '@/components/v2/GlobalShortcuts';
 
 interface NavItem {
   to: string;
@@ -412,6 +413,9 @@ function AppLayoutInner({ children, requiredRole }: Props) {
       {/* Floating help / issue-report / Ask-Robin bubble — bottom-right on
           every authenticated page. AI-backed via Gemini server-side. */}
       <HelpBubble />
+      {/* Global keyboard shortcuts — g d / g p / g t / g w / g c / g s / g i
+          plus Esc backstop for the RightDrawer. Mounted once per layout. */}
+      <GlobalShortcuts />
     </SlimSidebar>
     </AppLayoutNestedCtx.Provider>
   );

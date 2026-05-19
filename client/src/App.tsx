@@ -189,6 +189,7 @@ import { HuddleProvider } from '@/contexts/HuddleContext';
 import { ClientMeetingProvider } from '@/contexts/ClientMeetingContext';
 import { BreakOverlay } from '@/components/shared/BreakOverlay';
 import { NetworkStatus } from '@/components/shared/NetworkStatus';
+import { RightDrawerProvider } from '@/components/ui/RightDrawer';
 
 export default function App() {
   // White-label: on meeting.hastagcreator.com, render ONLY the public guest
@@ -213,10 +214,15 @@ export default function App() {
             {/* Client-meeting room state lives here so navigation between
                 Robin pages doesn't kick the host out mid-call. */}
             <ClientMeetingProvider>
-              <AppRoutes />
-              {/* Top-most break overlay — freezes the UI while user is on break. */}
-              <BreakOverlay />
-              <Toaster position="top-right" richColors expand />
+              {/* RightDrawer (v2) — contextual side panel, opened from
+                  any page via useDrawer(). Mounted at the app root so
+                  state survives navigation. */}
+              <RightDrawerProvider>
+                <AppRoutes />
+                {/* Top-most break overlay — freezes the UI while user is on break. */}
+                <BreakOverlay />
+                <Toaster position="top-right" richColors expand />
+              </RightDrawerProvider>
             </ClientMeetingProvider>
           </HuddleProvider>
         </ScreenShareProvider>

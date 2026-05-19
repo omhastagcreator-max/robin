@@ -195,35 +195,37 @@ export function CommandPalette() {
           <motion.div
             initial={{ opacity: 0, y: -8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
-            transition={{ duration: 0.12 }}
+            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
             role="dialog" aria-modal="true" aria-label="Command palette"
-            className="fixed left-1/2 top-24 -translate-x-1/2 z-[61] w-[min(640px,calc(100vw-2rem))] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+            className="fixed left-1/2 top-[15vh] -translate-x-1/2 z-[61] w-[min(620px,calc(100vw-2rem))] bg-card border border-border rounded-xl shadow-[var(--shadow-4)] overflow-hidden"
           >
-            {/* Search */}
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-              <Search className="h-4 w-4 text-muted-foreground" />
+            {/* Search — denser top bar */}
+            <div className="flex items-center gap-2 px-3 h-11 border-b border-border">
+              <Search className="h-3.5 w-3.5 text-muted-foreground" />
               <input
                 ref={inputRef}
                 value={q}
                 onChange={e => setQ(e.target.value)}
                 onKeyDown={onInputKey}
                 placeholder="Type a page or action…"
-                className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground"
+                className="flex-1 bg-transparent outline-none text-[13px] placeholder:text-muted-foreground/60"
               />
-              <kbd className="hidden sm:inline-flex text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono">Esc</kbd>
+              <kbd className="text-[9px] px-1 h-4 inline-flex items-center rounded bg-muted text-muted-foreground font-mono">Esc</kbd>
             </div>
 
-            {/* Results */}
-            <div className="max-h-[60vh] overflow-y-auto py-1">
+            {/* Results — dense rows, smaller padding, no chunky icon tiles */}
+            <div className="max-h-[55vh] overflow-y-auto py-0.5">
               {filtered.length === 0 && (
-                <p className="px-4 py-6 text-sm text-muted-foreground text-center">No matches.</p>
+                <p className="px-3 py-5 text-[12px] text-muted-foreground text-center">
+                  No matches for "{q}".
+                </p>
               )}
               {(['go', 'do'] as const).map(group => {
                 const items = filtered.filter(i => i.group === group);
                 if (items.length === 0) return null;
                 return (
-                  <div key={group}>
-                    <p className="px-4 pt-3 pb-1 text-[10px] uppercase tracking-wide text-muted-foreground/70 font-semibold">
+                  <div key={group} className="py-1">
+                    <p className="px-3 pt-1.5 pb-0.5 text-[9px] uppercase tracking-[0.16em] text-muted-foreground/70 font-bold">
                       {group === 'go' ? 'Go to' : 'Actions'}
                     </p>
                     {items.map(it => {
@@ -234,20 +236,16 @@ export function CommandPalette() {
                           key={it.id}
                           onClick={it.action}
                           onMouseEnter={() => setHi(idx)}
-                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
-                            active ? 'bg-primary/10' : 'hover:bg-muted/40'
+                          className={`w-full flex items-center gap-2.5 px-3 h-8 text-left transition-colors ${
+                            active ? 'bg-primary/[0.08] text-foreground' : 'hover:bg-muted/40 text-foreground'
                           }`}
                         >
-                          <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${
-                            active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-                          }`}>
-                            <it.icon className="h-4 w-4" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{it.label}</p>
-                            {it.hint && <p className="text-[11px] text-muted-foreground truncate">{it.hint}</p>}
-                          </div>
-                          {active && <CornerDownLeft className="h-3.5 w-3.5 text-muted-foreground" />}
+                          <it.icon className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-primary' : 'text-muted-foreground'}`} />
+                          <span className="flex-1 min-w-0 flex items-center gap-1.5 truncate">
+                            <span className="text-[12.5px] font-medium truncate">{it.label}</span>
+                            {it.hint && <span className="text-[11px] text-muted-foreground truncate">{it.hint}</span>}
+                          </span>
+                          {active && <CornerDownLeft className="h-3 w-3 text-primary shrink-0" />}
                         </button>
                       );
                     })}
@@ -256,13 +254,14 @@ export function CommandPalette() {
               })}
             </div>
 
-            {/* Footer hint */}
-            <div className="px-4 py-2 border-t border-border bg-muted/20 flex items-center justify-between text-[10px] text-muted-foreground">
+            {/* Footer — kbd hints + identity */}
+            <div className="px-3 h-7 border-t border-border bg-muted/30 flex items-center justify-between text-[10px] text-muted-foreground">
               <div className="flex items-center gap-3">
-                <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 rounded bg-card border border-border font-mono">↑</kbd><kbd className="px-1.5 py-0.5 rounded bg-card border border-border font-mono">↓</kbd> navigate</span>
-                <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 rounded bg-card border border-border font-mono">↵</kbd> select</span>
+                <span className="flex items-center gap-1"><kbd className="px-1 h-4 inline-flex items-center rounded bg-card border border-border font-mono">↑↓</kbd> navigate</span>
+                <span className="flex items-center gap-1"><kbd className="px-1 h-4 inline-flex items-center rounded bg-card border border-border font-mono">↵</kbd> select</span>
+                <span className="flex items-center gap-1"><kbd className="px-1 h-4 inline-flex items-center rounded bg-card border border-border font-mono">g d</kbd> dashboard</span>
               </div>
-              <span>Signed in as {user?.name || user?.email}</span>
+              <span className="truncate max-w-[180px]">{user?.name || user?.email}</span>
             </div>
           </motion.div>
         </>
