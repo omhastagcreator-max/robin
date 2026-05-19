@@ -38,6 +38,9 @@ function publicUser(u: any) {
     organizationId:   u.organizationId,
     onCallSince:      u.onCallSince,
     metaAdAccountId:  u.metaAdAccountId,
+    // Delegated permission: lets the client show the "Onboard workroom
+    // teammate" nav item + page to non-admins who admin trusted with it.
+    canManageWorkroom: u.canManageWorkroom === true,
   };
 }
 

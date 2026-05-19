@@ -7,7 +7,7 @@ import {
   Bird, LayoutDashboard, ListTodo, Video, Bell, User, LogOut,
   Briefcase, Users, Building2, BarChart2, TrendingUp, Menu, X,
   MessageSquare, Monitor, MonitorOff, KeyRound, CalendarOff, Clock,
-  BarChart3, Calendar, Bug, CalendarDays, Workflow,
+  BarChart3, Calendar, Bug, CalendarDays, Workflow, UserPlus,
 } from 'lucide-react';
 import { Avatar } from '@/components/shared/Avatar';
 import { dashboardForRole } from '@/components/ProtectedRoute';
@@ -24,7 +24,16 @@ import { MeetingQuickFab } from '@/components/shared/MeetingQuickFab';
 import { ScheduleMeetingButton } from '@/components/shared/ScheduleMeetingButton';
 import { StartClientMeetingButton } from '@/components/shared/StartClientMeetingButton';
 
-interface NavItem { to: string; label: string; icon: React.ElementType; roles?: string[]; team?: string; anyTeam?: string[]; }
+interface NavItem {
+  to: string;
+  label: string;
+  icon: React.ElementType;
+  roles?: string[];
+  team?: string;
+  anyTeam?: string[];
+  /** Show only if user has this delegated permission flag set to true. */
+  requiresFlag?: 'canManageWorkroom';
+}
 
 const NAV_ITEMS: NavItem[] = [
   // ── Role dashboards ────────────────────────────────────────────────
@@ -49,6 +58,11 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/admin/leaves',      label: 'Leave Approvals', icon: CalendarOff,  roles: ['admin'] },
   { to: '/admin/attendance',  label: 'Attendance',   icon: Clock,           roles: ['admin'] },
   { to: '/admin/crash-logs',  label: 'Crash Logs',   icon: Bug,             roles: ['admin'] },
+  // Onboard a workroom teammate — admin always, employees/sales only when
+  // admin has flipped canManageWorkroom on their profile. Same nav entry
+  // surfaces in both cases via the `requiresFlag` shortcut below.
+  { to: '/workroom-onboard',  label: 'Onboard Workroom', icon: UserPlus,    roles: ['admin'] },
+  { to: '/workroom-onboard',  label: 'Onboard Workroom', icon: UserPlus,    roles: ['employee', 'sales'], requiresFlag: 'canManageWorkroom' },
   { to: '/leaves',            label: 'My Leaves',    icon: CalendarOff,     roles: ['employee', 'sales'] },
   { to: '/workroom',          label: 'Work Room',    icon: Video,           roles: ['admin', 'employee', 'sales', 'workroom'] },
   { to: '/team/calendar',     label: 'Team Calendar', icon: Calendar,       roles: ['admin', 'employee', 'sales'] },
@@ -223,6 +237,8 @@ function AppLayoutInner({ children, requiredRole }: Props) {
         const userTeams = [user?.team, ...((user as any)?.teams || [])].filter(Boolean);
         if (!item.anyTeam.some(t => userTeams.includes(t))) return false;
       }
+      // Delegated permission flag — currently only canManageWorkroom.
+      if (item.requiresFlag === 'canManageWorkroom' && (user as any)?.canManageWorkroom !== true) return false;
       return true;
     });
     // Dedupe by URL — some pages (e.g. Meta Ads) have two entries so a

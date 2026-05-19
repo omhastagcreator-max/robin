@@ -38,6 +38,7 @@ const TeamCalendar      = lazy(() => import('@/pages/TeamCalendar'));
 const MeetGuest         = lazy(() => import('@/pages/MeetGuest'));
 const MeetHost          = lazy(() => import('@/pages/MeetHost'));
 const WorkroomHome      = lazy(() => import('@/pages/WorkroomHome'));
+const WorkroomOnboardPage = lazy(() => import('@/pages/WorkroomOnboardPage'));
 
 /**
  * BlankRoot — the public root (robin.hastagcreator.com/) renders nothing.
@@ -141,6 +142,10 @@ function AppRoutes() {
           <Route path="/chat"             element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><GroupChat /></E></ProtectedRoute>} />
           <Route path="/workroom"         element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><WorkRoom /></E></ProtectedRoute>} />
           <Route path="/workroom-home"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><WorkroomHome /></E></ProtectedRoute>} />
+          {/* Onboard a workroom teammate — admin OR any user the admin
+              has flagged with canManageWorkroom (e.g. Om). The page itself
+              re-checks the flag and bounces if accessed directly. */}
+          <Route path="/workroom-onboard" element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><WorkroomOnboardPage /></E></ProtectedRoute>} />
           <Route path="/vault"            element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientVault /></E></ProtectedRoute>} />
           <Route path="/leaves"           element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><LeavesPage /></E></ProtectedRoute>} />
           <Route path="/notifications"    element={<E><NotificationsPage /></E>} />

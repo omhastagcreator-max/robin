@@ -122,6 +122,22 @@ export default function AdminEmployees() {
     }
   };
 
+  const toggleWorkroomManager = async (emp: any) => {
+    const target = !emp.canManageWorkroom;
+    const before = employees;
+    // Optimistic flip
+    setEmployees(prev => prev.map(e => e._id === emp._id ? { ...e, canManageWorkroom: target } : e));
+    try {
+      await api.adminSetCanManageWorkroom(emp._id, target);
+      toast.success(target
+        ? `${emp.name || emp.email} can now onboard workroom teammates`
+        : `${emp.name || emp.email} can no longer onboard workroom teammates`);
+    } catch {
+      setEmployees(before);
+      toast.error('Could not update permission');
+    }
+  };
+
   const changeRole = async (id: string, role: string) => {
     // Optimistic update with rollback. Previously toasted "Role updated"
     // even when the server rejected, leaving the admin staring at a UI
@@ -293,6 +309,19 @@ export default function AdminEmployees() {
                     >
                       {['employee', 'sales', 'workroom', 'client', 'admin'].map(r => <option key={r} value={r}>{r}</option>)}
                     </select>
+                    <button
+                      onClick={() => toggleWorkroomManager(emp)}
+                      title={emp.canManageWorkroom
+                        ? 'Revoke: can onboard workroom teammates'
+                        : 'Grant: can onboard workroom teammates'}
+                      className={`text-[10px] px-1.5 py-1.5 rounded-lg transition-colors ${
+                        emp.canManageWorkroom
+                          ? 'bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25'
+                          : 'text-muted-foreground hover:text-emerald-700 hover:bg-emerald-500/10'
+                      }`}
+                    >
+                      {emp.canManageWorkroom ? 'WR ✓' : 'WR'}
+                    </button>
                     <button
                       onClick={() => resetPw(emp._id, emp.name || emp.email)}
                       title="Reset password"

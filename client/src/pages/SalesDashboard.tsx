@@ -129,11 +129,19 @@ export default function SalesDashboard() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-refresh every 30s so new leads from the sheet sync show up without
-  // Rishi having to reload the page. Pauses when the tab is hidden — no
-  // point hitting the API for a page nobody's looking at, and helps avoid
-  // a backlog of pending requests when the tab comes back.
+  // Auto-refresh every 2 minutes (was 30s — too aggressive; the kanban felt
+  // like it was flickering because the array refs changed on every tick
+  // even when nothing in the data had moved). Pauses when the tab is hidden,
+  // and skips the setState entirely when the new data is structurally
+  // identical to what's already on screen. No data change → no re-render
+  // → no flicker.
+  const lastSigRef = useRef<string>('');
   useEffect(() => {
+    const fingerprint = (l: any[], u: any[], d: any[]) =>
+      `L:${l.map(x => `${x._id}/${x.stage || x.status}`).join(',')}|` +
+      `U:${u.map(x => x._id).join(',')}|` +
+      `D:${d.map(x => `${x._id}/${x.stage || x.status}`).join(',')}`;
+
     const i = setInterval(async () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       try {
@@ -142,11 +150,17 @@ export default function SalesDashboard() {
           api.listUsers({ role: 'client' }),
           api.listDeals(),
         ]);
-        setLeads(Array.isArray(l) ? l : []);
-        setClients(Array.isArray(u) ? u : []);
-        setDeals(Array.isArray(d) ? d : []);
+        const ll = Array.isArray(l) ? l : [];
+        const uu = Array.isArray(u) ? u : [];
+        const dd = Array.isArray(d) ? d : [];
+        const sig = fingerprint(ll, uu, dd);
+        if (sig === lastSigRef.current) return;     // no change → no flicker
+        lastSigRef.current = sig;
+        setLeads(ll);
+        setClients(uu);
+        setDeals(dd);
       } catch { /* silent — next tick will retry */ }
-    }, 30_000);
+    }, 120_000);
     return () => clearInterval(i);
   }, []);
 

@@ -20,6 +20,15 @@ export interface IUser extends Document {
   isActive: boolean;
   onCallSince?: Date | null;
   metaAdAccountId?: string | null;   // for client users — links them to one Meta ad account
+  /**
+   * Permission flag — when true, this user can create new 'workroom'-role
+   * teammates without being an admin. Used to delegate basic onboarding of
+   * huddle-only staff (floor support, junior agents) to a senior employee
+   * (e.g. Om the developer) without giving them full admin access.
+   *
+   * Default false. Admin-only to flip.
+   */
+  canManageWorkroom?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,6 +56,10 @@ const UserSchema = new Schema<IUser>(
     // For client users — the Meta ad account they own. Used to map
     // /ads/meta share links to the right client.
     metaAdAccountId: { type: String, default: null, index: true },
+    // Delegated permission: can this employee onboard 'workroom'-role
+    // teammates? Admins always can; this flag lets us grant the ability
+    // to a trusted non-admin (e.g. Om) without giving them full admin.
+    canManageWorkroom: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

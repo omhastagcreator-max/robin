@@ -13,7 +13,10 @@ import * as meta from '../services/metaAdsService';
 // GET /api/admin/employees
 export async function listEmployees(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const employees = await User.find({ role: { $in: ['employee', 'sales'] }, isActive: true }).select('-passwordHash').lean();
+    // Include 'workroom' role here so admin can see + manage huddle-only
+    // teammates from the same Employees screen. Without this, workroom
+    // users would be invisible to admin even though they're internal staff.
+    const employees = await User.find({ role: { $in: ['employee', 'sales', 'workroom'] }, isActive: true }).select('-passwordHash').lean();
     const today = new Date(); today.setHours(0, 0, 0, 0);
 
     const enriched = await Promise.all(employees.map(async (e) => {
@@ -89,6 +92,23 @@ export async function updateUserRole(req: AuthRequest, res: Response): Promise<v
   try {
     const { role } = req.body;
     const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true }).select('-passwordHash');
+    if (!user) { res.status(404).json({ error: 'User not found' }); return; }
+    res.json(user);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+// PUT /api/admin/users/:id/can-manage-workroom
+// Admin-only — toggles whether this user can onboard 'workroom'-role
+// teammates. Used to delegate huddle-only-staff onboarding to Om without
+// granting him admin access.
+export async function setCanManageWorkroom(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const enabled = req.body.enabled === true || req.body.enabled === 'true';
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { canManageWorkroom: enabled },
+      { new: true },
+    ).select('-passwordHash');
     if (!user) { res.status(404).json({ error: 'User not found' }); return; }
     res.json(user);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }

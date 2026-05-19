@@ -212,6 +212,12 @@ export const adminUpdateRole = (id: string, role: string)                => api.
 export const adminUpdateUser = (id: string, patch: { team?: string; teams?: string[]; roles?: string[] }) =>
   api.put(`/users/${id}`, patch).then(r => r.data);
 export const adminResetPass  = (id: string, newPassword?: string)        => api.put(`/admin/users/${id}/reset-password`, { newPassword }).then(r => r.data);
+// Delegate workroom-onboarding permission to a non-admin user (e.g. Om).
+export const adminSetCanManageWorkroom = (id: string, enabled: boolean) =>
+  api.put(`/admin/users/${id}/can-manage-workroom`, { enabled }).then(r => r.data);
+// Create a new role='workroom' teammate. Admin OR canManageWorkroom users.
+export const onboardWorkroomUser = (body: { email: string; name?: string; password?: string }) =>
+  api.post('/workroom-onboard', body).then(r => r.data);
 export const adminRemoveUser = (id: string)                              => api.delete(`/admin/users/${id}`).then(r => r.data);
 export const adminEmployeeReport = (employeeId: string, period: 'daily' | 'weekly' | 'monthly' = 'daily') =>
   api.get(`/admin/employees/${employeeId}/report`, { params: { period } }).then(r => r.data);

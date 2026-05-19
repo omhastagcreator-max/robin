@@ -34,6 +34,7 @@ import influencerRoutes   from './routes/influencers';
 import seedRoutes         from './routes/seed';
 import errorLogRoutes     from './routes/errorLogs';
 import integrationsRoutes from './routes/integrations';
+import workroomOnboardRoutes from './routes/workroomOnboard';
 import { startSheetSyncJob } from './jobs/sheetSyncJob';
 import credentialsRoutes  from './routes/credentials';
 import leavesRoutes       from './routes/leaves';
@@ -416,6 +417,7 @@ app.use('/api/client-meetings', clientMeetingsRoutes);  // host endpoints
 app.use('/api/seed',            seedRoutes);
 app.use('/api/logs',            errorLogRoutes);
 app.use('/api/integrations',    integrationsRoutes);
+app.use('/api/workroom-onboard', workroomOnboardRoutes); // admin OR canManageWorkroom-flagged users
 
 // ── 404 + Error handler ───────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
