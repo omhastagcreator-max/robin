@@ -95,6 +95,12 @@ export default function AdminDashboard() {
     return m;
   }, [huddle.peers]);
 
+  // Fingerprint of the last data we rendered. Lets us skip setState when an
+  // incoming refresh carries identical data — the dashboard re-rendering
+  // every time a teammate sent a heartbeat was the "refreshing every
+  // second" flicker on Admin / Sales.
+  const lastSigRef = useRef<string>('');
+
   const loadStats = useCallback(async () => {
     try {
       const [s, e, leaves] = await Promise.all([
@@ -102,9 +108,20 @@ export default function AdminDashboard() {
         api.adminEmployees().catch(() => []),
         api.adminListLeaves({ status: 'pending' }).catch(() => []),
       ]);
+      const eList = Array.isArray(e) ? e : [];
+      const lc    = Array.isArray(leaves) ? leaves.length : 0;
+      // Cheap structural fingerprint — IDs + status + counts. Identical
+      // fingerprint means nothing on screen would actually change.
+      const sig = JSON.stringify({
+        s: s ? { ...(s as any), _ts: undefined } : null,
+        e: eList.map((u: any) => `${u._id}/${u.role}/${u.isActive}/${u.sessionStatus}`).join(','),
+        lc,
+      });
+      if (sig === lastSigRef.current) return;       // no real change → no re-render
+      lastSigRef.current = sig;
       setStats(s);
-      setEmployees(Array.isArray(e) ? e : []);
-      setPendingLeaveCount(Array.isArray(leaves) ? leaves.length : 0);
+      setEmployees(eList);
+      setPendingLeaveCount(lc);
     } finally {
       setLoading(false);
     }
@@ -122,10 +139,28 @@ export default function AdminDashboard() {
     return () => window.removeEventListener('keydown', onKey);
   }, [viewAllOpen]);
 
+  // Throttle presence:update — the server emits one whenever any teammate
+  // connects/disconnects (multi-tab users + heartbeats can fan this out
+  // many times per second). We only want to refresh stats at MOST once
+  // every 5s so the dashboard stops visibly blinking.
   useEffect(() => {
     if (!socket) return;
-    socket.on('presence:update', loadStats);
-    return () => { socket.off('presence:update', loadStats); };
+    let pending = false;
+    let lastFiredAt = 0;
+    const COOLDOWN_MS = 5_000;
+    const onPresence = () => {
+      const now = Date.now();
+      if (now - lastFiredAt >= COOLDOWN_MS) {
+        lastFiredAt = now;
+        loadStats();
+      } else if (!pending) {
+        pending = true;
+        const wait = COOLDOWN_MS - (now - lastFiredAt);
+        setTimeout(() => { pending = false; lastFiredAt = Date.now(); loadStats(); }, wait);
+      }
+    };
+    socket.on('presence:update', onPresence);
+    return () => { socket.off('presence:update', onPresence); };
   }, [socket, loadStats]);
 
   const handleRemoveEmployee = async (emp: any) => {
