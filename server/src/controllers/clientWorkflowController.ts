@@ -2,11 +2,13 @@ import { Response } from 'express';
 import { Types } from 'mongoose';
 import { AuthRequest } from '../middleware/authMiddleware';
 import ClientWorkflow from '../models/ClientWorkflow';
+import WorkflowActivity from '../models/WorkflowActivity';
 import User from '../models/User';
 import SopOverride from '../models/SopOverride';
 import { SERVICE_TEMPLATES, SERVICE_TYPES, blockingServices, type ServiceType } from '../lib/workflowTemplates';
 import { notify } from '../services/notify';
 import { performWorkflowAction, WorkflowActionError } from '../services/workflowActions';
+import { recomputeWorkflowHealth } from '../jobs/healthInference';
 
 /**
  * Resolve the effective SOP checklist + label for a service in a given org.
@@ -400,6 +402,7 @@ export async function toggleChecklist(req: AuthRequest, res: Response): Promise<
             detail: `${item.text} — "${comment}"`,
           });
         },
+        postHook: async (wf: any) => { try { await recomputeWorkflowHealth(String(wf._id)); } catch {} },
       });
       res.json(result.workflow);
     } catch (err: any) {
@@ -467,8 +470,6 @@ export async function completeService(req: AuthRequest, res: Response): Promise<
           const svc = wf.services.id(req.params.sid);
           svc.status = 'done';
           svc.completedAt = new Date();
-          // Legacy backstop — keep writing to inline activity[] for one
-          // release while WorkflowActivity backfills.
           wf.activity.push({
             actorId: req.user!.id, action: 'service_completed',
             serviceType: svc.serviceType,
@@ -476,6 +477,7 @@ export async function completeService(req: AuthRequest, res: Response): Promise<
           });
           recomputeServiceStatuses(wf);
         },
+        postHook: async (wf: any) => { try { await recomputeWorkflowHealth(String(wf._id)); } catch {} },
       });
       const wf = result.workflow;
 
@@ -656,4 +658,162 @@ export async function reassignService(req: AuthRequest, res: Response): Promise<
 // ── Service templates endpoint (read-only) ───────────────────────────────
 export async function getServiceTemplates(_req: AuthRequest, res: Response): Promise<void> {
   res.json(SERVICE_TEMPLATES);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Pipeline 2.0 — block / unblock / list-activity endpoints
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * PUT /api/client-workflows/:id/block
+ * Body: { comment, blockerType, blockerReason }
+ *
+ * Marks a workflow as blocked at the PROJECT level (not per-service —
+ * use the existing service-status flow for per-service blocking). The
+ * health-inference job converts a blocked workflow into one of:
+ *   waiting_client / waiting_internal / blocked
+ * depending on blockerType.
+ */
+export async function blockWorkflow(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    const { blockerType, blockerReason, comment } = req.body || {};
+    const validBlockerTypes = ['waiting_client_input', 'waiting_internal_approval', 'dependency', 'technical', 'budget'];
+    if (!validBlockerTypes.includes(blockerType)) {
+      res.status(400).json({ error: `blockerType must be one of: ${validBlockerTypes.join(', ')}` });
+      return;
+    }
+    if (!String(blockerReason || '').trim()) {
+      res.status(400).json({ error: 'blockerReason is required — say WHY this is blocked.' });
+      return;
+    }
+
+    const wfPreview = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!wfPreview) { res.status(404).json({ error: 'Workflow not found' }); return; }
+
+    try {
+      const result = await performWorkflowAction({
+        workflowId: req.params.id,
+        actorId:    req.user!.id,
+        action:     'service_blocked',
+        comment,
+        before:     { blockerType: wfPreview.blockerType, blockerReason: wfPreview.blockerReason },
+        after:      { blockerType, blockerReason },
+        isClientRelevant: blockerType === 'waiting_client_input',
+        isDelayCause:     true,
+        summaryForRollup: `Project blocked — ${blockerReason}`,
+        mutate: async (wf: any) => {
+          wf.blockerType   = blockerType;
+          wf.blockerReason = blockerReason;
+          wf.blockedSince  = new Date();
+          wf.blockerOwner  = req.user!.id;
+        },
+        postHook: async (wf: any) => { try { await recomputeWorkflowHealth(String(wf._id)); } catch {} },
+      });
+      res.json(result.workflow);
+    } catch (err: any) {
+      if (err instanceof WorkflowActionError) {
+        res.status(err.status || 400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * PUT /api/client-workflows/:id/unblock
+ * Body: { comment }
+ * Clears the project-level blocker and pings health re-inference.
+ */
+export async function unblockWorkflow(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    const wfPreview = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!wfPreview) { res.status(404).json({ error: 'Workflow not found' }); return; }
+    if (!wfPreview.blockerType) {
+      res.status(409).json({ error: 'This workflow isn\'t flagged blocked.' });
+      return;
+    }
+
+    try {
+      const result = await performWorkflowAction({
+        workflowId: req.params.id,
+        actorId:    req.user!.id,
+        action:     'service_unblocked',
+        comment:    req.body?.comment || '',
+        before:     { blockerType: wfPreview.blockerType, blockerReason: wfPreview.blockerReason },
+        after:      { blockerType: '', blockerReason: '' },
+        isClientRelevant: true,
+        summaryForRollup: 'Unblocked',
+        mutate: async (wf: any) => {
+          wf.blockerType   = '';
+          wf.blockerReason = '';
+          wf.blockedSince  = null;
+          wf.blockerOwner  = null;
+        },
+        postHook: async (wf: any) => { try { await recomputeWorkflowHealth(String(wf._id)); } catch {} },
+      });
+      res.json(result.workflow);
+    } catch (err: any) {
+      if (err instanceof WorkflowActionError) {
+        res.status(err.status || 400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * GET /api/client-workflows/:id/activity?cursor=<id>&limit=30
+ *
+ * Cursor-paginated reader for the WorkflowActivity collection. Returns
+ * a page of entries plus a `nextCursor` to fetch the next page. Default
+ * 30 per page — matches the drawer's activity timeline render budget.
+ *
+ * `cursor` is the _id of the LAST entry the client already has; we return
+ * entries strictly older than that.
+ */
+export async function listWorkflowActivity(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    // Verify the caller has access to this workflow (same gate the list
+    // endpoint uses).
+    const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId }).select('_id services createdBy').lean() as any;
+    if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
+    const role = req.user!.role;
+    if (role !== 'admin' && role !== 'sales') {
+      const assigned = (wf.services || []).some((s: any) => s.assignedTo === req.user!.id);
+      const created  = wf.createdBy === req.user!.id;
+      if (!assigned && !created) {
+        res.status(403).json({ error: 'No access to this workflow' });
+        return;
+      }
+    }
+
+    const limit  = Math.min(Math.max(parseInt(String(req.query.limit || '30'), 10) || 30, 1), 100);
+    const cursor = req.query.cursor ? String(req.query.cursor) : null;
+
+    const q: any = { workflowId: req.params.id };
+    if (cursor) q._id = { $lt: cursor };
+
+    const rows = await WorkflowActivity.find(q)
+      .sort({ _id: -1 })
+      .limit(limit + 1)
+      .select('action serviceType serviceId checklistIndex actorId actorName actorRole comment before after createdAt isClientRelevant')
+      .lean();
+
+    const hasMore   = rows.length > limit;
+    const slice     = hasMore ? rows.slice(0, limit) : rows;
+    const nextCursor = hasMore ? String(slice[slice.length - 1]._id) : null;
+
+    res.json({ rows: slice, nextCursor });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }

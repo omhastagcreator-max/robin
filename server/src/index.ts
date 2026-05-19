@@ -55,6 +55,7 @@ import { startClientMeetingExpiryJob } from './jobs/clientMeetingExpiry';
 import { startDailyAutoCloseJob } from './jobs/dailyAutoClose';
 import { grantWorkroomManagerPermissions } from './jobs/grantWorkroomManagerPermissions';
 import { startMorningBriefCron } from './jobs/morningBriefCron';
+import { startHealthInferenceCron } from './jobs/healthInference';
 import { startIdleAutoCloseJob } from './jobs/idleAutoClose';
 
 const app = express();
@@ -520,6 +521,11 @@ connectDB().then(() => {
     // Daily 8 AM IST morning brief — Gemini-generated executive summary
     // of yesterday's activity per organization.
     startMorningBriefCron();
+
+    // Pipeline 2.0 health inference — recomputes every active workflow's
+    // health enum (healthy / at_risk / delayed / blocked / waiting_client
+    // / etc.) every 15 minutes. Drives the StatusPill on every card.
+    startHealthInferenceCron();
 
     // Stale-socket sweep — runs every 10 minutes.
     //

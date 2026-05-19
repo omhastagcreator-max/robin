@@ -155,6 +155,36 @@ export const cwReassignService  = (wid: string, sid: string, body: { userId: str
   api.put(`/client-workflows/${wid}/services/${sid}/reassign`, body).then(r => r.data);
 export const cwGetTemplates     = () => api.get('/client-workflows/templates').then(r => r.data);
 
+// Pipeline 2.0 — explicit project-level blocker.
+// blockerType MUST be one of: waiting_client_input | waiting_internal_approval | dependency | technical | budget.
+// blockerReason is required ("WHY blocked"); comment is the audit trail line.
+export const cwBlock            = (wid: string, body: { blockerType: string; blockerReason: string; comment: string }) =>
+  api.put(`/client-workflows/${wid}/block`, body).then(r => r.data);
+export const cwUnblock          = (wid: string, body: { comment: string }) =>
+  api.put(`/client-workflows/${wid}/unblock`, body).then(r => r.data);
+
+// Cursor-paginated activity feed for the right-drawer timeline.
+// Pass cursor = last _id you've seen; backend returns { rows, nextCursor }.
+export const cwListActivity     = (wid: string, params: { cursor?: string; limit?: number } = {}) =>
+  api.get(`/client-workflows/${wid}/activity`, { params }).then(r => r.data as {
+    rows: Array<{
+      _id: string;
+      action: string;
+      serviceType?: string;
+      serviceId?: string;
+      checklistIndex?: number;
+      actorId: string;
+      actorName: string;
+      actorRole?: string;
+      comment?: string;
+      before?: any;
+      after?: any;
+      createdAt: string;
+      isClientRelevant?: boolean;
+    }>;
+    nextCursor: string | null;
+  });
+
 // ── Client Schedule (per-employee weekly calendar of clients to serve) ──
 export const listClientSchedule = (params: { from?: string; to?: string; userId?: string } = {}) =>
   api.get('/client-schedule', { params }).then(r => r.data);
@@ -243,6 +273,7 @@ export const issueClusters = () => api.get('/issues/clusters').then(r => r.data)
 export const aiRescoreLead          = (id: string) => api.post(`/ai-automation/score-lead/${id}`).then(r => r.data);
 export const aiSummarizeWorkflow    = (id: string) => api.post(`/ai-automation/summarize-workflow/${id}`).then(r => r.data);
 export const aiBriefAllProjects     = ()           => api.post('/ai-automation/brief-all-projects', {}).then(r => r.data);
+export const aiParseCommand         = (message: string) => api.post('/ai-automation/parse-command', { message }).then(r => r.data);
 export const aiOrgMorningBrief      = ()           => api.get('/ai-automation/morning-brief').then(r => r.data);
 export const aiRegenerateOrgBrief   = ()           => api.post('/ai-automation/morning-brief', {}).then(r => r.data);
 export const adminRemoveUser = (id: string)                              => api.delete(`/admin/users/${id}`).then(r => r.data);

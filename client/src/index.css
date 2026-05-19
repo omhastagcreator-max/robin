@@ -1,8 +1,9 @@
+/* @import must precede everything else in a CSS file — including @tailwind. */
+@import './styles/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import './styles/tokens.css';
 
 /*
  * Robin "Robin's-Egg" theme — a brand-anchored palette built around the name.
