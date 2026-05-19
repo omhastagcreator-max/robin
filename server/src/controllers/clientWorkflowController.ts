@@ -247,7 +247,30 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
     if (andGroups.length) filter.$and = andGroups;
 
     const list = await ClientWorkflow.find(filter).sort({ updatedAt: -1 }).limit(200).lean();
-    res.json(list);
+    // Decorate each workflow with the LAST activity entry as `lastUpdate`
+    // so the kanban can show "Last update: ..." on each card without
+    // needing the full activity log shipped. Keeps the payload tight
+    // while still surfacing the one thing the UI cares about.
+    const decorated = list.map((wf: any) => {
+      const last = Array.isArray(wf.activity) && wf.activity.length
+        ? wf.activity[wf.activity.length - 1]
+        : null;
+      return {
+        ...wf,
+        lastUpdate: last ? {
+          at:          last.at || last.createdAt || wf.updatedAt,
+          action:      last.action,
+          detail:      last.detail,
+          serviceType: last.serviceType,
+          actorId:     last.actorId,
+        } : null,
+        // Don't ship the whole activity array on the list endpoint — it
+        // can be 500 entries per workflow. The detail page fetches the
+        // full one separately.
+        activity: undefined,
+      };
+    });
+    res.json(decorated);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 

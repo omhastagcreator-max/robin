@@ -70,7 +70,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/workroom',          label: 'Work Room',    icon: Video,           roles: ['admin', 'employee', 'sales', 'workroom'] },
   { to: '/team/calendar',     label: 'Team Calendar', icon: Calendar,       roles: ['admin', 'employee', 'sales'] },
   { to: '/client-schedule',   label: 'Client Schedule', icon: CalendarDays, roles: ['admin', 'employee', 'sales'] },
-  { to: '/clients/pipeline',  label: 'Client Pipeline', icon: Workflow,     roles: ['admin', 'employee', 'sales'] },
+  { to: '/clients/pipeline',  label: 'Project Pipeline', icon: Workflow,    roles: ['admin', 'employee', 'sales'] },
   { to: '/vault',             label: 'Client Vault', icon: KeyRound,        roles: ['admin', 'employee', 'sales'] },
   { to: '/chat',              label: 'Group Chat',   icon: MessageSquare,   roles: ['admin', 'employee', 'sales'] },
   { to: '/influencers',       label: 'Influencer Sheet', icon: Users,       roles: ['employee'], team: 'influencer' },

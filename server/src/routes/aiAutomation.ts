@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
 import {
-  rescoreLead, summarizeWorkflowEndpoint,
+  rescoreLead, summarizeWorkflowEndpoint, briefAllProjects,
   getOrgMorningBrief, regenerateOrgMorningBrief,
   getAiHealth, getAiHealthPublic,
 } from '../controllers/aiAutomationController';
@@ -22,6 +22,8 @@ router.post('/score-lead/:id',         requireRole('admin', 'sales'),           
 
 // Workflow summary — any internal staff can ask for the AI status paragraph
 router.post('/summarize-workflow/:id', requireRole('admin', 'employee', 'sales'),             summarizeWorkflowEndpoint);
+// One brief summarizing EVERY active project in the org.
+router.post('/brief-all-projects',     requireRole('admin', 'employee', 'sales'),             briefAllProjects);
 
 // Morning brief — read for any internal staff, admin can regenerate
 router.get('/morning-brief',           requireRole('admin', 'employee', 'sales'),             getOrgMorningBrief);

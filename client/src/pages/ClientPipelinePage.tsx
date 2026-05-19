@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Plus, Loader2, X, Sparkles, Workflow,
   ChevronDown, ChevronRight, CheckCircle2, Circle, AlertTriangle,
-  MoreVertical, ArrowRight, TrendingUp, Users, Activity,
+  MoreVertical, ArrowRight, TrendingUp, Users, Activity, Clock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/api';
@@ -41,6 +41,15 @@ interface Workflow {
   clientEmail?: string;
   services: ServiceSummary[];
   updatedAt: string;
+  /** Decorated by the server — last activity-log entry, used to show
+   *  "Last update: …" on each card without shipping the full activity. */
+  lastUpdate?: {
+    at?: string;
+    action?: string;
+    detail?: string;
+    serviceType?: string;
+    actorId?: string;
+  } | null;
 }
 
 export default function ClientPipelinePage() {
@@ -108,18 +117,23 @@ export default function ClientPipelinePage() {
         <div className="flex items-end justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Workflow className="h-6 w-6 text-primary" /> Client Pipeline
+              <Workflow className="h-6 w-6 text-primary" /> Project Pipeline
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Every client's work, every stage — searchable by phone.
+              Every project, every stage — searchable by phone, name or email. Click any card to see what's left.
             </p>
           </div>
-          {isAdminOrSales && (
-            <button onClick={() => setShowCreate(true)}
-              className="h-9 px-3 flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold shadow-sm">
-              <Plus className="h-4 w-4" /> New pipeline
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {/* AI: one-paragraph brief covering EVERY active project. The
+                model output lands in the BriefPanel just below this row. */}
+            <AllProjectsBriefButton />
+            {isAdminOrSales && (
+              <button onClick={() => setShowCreate(true)}
+                className="h-9 px-3 flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold shadow-sm">
+                <Plus className="h-4 w-4" /> New project
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Search — no card chrome, lives in the page flow. The "Only mine"
@@ -545,6 +559,17 @@ function ClientCard({ wf, highlightServiceType, onMutated }: {
             {relevant ? `${relTicked}/${relTotal}` : `${pct}%`}
           </span>
         </div>
+
+        {/* Last major update — pulled from the workflow's activity log on
+            the server. Shows the most recent action with its comment so
+            anyone glancing at the board sees what just happened on this
+            project. "Add a note: …" preserved verbatim from the user. */}
+        {wf.lastUpdate?.detail && (
+          <div className="mt-2 pt-2 border-t border-border/50">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold">Last update</p>
+            <p className="text-[11px] text-foreground/80 line-clamp-2 mt-0.5">{wf.lastUpdate.detail}</p>
+          </div>
+        )}
       </div>
 
       {/* Expandable "what's left" — checklist of pending items so you can
@@ -734,5 +759,86 @@ function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCr
         </div>
       </motion.div>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// AllProjectsBriefButton — top-right button on the Project Pipeline page
+// that fires a single Gemini call summarizing every active project. The
+// resulting paragraph drops into a modal so the owner reads it once and
+// closes. Cheap (one model call regardless of project count) and gives
+// a "state of the agency" answer in 2 seconds.
+// ─────────────────────────────────────────────────────────────────────────
+function AllProjectsBriefButton() {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [brief, setBrief] = useState<string>('');
+  const [count, setCount] = useState<number>(0);
+
+  const run = async () => {
+    setOpen(true);
+    if (brief) return; // already loaded — just re-open the modal
+    setLoading(true);
+    try {
+      const r = await api.aiBriefAllProjects();
+      setBrief(r.text || '');
+      setCount(r.projectCount || 0);
+    } catch { /* axios toast */ }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <>
+      <button
+        onClick={run}
+        title="AI brief covering every active project"
+        className="h-9 px-3 flex items-center gap-1.5 rounded-lg bg-card border border-primary/30 text-primary hover:bg-primary/10 text-sm font-semibold transition-colors"
+      >
+        <Sparkles className="h-4 w-4" /> Brief all projects
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              onClick={e => e.stopPropagation()}
+              className="bg-card border border-border rounded-2xl shadow-2xl max-w-xl w-full p-5 space-y-3"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wider font-semibold text-primary">AI brief</p>
+                  <p className="text-base font-bold">State of {count || ''} active project{count === 1 ? '' : 's'}</p>
+                </div>
+                <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              {loading ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Asking Gemini for a status sweep…
+                </div>
+              ) : (
+                <p className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">{brief}</p>
+              )}
+              <div className="flex items-center gap-2 pt-1">
+                <button onClick={() => { setBrief(''); run(); }}
+                  className="text-xs font-semibold text-primary hover:underline">
+                  Regenerate
+                </button>
+                <button onClick={() => setOpen(false)}
+                  className="ml-auto px-3 h-8 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90">
+                  Done
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

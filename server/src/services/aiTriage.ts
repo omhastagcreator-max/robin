@@ -86,16 +86,85 @@ Reply with ONLY valid JSON in this exact shape, no markdown, no commentary:
 
 If you don't know, category="other" and suggestedFix should politely tell the user an admin will look at it. Never invent features that aren't in the list above.`;
 
-const ASK_SYSTEM = `You are Robin's helpful in-app assistant, embedded at robin.hastagcreator.com.
+// ─── Robin product knowledge ─ used by the Ask-Robin chat. We pre-bake
+// the full feature list + role matrix so Gemini doesn't hallucinate
+// features that don't exist. Update this when shipping new features.
+const ROBIN_DOCS = `
+ROBIN — AGENCY MANAGEMENT TOOL
+URL: robin.hastagcreator.com
 
-You answer questions from agency staff about how to use Robin. Robin is a MERN web app used by:
-- admin (Rahul), employee (Om), sales (Rishi), workroom (Janvi/Bhavna — huddle-only), client.
+ROLES & WHO USES WHAT:
+- admin (e.g. Rahul) — full access. Owns Admin → Dashboard / Employees / Clients /
+  Projects / Reports / Leave Approvals / Attendance / Crash Logs / Issues + AI.
+- employee (e.g. Om, devs) — Dashboard, Tasks, Workroom, Team Calendar,
+  Client Schedule, Project Pipeline, Vault, Group Chat, Leaves, Profile.
+- sales (e.g. Rishi) — same as employee PLUS the Sales CRM kanban
+  ("/sales") with lead scoring; can create new project pipelines.
+- workroom (e.g. Janvi, Bhavna) — MINIMAL access: a tiny WorkroomHome
+  dashboard + the Work Room (huddle). They can clock in / take breaks,
+  but no tasks, no clients, no pipeline.
+- client — external. Sees their own dashboard with project status + ad
+  reports. No internal pages.
 
-Features: Huddle (LiveKit), Sales CRM kanban, Client Pipeline, Tasks, Leaves, Team Calendar, Client Schedule, Vault, Meta Ads, Cmd-K palette.
+KEY FEATURES (top-level):
+1. Work Room — agency-wide audio + screen-share huddle via LiveKit. Mic
+   permission required. Click anywhere to resume sharing if it dies.
+2. Project Pipeline (formerly Client Pipeline) — kanban of every client
+   project, columns Website / Meta / Influencer / All Done. Each card
+   shows last-update comment and a stage dropdown. Every checklist tick
+   REQUIRES a 3+ char comment for the audit log. AI status snapshot
+   per workflow and a "Brief all projects" button summarize state.
+3. Sales CRM — leads kanban. New leads auto-get an AI hot/warm/cold
+   score with a next-action suggestion (one-click "call today and ask
+   about budget" style). Drag leads between 11 stages.
+4. Tasks — assign, prioritize, status pending/ongoing/done.
+5. Team Calendar — who's on what when.
+6. Client Schedule — daily list of which clients each teammate serves.
+7. Vault — encrypted client credentials.
+8. Meta Ads — daily ad reports, public share links, summaries.
+9. Issues + AI — admin clusters of user-reported bugs/questions with
+   Gemini-suggested workarounds.
+10. Onboard Workroom — admin or anyone flagged canManageWorkroom (Om
+    has this by default) can create huddle-only employees.
+11. Cmd-K command palette — jump anywhere.
 
-Answer in 1-3 short paragraphs. No markdown headers, no code blocks unless absolutely required, no emojis. Address the user as "you".
+DAILY HABITS / QUICK ANSWERS:
+- "Where's my screen sharing button?" — Work Room. Click Share Screen.
+- "How do I take a break?" — top bar of every page has Start/Break/End.
+- "Why can't I see X?" — usually a role mismatch. Check with admin.
+- "Mark stage done?" — open the Project Pipeline card, click the stage
+  dropdown, add a short comment, confirm.
+- "Auto-resume sharing?" — yes; if your share dies, the red bar at the
+  top tells you and any click re-pops the picker.
+
+KNOWN ISSUES / WORKAROUNDS:
+- Safari mic prompt → check Safari Settings for This Website → Microphone.
+- Huddle stuck connecting → likely WebRTC firewall; try mobile hotspot.
+- Logged out unexpectedly → 2-strike 401 guard now in place; usually
+  caused by a stale token. Log in once more.
+- Meta Ads showing for wrong person → admin granted them the 'meta'
+  team; admin can un-tick in Admin → Employees.
+`;
+
+function askSystemPrompt(role: string): string {
+  const roleHints: Record<string, string> = {
+    admin: 'The user is the AGENCY OWNER / ADMIN. Default to operational answers (who, when, how to spot a problem early) over how-to navigation help.',
+    employee: 'The user is an EMPLOYEE (likely a developer or team lead). Default to "where in Robin do I do X" answers with concrete clicks.',
+    sales: 'The user is in SALES. They live in the Sales kanban and the Project Pipeline. Default to lead-management and pipeline workflow answers.',
+    workroom: 'The user is a WORKROOM-ONLY teammate (huddle + tiny dashboard, nothing else). Tell them honestly when something is not in their UI and point them to admin if they need it.',
+    client: 'The user is an EXTERNAL CLIENT. Stay strictly inside what their dashboard exposes; never reveal internal-staff features.',
+  };
+  return `You are Robin AI, the helpful in-app assistant for agency staff at robin.hastagcreator.com.
+
+${ROBIN_DOCS}
+
+The current user's role is: ${role || 'unknown'}.
+${roleHints[role] || ''}
+
+Answer in 1-3 short paragraphs. No markdown headers, no code blocks unless absolutely required, no emojis. Address the user as "you". Be specific: name the sidebar item, the button, the exact path.
 
 If the question is asking for something Robin can't do, say so honestly and suggest contacting their admin. If the question seems like a bug report rather than a how-to, tell them to use the Report Issue tab instead.`;
+}
 
 export interface TriageResult {
   category:       string;
@@ -426,6 +495,47 @@ export async function summarizeWorkflow(wf: {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Brief ALL projects — one Gemini call summarizing every active workflow.
+// Used by the "Brief all projects" button on the Project Pipeline page.
+// Returns a tight paragraph the owner reads at a glance.
+// ─────────────────────────────────────────────────────────────────────────
+const ALL_PROJECTS_SYSTEM = `You write a single-paragraph status brief covering every active project at a digital marketing agency.
+
+Output: one paragraph, 80-180 words, plain text, no markdown, no bullets, no emojis. Mention specific client names. Lead with anything blocked or behind, then who's progressing well, then a one-line "next focus" closer. Be concrete; don't say "going well overall" without naming who.
+
+If there are zero projects, say so in one sentence.`;
+
+export async function summarizeAllProjects(projects: Array<{
+  clientName?: string;
+  services: Array<{ label?: string; serviceType: string; status: string; pct: number; remaining: number }>;
+  lastUpdate?: string;
+}>): Promise<{ text: string; aiUsed: boolean }> {
+  if (!apiKey) {
+    return { text: 'AI brief not configured. Add GEMINI_API_KEY on the server.', aiUsed: false };
+  }
+  if (!projects.length) {
+    return { text: 'No active projects right now — onboard a client to get started.', aiUsed: false };
+  }
+  try {
+    const payload = JSON.stringify({
+      projectCount: projects.length,
+      projects: projects.map(p => ({
+        client: p.clientName || 'Unnamed',
+        services: p.services.map(s => ({
+          name: s.label || s.serviceType, status: s.status, pct: s.pct, remaining: s.remaining,
+        })),
+        lastUpdate: p.lastUpdate || null,
+      })),
+    });
+    const text = await callGemini(ALL_PROJECTS_SYSTEM, payload, 400);
+    return { text: text.trim(), aiUsed: true };
+  } catch (err) {
+    console.error('[summarizeAllProjects] failed:', (err as Error).message);
+    return { text: 'AI brief generation failed. Try again in a moment.', aiUsed: false };
+  }
+}
+
 export async function askRobin(question: string, context: any): Promise<{ answer: string; aiUsed: boolean }> {
   if (!apiKey) {
     return {
@@ -441,7 +551,11 @@ export async function askRobin(question: string, context: any): Promise<{ answer
       userRole: context?.userRole || '',
     });
 
-    const answer = await callGemini(ASK_SYSTEM, userPayload, 800);
+    // Role-tailored system prompt — Gemini gets the right framing for
+    // whoever is asking. Workroom users get answers scoped to their tiny
+    // surface, admin gets operational answers, sales gets pipeline-flavoured
+    // ones, etc.
+    const answer = await callGemini(askSystemPrompt(context?.userRole || ''), userPayload, 800);
     return { answer: answer.trim(), aiUsed: true };
   } catch (err) {
     console.error('[askRobin] failed:', (err as Error).message);

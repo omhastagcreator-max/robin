@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
-import { scoreLead, summarizeWorkflow, generateMorningBrief, aiHealth } from '../services/aiTriage';
+import { scoreLead, summarizeWorkflow, summarizeAllProjects, generateMorningBrief, aiHealth } from '../services/aiTriage';
 import User from '../models/User';
 import Lead from '../models/Lead';
 import ClientWorkflow from '../models/ClientWorkflow';
@@ -74,6 +74,46 @@ export async function rescoreLead(req: AuthRequest, res: Response): Promise<void
     }
     res.json({ leadId: String(lead._id), ...ai });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * POST /api/ai-automation/brief-all-projects
+ * One Gemini call → one-paragraph state of every active project.
+ * The Project Pipeline page surfaces this as a "Brief all projects" button.
+ */
+export async function briefAllProjects(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const list = await ClientWorkflow.find({
+      organizationId: orgId,
+      // Skip workflows where every service is done — focus on active work.
+      'services.status': { $ne: 'done' },
+    }).select('clientName services activity').lean();
+
+    const projects = (list as any[]).map(wf => {
+      const services = (wf.services || []).map((s: any) => {
+        const total = s.checklist?.length || 0;
+        const done  = (s.checklist || []).filter((c: any) => c.done).length;
+        return {
+          label: s.label, serviceType: s.serviceType, status: s.status,
+          pct: total ? Math.round((done / total) * 100) : 0,
+          remaining: total - done,
+        };
+      });
+      const lastActivity = (wf.activity || []).slice(-1)[0];
+      return {
+        clientName: wf.clientName,
+        services,
+        lastUpdate: lastActivity ? (lastActivity.detail || lastActivity.action) : null,
+      };
+    });
+
+    const r = await summarizeAllProjects(projects);
+    res.json({ ...r, projectCount: projects.length });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 }
 
 /**

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HelpCircle, X, Send, AlertTriangle, Sparkles, Loader2, Check, Image as ImageIcon } from 'lucide-react';
+import { X, Send, AlertTriangle, Sparkles, Loader2, Check, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import * as api from '@/api';
@@ -87,14 +87,31 @@ export function HelpBubble() {
 
   return (
     <>
-      {/* Floating bubble */}
+      {/* Floating Robin AI bubble — bottom-right, BUT stacked ABOVE the
+          Start-Meeting FAB so the two don't overlap. The MeetingQuickFab
+          sits at bottom-5; we sit at bottom-24 (offset by ~76px including
+          its height + a gap). A small "AI" badge on the avatar makes it
+          obvious this is the assistant, not a generic help icon. */}
       <button
         onClick={() => setOpen(o => !o)}
-        title={open ? 'Close help' : 'Need help? Report an issue'}
-        className="fixed bottom-5 right-5 z-[80] h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
-        aria-label="Help and report issue"
+        title={open ? 'Close Robin AI' : 'Ask Robin AI / Report an issue'}
+        className="fixed bottom-24 right-5 z-[80] h-12 w-12 rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-transform overflow-visible"
+        style={{
+          background: 'linear-gradient(135deg, hsl(178 65% 26%) 0%, hsl(178 70% 38%) 50%, hsl(40 90% 55%) 100%)',
+          boxShadow: '0 8px 28px -8px hsl(178 65% 26% / 0.55), 0 0 0 1px hsl(178 65% 26% / 0.15)',
+        }}
+        aria-label="Robin AI assistant"
       >
-        {open ? <X className="h-5 w-5" /> : <HelpCircle className="h-5 w-5" />}
+        {open ? (
+          <X className="h-5 w-5 text-white" />
+        ) : (
+          <>
+            <Sparkles className="h-5 w-5 text-white drop-shadow-sm" />
+            <span className="absolute -top-1 -right-1 px-1 h-3.5 rounded-full bg-rose-500 text-white text-[8px] font-bold flex items-center justify-center shadow-sm">
+              AI
+            </span>
+          </>
+        )}
       </button>
 
       <AnimatePresence>
@@ -104,13 +121,19 @@ export function HelpBubble() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
             transition={{ duration: 0.15 }}
-            className="fixed bottom-20 right-5 z-[80] w-[min(380px,calc(100vw-2.5rem))] max-h-[min(560px,calc(100vh-7rem))] bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            className="fixed bottom-40 right-5 z-[80] w-[min(380px,calc(100vw-2.5rem))] max-h-[min(560px,calc(100vh-12rem))] bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden"
           >
             {/* Header */}
             <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-muted/30">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-primary" />
-                <p className="text-sm font-semibold">Need a hand?</p>
+                <div className="h-6 w-6 rounded-full flex items-center justify-center shrink-0"
+                  style={{ background: 'linear-gradient(135deg, hsl(178 65% 26%) 0%, hsl(178 70% 38%) 50%, hsl(40 90% 55%) 100%)' }}>
+                  <Sparkles className="h-3 w-3 text-white" />
+                </div>
+                <div className="leading-tight">
+                  <p className="text-sm font-semibold">Robin AI</p>
+                  <p className="text-[10px] text-muted-foreground -mt-0.5">Tailored to your role</p>
+                </div>
               </div>
               <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground">
                 <X className="h-4 w-4" />

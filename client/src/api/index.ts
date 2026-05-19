@@ -242,6 +242,7 @@ export const issueClusters = () => api.get('/issues/clusters').then(r => r.data)
 // individualised). These call the new Gemini-backed automation routes.
 export const aiRescoreLead          = (id: string) => api.post(`/ai-automation/score-lead/${id}`).then(r => r.data);
 export const aiSummarizeWorkflow    = (id: string) => api.post(`/ai-automation/summarize-workflow/${id}`).then(r => r.data);
+export const aiBriefAllProjects     = ()           => api.post('/ai-automation/brief-all-projects', {}).then(r => r.data);
 export const aiOrgMorningBrief      = ()           => api.get('/ai-automation/morning-brief').then(r => r.data);
 export const aiRegenerateOrgBrief   = ()           => api.post('/ai-automation/morning-brief', {}).then(r => r.data);
 export const adminRemoveUser = (id: string)                              => api.delete(`/admin/users/${id}`).then(r => r.data);
