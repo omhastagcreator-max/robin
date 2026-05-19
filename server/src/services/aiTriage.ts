@@ -110,14 +110,24 @@ export interface TriageResult {
 
 async function tryGeminiOnce(model: string, systemPrompt: string, userPayload: string, maxOutputTokens: number): Promise<string> {
   const url = `${endpointFor(model)}?key=${encodeURIComponent(apiKey)}`;
-  const body = {
+  const body: any = {
     // Gemini doesn't have a dedicated "system" role; we wire it as system_instruction.
     system_instruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: 'user', parts: [{ text: userPayload }] }],
     generationConfig: {
       temperature: 0.3,
-      maxOutputTokens,
+      // Bump a little so 2.5's "thinking" tokens don't starve the actual
+      // text response. 2.5 Flash reserves a slice of maxOutputTokens for
+      // internal reasoning before producing output — at very low budgets
+      // (e.g. 16) the budget can be entirely consumed by thinking and
+      // the visible response comes back empty.
+      maxOutputTokens: Math.max(maxOutputTokens, 256),
       responseMimeType: 'text/plain',
+      // Disable thinking on models that support it (Gemini 2.5 family).
+      // Ignored by 2.0 / 1.5 silently. Triage and quick Q&A don't need
+      // deep reasoning; this makes responses faster, cheaper, and ensures
+      // every output token is real text.
+      thinkingConfig: { thinkingBudget: 0 },
     },
   };
 
@@ -133,8 +143,17 @@ async function tryGeminiOnce(model: string, systemPrompt: string, userPayload: s
   }
 
   const json: any = await r.json();
-  const text = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join('').trim();
-  if (!text) throw new Error(`gemini_empty_response (${model})`);
+  const candidate = json?.candidates?.[0];
+  const text = candidate?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join('').trim();
+  if (!text) {
+    // Surface the EXACT reason so we don't lose context in the next round
+    // of debugging. SAFETY = content blocked by Gemini's safety filters;
+    // MAX_TOKENS = output cut off before text was emitted; RECITATION =
+    // refused because output too closely matches copyrighted material.
+    const finishReason = candidate?.finishReason || 'NO_CANDIDATE';
+    const safetyRatings = candidate?.safetyRatings ? JSON.stringify(candidate.safetyRatings).slice(0, 200) : '';
+    throw new Error(`gemini_empty_response (${model}): finishReason=${finishReason}${safetyRatings ? ' safety=' + safetyRatings : ''}`);
+  }
   return text;
 }
 
