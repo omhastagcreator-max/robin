@@ -48,8 +48,10 @@ export function SessionTopBar() {
   } = useSession();
   const { isOnCall, toggle: toggleOnCall } = useOnCall();
 
-  // Internal staff (admin/employee/sales) all clock in. Clients don't.
-  if (!['admin', 'employee', 'sales'].includes(role)) return null;
+  // Internal staff (admin/employee/sales/workroom) all clock in + can take
+  // breaks. Clients don't. Workroom users get the same break controls as
+  // a regular employee — owner ask: "let Janvi take a break like normal."
+  if (!['admin', 'employee', 'sales', 'workroom'].includes(role)) return null;
 
   const isActive  = session?.status === 'active';
   const isOnBreak = session?.status === 'on_break';

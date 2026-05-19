@@ -12,7 +12,9 @@ export function PresenceStrip() {
   const { role } = useAuth();
   const { onBreak, onLeave } = useTeamPresence();
 
-  const internal = role === 'admin' || role === 'employee' || role === 'sales';
+  // Workroom users clock in and take breaks like the rest of internal
+  // staff, so they should see the same "X teammates on break" banner.
+  const internal = role === 'admin' || role === 'employee' || role === 'sales' || role === 'workroom';
   if (!internal) return null;
 
   const breakCount = onBreak?.length || 0;
