@@ -6,6 +6,7 @@ import User from '../models/User';
 import SopOverride from '../models/SopOverride';
 import { SERVICE_TEMPLATES, SERVICE_TYPES, blockingServices, type ServiceType } from '../lib/workflowTemplates';
 import { notify } from '../services/notify';
+import { performWorkflowAction, WorkflowActionError } from '../services/workflowActions';
 
 /**
  * Resolve the effective SOP checklist + label for a service in a given org.
@@ -336,50 +337,78 @@ export async function getWorkflow(req: AuthRequest, res: Response): Promise<void
 /**
  * PUT /api/client-workflows/:id/services/:sid/check  { index, done, comment }
  *
- * A comment is REQUIRED on every check / uncheck. Owner ask: "when any
- * employee checks or unchecks anything in client pipeline they need to add
- * a comment." The comment lands in the activity log alongside the action
- * so admin can audit who said what, when.
+ * Now routes through the Pipeline 2.0 `performWorkflowAction` chokepoint.
+ * The chokepoint enforces the comment, writes a typed WorkflowActivity
+ * row (separate collection — searchable, paginated), refreshes the
+ * workflow's denormalized rollup, and dispatches optional post-hooks.
+ *
+ * Pre-mutation authorization checks (org membership, assignee-or-admin,
+ * blocked guard) still live here in the controller because they need
+ * route-level 4xx responses; the chokepoint handles audit + persistence.
  */
 export async function toggleChecklist(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     const { index, done, comment } = req.body || {};
-    const note = String(comment || '').trim();
-    if (note.length < 3) {
-      res.status(400).json({ error: 'Add a short comment (at least 3 characters) explaining the change.' });
-      return;
-    }
-    if (note.length > 600) {
-      res.status(400).json({ error: 'Comment is too long (max 600 characters).' });
-      return;
-    }
-    const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
-    if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
-    const svc = wf.services.id(req.params.sid);
-    if (!svc) { res.status(404).json({ error: 'Service not found' }); return; }
-    // Only the assignee or an admin can tick
-    if (svc.assignedTo !== req.user!.id && req.user!.role !== 'admin') {
+
+    // Pre-mutation auth: load the workflow, verify access, then hand off
+    // the mutation to performWorkflowAction.
+    const wfPreview = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!wfPreview) { res.status(404).json({ error: 'Workflow not found' }); return; }
+    const svcPreview = wfPreview.services.id(req.params.sid);
+    if (!svcPreview) { res.status(404).json({ error: 'Service not found' }); return; }
+    if (svcPreview.assignedTo !== req.user!.id && req.user!.role !== 'admin') {
       res.status(403).json({ error: 'You can only update your own assigned service' });
       return;
     }
-    if (svc.status === 'blocked') { res.status(409).json({ error: 'Service is blocked by another service that isn\'t done yet' }); return; }
-    const item = svc.checklist?.[index];
-    if (!item) { res.status(400).json({ error: 'Invalid checklist index' }); return; }
-    item.done = !!done;
-    item.doneAt = done ? new Date() : undefined;
-    item.doneBy = done ? req.user!.id : undefined;
-    // Returning a service back to in_progress clears the prior return note.
-    if (done && svc.returnedReason) { svc.returnedReason = undefined; svc.returnedAt = undefined; }
-    recomputeServiceStatuses(wf);
-    wf.activity.push({
-      actorId: req.user!.id, action: done ? 'item_checked' : 'item_unchecked',
-      serviceType: svc.serviceType,
-      detail: `${item.text} — "${note}"`,
-    } as any);
-    await wf.save();
-    res.json(wf);
+    if (svcPreview.status === 'blocked') {
+      res.status(409).json({ error: 'Service is blocked by another service that isn\'t done yet' });
+      return;
+    }
+    if (!svcPreview.checklist?.[index]) {
+      res.status(400).json({ error: 'Invalid checklist index' });
+      return;
+    }
+
+    try {
+      const beforeText = svcPreview.checklist[index].text;
+      const result = await performWorkflowAction({
+        workflowId: req.params.id,
+        actorId:    req.user!.id,
+        action:     done ? 'item_checked' : 'item_unchecked',
+        serviceId:  req.params.sid,
+        serviceType: svcPreview.serviceType,
+        checklistIndex: index,
+        comment,
+        before: { done: !done, text: beforeText },
+        after:  { done: !!done, text: beforeText },
+        summaryForRollup: `${(done ? 'Ticked' : 'Unticked')} "${beforeText}"`,
+        mutate: async (wf: any) => {
+          const svc = wf.services.id(req.params.sid);
+          const item = svc.checklist[index];
+          item.done = !!done;
+          item.doneAt = done ? new Date() : undefined;
+          item.doneBy = done ? req.user!.id : undefined;
+          if (done && svc.returnedReason) { svc.returnedReason = undefined; svc.returnedAt = undefined; }
+          recomputeServiceStatuses(wf);
+          // Legacy backstop — keep writing to inline activity[] for one
+          // release while WorkflowActivity backfills. Remove after Phase 12.
+          wf.activity.push({
+            actorId: req.user!.id, action: done ? 'item_checked' : 'item_unchecked',
+            serviceType: svc.serviceType,
+            detail: `${item.text} — "${comment}"`,
+          });
+        },
+      });
+      res.json(result.workflow);
+    } catch (err: any) {
+      if (err instanceof WorkflowActionError) {
+        res.status(err.status || 400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
@@ -387,83 +416,105 @@ export async function toggleChecklist(req: AuthRequest, res: Response): Promise<
 /**
  * PUT /api/client-workflows/:id/services/:sid/complete  { comment }
  *
- * Comment is REQUIRED — same audit-trail rule as toggleChecklist.
+ * Phase 4: routes through `performWorkflowAction`. The chokepoint owns
+ * the audit comment, the WorkflowActivity row, and the denormalized
+ * rollup. We keep the unblock notifications + sales-notify side effects
+ * in this controller because they reach OUTSIDE the workflow itself.
  */
 export async function completeService(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
-    const note = String(req.body?.comment || '').trim();
-    if (note.length < 3) {
-      res.status(400).json({ error: 'Add a short comment explaining what was done before marking the stage complete.' });
-      return;
-    }
-    if (note.length > 600) {
-      res.status(400).json({ error: 'Comment is too long (max 600 characters).' });
-      return;
-    }
-    const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
-    if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
-    const svc = wf.services.id(req.params.sid);
-    if (!svc) { res.status(404).json({ error: 'Service not found' }); return; }
-    if (svc.assignedTo !== req.user!.id && req.user!.role !== 'admin') {
+
+    // Pre-mutation auth + state validation.
+    const wfPreview = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!wfPreview) { res.status(404).json({ error: 'Workflow not found' }); return; }
+    const svcPreview = wfPreview.services.id(req.params.sid);
+    if (!svcPreview) { res.status(404).json({ error: 'Service not found' }); return; }
+    if (svcPreview.assignedTo !== req.user!.id && req.user!.role !== 'admin') {
       res.status(403).json({ error: 'Only the assignee can complete this service' });
       return;
     }
-    if (svc.status === 'blocked') {
+    if (svcPreview.status === 'blocked') {
       res.status(409).json({ error: 'This service is waiting on an earlier service — can\'t complete it yet.' });
       return;
     }
-    const total = svc.checklist?.length || 0;
-    const ticked = (svc.checklist || []).filter((c: any) => c.done).length;
+    const total = svcPreview.checklist?.length || 0;
+    const ticked = (svcPreview.checklist || []).filter((c: any) => c.done).length;
     if (ticked < total) {
       res.status(409).json({ error: 'Tick every checklist item before completing the service' });
       return;
     }
-    // Snapshot which services were 'blocked' BEFORE we recompute — any that
-    // flip to non-blocked are now actionable and their owners deserve a ping.
+
+    // Snapshot blocked services before we recompute statuses.
     const blockedBefore = new Set(
-      wf.services.filter(s => s.status === 'blocked').map(s => String((s as any)._id)),
+      wfPreview.services.filter(s => s.status === 'blocked').map(s => String((s as any)._id)),
     );
 
-    svc.status = 'done';
-    svc.completedAt = new Date();
-    wf.activity.push({
-      actorId: req.user!.id, action: 'service_completed',
-      serviceType: svc.serviceType,
-      detail: `${svc.label} — "${note}"`,
-    } as any);
-    recomputeServiceStatuses(wf);
-    await wf.save();
+    try {
+      const result = await performWorkflowAction({
+        workflowId: req.params.id,
+        actorId:    req.user!.id,
+        action:     'service_completed',
+        serviceId:  req.params.sid,
+        serviceType: svcPreview.serviceType,
+        comment:    String(req.body?.comment || ''),
+        before:     { status: svcPreview.status },
+        after:      { status: 'done' },
+        isClientRelevant: true,   // service-done events go in client-facing summary
+        summaryForRollup: `Completed ${svcPreview.label}`,
+        mutate: async (wf: any) => {
+          const svc = wf.services.id(req.params.sid);
+          svc.status = 'done';
+          svc.completedAt = new Date();
+          // Legacy backstop — keep writing to inline activity[] for one
+          // release while WorkflowActivity backfills.
+          wf.activity.push({
+            actorId: req.user!.id, action: 'service_completed',
+            serviceType: svc.serviceType,
+            detail: `${svc.label} — "${String(req.body?.comment || '').trim()}"`,
+          });
+          recomputeServiceStatuses(wf);
+        },
+      });
+      const wf = result.workflow;
 
-    // Notify the assignees of any service that JUST got unblocked.
-    const io = req.app.get('io');
-    for (const s of wf.services) {
-      const idStr = String((s as any)._id);
-      if (blockedBefore.has(idStr) && s.status !== 'blocked' && s.assignedTo) {
+      // Side-effects: notify assignees of newly-unblocked services + sales.
+      // These reach OUTSIDE the workflow doc so they stay in the controller.
+      const io = req.app.get('io');
+      const svc = wf.services.id(req.params.sid);
+      for (const s of wf.services) {
+        const idStr = String((s as any)._id);
+        if (blockedBefore.has(idStr) && s.status !== 'blocked' && s.assignedTo) {
+          await notify({
+            io, organizationId: orgId, actorId: req.user!.id,
+            userId: s.assignedTo,
+            type: 'workflow.unblocked',
+            title: `${s.label} is now ready for you`,
+            body:  `${wf.clientName || 'A client'} — ${svc?.label || 'a service'} just wrapped up, you can start.`,
+            entityId: String(wf._id), entityType: 'workflow',
+          });
+        }
+      }
+      if (wf.createdBy && wf.createdBy !== req.user!.id) {
         await notify({
           io, organizationId: orgId, actorId: req.user!.id,
-          userId: s.assignedTo,
-          type: 'workflow.unblocked',
-          title: `${s.label} is now ready for you`,
-          body:  `${wf.clientName || 'A client'} — ${svc.label} just wrapped up, you can start.`,
+          userId: wf.createdBy,
+          type: 'workflow.completed',
+          title: `${svc?.label || 'A service'} is done · ${wf.clientName || 'client'}`,
+          body:  `Pipeline progressed — check the next stage when you have a sec.`,
           entityId: String(wf._id), entityType: 'workflow',
         });
       }
-    }
-    // Also notify sales (who created the pipeline) when a whole service completes.
-    if (wf.createdBy && wf.createdBy !== req.user!.id) {
-      await notify({
-        io, organizationId: orgId, actorId: req.user!.id,
-        userId: wf.createdBy,
-        type: 'workflow.completed',
-        title: `${svc.label} is done · ${wf.clientName || 'client'}`,
-        body:  `Pipeline progressed — check the next stage when you have a sec.`,
-        entityId: String(wf._id), entityType: 'workflow',
-      });
-    }
 
-    res.json(wf);
+      res.json(wf);
+    } catch (err: any) {
+      if (err instanceof WorkflowActionError) {
+        res.status(err.status || 400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 

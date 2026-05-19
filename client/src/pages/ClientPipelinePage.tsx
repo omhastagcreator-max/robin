@@ -11,6 +11,11 @@ import { toast } from 'sonner';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useVisiblePoll } from '@/hooks/useVisiblePoll';
+import { CommentRequiredModal } from '@/components/shared/CommentRequiredModal';
+import { useDrawer } from '@/components/ui/RightDrawer';
+import { ProjectDetailPanel } from '@/components/panels/ProjectDetailPanel';
+import { useShortcut } from '@/hooks/useShortcut';
+import { StatusPill, type Status } from '@/components/ui/StatusPill';
 
 /**
  * ClientPipelinePage — universal "where is X at?" view.
@@ -31,7 +36,11 @@ interface ServiceSummary {
   serviceType: string;
   label: string;
   status: 'pending' | 'in_progress' | 'done' | 'blocked';
-  checklist: Array<{ _id?: string; title?: string; done: boolean }>;
+  // The server stores the per-item label as `text` (see ClientWorkflow
+  // model). Older code paths called it `title` — we accept both for
+  // defensive forward-compatibility, but `text` is what's actually on
+  // disk. This is what fixed the "Untitled step" everywhere bug.
+  checklist: Array<{ _id?: string; text?: string; title?: string; done: boolean }>;
   assignedTo?: string;
 }
 interface Workflow {
@@ -61,6 +70,21 @@ export default function ClientPipelinePage() {
   const [list, setList]         = useState<Workflow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const drawer = useDrawer();
+
+  // Open a workflow in the drawer (rather than navigating to a detail page).
+  // Keeps the user's place in the kanban/filter context — admin can review
+  // three projects in 15 seconds without losing scroll position.
+  const openProject = (wfId: string, clientName?: string) => {
+    drawer.open({
+      title: clientName || 'Project',
+      width: 'lg',
+      content: <ProjectDetailPanel workflowId={wfId} />,
+    });
+  };
+
+  // `n` — quick "new project" when admin/sales is on this page.
+  useShortcut('n', () => { if (isAdminOrSales) setShowCreate(true); });
   // Last fingerprint of the workflow list — we compare incoming poll data
   // against this and SKIP setState when nothing changed. This is what kills
   // the visible refresh: even though the data was identical, setList(new
@@ -179,6 +203,7 @@ export default function ClientPipelinePage() {
             isAdminOrSales={isAdminOrSales}
             onAdd={() => setShowCreate(true)}
             onMutated={load}
+            onOpenDrawer={openProject}
           />
         )}
       </div>
@@ -214,31 +239,66 @@ function OverviewReport({ list }: { list: Workflow[] }) {
     return { total, done, active, blocked, pct, totalItems, doneItems };
   }, [list]);
 
+  // Visual stat strip — progress ring on the left, four micro-stats on
+  // the right. Designed to read at a glance instead of taking up four
+  // dashboard cards' worth of vertical space.
+  const ringSize = 48;
+  const ringStroke = 5;
+  const ringR = (ringSize - ringStroke) / 2;
+  const ringC = 2 * Math.PI * ringR;
+  const ringOffset = ringC * (1 - stats.pct / 100);
+
   return (
-    <div className="rounded-2xl border border-border bg-card overflow-hidden">
-      <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center gap-2">
-        <Activity className="h-4 w-4 text-primary" />
-        <p className="text-xs uppercase tracking-[0.14em] font-semibold text-muted-foreground">Overview</p>
-        <span className="text-[11px] text-muted-foreground ml-auto">Click any column below for what's left</span>
+    <div className="rounded-2xl border border-border bg-card p-4 flex items-center gap-5 flex-wrap">
+      {/* Progress ring */}
+      <div className="flex items-center gap-3 shrink-0">
+        <div className="relative" style={{ width: ringSize, height: ringSize }}>
+          <svg width={ringSize} height={ringSize} className="-rotate-90">
+            <circle cx={ringSize/2} cy={ringSize/2} r={ringR}
+              fill="none" stroke="hsl(var(--muted))" strokeWidth={ringStroke} />
+            <circle cx={ringSize/2} cy={ringSize/2} r={ringR}
+              fill="none" stroke="hsl(var(--primary))" strokeWidth={ringStroke}
+              strokeDasharray={ringC} strokeDashoffset={ringOffset}
+              strokeLinecap="round"
+              className="transition-all duration-500" />
+          </svg>
+          <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold tabular-nums">{stats.pct}%</span>
+        </div>
+        <div className="leading-tight">
+          <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Overall</p>
+          <p className="text-sm font-bold">{stats.doneItems} of {stats.totalItems} steps</p>
+        </div>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-border">
-        <Stat icon={<Users className="h-4 w-4" />} label="Active clients" value={stats.active} sub={`${stats.total} total`} />
-        <Stat icon={<TrendingUp className="h-4 w-4 text-primary" />} label="Overall progress" value={`${stats.pct}%`} sub={`${stats.doneItems}/${stats.totalItems} steps`} />
-        <Stat icon={<CheckCircle2 className="h-4 w-4 text-emerald-600" />} label="Completed" value={stats.done} sub="pipelines done" />
-        <Stat icon={<AlertTriangle className="h-4 w-4 text-amber-600" />} label="Needs attention" value={stats.blocked} sub="blocked services" />
+
+      {/* Vertical divider, hidden on mobile */}
+      <div className="hidden sm:block h-10 w-px bg-border" />
+
+      {/* Micro stats */}
+      <div className="flex items-center gap-5 sm:gap-7 flex-wrap">
+        <MicroStat icon={<Users className="h-3.5 w-3.5" />} value={stats.active} label="active" tone="primary" />
+        <MicroStat icon={<CheckCircle2 className="h-3.5 w-3.5" />} value={stats.done} label="done" tone="success" />
+        <MicroStat icon={<AlertTriangle className="h-3.5 w-3.5" />} value={stats.blocked} label="blocked" tone={stats.blocked > 0 ? 'danger' : 'muted'} />
+        <MicroStat icon={<Activity className="h-3.5 w-3.5" />} value={stats.total} label="total" tone="muted" />
       </div>
     </div>
   );
 }
 
-function Stat({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: React.ReactNode; sub: string }) {
+function MicroStat({ icon, value, label, tone }: {
+  icon: React.ReactNode; value: number; label: string;
+  tone: 'primary' | 'success' | 'danger' | 'muted';
+}) {
+  const colorMap: Record<typeof tone, string> = {
+    primary: 'text-primary',
+    success: 'text-emerald-600',
+    danger:  'text-rose-600',
+    muted:   'text-muted-foreground',
+  };
   return (
-    <div className="px-4 py-3 flex flex-col gap-0.5">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
-        {icon}<span>{label}</span>
-      </div>
-      <p className="text-xl font-bold tabular-nums leading-tight">{value}</p>
-      <p className="text-[11px] text-muted-foreground">{sub}</p>
+    <div className="flex items-center gap-1.5">
+      <span className={colorMap[tone]}>{icon}</span>
+      <p className="text-base font-bold tabular-nums">{value}</p>
+      <p className="text-[11px] text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -291,8 +351,9 @@ const PIPELINE_COLUMNS: ColumnDef[] = [
   },
 ];
 
-function PipelineKanban({ list, isAdminOrSales, onAdd, onMutated }: {
+function PipelineKanban({ list, isAdminOrSales, onAdd, onMutated, onOpenDrawer }: {
   list: Workflow[]; isAdminOrSales: boolean; onAdd: () => void; onMutated: () => void;
+  onOpenDrawer?: (wfId: string, clientName?: string) => void;
 }) {
   // Bucket each workflow into the FIRST matching column so a client only
   // appears once on the board. Order matters — Website before Meta means
@@ -326,6 +387,7 @@ function PipelineKanban({ list, isAdminOrSales, onAdd, onMutated }: {
               isAdminOrSales={isAdminOrSales}
               onAdd={onAdd}
               onMutated={onMutated}
+              onOpenDrawer={onOpenDrawer}
             />
             {i < PIPELINE_COLUMNS.length - 1 && (
               <div className="flex items-center justify-center px-0.5">
@@ -356,6 +418,7 @@ function PipelineKanban({ list, isAdminOrSales, onAdd, onMutated }: {
               isAdminOrSales={isAdminOrSales}
               onAdd={onAdd}
               onMutated={onMutated}
+              onOpenDrawer={onOpenDrawer}
             />
             {i < PIPELINE_COLUMNS.length - 1 && (
               <div className="flex items-center justify-center py-1.5">
@@ -373,37 +436,66 @@ function PipelineKanban({ list, isAdminOrSales, onAdd, onMutated }: {
   );
 }
 
-function Column({ col, clients, isAdminOrSales, onAdd, onMutated }: {
+function Column({ col, clients, isAdminOrSales, onAdd, onMutated, onOpenDrawer }: {
   col: ColumnDef; clients: Workflow[]; isAdminOrSales: boolean; onAdd: () => void; onMutated: () => void;
+  onOpenDrawer?: (wfId: string, clientName?: string) => void;
 }) {
+  // Map column key → soft tinted top accent strip + matching count chip
+  // background. The accent makes each column glance-recognisable without
+  // shouting.
+  const accentBar: Record<string, string> = {
+    shopify:    'bg-emerald-500',
+    meta:       'bg-blue-500',
+    influencer: 'bg-amber-500',
+    done:       'bg-foreground/30',
+  };
+  const accentChip: Record<string, string> = {
+    shopify:    'bg-emerald-500/15 text-emerald-700',
+    meta:       'bg-blue-500/15 text-blue-700',
+    influencer: 'bg-amber-500/15 text-amber-700',
+    done:       'bg-muted text-muted-foreground',
+  };
   return (
-    <div className="rounded-2xl border border-border bg-card overflow-hidden flex flex-col min-h-[300px]">
-      {/* Header — service label + count + (admin/sales only) add button */}
-      <div className="px-3 py-2.5 border-b border-border bg-muted/30 flex items-center gap-2">
+    <div className="rounded-2xl border border-border bg-card overflow-hidden flex flex-col min-h-[320px]">
+      {/* Coloured accent strip at the very top of the column — same as
+          Notion / Linear kanban headers. Makes each column instantly
+          recognisable. */}
+      <div className={`h-1 ${accentBar[col.key] || 'bg-border'}`} />
+
+      {/* Header — service label, count chip, (admin/sales only) add btn */}
+      <div className="px-3 py-3 border-b border-border flex items-center gap-2">
         <div className="flex-1 min-w-0">
-          <p className={`text-[10px] uppercase tracking-[0.14em] font-semibold ${col.accent || 'text-muted-foreground'}`}>
+          <p className={`text-[10px] uppercase tracking-[0.14em] font-bold ${col.accent || 'text-muted-foreground'}`}>
             {col.label}
           </p>
-          <p className="text-base font-bold mt-0.5">{clients.length} {clients.length === 1 ? 'client' : 'clients'}</p>
+          <div className="flex items-center gap-2 mt-1">
+            <span className={`px-1.5 h-5 inline-flex items-center rounded text-[10px] font-bold tabular-nums ${accentChip[col.key] || 'bg-muted'}`}>
+              {clients.length}
+            </span>
+            <p className="text-[11px] text-muted-foreground">
+              {clients.length === 1 ? 'project' : 'projects'}
+            </p>
+          </div>
         </div>
         {isAdminOrSales && col.key !== 'done' && (
           <button onClick={onAdd}
             title="Onboard a new client"
-            className="h-7 w-7 rounded-lg bg-muted text-primary hover:bg-primary/10 flex items-center justify-center transition-colors">
+            className="h-7 w-7 rounded-lg border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 flex items-center justify-center transition-colors">
             <Plus className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
 
       {/* Cards inside the column */}
-      <div className="p-2 space-y-1.5 flex-1 overflow-y-auto">
+      <div className="p-2 space-y-2 flex-1 overflow-y-auto bg-muted/10">
         {clients.length === 0 ? (
-          <div className="h-24 rounded-xl border border-dashed border-border bg-muted/10 flex items-center justify-center">
-            <p className="text-[11px] text-muted-foreground">No clients yet</p>
+          <div className="h-28 rounded-xl border border-dashed border-border bg-card flex flex-col items-center justify-center gap-1.5 text-center px-3">
+            <Circle className="h-4 w-4 text-muted-foreground/40" />
+            <p className="text-[11px] text-muted-foreground">No projects in this stage</p>
           </div>
         ) : (
           clients.map(wf => (
-            <ClientCard key={wf._id} wf={wf} highlightServiceType={col.serviceType} onMutated={onMutated} />
+            <ClientCard key={wf._id} wf={wf} highlightServiceType={col.serviceType} onMutated={onMutated} onOpenDrawer={onOpenDrawer} />
           ))
         )}
       </div>
@@ -411,8 +503,8 @@ function Column({ col, clients, isAdminOrSales, onAdd, onMutated }: {
   );
 }
 
-function ClientCard({ wf, highlightServiceType, onMutated }: {
-  wf: Workflow; highlightServiceType?: string; onMutated: () => void;
+function ClientCard({ wf, highlightServiceType, onMutated, onOpenDrawer }: {
+  wf: Workflow; highlightServiceType?: string; onMutated: () => void; onOpenDrawer?: (wfId: string, clientName?: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -448,7 +540,7 @@ function ClientCard({ wf, highlightServiceType, onMutated }: {
     const items: { service: string; title: string }[] = [];
     for (const s of src) {
       for (const c of (s.checklist || [])) {
-        if (!c.done) items.push({ service: s.label || s.serviceType, title: c.title || 'Untitled step' });
+        if (!c.done) items.push({ service: s.label || s.serviceType, title: c.text || c.title || 'Untitled step' });
       }
     }
     return items;
@@ -467,19 +559,22 @@ function ClientCard({ wf, highlightServiceType, onMutated }: {
     status === 'in_progress' ? 'In progress' :
                                'Pending';
 
-  const markDone = async () => {
+  const [confirmMarkDone, setConfirmMarkDone] = useState(false);
+
+  const markDone = () => {
     if (!relevant?._id || busy) return;
-    // Required comment — owner ask: any pipeline action must carry a note
-    // so admin can audit who said what. We use a window.prompt here to
-    // keep the change small; the full per-card comment modal lives on
-    // the workflow detail page.
-    const note = window.prompt(`Add a short note before marking "${relevant.label || 'this service'}" done (visible to admin):`, '');
-    if (note === null) return;                                 // user cancelled
-    if (note.trim().length < 3) { toast.error('Please write a few words.'); return; }
-    setBusy(true);
     setMenuOpen(false);
+    // Open the proper styled modal instead of window.prompt. The actual
+    // API call happens in modal.onSubmit so the modal can render a
+    // loading state while it's in flight.
+    setConfirmMarkDone(true);
+  };
+
+  const performMarkDone = async (comment: string) => {
+    if (!relevant?._id) return;
+    setBusy(true);
     try {
-      await api.cwCompleteService(wf._id, relevant._id, { comment: note.trim() });
+      await api.cwCompleteService(wf._id, relevant._id, { comment });
       toast.success(`${relevant.label || 'Service'} marked done`);
       onMutated();
     } catch { /* axios interceptor */ }
@@ -487,25 +582,44 @@ function ClientCard({ wf, highlightServiceType, onMutated }: {
   };
 
   return (
-    <div className="bg-background border border-border rounded-xl overflow-hidden">
+    <div className="bg-card border border-border rounded-xl overflow-hidden hover:border-primary/30 hover:shadow-sm transition-all">
       {/* Top row — name + status pill + action menu */}
-      <div className="px-3 py-2.5">
+      <div className="px-3 pt-3 pb-2">
         <div className="flex items-start gap-2">
           <button
             onClick={() => setExpanded(e => !e)}
-            className="flex-1 min-w-0 text-left"
+            className="flex-1 min-w-0 text-left group"
             title={expanded ? 'Hide what\'s left' : 'See what\'s left'}
           >
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm font-bold truncate group-hover:text-primary transition-colors">{wf.clientName || 'Unnamed client'}</p>
               {expanded
-                ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-              <p className="text-sm font-semibold truncate">{wf.clientName || 'Unnamed client'}</p>
+                ? <ChevronDown className="h-3 w-3 text-muted-foreground/60 shrink-0" />
+                : <ChevronRight className="h-3 w-3 text-muted-foreground/60 shrink-0" />}
             </div>
-            {wf.clientPhone && (
-              <p className="text-[10px] text-muted-foreground truncate mt-0.5 pl-4">{wf.clientPhone}</p>
-            )}
+            <div className="flex items-center gap-1.5 mt-1">
+              {wf.clientPhone && (
+                <span className="text-[10px] text-muted-foreground truncate tabular-nums">{wf.clientPhone}</span>
+              )}
+              {/* Health pill — defaults to 'healthy' until the inference job
+                  is wired (Phase 5). Renders consistently with project
+                  detail and admin dashboard. */}
+              {(wf as any).health && (
+                <StatusPill state={(wf as any).health as Status} size="xs" icon="none" />
+              )}
+            </div>
           </button>
+
+          {/* Open in drawer — single click, keeps the kanban context. */}
+          {onOpenDrawer && (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpenDrawer(wf._id, wf.clientName); }}
+              className="h-6 w-6 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center justify-center transition-colors"
+              title="Open project (drawer)"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          )}
 
           {/* Stage dropdown — change the service status without leaving the
               board. Mark done, bounce back, or jump to full detail. */}
@@ -548,26 +662,33 @@ function ClientCard({ wf, highlightServiceType, onMutated }: {
           </div>
         </div>
 
-        {/* Mini progress bar for the relevant service, OR overall if no
-            service highlight (e.g. the Done column). */}
-        <div className="mt-2 flex items-center gap-2">
-          <div className="flex-1 h-1 rounded-full bg-muted/40 overflow-hidden">
-            <div className="h-full bg-primary transition-all"
+        {/* Progress — thicker bar + clearer step count. Shows the
+            relevant-service progress when in a service column; overall
+            otherwise (e.g. "All Done"). */}
+        <div className="mt-2.5">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-semibold text-muted-foreground tabular-nums">
+              {relevant ? `${relTicked} of ${relTotal} steps` : `${pct}% overall`}
+            </span>
+            <span className="text-[10px] text-muted-foreground tabular-nums">
+              {relevant ? `${relTotal ? Math.round((relTicked / relTotal) * 100) : 0}%` : `${doneItems}/${totalItems}`}
+            </span>
+          </div>
+          <div className="h-1.5 rounded-full bg-muted/40 overflow-hidden">
+            <div className={`h-full transition-all duration-300 ${
+              (relevant ? relTicked === relTotal : pct === 100) ? 'bg-emerald-500' : 'bg-primary'
+            }`}
               style={{ width: `${relevant ? (relTotal ? (relTicked / relTotal) * 100 : 0) : pct}%` }} />
           </div>
-          <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
-            {relevant ? `${relTicked}/${relTotal}` : `${pct}%`}
-          </span>
         </div>
 
-        {/* Last major update — pulled from the workflow's activity log on
-            the server. Shows the most recent action with its comment so
-            anyone glancing at the board sees what just happened on this
-            project. "Add a note: …" preserved verbatim from the user. */}
+        {/* Last major update — most recent activity-log entry, pulled
+            from the server. Anyone glancing at the board sees what just
+            happened on this project. */}
         {wf.lastUpdate?.detail && (
-          <div className="mt-2 pt-2 border-t border-border/50">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold">Last update</p>
-            <p className="text-[11px] text-foreground/80 line-clamp-2 mt-0.5">{wf.lastUpdate.detail}</p>
+          <div className="mt-2.5 -mx-3 px-3 py-1.5 bg-muted/30 border-t border-border">
+            <p className="text-[9px] uppercase tracking-wider text-muted-foreground/80 font-bold">Last update</p>
+            <p className="text-[11px] text-foreground line-clamp-2 mt-0.5 leading-snug">{wf.lastUpdate.detail}</p>
           </div>
         )}
       </div>
@@ -617,6 +738,19 @@ function ClientCard({ wf, highlightServiceType, onMutated }: {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Comment-required modal — replaces the old window.prompt(). */}
+      {confirmMarkDone && (
+        <CommentRequiredModal
+          title={`Mark "${relevant?.label || 'service'}" done`}
+          description="Add a short note that admin can audit later. Cmd-Enter to save."
+          placeholder="e.g. Shopify store live, products imported, payments tested."
+          primaryLabel="Mark done"
+          tone="success"
+          onSubmit={performMarkDone}
+          onClose={() => setConfirmMarkDone(false)}
+        />
+      )}
     </div>
   );
 }
