@@ -80,7 +80,8 @@ export async function grantWorkroomManagerPermissions(): Promise<void> {
  * agent) without the owner having to fill the onboarding form each deploy.
  */
 const DEFAULT_WORKROOM_USERS: Array<{ email: string; name: string; password: string }> = [
-  { email: 'janvi@hastag.com', name: 'Janvi', password: 'Janvi@123' },
+  { email: 'janvi@hastag.com',  name: 'Janvi',  password: 'Janvi@123'  },
+  { email: 'bhavna@hastag.com', name: 'Bhavna', password: 'Bhavna@123' },
 ];
 
 async function seedDefaultWorkroomUsers(): Promise<void> {
