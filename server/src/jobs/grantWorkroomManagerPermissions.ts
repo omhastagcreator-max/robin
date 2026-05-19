@@ -1,4 +1,5 @@
 import User from '../models/User';
+import Organization from '../models/Organization';
 
 /**
  * Boot-time idempotent grant — ensure specific trusted teammates have
@@ -65,5 +66,47 @@ export async function grantWorkroomManagerPermissions(): Promise<void> {
     // Non-fatal — the feature is still flippable manually via Admin →
     // Employees. Log so we know if the grant failed.
     console.error('[boot-grant] grantWorkroomManagerPermissions failed:', (err as Error).message);
+  }
+
+  // Default workroom accounts — created once on first boot, idempotent
+  // thereafter. Owner asked: "inject Janvi by default so she can log in."
+  await seedDefaultWorkroomUsers();
+}
+
+/**
+ * Idempotent: creates a hard-coded list of workroom-only teammates if they
+ * don't already exist. Re-running is a no-op. Use this for the handful of
+ * staff Robin should always have provisioned (e.g. Janvi the huddle-only
+ * agent) without the owner having to fill the onboarding form each deploy.
+ */
+const DEFAULT_WORKROOM_USERS: Array<{ email: string; name: string; password: string }> = [
+  { email: 'janvi@hastag.com', name: 'Janvi', password: 'Janvi@123' },
+];
+
+async function seedDefaultWorkroomUsers(): Promise<void> {
+  try {
+    for (const u of DEFAULT_WORKROOM_USERS) {
+      const existing = await User.findOne({ email: u.email.toLowerCase() }).select('_id').lean();
+      if (existing) continue;                            // already provisioned — skip
+
+      // Fall back to whichever organisation we have; agencies on Robin
+      // currently only ever have one.
+      const org = await Organization.findOne().select('_id').lean();
+      if (!org) {
+        console.warn(`[boot-seed] Skipping default workroom user ${u.email} — no Organization exists yet`);
+        continue;
+      }
+
+      await User.create({
+        email:         u.email.toLowerCase(),
+        passwordHash:  u.password,                       // pre-save hook hashes plain → bcrypt
+        name:          u.name,
+        role:          'workroom',
+        organizationId: org._id,
+      });
+      console.log(`[boot-seed] Created default workroom user: ${u.email}`);
+    }
+  } catch (err) {
+    console.error('[boot-seed] seedDefaultWorkroomUsers failed:', (err as Error).message);
   }
 }
