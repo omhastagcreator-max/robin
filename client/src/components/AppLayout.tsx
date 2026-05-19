@@ -25,6 +25,8 @@ import { MeetingQuickFab } from '@/components/shared/MeetingQuickFab';
 import { ScheduleMeetingButton } from '@/components/shared/ScheduleMeetingButton';
 import { StartClientMeetingButton } from '@/components/shared/StartClientMeetingButton';
 import { HelpBubble } from '@/components/shared/HelpBubble';
+import { SlimSidebar } from '@/components/v2/SlimSidebar';
+import { TopBar }      from '@/components/v2/TopBar';
 
 interface NavItem {
   to: string;
@@ -357,51 +359,12 @@ function AppLayoutInner({ children, requiredRole }: Props) {
 
   return (
     <AppLayoutNestedCtx.Provider value={true}>
-    <div className="min-h-screen bg-background flex">
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col w-60 xl:w-64 border-r border-border shrink-0 sticky top-0 h-screen overflow-y-auto bg-card shadow-sm">
-        <Sidebar />
-      </aside>
-
-      {/* Mobile Sidebar Overlay */}
-      <AnimatePresence>
-        {sidebarOpen && (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setSidebarOpen(false)}
-              className="fixed inset-0 bg-black/40 z-40 lg:hidden backdrop-blur-sm" />
-            <motion.aside initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }} transition={{ type: 'spring', damping: 30 }}
-              className="fixed top-0 left-0 h-full w-72 bg-card border-r border-border z-50 lg:hidden overflow-y-auto shadow-xl">
-              <button onClick={() => setSidebarOpen(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
-                <X className="h-5 w-5" />
-              </button>
-              <Sidebar mobile />
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
-
+    <SlimSidebar>
       {/* Main */}
+      <TopBar />
       <main className="flex-1 flex flex-col min-w-0">
-        {/* Mobile Header */}
-        <header className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-border bg-card sticky top-0 z-30 shadow-sm">
-          <button onClick={() => setSidebarOpen(true)} className="text-muted-foreground hover:text-foreground">
-            <Menu className="h-5 w-5" />
-          </button>
-          <div className="flex items-center gap-2">
-            <Bird className="h-5 w-5 text-primary" />
-            <span className="font-bold text-sm text-foreground">Robin</span>
-          </div>
-          {/* Mobile notification badge */}
-          {unreadCount > 0 && (
-            <Link to="/notifications" className="ml-auto relative">
-              <Bell className="h-5 w-5 text-muted-foreground" />
-              <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-[9px] text-white font-bold flex items-center justify-center">
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
-            </Link>
-          )}
-        </header>
+        {/* On mobile (no Sidebar visible), keep a tiny brand pill so users
+            know what app they're in. The TopBar already shows breadcrumbs. */}
 
         {/* If host is in a client meeting, sticky pill on every page with
             mute / end / back-to-meeting controls. Hidden on the meeting
@@ -449,7 +412,7 @@ function AppLayoutInner({ children, requiredRole }: Props) {
       {/* Floating help / issue-report / Ask-Robin bubble — bottom-right on
           every authenticated page. AI-backed via Gemini server-side. */}
       <HelpBubble />
-    </div>
+    </SlimSidebar>
     </AppLayoutNestedCtx.Provider>
   );
 }

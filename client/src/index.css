@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@import './styles/tokens.css';
+
 /*
  * Robin "Robin's-Egg" theme — a brand-anchored palette built around the name.
  *

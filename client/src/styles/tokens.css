@@ -1,0 +1,93 @@
+/**
+ * Robin v2 design tokens.
+ *
+ * This is the SINGLE source of truth for spacing, radii, shadows, type
+ * scale, and motion. Every primitive component (Button, Row, StatusPill,
+ * etc.) reads from these — so changing a token here re-themes the entire
+ * app without touching components.
+ *
+ * Loaded by index.css. Colors live there; this file is everything else.
+ */
+
+:root {
+  /* ── Spacing scale (denser than Tailwind defaults) ─────────────────
+   * Robin v1 used a lot of 16/24px gaps. v2 tightens to a 4/6/8 base
+   * for a Linear-style density. */
+  --spc-0:  0px;
+  --spc-1:  2px;
+  --spc-2:  4px;
+  --spc-3:  6px;
+  --spc-4:  8px;
+  --spc-5:  10px;
+  --spc-6:  12px;
+  --spc-7:  16px;
+  --spc-8:  20px;
+  --spc-9:  24px;
+  --spc-10: 32px;
+  --spc-11: 40px;
+  --spc-12: 56px;
+
+  /* ── Radii — tighter, more architectural ─────────────────────────── */
+  --r-xs:  4px;
+  --r-sm:  6px;
+  --r-md:  8px;     /* default for buttons, inputs, rows */
+  --r-lg:  12px;
+  --r-xl:  18px;    /* reserved for hero cards only */
+  --r-pill: 9999px;
+
+  /* ── Shadows — barely-there, low elevation ───────────────────────── */
+  --shadow-0:  none;
+  --shadow-1:  0 1px 1px rgba(15, 18, 23, 0.04);
+  --shadow-2:  0 2px 6px -2px rgba(15, 18, 23, 0.08);
+  --shadow-3:  0 6px 16px -6px rgba(15, 18, 23, 0.12);
+  --shadow-4:  0 16px 40px -16px rgba(15, 18, 23, 0.18);
+  --shadow-focus: 0 0 0 3px hsl(var(--ring) / 0.18);
+
+  /* ── Type scale — compact, magazine-style hierarchy ──────────────── */
+  --fs-2xs:  10px;
+  --fs-xs:   11px;
+  --fs-sm:   12px;
+  --fs-base: 13px;
+  --fs-md:   14px;
+  --fs-lg:   16px;
+  --fs-xl:   18px;
+  --fs-2xl:  22px;
+  --fs-3xl:  28px;
+  --fs-4xl:  36px;
+
+  --lh-tight:  1.15;
+  --lh-snug:   1.3;
+  --lh-normal: 1.5;
+
+  --tracking-tight: -0.011em;
+  --tracking-normal: 0;
+  --tracking-wide:  0.04em;
+  --tracking-wider: 0.14em;
+
+  /* ── Component sizing ────────────────────────────────────────────── */
+  --h-input: 32px;
+  --h-button-sm: 28px;
+  --h-button-md: 32px;
+  --h-button-lg: 36px;
+  --h-row:  36px;        /* dense table row */
+  --h-topbar: 44px;
+  --w-sidebar-collapsed: 56px;
+  --w-sidebar-expanded: 240px;
+  --w-right-drawer: 360px;
+
+  /* ── Motion — short, intentional ─────────────────────────────────── */
+  --t-instant:  60ms;     /* hover color/opacity */
+  --t-fast:    120ms;     /* button press, focus ring */
+  --t-base:    180ms;     /* dropdowns, popovers */
+  --t-modal:   220ms;     /* modal / drawer entry */
+  --e-out:     cubic-bezier(0.16, 1, 0.3, 1);   /* easeOutExpo-ish */
+  --e-spring:  cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Reduce motion respect */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001s !important;
+    transition-duration: 0.001s !important;
+  }
+}
