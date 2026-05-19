@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
-import { scoreLead, summarizeWorkflow, generateMorningBrief } from '../services/aiTriage';
+import { scoreLead, summarizeWorkflow, generateMorningBrief, aiHealth } from '../services/aiTriage';
 import User from '../models/User';
 import Lead from '../models/Lead';
 import ClientWorkflow from '../models/ClientWorkflow';
@@ -14,6 +14,20 @@ import MorningBrief from '../models/MorningBrief';
 async function getOrgId(userId: string): Promise<string | null> {
   const u = await User.findById(userId).select('organizationId').lean();
   return u?.organizationId ? String(u.organizationId) : null;
+}
+
+/**
+ * GET /api/ai-automation/health  (admin-only)
+ * Returns the live AI status: whether the key is set, which model is
+ * working, and the exact last error if any. Hit this from a browser
+ * (logged in as admin) to debug why the AI is silent.
+ */
+export async function getAiHealth(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    if (req.user!.role !== 'admin') { res.status(403).json({ error: 'Admin only' }); return; }
+    const h = await aiHealth();
+    res.json(h);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
 /**

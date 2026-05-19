@@ -4,6 +4,7 @@ import { requireRole } from '../middleware/roleMiddleware';
 import {
   rescoreLead, summarizeWorkflowEndpoint,
   getOrgMorningBrief, regenerateOrgMorningBrief,
+  getAiHealth,
 } from '../controllers/aiAutomationController';
 
 const router = Router();
@@ -18,5 +19,8 @@ router.post('/summarize-workflow/:id', requireRole('admin', 'employee', 'sales')
 // Morning brief — read for any internal staff, admin can regenerate
 router.get('/morning-brief',           requireRole('admin', 'employee', 'sales'),             getOrgMorningBrief);
 router.post('/morning-brief',          requireRole('admin'),                                   regenerateOrgMorningBrief);
+
+// Health probe — admin-only diagnostic (which model is working, last error).
+router.get('/health',                  requireRole('admin'),                                   getAiHealth);
 
 export default router;

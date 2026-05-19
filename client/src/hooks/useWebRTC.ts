@@ -35,9 +35,16 @@ export function useWebRTCSender(userId: string) {
   // for ANY reason other than their click (OS sleep, Chrome Stop pill,
   // tab discard, etc.), the UI keeps showing the "Resume sharing" pill
   // and the next click anywhere on the page is treated as a retry
-  // gesture for getDisplayMedia. Persisted in localStorage so a reload
-  // doesn't lose the intent.
-  const PERSIST_KEY = `robin.screenShare.persist.${userId}`;
+  // gesture for getDisplayMedia.
+  //
+  // Persisted in localStorage so a reload doesn't lose the intent. We
+  // use a global key (not per-user) because (a) userId is often empty
+  // on the very first render before AuthProvider settles, and (b)
+  // there's only one user signed into the browser at a time anyway —
+  // we wipe on logout. The earlier per-user key meant the state was
+  // initialised as `false` on the first render and never picked up
+  // when userId resolved a tick later.
+  const PERSIST_KEY = 'robin.screenShare.persist';
   const [persistentIntent, setPersistentIntentState] = useState<boolean>(() => {
     try { return localStorage.getItem(PERSIST_KEY) === '1'; } catch { return false; }
   });
@@ -45,7 +52,7 @@ export function useWebRTCSender(userId: string) {
     setPersistentIntentState(on);
     try { on ? localStorage.setItem(PERSIST_KEY, '1') : localStorage.removeItem(PERSIST_KEY); }
     catch { /* private mode */ }
-  }, [PERSIST_KEY]);
+  }, []);
   // Sender keeps one PC per admin watching, so multiple admins can view at once.
   const pcMap = useRef<Map<string, RTCPeerConnection>>(new Map());
   const streamRef = useRef<MediaStream | null>(null);

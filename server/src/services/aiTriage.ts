@@ -30,8 +30,25 @@ const apiKey =
   process.env.GOOGLE_GENERATIVE_AI_KEY ||
   '';
 
-const MODEL = 'gemini-1.5-flash-latest';   // free, fast, good enough
-const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+// Model name is configurable so we don't have to redeploy when Google
+// renames or deprecates a model. We try the env override first, then
+// fall back through a list of names that have been valid at various
+// points so a stale 1.5-flash deployment auto-heals onto a newer model.
+const PREFERRED_MODELS = [
+  process.env.GEMINI_MODEL || '',          // explicit override wins
+  'gemini-2.5-flash',                      // newest free-tier as of mid-2026
+  'gemini-2.0-flash',                      // older but still supported
+  'gemini-1.5-flash',                      // legacy fallback
+  'gemini-1.5-flash-latest',               // last resort
+].filter(Boolean);
+
+const endpointFor = (model: string) =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+// We remember which model was last known to work and try it first on
+// subsequent calls — cuts the latency of the auto-recovery to a single
+// attempt after the very first probe.
+let stickyModel: string | null = null;
 
 const TRIAGE_SYSTEM = `You are Robin's in-app issue triage assistant for a digital marketing agency tool.
 
@@ -91,9 +108,8 @@ export interface TriageResult {
   aiUsed:         boolean;
 }
 
-async function callGemini(systemPrompt: string, userPayload: string, maxOutputTokens: number): Promise<string> {
-  if (!apiKey) throw new Error('no_api_key');
-  const url = `${ENDPOINT}?key=${encodeURIComponent(apiKey)}`;
+async function tryGeminiOnce(model: string, systemPrompt: string, userPayload: string, maxOutputTokens: number): Promise<string> {
+  const url = `${endpointFor(model)}?key=${encodeURIComponent(apiKey)}`;
   const body = {
     // Gemini doesn't have a dedicated "system" role; we wire it as system_instruction.
     system_instruction: { parts: [{ text: systemPrompt }] },
@@ -101,7 +117,6 @@ async function callGemini(systemPrompt: string, userPayload: string, maxOutputTo
     generationConfig: {
       temperature: 0.3,
       maxOutputTokens,
-      // Lower verbosity for triage — we want structured output.
       responseMimeType: 'text/plain',
     },
   };
@@ -114,14 +129,79 @@ async function callGemini(systemPrompt: string, userPayload: string, maxOutputTo
 
   if (!r.ok) {
     const errText = await r.text().catch(() => '');
-    throw new Error(`gemini_http_${r.status}: ${errText.slice(0, 200)}`);
+    throw new Error(`gemini_http_${r.status} (${model}): ${errText.slice(0, 300)}`);
   }
 
   const json: any = await r.json();
-  // Standard Gemini response shape: candidates[0].content.parts[*].text
   const text = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join('').trim();
-  if (!text) throw new Error('gemini_empty_response');
+  if (!text) throw new Error(`gemini_empty_response (${model})`);
   return text;
+}
+
+async function callGemini(systemPrompt: string, userPayload: string, maxOutputTokens: number): Promise<string> {
+  if (!apiKey) throw new Error('no_api_key');
+
+  // Try the sticky model first — if it worked last time, it'll probably
+  // work this time too. Otherwise walk the preferred list.
+  const order = stickyModel
+    ? [stickyModel, ...PREFERRED_MODELS.filter(m => m !== stickyModel)]
+    : PREFERRED_MODELS;
+
+  let lastErr: Error | null = null;
+  for (const model of order) {
+    try {
+      const text = await tryGeminiOnce(model, systemPrompt, userPayload, maxOutputTokens);
+      // Lock onto whichever model worked so subsequent calls don't re-walk
+      // the list. The list is re-walked on any failure (process restart
+      // also resets stickyModel to null).
+      if (stickyModel !== model) {
+        console.log(`[aiTriage] locked onto model: ${model}`);
+        stickyModel = model;
+      }
+      return text;
+    } catch (err) {
+      lastErr = err as Error;
+      const msg = lastErr.message || '';
+      // 404 = "model not found" → try the next one. Same for 400 with a
+      // model-not-supported body. Other errors (403 = bad key, 429 =
+      // rate limit) shouldn't trigger a fallback — they'd fail on every
+      // model.
+      const shouldFallback =
+        msg.includes('gemini_http_404') ||
+        msg.includes('gemini_http_400') ||
+        msg.includes('not found') ||
+        msg.toLowerCase().includes('not supported');
+      if (!shouldFallback) {
+        console.error('[aiTriage] hard error, not falling back:', msg);
+        throw lastErr;
+      }
+      console.warn('[aiTriage] model failed, trying next:', msg);
+      // Reset sticky model so a permanently-dead one doesn't stay pinned.
+      if (stickyModel === model) stickyModel = null;
+    }
+  }
+  throw lastErr || new Error('all_gemini_models_failed');
+}
+
+/**
+ * Health probe — used by /api/ai-automation/health to surface the exact
+ * status (no key / which model is working / what error). Returns a small
+ * structured payload, never throws.
+ */
+export async function aiHealth(): Promise<{
+  configured: boolean;
+  workingModel: string | null;
+  lastError: string | null;
+  modelsTried: string[];
+}> {
+  if (!apiKey) return { configured: false, workingModel: null, lastError: null, modelsTried: PREFERRED_MODELS };
+  // Cheap probe: ask for one word.
+  try {
+    await callGemini('Respond with the single word OK.', 'health-check', 16);
+    return { configured: true, workingModel: stickyModel, lastError: null, modelsTried: PREFERRED_MODELS };
+  } catch (err) {
+    return { configured: true, workingModel: null, lastError: (err as Error).message, modelsTried: PREFERRED_MODELS };
+  }
 }
 
 export async function triageIssue(description: string, context: any): Promise<TriageResult> {
