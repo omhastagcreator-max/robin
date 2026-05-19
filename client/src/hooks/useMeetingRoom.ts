@@ -10,7 +10,13 @@ import {
 } from 'livekit-client';
 import * as api from '@/api';
 
-const log = (...args: any[]) => console.log('[huddle]', ...args);
+// Dev-only debug logger. In production these are no-ops — the ~10 calls
+// per huddle session were filling clients' DevTools consoles with chatter
+// that wasn't actionable for them. Vite inlines `import.meta.env.DEV` to
+// a literal at build time, so this also gets dead-code-eliminated.
+const log = import.meta.env.DEV
+  ? (...args: any[]) => console.log('[huddle]', ...args)
+  : (..._args: any[]) => { /* no-op in prod */ };
 
 // LiveKit URL is provided by the server alongside the JWT (see
 // /api/huddle/token). We deliberately don't read it from Vite env vars
@@ -152,6 +158,37 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
     setError(null);
     setJoining(true);
     try {
+      // ── Safari mic-permission warm-up ────────────────────────────────
+      // Safari ties getUserMedia() to the user-activation token of the
+      // originating click. Once the LiveKit SDK eventually asks for the
+      // mic (after JWT fetch + room.connect + first audio publish), the
+      // activation is long gone and Safari silently drops the prompt.
+      //
+      // Doing this INSIDE joinMeeting (not the click handler) means we
+      // hit the API before LiveKit does, so they don't race over the
+      // audio device. The earlier "click handler prime" version raced
+      // with LiveKit and hung every browser at "Connecting…".
+      //
+      // Gated to Safari only — Chrome/Firefox handle the delayed prompt
+      // just fine and adding this for them was the source of the hang.
+      try {
+        const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+        const isSafari =
+          /^((?!chrome|crios|fxios|edg|android).)*safari/i.test(ua) &&
+          /apple/i.test(navigator.vendor || '');
+        if (isSafari && navigator.mediaDevices?.getUserMedia) {
+          const warmUp = await navigator.mediaDevices.getUserMedia({ audio: true });
+          // Release the warm-up tracks immediately — LiveKit will request
+          // its own mic stream when it publishes audio, and now Safari
+          // already has the permission grant in its store.
+          warmUp.getTracks().forEach(t => t.stop());
+        }
+      } catch (warmupErr) {
+        // User denied OR no mic — not fatal. Let LiveKit try; if it
+        // fails it'll surface a clearer error in `setError` below.
+        log('safari mic warm-up declined/failed', (warmupErr as Error).message);
+      }
+
       log('requesting JWT…');
       const { token, url } = await api.getHuddleToken();
       if (!url || !token) {
@@ -210,7 +247,26 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
         }
       };
 
-      await room.connect(url, token);
+      // ── Defensive connect timeout ────────────────────────────────────
+      // LiveKit's room.connect() has no built-in timeout. If the WebSocket
+      // upgrade succeeds but ICE / DTLS hangs (NAT, picky corporate
+      // firewall, half-broken proxy), the promise never resolves or
+      // rejects — so the UI sits forever at "Connecting…". Race it
+      // against a 15-second timer so the user gets a real error instead.
+      const connectWithTimeout = (timeoutMs: number) => new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const t = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          try { room.disconnect(true); } catch { /* ignore */ }
+          reject(new Error(`Huddle connect timed out after ${Math.round(timeoutMs / 1000)}s. Your network may be blocking WebRTC — try a different connection (mobile hotspot) and retry.`));
+        }, timeoutMs);
+        room.connect(url, token).then(
+          () => { if (settled) return; settled = true; clearTimeout(t); resolve(); },
+          (err) => { if (settled) return; settled = true; clearTimeout(t); reject(err); },
+        );
+      });
+      await connectWithTimeout(15_000);
       log('connected as', room.localParticipant.identity);
 
       // Hydrate existing remote participants (those who joined before us).
@@ -225,6 +281,9 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
       const msg = e?.message || 'Could not join the huddle';
       log('joinMeeting failed:', msg);
       setError(msg);
+      // Drop any partially-initialised room so the next attempt starts fresh.
+      try { roomRef.current?.disconnect(true); } catch { /* ignore */ }
+      roomRef.current = null;
     } finally {
       setJoining(false);
     }

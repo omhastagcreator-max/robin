@@ -100,20 +100,23 @@ export function SessionTopBar() {
   };
 
   // ── Visual state ────────────────────────────────────────────────────────
+  // Tints match the StatusPill tone map (emerald=working, amber=on_break,
+  // rose=danger/over-limit). Was using generic green-500 / red-500 which
+  // drifted ~5% in hue from every other badge in the app.
   const tone = !session
     ? 'bg-muted/50 border-border/60'
     : isActive
-      ? 'bg-green-500/10 border-green-500/30'
+      ? 'bg-emerald-500/10 border-emerald-500/30'
       : breakOverLimit
-        ? 'bg-red-500/15 border-red-500/40'
+        ? 'bg-rose-500/15 border-rose-500/40'
         : 'bg-amber-500/10 border-amber-500/30';
 
   const dotColor = !session
     ? 'bg-muted-foreground/40'
     : isActive
-      ? 'bg-green-500 animate-pulse'
+      ? 'bg-emerald-500 animate-pulse'
       : breakOverLimit
-        ? 'bg-red-500 animate-pulse'
+        ? 'bg-rose-500 animate-pulse'
         : 'bg-amber-500';
 
   const statusLabel = !session
@@ -141,15 +144,15 @@ export function SessionTopBar() {
 
           {isOnBreak && (
             <span className="flex items-center gap-1.5 ml-1">
-              <Coffee className="h-3.5 w-3.5 text-amber-600" />
-              <span className={`font-mono font-bold tabular-nums text-sm sm:text-base ${breakOverLimit ? 'text-red-500' : 'text-amber-600'}`}>
+              <Coffee className="h-3.5 w-3.5 text-amber-700" />
+              <span className={`font-mono font-bold tabular-nums text-sm sm:text-base ${breakOverLimit ? 'text-rose-600' : 'text-amber-700'}`}>
                 {fmtMS(currentBreakMs)}
               </span>
               <span className="text-[10px] text-muted-foreground hidden md:inline tabular-nums">
                 today: {fmtMS(totalBreakMs)}
               </span>
               {breakOverLimit && (
-                <span className="text-[10px] text-red-500 flex items-center gap-1 hidden md:flex">
+                <span className="text-[10px] text-rose-600 flex items-center gap-1 hidden md:flex">
                   <AlertTriangle className="h-3 w-3" /> long break
                 </span>
               )}
@@ -240,11 +243,12 @@ function IconBtn({
   active?: boolean;
   hoverTone?: 'amber' | 'red' | 'green';
 }) {
+  // Hover tones aligned to the StatusPill palette (emerald/amber/rose).
   const hover =
-    hoverTone === 'amber' ? 'hover:bg-amber-500/15 hover:text-amber-700' :
-    hoverTone === 'red'   ? 'hover:bg-red-500/15   hover:text-red-600'   :
-    hoverTone === 'green' ? 'hover:bg-green-500/15 hover:text-green-700' :
-                            'hover:bg-primary/10 hover:text-primary';
+    hoverTone === 'amber' ? 'hover:bg-amber-500/15   hover:text-amber-700'   :
+    hoverTone === 'red'   ? 'hover:bg-rose-500/15    hover:text-rose-600'    :
+    hoverTone === 'green' ? 'hover:bg-emerald-500/15 hover:text-emerald-700' :
+                            'hover:bg-primary/10     hover:text-primary';
   const tone = active
     ? 'bg-primary/15 text-primary'
     : `text-muted-foreground ${hover}`;

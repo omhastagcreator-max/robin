@@ -74,10 +74,13 @@ export function HuddleDock() {
         </button>
       )}
 
-      {/* Collapsed — small status pill with quick mic + screen + expand + leave */}
+      {/* Collapsed — small status pill with quick mic + screen + expand + leave.
+          Tints aligned to StatusPill: emerald = audio live (working), rose =
+          muted (danger). Previously generic green-500/red-500 which drifted
+          from every other badge in the app. */}
       {mode === 'collapsed' && (
         <div className="fixed bottom-4 right-4 z-50 flex items-center gap-1 bg-card border border-primary/40 rounded-full pl-4 pr-1.5 py-1.5 shadow-xl">
-          <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
           <span className="text-xs font-medium">
             Huddle{participantCount > 0 ? ` · ${participantCount}` : ''}
           </span>
@@ -85,7 +88,7 @@ export function HuddleDock() {
             onClick={huddle.toggleAudio}
             title={huddle.audioOn ? 'Mute' : 'Unmute'}
             className={`ml-2 h-7 w-7 rounded-full flex items-center justify-center text-white transition-colors ${
-              huddle.audioOn ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'
+              huddle.audioOn ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'
             }`}
           >
             {huddle.audioOn ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
@@ -111,7 +114,7 @@ export function HuddleDock() {
           <button
             onClick={handleLeave}
             title="Leave huddle"
-            className="h-7 w-7 rounded-full flex items-center justify-center bg-red-500/15 hover:bg-red-500/30 text-red-500"
+            className="h-7 w-7 rounded-full flex items-center justify-center bg-rose-500/15 hover:bg-rose-500/30 text-rose-600"
           >
             <PhoneOff className="h-3.5 w-3.5" />
           </button>
@@ -151,7 +154,7 @@ export function HuddleDock() {
             </button>
             <button
               onClick={handleLeave}
-              className="h-7 px-2 rounded-full flex items-center gap-1 bg-red-500 text-white text-xs font-medium hover:bg-red-600 shrink-0"
+              className="h-7 px-2 rounded-full flex items-center gap-1 bg-rose-500 text-white text-xs font-medium hover:bg-rose-600 shrink-0"
               title="Leave huddle"
             >
               <PhoneOff className="h-3 w-3" /> Leave
@@ -162,7 +165,7 @@ export function HuddleDock() {
           <div className="flex-1 flex flex-col overflow-hidden">
             {huddle.meetingError ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-3 p-5 text-center">
-                <AlertTriangle className="h-8 w-8 text-red-500" />
+                <AlertTriangle className="h-8 w-8 text-rose-600" />
                 <p className="text-sm font-semibold">Couldn't access microphone</p>
                 <p className="text-xs text-muted-foreground">{huddle.meetingError}</p>
               </div>
@@ -236,7 +239,7 @@ export function HuddleDock() {
               />
               <button
                 onClick={handleLeave}
-                className="ml-2 flex items-center gap-1.5 px-3 py-2 rounded-full bg-red-500 text-white text-xs font-medium hover:bg-red-600 shadow"
+                className="ml-2 flex items-center gap-1.5 px-3 py-2 rounded-full bg-rose-500 text-white text-xs font-medium hover:bg-rose-600 shadow"
                 title="Leave huddle"
               >
                 <PhoneOff className="h-3.5 w-3.5" /> Leave
@@ -279,7 +282,7 @@ function ParticipantTile({
         </p>
       </div>
       <span className={`h-6 w-6 rounded-full flex items-center justify-center shrink-0 ${
-        showAudioOn ? 'bg-green-500/15 text-green-500' : 'bg-red-500/15 text-red-500'
+        showAudioOn ? 'bg-emerald-500/15 text-emerald-600' : 'bg-rose-500/15 text-rose-600'
       }`}>
         {showAudioOn ? <Mic className="h-3 w-3" /> : <MicOff className="h-3 w-3" />}
       </span>
@@ -317,11 +320,12 @@ function ControlButton({
   label: string;
 }) {
   const Icon = on ? OnIcon : OffIcon;
+  // Aligned to StatusPill: emerald = good (audio live), rose = danger (muted).
   const palette = {
-    good:    'bg-green-500 text-white hover:bg-green-600',
-    danger:  'bg-red-500   text-white hover:bg-red-600',
-    primary: 'bg-primary   text-primary-foreground hover:bg-primary/90',
-    neutral: 'bg-muted     text-foreground hover:bg-muted/80 border border-border',
+    good:    'bg-emerald-500 text-white hover:bg-emerald-600',
+    danger:  'bg-rose-500    text-white hover:bg-rose-600',
+    primary: 'bg-primary     text-primary-foreground hover:bg-primary/90',
+    neutral: 'bg-muted       text-foreground hover:bg-muted/80 border border-border',
   }[tone];
   return (
     <button

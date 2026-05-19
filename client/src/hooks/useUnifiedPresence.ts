@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useTeamPresence, type PresenceStatus, type TeamMember } from './useTeamPresence';
 import { useHuddle } from '@/contexts/HuddleContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 /**
  * useUnifiedPresence — the single source of truth for "who is doing what
@@ -132,32 +133,41 @@ const SORT_PRIORITY: Record<UnifiedPresence['displayState'], number> = {
 export function useUnifiedPresence(): UnifiedPresenceApi {
   const team   = useTeamPresence();
   const huddle = useHuddle();
+  const { user } = useAuth();
+  const localUserId = user?.id || '';
 
   // The hook can't safely call `useHuddle()` inside conditions, so we
   // always read it; on routes outside HuddleProvider this would throw.
   // HuddleProvider wraps the whole authenticated app in App.tsx, so we're
   // guaranteed to be inside it whenever this hook is mounted.
 
-  // huddle.peers is the LiveKit participants list. The local user's own
-  // huddle membership is `huddle.joined` (peers excludes the local user).
+  // huddle.peers is the LiveKit participants list. CRITICAL: LiveKit's
+  // peer list excludes the LOCAL participant (it's the "remote peers"
+  // view from the local user's perspective). We add the local user back
+  // when `huddle.joined` is true so the manager's own row also flips to
+  // "in_huddle" instead of stale "working". Before this fix the manager
+  // could be on a call yet see themselves badged as "Working" — the bug
+  // that motivated useUnifiedPresence in the first place was still
+  // present for the local user.
   const inHuddleSet = useMemo(() => {
     const s = new Set<string>();
     for (const p of huddle.peers || []) s.add(p.userId);
-    // If the LOCAL user is joined, include them. (Local user is the user
-    // viewing the dashboard — they should see themselves as in-huddle.)
-    // useHuddle exposes `joined` boolean but not the local userId; we
-    // pick it up from useTeamPresence's `members` map by intersecting
-    // with the LOCAL screen-sharing flag if available. For now, the
-    // PresenceStrip already shows "you're in the huddle" status; this
-    // map is for OTHER teammates' rows.
+    if (huddle.joined && localUserId) s.add(localUserId);
     return s;
-  }, [huddle.peers]);
+  }, [huddle.peers, huddle.joined, localUserId]);
 
+  // Same story for the screen-sharing set — if the local user is sharing,
+  // LiveKit's peer list won't tell us; HuddleContext exposes it through
+  // ScreenShareContext (consumed inside HuddleContext) but the simplest
+  // tap here is checking `huddle.localScreenOn` if exposed; falls back to
+  // peers-only when not.
   const sharingSet = useMemo(() => {
     const s = new Set<string>();
     for (const p of huddle.peers || []) if (p.screenOn) s.add(p.userId);
+    const localScreenOn = (huddle as any).localScreenOn;
+    if (localScreenOn && localUserId) s.add(localUserId);
     return s;
-  }, [huddle.peers]);
+  }, [huddle.peers, (huddle as any).localScreenOn, localUserId]);
 
   // Build the unified list.
   const list = useMemo<UnifiedPresence[]>(() => {

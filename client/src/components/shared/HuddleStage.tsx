@@ -72,8 +72,9 @@ export function HuddleStage() {
         <Headphones className="h-4 w-4 text-primary" />
         <h2 className="font-semibold text-sm">Live Huddle</h2>
         {meeting.joined && (
-          <span className="flex items-center gap-1 text-xs text-green-600">
-            <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+          // Emerald = "live & working" (matches StatusPill `working` tone).
+          <span className="flex items-center gap-1 text-xs text-emerald-700">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
             {meeting.peers.length + 1} {meeting.peers.length === 0 ? 'person' : 'people'}
           </span>
         )}
@@ -85,7 +86,7 @@ export function HuddleStage() {
       {/* Connection status strip */}
       {meeting.joined && (
         <div className="px-4 py-1.5 border-b border-border bg-muted/30 text-[10px] text-muted-foreground flex items-center gap-2 flex-wrap">
-          <span className="text-green-600 font-semibold">● LiveKit Cloud — connected</span>
+          <span className="text-emerald-700 font-semibold">● LiveKit Cloud — connected</span>
           <span className="text-muted-foreground/70">free forever for an agency</span>
         </div>
       )}
@@ -103,7 +104,7 @@ export function HuddleStage() {
             </p>
           </div>
           {meeting.meetingError && (
-            <p className="text-xs text-red-500 max-w-sm flex items-center gap-1">
+            <p className="text-xs text-rose-600 max-w-sm flex items-center gap-1">
               <AlertTriangle className="h-3 w-3" /> {meeting.meetingError}
             </p>
           )}
@@ -168,7 +169,7 @@ export function HuddleStage() {
                         ? <SelfScreenView stream={pinnedSharer.stream} fullscreen />
                         : null}
                     <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[11px] text-white bg-black/60 backdrop-blur flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
                       {pinnedSharer.name}{pinnedSharer.isSelf ? ' (you)' : ''}
                     </div>
                   </div>
@@ -241,7 +242,7 @@ export function HuddleStage() {
             />
             <button
               onClick={handleLeave}
-              className="ml-3 flex items-center gap-1.5 px-4 py-2 rounded-full bg-red-500 text-white text-sm font-medium hover:bg-red-600 shadow"
+              className="ml-3 flex items-center gap-1.5 px-4 py-2 rounded-full bg-rose-500 text-white text-sm font-medium hover:bg-rose-600 shadow"
             >
               <PhoneOff className="h-3.5 w-3.5" /> Leave
             </button>
@@ -257,7 +258,7 @@ export function HuddleStage() {
 
 function PresenceChip({ status }: { status: PresenceStatus }) {
   if (status === 'on_break') return (
-    <span className="flex items-center gap-1 text-[10px] font-semibold bg-amber-500/15 text-amber-600 border border-amber-500/30 px-1.5 py-0.5 rounded-full">
+    <span className="flex items-center gap-1 text-[10px] font-semibold bg-amber-500/15 text-amber-700 border border-amber-500/30 px-1.5 py-0.5 rounded-full">
       <Coffee className="h-2.5 w-2.5" /> Break
     </span>
   );
@@ -298,7 +299,7 @@ function SelfTile({
         <p className="text-[10px] text-muted-foreground">you</p>
       </div>
       <div className="flex items-center gap-1 shrink-0">
-        <span className={`h-5 w-5 rounded-full flex items-center justify-center ${audioOn ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+        <span className={`h-5 w-5 rounded-full flex items-center justify-center ${audioOn ? 'bg-emerald-500/20 text-emerald-600' : 'bg-rose-500/20 text-rose-600'}`}>
           {audioOn ? <Mic className="h-2.5 w-2.5" /> : <MicOff className="h-2.5 w-2.5" />}
         </span>
         {screenOn && (
@@ -355,7 +356,7 @@ function PeerTile({ peer, presenceStatus, onCall, deafened, hasMutedYou, inMeeti
         {peer.role && <p className="text-[10px] text-muted-foreground capitalize">{peer.role}</p>}
       </div>
       <div className="flex items-center gap-1 shrink-0">
-        <span className={`h-5 w-5 rounded-full flex items-center justify-center ${peer.audioOn ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+        <span className={`h-5 w-5 rounded-full flex items-center justify-center ${peer.audioOn ? 'bg-emerald-500/20 text-emerald-600' : 'bg-rose-500/20 text-rose-600'}`}>
           {peer.audioOn ? <Mic className="h-2.5 w-2.5" /> : <MicOff className="h-2.5 w-2.5" />}
         </span>
         {peer.screenOn && (
@@ -398,7 +399,7 @@ function ScreenCard({
           ? <SelfScreenView stream={sharer.stream} />
           : null}
       <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] text-white bg-black/60 backdrop-blur">
-        <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
         {sharer.name}{sharer.isSelf ? ' (you)' : ''}
       </div>
       <div className="absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-md text-[11px] bg-primary text-primary-foreground opacity-0 group-hover:opacity-100 transition-opacity">
@@ -453,8 +454,9 @@ function ControlButton({
 }) {
   const Icon = on ? OnIcon : OffIcon;
   const palette = {
-    good:    'bg-green-500 text-white hover:bg-green-600',
-    danger:  'bg-red-500   text-white hover:bg-red-600',
+    // Tones aligned to StatusPill: emerald=working, rose=danger.
+    good:    'bg-emerald-500 text-white hover:bg-emerald-600',
+    danger:  'bg-rose-500    text-white hover:bg-rose-600',
     primary: 'bg-primary   text-primary-foreground hover:bg-primary/90',
     neutral: 'bg-muted     text-foreground hover:bg-muted/80 border border-border',
   }[tone];

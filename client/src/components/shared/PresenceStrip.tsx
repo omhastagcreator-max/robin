@@ -32,7 +32,9 @@ export function PresenceStrip() {
     >
       <div className="flex items-center gap-3 flex-wrap max-w-6xl mx-auto">
         {breakCount > 0 && (
-          <span className="inline-flex items-center gap-1.5 text-amber-600">
+          // Color matches StatusPill's `on_break` tone — keeps the strip
+          // visually consistent with every break badge elsewhere in the app.
+          <span className="inline-flex items-center gap-1.5 text-amber-700">
             <Coffee className="h-3 w-3" />
             <span className="font-semibold">{breakCount} on break</span>
             <span className="text-muted-foreground truncate max-w-[40vw]">— {breakNames}</span>
@@ -42,7 +44,10 @@ export function PresenceStrip() {
           <span className="text-muted-foreground/40">·</span>
         )}
         {leaveCount > 0 && (
-          <span className="inline-flex items-center gap-1.5 text-purple-500">
+          // Was `text-purple-500` — drifted from StatusPill's `on_leave`
+          // tone (`text-blue-700`). Aligning so the strip and the StatusPill
+          // badges aren't telling the same story in two different colors.
+          <span className="inline-flex items-center gap-1.5 text-blue-700">
             <CalendarOff className="h-3 w-3" />
             <span className="font-semibold">{leaveCount} on leave</span>
             <span className="text-muted-foreground truncate max-w-[40vw]">— {leaveNames}</span>
