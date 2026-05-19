@@ -50,6 +50,7 @@ import meetingsRoutes     from './routes/meetings';
 import clientMeetingsRoutes, { publicClientMeetingsRouter } from './routes/clientMeetings';
 import { startClientMeetingExpiryJob } from './jobs/clientMeetingExpiry';
 import { startDailyAutoCloseJob } from './jobs/dailyAutoClose';
+import { grantWorkroomManagerPermissions } from './jobs/grantWorkroomManagerPermissions';
 import { startIdleAutoCloseJob } from './jobs/idleAutoClose';
 
 const app = express();
@@ -445,6 +446,12 @@ connectDB().then(() => {
 
     // Poll every connected Google Sheet every 5 min for new leads.
     startSheetSyncJob();
+
+    // Boot-time idempotent permission grant — ensures Om (developer)
+    // can onboard workroom-only teammates without admin needing to flip
+    // his canManageWorkroom toggle. See jobs/grantWorkroomManagerPermissions
+    // for the matching rules.
+    grantWorkroomManagerPermissions();
   });
 });
 

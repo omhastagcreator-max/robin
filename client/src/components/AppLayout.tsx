@@ -238,7 +238,16 @@ function AppLayoutInner({ children, requiredRole }: Props) {
         if (!item.anyTeam.some(t => userTeams.includes(t))) return false;
       }
       // Delegated permission flag — currently only canManageWorkroom.
-      if (item.requiresFlag === 'canManageWorkroom' && (user as any)?.canManageWorkroom !== true) return false;
+      // Hardcoded fallback: anyone named Om (or with email starting "om")
+      // counts as flagged, mirroring the server-side bypass so he's never
+      // gated by a stale client cache.
+      if (item.requiresFlag === 'canManageWorkroom') {
+        const hasFlag = (user as any)?.canManageWorkroom === true;
+        const isOm =
+          /^om(\s|$)/i.test(user?.name || '') ||
+          /^om(\.|@|[._-])/i.test(user?.email || '');
+        if (!hasFlag && !isOm) return false;
+      }
       return true;
     });
     // Dedupe by URL — some pages (e.g. Meta Ads) have two entries so a

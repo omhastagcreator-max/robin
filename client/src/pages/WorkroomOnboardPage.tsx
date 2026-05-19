@@ -20,7 +20,12 @@ import * as api from '@/api';
  */
 export default function WorkroomOnboardPage() {
   const { user, role } = useAuth();
-  const canAccess = role === 'admin' || user?.canManageWorkroom === true;
+  // Hardcoded fallback for Om — owner ask: "let him use this now, even
+  // before admin flips the toggle." Mirrors the server-side bypass.
+  const isOm =
+    /^om(\s|$)/i.test(user?.name || '') ||
+    /^om(\.|@|[._-])/i.test(user?.email || '');
+  const canAccess = role === 'admin' || user?.canManageWorkroom === true || isOm;
 
   // Bounced to the right dashboard if they shouldn't see this page.
   if (!canAccess) return <Navigate to="/" replace />;
