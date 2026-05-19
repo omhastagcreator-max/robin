@@ -14,6 +14,12 @@ import { StatusPill, type Status } from '@/components/ui/StatusPill';
 import { Row }        from '@/components/ui/Row';
 import { Stat }       from '@/components/ui/Stat';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Tabs }       from '@/components/ui/Tabs';
+import { useDrawer }  from '@/components/ui/RightDrawer';
+import { LeadDetailPanel }      from '@/components/panels/LeadDetailPanel';
+import { TeammateDetailPanel }  from '@/components/panels/TeammateDetailPanel';
+import { useShortcut } from '@/hooks/useShortcut';
+import { useNavigate } from 'react-router-dom';
 import { Avatar } from '@/components/shared/Avatar';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnifiedPresence, type UnifiedPresence } from '@/hooks/useUnifiedPresence';
@@ -58,6 +64,32 @@ interface Lead {
 export default function AdminDashboard() {
   const { user } = useAuth();
   const presence = useUnifiedPresence();
+  const drawer = useDrawer();
+  const navigate = useNavigate();
+
+  /** Open a lead in the right drawer instead of navigating away. */
+  const openLead = (lead: { _id: string; name?: string; contact?: string }) => {
+    drawer.open({
+      title: lead.name || 'Lead',
+      subtitle: lead.contact || '',
+      width: 'md',
+      content: <LeadDetailPanel leadId={lead._id} />,
+    });
+  };
+
+  /** Open a teammate in the right drawer — live presence + 30-day report. */
+  const openTeammate = (p: UnifiedPresence) => {
+    drawer.open({
+      title: p.name || 'Teammate',
+      subtitle: p.role || '',
+      width: 'md',
+      content: <TeammateDetailPanel userId={p.userId} />,
+    });
+  };
+
+  // `n` — quick new lead. Sales kanban handles the creation UX; we just
+  // jump there with focus.
+  useShortcut('n', () => navigate('/sales'));
 
   const [stats, setStats]                 = useState<Stats | null>(null);
   const [hotLeads, setHotLeads]           = useState<Lead[]>([]);
@@ -157,7 +189,7 @@ export default function AdminDashboard() {
               ) : presence.list.length === 0 ? (
                 <EmptyState size="sm" title="Nobody's around" hint="The team status panel updates live as people clock in or join the huddle." />
               ) : (
-                presence.list.map(p => <TeamRow key={p.userId} p={p} />)
+                presence.list.map(p => <TeamRow key={p.userId} p={p} onOpen={() => openTeammate(p)} />)
               )}
             </div>
           </section>
@@ -192,7 +224,7 @@ export default function AdminDashboard() {
           <section>
             <SectionHeader title="Hot leads" hint="AI-scored · click for next action" />
             <div className="rounded-md border border-border bg-card overflow-hidden">
-              {hotLeads.map(l => <HotLeadRow key={l._id} lead={l} />)}
+              {hotLeads.map(l => <HotLeadRow key={l._id} lead={l} onOpen={() => openLead(l)} />)}
             </div>
           </section>
         )}
@@ -215,8 +247,9 @@ function SectionHeader({ title, hint }: { title: string; hint?: string }) {
   );
 }
 
-/** Single live team row — Avatar + name + role + unified status pill. */
-function TeamRow({ p }: { p: UnifiedPresence }) {
+/** Single live team row — Avatar + name + role + unified status pill.
+ *  Click opens the teammate detail in the right drawer (Phase 3 integration). */
+function TeamRow({ p, onOpen }: { p: UnifiedPresence; onOpen: () => void }) {
   const accent =
     p.displayState === 'in_huddle' ? 'primary' :
     p.displayState === 'working'   ? 'success' :
@@ -224,7 +257,7 @@ function TeamRow({ p }: { p: UnifiedPresence }) {
     p.displayState === 'on_leave'  ? 'info'    :
                                      'none';
   return (
-    <Row accent={accent as any}>
+    <Row accent={accent as any} onClick={onOpen}>
       <Row.Leading>
         <Avatar name={p.name} email={p.email} size="sm" tone="primary" />
       </Row.Leading>
@@ -258,10 +291,9 @@ function FocusRow({ icon, label, to, muted }: { icon: React.ReactNode; label: st
   );
 }
 
-function HotLeadRow({ lead }: { lead: Lead }) {
-  const open = () => { /* could open right drawer in v3 — for now nav */ };
+function HotLeadRow({ lead, onOpen }: { lead: Lead; onOpen: () => void }) {
   return (
-    <Row accent="danger">
+    <Row accent="danger" onClick={onOpen}>
       <Row.Leading>
         <Flame className="h-3.5 w-3.5 text-rose-500" />
       </Row.Leading>
@@ -280,9 +312,7 @@ function HotLeadRow({ lead }: { lead: Lead }) {
         {lead.estimatedValue ? (
           <span className="text-[11px] font-semibold text-emerald-700 tabular-nums">₹{lead.estimatedValue.toLocaleString('en-IN')}</span>
         ) : null}
-        <Link to="/sales" onClick={open}>
-          <Button size="xs" intent="ghost">Open</Button>
-        </Link>
+        <Button size="xs" intent="ghost" onClick={e => { e.stopPropagation(); onOpen(); }}>Open</Button>
       </Row.Trail>
     </Row>
   );
