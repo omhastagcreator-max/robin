@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import * as api from '@/api';
 import { toast } from 'sonner';
-import { EmptyState } from '@/components/shared/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 type CredType = 'website' | 'social' | 'ad' | 'email' | 'api' | 'hosting' | 'analytics' | 'other';
 
@@ -177,8 +177,8 @@ export default function ClientVault() {
           <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
         ) : filtered.length === 0 ? (
           credentials.length === 0
-            ? <EmptyState icon={KeyRound} title="No credentials yet" description="Add your first client credential above." />
-            : <EmptyState icon={Search} title="No matches" description="Try a different search or filter." />
+            ? <EmptyState icon={<KeyRound className="h-6 w-6" />} title="No credentials yet" hint="Add your first client credential above." />
+            : <EmptyState icon={<Search className="h-6 w-6" />} title="No matches" hint="Try a different search or filter." />
         ) : (
           <div className="space-y-5">
             {grouped.map(([key, group]) => (

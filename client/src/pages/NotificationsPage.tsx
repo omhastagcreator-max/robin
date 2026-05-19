@@ -4,7 +4,7 @@ import { Bell, CheckCheck, Trash2, Info, AlertTriangle, CheckCircle2, AlertOctag
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 import * as api from '@/api';
-import { EmptyState } from '@/components/shared/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { toast } from 'sonner';
 
 const typeConfig: Record<string, { icon: typeof Info; color: string }> = {
@@ -75,7 +75,7 @@ export default function NotificationsPage() {
         {loading ? (
           <div className="bg-card border border-border rounded-2xl h-64 animate-pulse" />
         ) : notifs.length === 0 ? (
-          <EmptyState icon={Bell} title="All good!" description="No notifications at the moment." />
+          <EmptyState icon={<Bell className="h-6 w-6" />} title="All good!" hint="No notifications at the moment." />
         ) : (
           <div className="bg-card border border-border rounded-2xl divide-y divide-border/50 overflow-hidden">
             <AnimatePresence initial={false}>

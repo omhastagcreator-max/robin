@@ -1,22 +1,46 @@
-import { useState, useEffect, useCallback } from 'react';
-import { AppLayout } from '@/components/AppLayout';
+import { useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Building2, Briefcase, Plus, X, Loader2, Trophy,
-  Eye, EyeOff, Users, ArrowRight, CheckCircle2, Mail,
-  Phone, Copy, RefreshCw, IndianRupee, UserPlus, Star,
-  Wand2,
+  Loader2, Plus, X, Eye, EyeOff, Copy, RefreshCw,
+  Trophy, ArrowRight, IndianRupee, UserPlus, CheckCircle2,
+  Building2, Wand2, Phone, Mail, Briefcase, Info,
 } from 'lucide-react';
-import * as api from '@/api';
 import { toast } from 'sonner';
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+import { AppLayout }   from '@/components/AppLayout';
+import { Button }      from '@/components/ui/Button';
+import { Row }         from '@/components/ui/Row';
+import { EmptyState }  from '@/components/ui/EmptyState';
+import { StatusPill }  from '@/components/ui/StatusPill';
+import { Avatar }      from '@/components/shared/Avatar';
+import * as api from '@/api';
+
+/**
+ * AdminClients v2 — rebuilt on design-system primitives.
+ *
+ * What changed vs v1:
+ *   • 3-column client card grid → dense Row list.
+ *   • Hardcoded gray-100/300/500/700/900 chrome → semantic tokens
+ *     (`muted-foreground`, `foreground`, `card`, `border`).
+ *   • Won-leads green strip rebuilt as a tinted Row list.
+ *   • "How clients enter" info block → EmptyState with hint copy.
+ *   • CreateClientModal repaletted to v2 Button + tokens.
+ *
+ * What stayed:
+ *   • All existing actions: Add Client manually, Convert won leads,
+ *     Seed demo clients (Wand2), Import from Meta (Wand2).
+ *   • The credentials-share success state inside the modal.
+ *
+ * Density: ~12 clients visible per fold vs. ~6 in v1.
+ */
+
+// ─── helpers ────────────────────────────────────────────────────────────────
 function genPassword(name: string) {
-  const clean = name.replace(/\s+/g, '').slice(0, 6);
+  const clean = (name || 'client').replace(/\s+/g, '').slice(0, 6);
   return `${clean}@${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
-// ── Create Client Modal ───────────────────────────────────────────────────────
+// ─── Create / Convert modal ────────────────────────────────────────────────
 function CreateClientModal({
   onClose, onCreated, prefill, fromLead,
 }: {
@@ -26,17 +50,17 @@ function CreateClientModal({
   fromLead?: boolean;
 }) {
   const [form, setForm] = useState({
-    name:    prefill?.name    || '',
-    email:   prefill?.email   || '',
-    phone:   prefill?.phone   || '',
-    company: prefill?.company || '',
+    name:     prefill?.name    || '',
+    email:    prefill?.email   || '',
+    phone:    prefill?.phone   || '',
+    company:  prefill?.company || '',
     password: prefill?.name ? genPassword(prefill.name) : '',
   });
-  const [showPw, setShowPw]   = useState(true);
-  const [saving, setSaving]   = useState(false);
-  const [done, setDone]       = useState<any>(null);
+  const [showPw, setShowPw] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [done, setDone]     = useState<any>(null);
 
-  const f = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const f = (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(p => ({ ...p, [field]: e.target.value }));
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -54,111 +78,111 @@ function CreateClientModal({
       });
       setDone(result);
       onCreated(result);
-      toast.success(`Client "${form.name}" created! 🎉`);
+      toast.success(`Client "${form.name}" created`);
     } catch (err: any) {
       toast.error(err?.response?.data?.error || 'Failed to create client');
     } finally { setSaving(false); }
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95 }}
-        className="bg-white border border-gray-100 rounded-2xl w-full max-w-md shadow-xl overflow-hidden">
-
-        {/* Header */}
-        <div className={`px-6 py-4 flex items-center justify-between ${fromLead ? 'bg-green-50 border-b border-green-100' : 'border-b border-gray-50'}`}>
-          <div className="flex items-center gap-2">
-            {fromLead && <Trophy className="h-5 w-5 text-green-600" />}
-            <h2 className="font-bold text-gray-900">{fromLead ? 'Convert Lead → Client' : 'Add New Client'}</h2>
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <motion.div
+        initial={{ scale: 0.96, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96 }}
+        className="bg-card border border-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden"
+      >
+        <div className={`px-5 py-3 flex items-center justify-between border-b border-border ${fromLead ? 'bg-emerald-500/[0.06]' : ''}`}>
+          <div className="flex items-center gap-2 min-w-0">
+            {fromLead ? <Trophy className="h-4 w-4 text-emerald-600 shrink-0" /> : <UserPlus className="h-4 w-4 text-primary shrink-0" />}
+            <p className="text-sm font-semibold truncate">{fromLead ? 'Convert Lead → Client' : 'Add New Client'}</p>
           </div>
-          <button onClick={onClose}><X className="h-4 w-4 text-gray-400" /></button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted">
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
         {!done ? (
-          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <form onSubmit={handleSubmit} className="p-5 space-y-4">
             {fromLead && prefill?.wonAmount && (
-              <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-2.5 flex items-center gap-2 text-sm">
-                <IndianRupee className="h-4 w-4 text-green-600" />
-                <span className="text-green-700 font-medium">Won deal: ₹{Number(prefill.wonAmount).toLocaleString('en-IN')}</span>
+              <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2 text-[12.5px] text-emerald-700">
+                <IndianRupee className="h-3.5 w-3.5" />
+                <span className="font-semibold">Won deal: ₹{Number(prefill.wonAmount).toLocaleString('en-IN')}</span>
               </div>
             )}
 
             <div className="grid grid-cols-2 gap-3">
               {[
-                { field: 'name',    label: 'Client Name *', required: true,  span: 'col-span-2' },
-                { field: 'email',   label: 'Email *',       required: true,  span: '' },
-                { field: 'phone',   label: 'Phone',         required: false, span: '' },
-                { field: 'company', label: 'Company / Brand', required: false, span: 'col-span-2' },
-              ].map(f2 => (
-                <div key={f2.field} className={f2.span}>
-                  <label className="text-[10px] font-semibold text-gray-400 uppercase mb-1 block">{f2.label}</label>
-                  <input value={(form as any)[f2.field]} required={f2.required} type={f2.field === 'email' ? 'email' : 'text'}
-                    onChange={f(f2.field)}
-                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                { field: 'name',    label: 'Client name *',  required: true,  span: 'col-span-2' },
+                { field: 'email',   label: 'Email *',         required: true,  span: '' },
+                { field: 'phone',   label: 'Phone',           required: false, span: '' },
+                { field: 'company', label: 'Company / brand', required: false, span: 'col-span-2' },
+              ].map(field => (
+                <div key={field.field} className={field.span}>
+                  <label className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground mb-1 block">{field.label}</label>
+                  <input
+                    value={(form as any)[field.field]}
+                    onChange={f(field.field as any)}
+                    required={field.required}
+                    type={field.field === 'email' ? 'email' : 'text'}
+                    className="w-full px-3 h-9 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
                 </div>
               ))}
+
               <div className="col-span-2">
-                <label className="text-[10px] font-semibold text-gray-400 uppercase mb-1 block">Login Password *</label>
+                <label className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground mb-1 block">Login password *</label>
                 <div className="relative">
-                  <input value={form.password} required onChange={f('password')} type={showPw ? 'text' : 'password'}
-                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring pr-20" />
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
-                    <button type="button" onClick={() => setShowPw(v => !v)}
-                      className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg">
+                  <input
+                    value={form.password}
+                    onChange={f('password')}
+                    required
+                    type={showPw ? 'text' : 'password'}
+                    className="w-full px-3 h-9 bg-background border border-input rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring pr-20"
+                  />
+                  <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-0.5">
+                    <button type="button" onClick={() => setShowPw(v => !v)} className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted">
                       {showPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                     </button>
-                    <button type="button" onClick={() => setForm(p => ({ ...p, password: genPassword(form.name || 'client') }))}
-                      className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg">
+                    <button type="button" onClick={() => setForm(p => ({ ...p, password: genPassword(form.name) }))} className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted" title="Generate new password">
                       <RefreshCw className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
-                <p className="text-[11px] text-gray-400 mt-1">📋 Copy this password and share it with the client</p>
+                <p className="text-[11px] text-muted-foreground mt-1">Copy this and share it with the client.</p>
               </div>
             </div>
 
-            <button type="submit" disabled={saving || !form.name || !form.email || !form.password}
-              className="w-full py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
-              {fromLead ? 'Create Client Account' : 'Add Client'}
-            </button>
+            <Button
+              type="submit"
+              size="md"
+              intent={fromLead ? 'success' : 'primary'}
+              loading={saving}
+              disabled={!form.name || !form.email || !form.password}
+              iconLeft={<UserPlus className="h-3.5 w-3.5" />}
+              full
+            >
+              {fromLead ? 'Create client account' : 'Add client'}
+            </Button>
           </form>
         ) : (
-          /* ── Success State ── */
-          <div className="p-6 space-y-5 text-center">
-            <div className="h-14 w-14 rounded-full bg-green-100 flex items-center justify-center mx-auto">
-              <CheckCircle2 className="h-7 w-7 text-green-600" />
+          /* Success state — credentials handoff */
+          <div className="p-5 space-y-4 text-center">
+            <div className="h-12 w-12 rounded-full bg-emerald-500/15 flex items-center justify-center mx-auto">
+              <CheckCircle2 className="h-6 w-6 text-emerald-600" />
             </div>
             <div>
-              <p className="font-bold text-gray-900 text-lg">{done.name} added!</p>
-              <p className="text-sm text-gray-500">Share these credentials with the client</p>
+              <p className="text-[15px] font-bold">{done.name} added</p>
+              <p className="text-[12px] text-muted-foreground">Share these credentials with the client.</p>
             </div>
-            <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 text-left space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">Login URL</span>
-                <span className="text-xs font-medium text-primary">robin.hastagcreator.com/login</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">Email</span>
-                <span className="text-xs font-mono text-gray-800">{done.email}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">Password</span>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-mono text-gray-800">{done.generatedPassword}</span>
-                  <button onClick={() => { navigator.clipboard?.writeText(done.generatedPassword); toast.success('Copied!'); }}
-                    className="p-1 text-gray-400 hover:text-gray-600">
-                    <Copy className="h-3 w-3" />
-                  </button>
-                </div>
-              </div>
+            <div className="rounded-lg border border-border bg-muted/30 p-3 text-left space-y-1.5">
+              <CredRow label="Login URL" value="robin.hastagcreator.com/login" tone="primary" />
+              <CredRow label="Email"     value={done.email} mono />
+              <CredRow label="Password"  value={done.generatedPassword} mono copy />
             </div>
-            <button onClick={onClose}
-              className="w-full py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90">
-              Done
-            </button>
+            <Button size="md" intent="primary" full onClick={onClose}>Done</Button>
           </div>
         )}
       </motion.div>
@@ -166,7 +190,23 @@ function CreateClientModal({
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+function CredRow({ label, value, mono, tone, copy }: { label: string; value: string; mono?: boolean; tone?: 'primary'; copy?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span className={`text-[12px] truncate ${mono ? 'font-mono' : ''} ${tone === 'primary' ? 'text-primary font-semibold' : 'text-foreground'}`}>{value}</span>
+        {copy && (
+          <button onClick={() => { navigator.clipboard?.writeText(value); toast.success('Copied'); }} className="text-muted-foreground hover:text-foreground p-0.5 rounded">
+            <Copy className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main page ─────────────────────────────────────────────────────────────
 export default function AdminClients() {
   const [clients, setClients]       = useState<any[]>([]);
   const [wonLeads, setWonLeads]     = useState<any[]>([]);
@@ -182,220 +222,186 @@ export default function AdminClients() {
         api.listLeads({ stage: 'won' }),
       ]);
       setClients(Array.isArray(users) ? users : []);
-      // Only show won leads that have NOT been converted yet
       const won = (Array.isArray(leads) ? leads : []).filter((l: any) => !l.convertedToClientId);
       setWonLeads(won);
     } finally { setLoading(false); }
   }, []);
-
   useEffect(() => { load(); }, [load]);
 
   return (
     <AppLayout requiredRole="admin">
-      <div className="max-w-5xl mx-auto space-y-6 page-transition-enter">
+      <div className="max-w-6xl mx-auto space-y-5">
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
-            <p className="text-sm text-gray-500">{clients.length} active client accounts</p>
+            <h1 className="text-[20px] font-bold tracking-tight">Clients</h1>
+            <p className="text-[12px] text-muted-foreground">{clients.length} active account{clients.length === 1 ? '' : 's'}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <SeedDemoClientsButton onDone={() => load()} />
-            <BulkCreateMetaClientsButton onDone={() => load()} />
-            <button onClick={() => setShowCreate(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 shadow-sm">
-              <Plus className="h-4 w-4" /> Add Client
-            </button>
+            <UtilityButton
+              label="Seed 3 demo clients"
+              busyLabel="Seeding…"
+              icon={<Wand2 className="h-3.5 w-3.5" />}
+              prompt="Seed 3 demo clients (Velloer Living, History Life, Darpan) with workflows at different stages? Safe to re-run."
+              onAction={() => api.seedDemoClients()}
+              onDone={load}
+              successKey="message"
+            />
+            <UtilityButton
+              label="Import from Meta"
+              busyLabel="Creating…"
+              icon={<Wand2 className="h-3.5 w-3.5" />}
+              prompt="Create one Robin Client account per Meta ad account?\n\nPlaceholder emails will be assigned — edit afterwards. Accounts already linked are skipped."
+              onAction={() => api.adminBulkCreateMetaClients()}
+              onDone={load}
+              successKey="summary"
+            />
+            <Button size="sm" intent="primary" iconLeft={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowCreate(true)}>
+              Add client
+            </Button>
           </div>
         </div>
 
-        {/* ── Won Leads awaiting conversion ─────────────────────────── */}
+        {/* Won leads awaiting conversion */}
         {wonLeads.length > 0 && (
-          <div className="bg-green-50 border border-green-100 rounded-2xl p-5 space-y-3">
-            <div className="flex items-center gap-2 mb-1">
-              <Trophy className="h-4 w-4 text-green-600" />
-              <p className="text-sm font-semibold text-green-800">
-                {wonLeads.length} won deal{wonLeads.length !== 1 ? 's' : ''} ready to convert
+          <section className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] overflow-hidden">
+            <div className="px-4 py-2.5 flex items-center gap-2 border-b border-emerald-500/15">
+              <Trophy className="h-4 w-4 text-emerald-600" />
+              <p className="text-[12.5px] font-semibold text-emerald-800">
+                {wonLeads.length} won deal{wonLeads.length === 1 ? '' : 's'} ready to convert
               </p>
-              <span className="ml-auto text-[11px] text-green-600">Click to create client account</span>
+              <span className="ml-auto text-[10.5px] text-emerald-700/70">Click to create the client account</span>
             </div>
-            <div className="space-y-2">
+            <div>
               {wonLeads.map(lead => (
-                <div key={lead._id}
-                  className="bg-white border border-green-100 rounded-xl px-4 py-3 flex items-center gap-4 hover:border-green-300 transition-all group">
-                  <div className="h-9 w-9 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-                    <span className="text-sm font-bold text-green-700">{(lead.name || '?')[0]}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800">{lead.name}</p>
-                    <p className="text-xs text-gray-400">{lead.company} {lead.contact ? `· ${lead.contact}` : ''}</p>
-                  </div>
-                  <p className="text-sm font-bold text-green-600 shrink-0">
-                    ₹{(lead.wonAmount || lead.estimatedValue || 0).toLocaleString('en-IN')}
-                  </p>
-                  <button
-                    onClick={() => setConvertLead(lead)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700 transition-all shadow-sm opacity-0 group-hover:opacity-100">
-                    <ArrowRight className="h-3.5 w-3.5" /> Convert
-                  </button>
-                </div>
+                <Row key={lead._id} onClick={() => setConvertLead(lead)} density="comfy" accent="success">
+                  <Row.Leading>
+                    <Avatar name={lead.name} size="sm" tone="primary" />
+                  </Row.Leading>
+                  <Row.Main>
+                    <Row.Title>{lead.name}</Row.Title>
+                    <Row.Meta>{lead.company || '—'}{lead.contact ? ` · ${lead.contact}` : ''}</Row.Meta>
+                  </Row.Main>
+                  <Row.Trail>
+                    <span className="text-[12.5px] font-bold text-emerald-700 tabular-nums">
+                      ₹{(lead.wonAmount || lead.estimatedValue || 0).toLocaleString('en-IN')}
+                    </span>
+                    <ArrowRight className="h-3.5 w-3.5 text-emerald-600" />
+                  </Row.Trail>
+                </Row>
               ))}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* ── Info block — how clients enter ────────────────────────── */}
-        {clients.length === 0 && wonLeads.length === 0 && !loading && (
-          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-6 space-y-3">
-            <p className="font-semibold text-blue-900 text-sm">How do clients enter the dashboard?</p>
-            <div className="space-y-2 text-sm text-blue-700">
-              <div className="flex items-start gap-2.5">
-                <div className="h-5 w-5 bg-blue-100 rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                  <span className="text-[10px] font-bold text-blue-700">1</span>
-                </div>
-                <p><strong>Rishi closes a deal</strong> → moves the lead to "Won" in the Sales pipeline → it appears here as a green card for you to review</p>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <div className="h-5 w-5 bg-blue-100 rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                  <span className="text-[10px] font-bold text-blue-700">2</span>
-                </div>
-                <p><strong>You click "Convert"</strong> → fill in their email + set a password → they get access to their client dashboard</p>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <div className="h-5 w-5 bg-blue-100 rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                  <span className="text-[10px] font-bold text-blue-700">3</span>
-                </div>
-                <p><strong>Or add directly</strong> → click "Add Client" above if the client came in without going through the sales pipeline</p>
-              </div>
-            </div>
-          </div>
+        {/* "How clients enter" empty-state hint */}
+        {!loading && clients.length === 0 && wonLeads.length === 0 && (
+          <EmptyState
+            size="lg"
+            icon={<Building2 className="h-7 w-7" />}
+            title="No clients yet"
+            hint="Two ways in: Sales closes a deal in /sales → it appears here as a green row to convert. Or click 'Add client' to onboard one directly."
+            action={
+              <Button size="sm" intent="primary" iconLeft={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowCreate(true)}>
+                Add your first client
+              </Button>
+            }
+          />
         )}
 
-        {/* ── Client cards ──────────────────────────────────────────── */}
+        {/* Client list */}
         {loading ? (
-          <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+          <div className="flex justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         ) : clients.length > 0 ? (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {clients.map((c, i) => (
-              <motion.div key={c._id}
-                initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                className="bg-white border border-gray-100 rounded-2xl p-5 space-y-3 hover:border-primary/30 hover:shadow-sm transition-all group">
-                <div className="flex items-center gap-3">
-                  <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center text-xl font-bold text-primary shrink-0">
-                    {(c.name || c.email || '?')[0].toUpperCase()}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-gray-900 truncate">{c.name || 'Unnamed'}</p>
-                    {c.company && <p className="text-[11px] text-gray-400 truncate">{c.company}</p>}
-                  </div>
-                </div>
-                <div className="space-y-1.5 text-xs text-gray-500">
-                  <div className="flex items-center gap-1.5"><Mail className="h-3 w-3" />{c.email}</div>
-                  {c.phone && <div className="flex items-center gap-1.5"><Phone className="h-3 w-3" />{c.phone}</div>}
-                </div>
-                <div className="flex items-center gap-2 pt-1 border-t border-gray-50">
-                  <Briefcase className="h-3 w-3 text-gray-400" />
-                  <span className="text-xs text-gray-500">{c.projectCount || 0} project{c.projectCount !== 1 ? 's' : ''}</span>
-                  <span className={`ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium ${c.isActive !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                    {c.isActive !== false ? 'Active' : 'Inactive'}
+          <div className="border border-border rounded-xl bg-card overflow-hidden">
+            {clients.map(c => (
+              <Row key={c._id} density="comfy">
+                <Row.Leading>
+                  <Avatar name={c.name} email={c.email} size="sm" tone="primary" />
+                </Row.Leading>
+                <Row.Main>
+                  <Row.Title>{c.name || 'Unnamed'}</Row.Title>
+                  <Row.Meta>
+                    {c.company && <><span className="font-medium text-foreground/70">{c.company}</span> · </>}
+                    <span className="inline-flex items-center gap-1"><Mail className="h-2.5 w-2.5" />{c.email}</span>
+                    {c.phone && <> · <span className="inline-flex items-center gap-1"><Phone className="h-2.5 w-2.5" />{c.phone}</span></>}
+                  </Row.Meta>
+                </Row.Main>
+                <Row.Trail>
+                  <span className="inline-flex items-center gap-1 text-[11.5px] text-muted-foreground">
+                    <Briefcase className="h-3 w-3" />
+                    {c.projectCount || 0}
                   </span>
-                </div>
-              </motion.div>
+                  <StatusPill state={c.isActive !== false ? 'working' : 'off_clock'} size="xs" label={c.isActive !== false ? 'Active' : 'Inactive'} icon="none" />
+                </Row.Trail>
+              </Row>
             ))}
           </div>
         ) : null}
 
-        {/* ── Modals ── */}
-        <AnimatePresence>
-          {showCreate && (
-            <CreateClientModal
-              onClose={() => setShowCreate(false)}
-              onCreated={() => { load(); setShowCreate(false); }}
-            />
-          )}
-          {convertLead && (
-            <CreateClientModal
-              fromLead
-              prefill={{
-                name:       convertLead.name,
-                phone:      convertLead.contact,
-                company:    convertLead.company,
-                fromLeadId: convertLead._id,
-                wonAmount:  convertLead.wonAmount || convertLead.estimatedValue,
-              }}
-              onClose={() => setConvertLead(null)}
-              onCreated={() => { load(); setConvertLead(null); }}
-            />
-          )}
-        </AnimatePresence>
+        {/* Discovery hint — keep it small once there ARE clients but no won leads,
+            so the team remembers the alternate entry path. */}
+        {!loading && clients.length > 0 && wonLeads.length === 0 && (
+          <p className="flex items-start gap-2 text-[11.5px] text-muted-foreground">
+            <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            Tip: a deal moved to "Won" in /sales will appear here as a green row, ready to convert.
+          </p>
+        )}
       </div>
+
+      <AnimatePresence>
+        {showCreate && (
+          <CreateClientModal
+            onClose={() => setShowCreate(false)}
+            onCreated={() => { load(); setShowCreate(false); }}
+          />
+        )}
+        {convertLead && (
+          <CreateClientModal
+            fromLead
+            prefill={{
+              name:       convertLead.name,
+              phone:      convertLead.contact,
+              company:    convertLead.company,
+              fromLeadId: convertLead._id,
+              wonAmount:  convertLead.wonAmount || convertLead.estimatedValue,
+            }}
+            onClose={() => setConvertLead(null)}
+            onCreated={() => { load(); setConvertLead(null); }}
+          />
+        )}
+      </AnimatePresence>
     </AppLayout>
   );
 }
 
-/**
- * BulkCreateMetaClientsButton — one-click create of Robin Client users
- * for every Meta ad account the agency has access to. Each new client
- * is linked via metaAdAccountId so share links can target them.
- *
- * Skips accounts already linked to a client. Placeholder emails get
- * generated; admin edits to real ones from this same page later.
- */
-function BulkCreateMetaClientsButton({ onDone }: { onDone: () => void }) {
-  const [busy, setBusy] = useState(false);
-
-  const run = async () => {
-    if (!confirm("Create one Robin Client account per Meta ad account?\n\nPlaceholder emails will be assigned (e.g., client.scent-diffuser@robin.local) — you can edit them to real client emails afterwards.\n\nAccounts already linked are skipped.")) return;
-    setBusy(true);
-    try {
-      const res = await api.adminBulkCreateMetaClients();
-      toast.success(res.summary || `Created ${res.created?.length || 0} clients`, { duration: 6000 });
-      onDone();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.error || 'Bulk create failed');
-    } finally { setBusy(false); }
-  };
-
-  return (
-    <button
-      onClick={run}
-      disabled={busy}
-      className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold disabled:opacity-50"
-      title="Create a Robin Client user for every ad account in your Meta Business Manager"
-    >
-      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-      {busy ? 'Creating…' : 'Import from Meta'}
-    </button>
-  );
-}
-
-/**
- * One-click demo seeder. Creates Velloer Living, History Life, Darpan as
- * client accounts AND seeds their Client Workflow at early/mid/late stages.
- * Idempotent — re-running skips clients that already exist.
- */
-function SeedDemoClientsButton({ onDone }: { onDone: () => void }) {
+// ─── Utility button (Seed / Import-from-Meta share the same shape) ─────────
+function UtilityButton({
+  label, busyLabel, icon, prompt, onAction, onDone, successKey,
+}: {
+  label: string;
+  busyLabel: string;
+  icon: React.ReactNode;
+  prompt: string;
+  onAction: () => Promise<any>;
+  onDone: () => void;
+  successKey: string;
+}) {
   const [busy, setBusy] = useState(false);
   const run = async () => {
-    if (!confirm('Seed 3 demo clients (Velloer Living, History Life, Darpan) with workflows at different stages?\n\nSafe to re-run — already-existing clients are skipped.')) return;
+    if (!confirm(prompt)) return;
     setBusy(true);
     try {
-      const res = await api.seedDemoClients();
-      toast.success(res.message || 'Demo clients seeded', { duration: 6000 });
+      const res = await onAction();
+      toast.success((res && res[successKey]) || 'Done', { duration: 6000 });
       onDone();
     } catch (e: any) {
-      toast.error(e?.response?.data?.error || 'Seed failed');
+      toast.error(e?.response?.data?.error || `${label} failed`);
     } finally { setBusy(false); }
   };
   return (
-    <button
-      onClick={run}
-      disabled={busy}
-      className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold disabled:opacity-50"
-      title="Seed Velloer Living + History Life + Darpan with workflows at 3 different stages"
-    >
-      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-      {busy ? 'Seeding…' : 'Seed 3 demo clients'}
-    </button>
+    <Button size="sm" intent="secondary" loading={busy} onClick={run} iconLeft={icon}>
+      {busy ? busyLabel : label}
+    </Button>
   );
 }
