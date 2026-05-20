@@ -281,7 +281,7 @@ export default function MetaAdsReport() {
         {/* Error */}
         {error && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-start gap-2 text-sm">
-            <AlertCircle className="h-4 w-4 mt-0.5 text-amber-600 shrink-0" />
+            <AlertCircle className="h-4 w-4 mt-0.5 text-amber-700 shrink-0" />
             <div>
               <p className="font-semibold text-amber-700">{error}</p>
               <p className="text-xs text-muted-foreground mt-0.5">If you're seeing a permissions error, the System User token may not have access to this specific ad account.</p>
@@ -361,7 +361,7 @@ export default function MetaAdsReport() {
                       <td className="px-3 py-2.5 text-right tabular-nums font-semibold">{fmtINR(d.spend)}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{fmtNum(d.conversions)}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{d.conversions > 0 ? fmtINR(d.costPerConversion) : <span className="text-muted-foreground">—</span>}</td>
-                      <td className={`px-3 py-2.5 text-right tabular-nums font-semibold ${d.roas >= 2 ? 'text-green-600' : d.roas >= 1 ? 'text-amber-600' : d.roas > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
+                      <td className={`px-3 py-2.5 text-right tabular-nums font-semibold ${d.roas >= 2 ? 'text-emerald-700' : d.roas >= 1 ? 'text-amber-700' : d.roas > 0 ? 'text-rose-700' : 'text-muted-foreground'}`}>
                         {d.roas > 0 ? `${d.roas.toFixed(2)}x` : '—'}
                       </td>
                     </tr>
@@ -373,7 +373,7 @@ export default function MetaAdsReport() {
                       <td className="px-3 py-2.5 text-right tabular-nums">{fmtINR(totals.spend)}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{fmtNum(totals.conversions)}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{totals.conversions > 0 ? fmtINR(totals.costPerConversion) : '—'}</td>
-                      <td className={`px-3 py-2.5 text-right tabular-nums ${totals.roas >= 2 ? 'text-green-600' : totals.roas >= 1 ? 'text-amber-600' : totals.roas > 0 ? 'text-red-600' : ''}`}>
+                      <td className={`px-3 py-2.5 text-right tabular-nums ${totals.roas >= 2 ? 'text-emerald-700' : totals.roas >= 1 ? 'text-amber-700' : totals.roas > 0 ? 'text-rose-700' : ''}`}>
                         {totals.roas > 0 ? `${totals.roas.toFixed(2)}x` : '—'}
                       </td>
                     </tr>
@@ -416,7 +416,7 @@ export default function MetaAdsReport() {
                       <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{fmtPct(c.ctr)}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{c.cpc > 0 ? fmtINR(c.cpc) : '—'}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{fmtNum(c.conversions)}</td>
-                      <td className={`px-3 py-2.5 text-right tabular-nums font-semibold ${c.roas >= 2 ? 'text-green-600' : c.roas >= 1 ? 'text-amber-600' : c.roas > 0 ? 'text-red-600' : ''}`}>
+                      <td className={`px-3 py-2.5 text-right tabular-nums font-semibold ${c.roas >= 2 ? 'text-emerald-700' : c.roas >= 1 ? 'text-amber-700' : c.roas > 0 ? 'text-rose-700' : ''}`}>
                         {c.roas > 0 ? `${c.roas.toFixed(2)}x` : '—'}
                       </td>
                     </tr>
@@ -631,7 +631,7 @@ function ShareReportModal({ adAccountId, accountName, dateWindow: w, preset, onC
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={shareWhatsApp} className="h-10 flex items-center justify-center gap-1.5 rounded-lg bg-green-500/15 text-green-700 border border-green-500/30 hover:bg-green-500/25 text-sm font-semibold">
+                <button onClick={shareWhatsApp} className="h-10 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-500/15 text-emerald-700 border border-green-500/30 hover:bg-emerald-500/25 text-sm font-semibold">
                   <MessageCircle className="h-4 w-4" /> WhatsApp
                 </button>
                 <button onClick={shareEmail} className="h-10 flex items-center justify-center gap-1.5 rounded-lg bg-blue-500/15 text-blue-700 border border-blue-500/30 hover:bg-blue-500/25 text-sm font-semibold">
@@ -698,9 +698,9 @@ function AccountPicker({ accounts, value, onChange }: { accounts: AdAccount[]; v
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-card border border-border rounded-lg shadow-xl max-h-80 overflow-y-auto min-w-[320px]">
             <div className="px-3 py-2 border-b border-border bg-muted/30 flex items-center gap-3 text-[10px] font-semibold">
-              <span className="flex items-center gap-1 text-green-600"><Check className="h-3 w-3" /> {liveCount} live</span>
+              <span className="flex items-center gap-1 text-emerald-700"><Check className="h-3 w-3" /> {liveCount} live</span>
               <span className="flex items-center gap-1 text-muted-foreground"><X className="h-3 w-3" /> {idleCount} idle</span>
-              {noAccessCount > 0 && <span className="flex items-center gap-1 text-red-500"><Lock className="h-3 w-3" /> {noAccessCount} no access</span>}
+              {noAccessCount > 0 && <span className="flex items-center gap-1 text-rose-600"><Lock className="h-3 w-3" /> {noAccessCount} no access</span>}
             </div>
             {sorted.map(a => (
               <button
@@ -725,10 +725,10 @@ function AccountPicker({ accounts, value, onChange }: { accounts: AdAccount[]; v
 }
 
 function StatusIcon({ status }: { status?: string }) {
-  if (status === 'live')      return <span className="h-4 w-4 rounded-full bg-green-500/20 text-green-600 flex items-center justify-center shrink-0"><Check className="h-2.5 w-2.5" /></span>;
+  if (status === 'live')      return <span className="h-4 w-4 rounded-full bg-emerald-500/20 text-emerald-700 flex items-center justify-center shrink-0"><Check className="h-2.5 w-2.5" /></span>;
   if (status === 'idle')      return <span className="h-4 w-4 rounded-full bg-muted text-muted-foreground flex items-center justify-center shrink-0"><X className="h-2.5 w-2.5" /></span>;
-  if (status === 'no_access') return <span className="h-4 w-4 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center shrink-0"><Lock className="h-2.5 w-2.5" /></span>;
-  if (status === 'error')     return <span className="h-4 w-4 rounded-full bg-amber-500/20 text-amber-600 flex items-center justify-center shrink-0"><AlertCircle className="h-2.5 w-2.5" /></span>;
+  if (status === 'no_access') return <span className="h-4 w-4 rounded-full bg-rose-500/20 text-rose-600 flex items-center justify-center shrink-0"><Lock className="h-2.5 w-2.5" /></span>;
+  if (status === 'error')     return <span className="h-4 w-4 rounded-full bg-amber-500/20 text-amber-700 flex items-center justify-center shrink-0"><AlertCircle className="h-2.5 w-2.5" /></span>;
   // unknown / loading
   return <span className="h-4 w-4 rounded-full bg-muted/50 shrink-0" />;
 }
@@ -808,9 +808,9 @@ function RankingPill({ label, value }: { label: string; value?: string | null })
   // so we never call .replace() on a missing value.
   const v = value || 'unknown';
   const tone =
-    v === 'above_average' ? 'bg-green-500/15 text-green-700 border-green-500/30' :
+    v === 'above_average' ? 'bg-emerald-500/15 text-emerald-700 border-green-500/30' :
     v === 'average'       ? 'bg-amber-500/15 text-amber-700 border-amber-500/30' :
-    v === 'below_average' ? 'bg-red-500/15 text-red-700 border-red-500/30'    :
+    v === 'below_average' ? 'bg-rose-500/15 text-rose-700 border-red-500/30'    :
                             'bg-muted text-muted-foreground border-border';
   const display = v === 'unknown' ? 'no data' : v.replace(/_/g, ' ');
   return (
@@ -821,7 +821,7 @@ function RankingPill({ label, value }: { label: string; value?: string | null })
 }
 
 function Kpi({ icon: Icon, label, value, sub, accent }: { icon: any; label: string; value: string; sub?: string; accent?: 'green' | 'amber' | 'red' }) {
-  const accentColor = accent === 'green' ? 'text-green-600' : accent === 'amber' ? 'text-amber-600' : accent === 'red' ? 'text-red-600' : '';
+  const accentColor = accent === 'green' ? 'text-emerald-700' : accent === 'amber' ? 'text-amber-700' : accent === 'red' ? 'text-rose-700' : '';
   return (
     <div className="bg-card border border-border rounded-xl p-3">
       <div className="flex items-center gap-1.5 mb-1">

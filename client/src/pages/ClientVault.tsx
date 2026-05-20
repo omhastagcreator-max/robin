@@ -27,15 +27,16 @@ interface Credential {
 
 interface ClientLite { _id: string; name?: string; email?: string }
 
+// Tones aligned to StatusPill palette (-700 weights so they read on white BG).
 const TYPE_META: Record<CredType, { label: string; icon: any; color: string }> = {
-  website:   { label: 'Website',   icon: Globe,      color: 'bg-blue-500/15 text-blue-500' },
-  social:    { label: 'Social',    icon: Hash,       color: 'bg-pink-500/15 text-pink-500' },
-  ad:        { label: 'Ads',       icon: Megaphone,  color: 'bg-amber-500/15 text-amber-500' },
-  email:     { label: 'Email',     icon: Mail,       color: 'bg-violet-500/15 text-violet-500' },
-  api:       { label: 'API',       icon: Code,       color: 'bg-emerald-500/15 text-emerald-500' },
-  hosting:   { label: 'Hosting',   icon: Server,     color: 'bg-slate-500/15 text-slate-500' },
-  analytics: { label: 'Analytics', icon: BarChart3,  color: 'bg-orange-500/15 text-orange-500' },
-  other:     { label: 'Other',     icon: KeyRound,   color: 'bg-primary/15 text-primary' },
+  website:   { label: 'Website',   icon: Globe,      color: 'bg-blue-500/12     text-blue-700'     },
+  social:    { label: 'Social',    icon: Hash,       color: 'bg-pink-500/12     text-pink-700'     },
+  ad:        { label: 'Ads',       icon: Megaphone,  color: 'bg-amber-500/12    text-amber-700'    },
+  email:     { label: 'Email',     icon: Mail,       color: 'bg-violet-500/12   text-violet-700'   },
+  api:       { label: 'API',       icon: Code,       color: 'bg-emerald-500/12  text-emerald-700'  },
+  hosting:   { label: 'Hosting',   icon: Server,     color: 'bg-slate-500/12    text-slate-700'    },
+  analytics: { label: 'Analytics', icon: BarChart3,  color: 'bg-orange-500/12   text-orange-700'   },
+  other:     { label: 'Other',     icon: KeyRound,   color: 'bg-primary/12      text-primary'      },
 };
 
 const TYPE_ORDER: CredType[] = ['website', 'social', 'ad', 'email', 'analytics', 'hosting', 'api', 'other'];
@@ -237,7 +238,7 @@ function CopyChip({ value, label, mono = false }: { value?: string; label: strin
       <span className={`text-muted-foreground text-[10px] uppercase tracking-wide font-medium`}>{label}</span>
       <span className={`truncate text-foreground ${mono ? 'font-mono' : ''}`}>{value}</span>
       {hit
-        ? <Check className="h-3 w-3 text-green-500 shrink-0" />
+        ? <Check className="h-3 w-3 text-emerald-600 shrink-0" />
         : <Copy className="h-3 w-3 text-muted-foreground/60 group-hover:text-foreground shrink-0" />}
     </button>
   );
@@ -347,7 +348,7 @@ function CredentialRow({
             <Pencil className="h-3.5 w-3.5" />
           </button>
           <button onClick={handleDelete}
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors" title="Delete">
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 transition-colors" title="Delete">
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>

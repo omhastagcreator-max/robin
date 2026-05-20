@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AppLayout } from '@/components/AppLayout';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
@@ -8,8 +7,12 @@ import {
   CheckCircle2, Clock, XCircle, Trash2,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import * as api from '@/api';
 import { toast } from 'sonner';
+
+import { AppLayout }  from '@/components/AppLayout';
+import { Button }     from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import * as api from '@/api';
 
 type DayType = 'full' | 'first_half' | 'second_half';
 
@@ -24,10 +27,11 @@ const DAY_TYPE_LABEL: Record<DayType, string> = {
   first_half:   '½ · Morning',
   second_half:  '½ · Afternoon',
 };
+// Tones aligned to StatusPill palette.
 const DAY_TYPE_BADGE: Record<DayType, string> = {
-  full:         'bg-blue-500/15 text-blue-700 border-blue-500/30',
-  first_half:   'bg-amber-500/15 text-amber-700 border-amber-500/30',
-  second_half:  'bg-purple-500/15 text-purple-700 border-purple-500/30',
+  full:         'bg-primary/12     text-primary     border-primary/25',
+  first_half:   'bg-amber-500/12   text-amber-700   border-amber-500/25',
+  second_half:  'bg-violet-500/12  text-violet-700  border-violet-500/25',
 };
 
 interface LeaveApp {
@@ -39,11 +43,12 @@ interface LeaveApp {
   createdAt: string;
 }
 
+// Tones aligned to StatusPill palette: emerald=approved, amber=pending, rose=rejected.
 const STATUS_META: Record<LeaveApp['status'], { label: string; color: string; icon: any }> = {
-  pending:   { label: 'Pending review', color: 'bg-amber-500/15 text-amber-600 border-amber-500/30',  icon: Clock },
-  approved:  { label: 'Approved',       color: 'bg-green-500/15 text-green-600 border-green-500/30',  icon: CheckCircle2 },
-  rejected:  { label: 'Rejected',       color: 'bg-red-500/15 text-red-600 border-red-500/30',         icon: XCircle },
-  cancelled: { label: 'Cancelled',      color: 'bg-muted text-muted-foreground border-border',         icon: X },
+  pending:   { label: 'Pending review', color: 'bg-amber-500/12   text-amber-700   border-amber-500/25',   icon: Clock },
+  approved:  { label: 'Approved',       color: 'bg-emerald-500/12 text-emerald-700 border-emerald-500/25', icon: CheckCircle2 },
+  rejected:  { label: 'Rejected',       color: 'bg-rose-500/12    text-rose-700    border-rose-500/25',    icon: XCircle },
+  cancelled: { label: 'Cancelled',      color: 'bg-muted          text-muted-foreground border-border',    icon: X },
 };
 
 /**
@@ -146,14 +151,13 @@ export default function LeavesPage() {
 
   return (
     <AppLayout>
-      <div className="max-w-5xl mx-auto space-y-6 page-transition-enter">
+      <div className="max-w-5xl mx-auto space-y-5">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <CalendarOff className="h-6 w-6 text-primary" /> Leave Applications
+          <h1 className="text-[20px] font-bold tracking-tight inline-flex items-center gap-2">
+            <CalendarOff className="h-5 w-5 text-primary" /> Leaves
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Pick the specific days you need off, give a reason for each, and submit.
-            Your applications stay private to you and the admins.
+          <p className="text-[12px] text-muted-foreground">
+            Pick the days you need off, give a reason for each, submit. Visible only to you and admins.
           </p>
         </div>
 
@@ -229,7 +233,7 @@ export default function LeavesPage() {
                       </div>
                       <button
                         onClick={() => removeDay(d)}
-                        className="p-1 rounded-md text-muted-foreground hover:text-red-500 hover:bg-red-500/10"
+                        className="p-1 rounded-md text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10"
                         title="Remove"
                       >
                         <X className="h-3.5 w-3.5" />
@@ -241,22 +245,25 @@ export default function LeavesPage() {
             )}
 
             {hasWeekendBoth && (
-              <div className="flex items-start gap-2 p-2 rounded-xl bg-red-500/10 border border-red-500/30">
-                <AlertTriangle className="h-3.5 w-3.5 text-red-500 mt-0.5 shrink-0" />
-                <p className="text-xs text-red-500">
+              <div className="flex items-start gap-2 p-2 rounded-lg bg-rose-500/[0.06] border border-rose-500/25">
+                <AlertTriangle className="h-3.5 w-3.5 text-rose-600 mt-0.5 shrink-0" />
+                <p className="text-[12px] text-rose-700">
                   Saturday and Sunday cannot appear in the same application. Remove one of them.
                 </p>
               </div>
             )}
 
-            <button
+            <Button
+              size="md"
+              intent="primary"
+              loading={submitting}
+              disabled={selected.length === 0 || hasWeekendBoth}
               onClick={handleSubmit}
-              disabled={submitting || selected.length === 0 || hasWeekendBoth}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              iconLeft={<Send className="h-3.5 w-3.5" />}
+              full
             >
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               Submit {selected.length > 0 ? `(${selected.length} day${selected.length > 1 ? 's' : ''})` : ''}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -268,9 +275,7 @@ export default function LeavesPage() {
           {loading ? (
             <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
           ) : history.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-6 text-center bg-card border border-border rounded-xl">
-              You haven't applied for any leave yet.
-            </p>
+            <EmptyState size="md" title="No leave applications yet" hint="Pick days above and submit your first request." />
           ) : (
             <div className="bg-card border border-border rounded-2xl divide-y divide-border/40 overflow-hidden">
               <AnimatePresence initial={false}>
@@ -316,7 +321,7 @@ export default function LeavesPage() {
                         {h.status === 'pending' && (
                           <button
                             onClick={() => handleCancel(h._id)}
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-500/10"
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10"
                             title="Cancel"
                           >
                             <Trash2 className="h-3.5 w-3.5" />

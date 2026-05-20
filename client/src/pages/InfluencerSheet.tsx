@@ -23,7 +23,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   beauty:        'bg-rose-100 text-rose-700',
   food:          'bg-orange-100 text-orange-700',
   lifestyle:     'bg-purple-100 text-purple-700',
-  fitness:       'bg-green-100 text-green-700',
+  fitness:       'bg-emerald-500/12 text-emerald-700',
   travel:        'bg-sky-100 text-sky-700',
   tech:          'bg-blue-100 text-blue-700',
   education:     'bg-indigo-100 text-indigo-700',
@@ -37,9 +37,9 @@ const CATEGORY_COLORS: Record<string, string> = {
 const STATUS_COLORS: Record<string, string> = {
   prospect:    'bg-gray-100 text-gray-600',
   approached:  'bg-amber-100 text-amber-700',
-  active:      'bg-green-100 text-green-700',
+  active:      'bg-emerald-500/12 text-emerald-700',
   paused:      'bg-orange-100 text-orange-600',
-  blacklisted: 'bg-red-100 text-red-600',
+  blacklisted: 'bg-rose-500/12 text-rose-700',
 };
 
 const PLATFORM_ICONS: Record<string, any> = {
@@ -161,7 +161,7 @@ export default function InfluencerSheet() {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Influencer Sheet</h1>
-            <p className="text-sm text-gray-500">{influencers.length} influencers tracked across {stats.length} categories</p>
+            <p className="text-sm text-muted-foreground">{influencers.length} influencers tracked across {stats.length} categories</p>
           </div>
           <button onClick={() => { setEditTarget(null); setForm({ ...EMPTY_FORM }); setShowAdd(true); }}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 shadow-sm">
@@ -174,13 +174,13 @@ export default function InfluencerSheet() {
           {[
             { label: 'Total Influencers', value: influencers.length,   icon: Users,       color: 'text-primary',   bg: 'bg-primary/5'  },
             { label: 'Total Reach',       value: fmt(totalFollowers),  icon: TrendingUp,  color: 'text-blue-600',  bg: 'bg-blue-50'    },
-            { label: 'Avg Engagement',    value: `${avgEngagement}%`,  icon: Star,        color: 'text-amber-600', bg: 'bg-amber-50'   },
-            { label: 'Active Now',        value: activeCount,          icon: BarChart3,   color: 'text-green-600', bg: 'bg-green-50'   },
+            { label: 'Avg Engagement',    value: `${avgEngagement}%`,  icon: Star,        color: 'text-amber-700', bg: 'bg-amber-50'   },
+            { label: 'Active Now',        value: activeCount,          icon: BarChart3,   color: 'text-emerald-700', bg: 'bg-emerald-500/10'   },
           ].map(k => (
             <div key={k.label} className={`${k.bg} border border-gray-100 rounded-2xl px-4 py-3 flex items-center gap-3`}>
               <k.icon className={`h-5 w-5 ${k.color} opacity-80 shrink-0`} />
               <div>
-                <p className="text-xs text-gray-500">{k.label}</p>
+                <p className="text-xs text-muted-foreground">{k.label}</p>
                 <p className={`text-lg font-bold ${k.color}`}>{k.value}</p>
               </div>
             </div>
@@ -204,7 +204,7 @@ export default function InfluencerSheet() {
         {/* Filters */}
         <div className="flex flex-wrap gap-2 items-center">
           <div className="relative flex-1 min-w-[200px] max-w-xs">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, handle, city…"
               className="w-full pl-9 pr-3 py-2 border border-gray-200 bg-white rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
           </div>
@@ -218,7 +218,7 @@ export default function InfluencerSheet() {
           </select>
           {(catFilter !== 'all' || platFilter !== 'all' || statFilter !== 'all' || search) && (
             <button onClick={() => { setCatFilter('all'); setPlatFilter('all'); setStatFilter('all'); setSearch(''); }}
-              className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
+              className="text-xs text-muted-foreground hover:text-gray-600 flex items-center gap-1">
               <X className="h-3.5 w-3.5" /> Clear filters
             </button>
           )}
@@ -241,7 +241,7 @@ export default function InfluencerSheet() {
                 <thead>
                   <tr className="border-b border-gray-50 bg-gray-50/60">
                     {['Influencer','Category','Platform','Followers','Eng. Rate','Rate/Post','City','Contact','Status',''].map(h => (
-                      <th key={h} className="text-left text-xs font-semibold text-gray-500 px-4 py-3 whitespace-nowrap">{h}</th>
+                      <th key={h} className="text-left text-xs font-semibold text-muted-foreground px-4 py-3 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -258,7 +258,7 @@ export default function InfluencerSheet() {
                             </div>
                             <div>
                               <p className="font-semibold text-gray-800 leading-tight">{inf.name}</p>
-                              {inf.handle && <p className="text-[11px] text-gray-400">@{inf.handle.replace('@','')}</p>}
+                              {inf.handle && <p className="text-[11px] text-muted-foreground">@{inf.handle.replace('@','')}</p>}
                             </div>
                           </div>
                         </td>
@@ -278,7 +278,7 @@ export default function InfluencerSheet() {
                         <td className="px-4 py-3 font-semibold text-gray-700">{fmt(inf.followers || 0)}</td>
                         {/* Engagement */}
                         <td className="px-4 py-3">
-                          <span className={`font-semibold ${inf.engagementRate >= 3 ? 'text-green-600' : inf.engagementRate >= 1 ? 'text-amber-600' : 'text-gray-500'}`}>
+                          <span className={`font-semibold ${inf.engagementRate >= 3 ? 'text-emerald-700' : inf.engagementRate >= 1 ? 'text-amber-700' : 'text-muted-foreground'}`}>
                             {inf.engagementRate?.toFixed(1) || '—'}%
                           </span>
                         </td>
@@ -287,9 +287,9 @@ export default function InfluencerSheet() {
                           {inf.ratePerPost > 0 ? `₹${inf.ratePerPost.toLocaleString('en-IN')}` : '—'}
                         </td>
                         {/* City */}
-                        <td className="px-4 py-3 text-gray-500 text-xs">{inf.city || '—'}</td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">{inf.city || '—'}</td>
                         {/* Contact */}
-                        <td className="px-4 py-3 text-xs text-gray-500">
+                        <td className="px-4 py-3 text-xs text-muted-foreground">
                           <div>{inf.email || ''}</div>
                           <div>{inf.phone || ''}</div>
                           {!inf.email && !inf.phone && '—'}
@@ -313,16 +313,16 @@ export default function InfluencerSheet() {
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
                             {inf.profileUrl && (
                               <a href={inf.profileUrl} target="_blank" rel="noopener noreferrer"
-                                className="p-1 text-gray-400 hover:text-primary rounded-lg hover:bg-primary/10 transition-all">
+                                className="p-1 text-muted-foreground hover:text-primary rounded-lg hover:bg-primary/10 transition-all">
                                 <ExternalLink className="h-3.5 w-3.5" />
                               </a>
                             )}
                             <button onClick={() => openEdit(inf)}
-                              className="p-1 text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-all">
+                              className="p-1 text-muted-foreground hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-all">
                               <Edit3 className="h-3.5 w-3.5" />
                             </button>
                             <button onClick={() => setDeleteId(inf._id)}
-                              className="p-1 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-all">
+                              className="p-1 text-muted-foreground hover:text-rose-600 rounded-lg hover:bg-rose-500/10 transition-all">
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </div>
@@ -347,7 +347,7 @@ export default function InfluencerSheet() {
                 className="bg-white border border-gray-100 rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-xl my-4">
                 <div className="flex items-start justify-between">
                   <h2 className="font-bold text-gray-900 text-lg">{editTarget ? 'Edit Influencer' : 'Add Influencer'}</h2>
-                  <button type="button" onClick={() => { setShowAdd(false); setEditTarget(null); }}><X className="h-4 w-4 text-gray-400" /></button>
+                  <button type="button" onClick={() => { setShowAdd(false); setEditTarget(null); }}><X className="h-4 w-4 text-muted-foreground" /></button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -360,7 +360,7 @@ export default function InfluencerSheet() {
                     { field: 'profileUrl', label: 'Profile URL', required: false, full: true },
                   ].map(f => (
                     <div key={f.field} className={f.full ? 'col-span-2' : ''}>
-                      <label className="text-[10px] uppercase font-semibold text-gray-400 mb-1 block">{f.label}</label>
+                      <label className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 block">{f.label}</label>
                       <input value={(form as any)[f.field]} required={f.required}
                         onChange={e => setForm(p => ({ ...p, [f.field]: e.target.value }))}
                         className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
@@ -369,21 +369,21 @@ export default function InfluencerSheet() {
 
                   {/* Selects */}
                   <div>
-                    <label className="text-[10px] uppercase font-semibold text-gray-400 mb-1 block">Platform</label>
+                    <label className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 block">Platform</label>
                     <select value={form.platform} onChange={e => setForm(p => ({ ...p, platform: e.target.value }))}
                       className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm">
                       {['instagram','youtube','twitter','linkedin','threads','other'].map(v => <option key={v} value={v}>{v}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="text-[10px] uppercase font-semibold text-gray-400 mb-1 block">Category *</label>
+                    <label className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 block">Category *</label>
                     <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}
                       className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm">
                       {['fashion','beauty','food','lifestyle','fitness','travel','tech','education','entertainment','parenting','business','photography','other'].map(v => <option key={v} value={v}>{v}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="text-[10px] uppercase font-semibold text-gray-400 mb-1 block">Status</label>
+                    <label className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 block">Status</label>
                     <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}
                       className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm">
                       {['prospect','approached','active','paused','blacklisted'].map(v => <option key={v} value={v}>{v}</option>)}
@@ -397,7 +397,7 @@ export default function InfluencerSheet() {
                     { field: 'ratePerPost',    label: 'Rate / Post (₹)' },
                   ].map(f => (
                     <div key={f.field}>
-                      <label className="text-[10px] uppercase font-semibold text-gray-400 mb-1 block">{f.label}</label>
+                      <label className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 block">{f.label}</label>
                       <input type="number" value={(form as any)[f.field]}
                         onChange={e => setForm(p => ({ ...p, [f.field]: e.target.value }))}
                         className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
@@ -405,7 +405,7 @@ export default function InfluencerSheet() {
                   ))}
 
                   <div className="col-span-2">
-                    <label className="text-[10px] uppercase font-semibold text-gray-400 mb-1 block">Notes</label>
+                    <label className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 block">Notes</label>
                     <textarea value={form.notes} rows={2}
                       onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
                       className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" />
@@ -429,14 +429,14 @@ export default function InfluencerSheet() {
               className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
                 className="bg-white rounded-2xl p-6 w-full max-w-xs shadow-xl text-center space-y-4">
-                <Trash2 className="h-8 w-8 text-red-400 mx-auto" />
+                <Trash2 className="h-8 w-8 text-rose-600 mx-auto" />
                 <p className="font-semibold text-gray-900">Remove this influencer?</p>
-                <p className="text-sm text-gray-500">This action cannot be undone.</p>
+                <p className="text-sm text-muted-foreground">This action cannot be undone.</p>
                 <div className="flex gap-2">
                   <button onClick={() => setDeleteId(null)}
                     className="flex-1 py-2 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
                   <button onClick={() => handleDelete(deleteId)}
-                    className="flex-1 py-2 bg-red-500 text-white rounded-xl text-sm font-semibold hover:bg-red-600">Delete</button>
+                    className="flex-1 py-2 bg-rose-500/100 text-white rounded-xl text-sm font-semibold hover:bg-rose-600">Delete</button>
                 </div>
               </motion.div>
             </motion.div>

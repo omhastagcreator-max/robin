@@ -1,22 +1,31 @@
-import { useState, useEffect } from 'react';
-import { AppLayout } from '@/components/AppLayout';
-import { useAuth } from '@/contexts/AuthContext';
-import { User, Lock, Camera, Save, Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { User, Lock, Save, Loader2, Mail } from 'lucide-react';
 import { toast } from 'sonner';
-import * as api from '@/api';
-import { Avatar } from '@/components/shared/Avatar';
+
+import { AppLayout } from '@/components/AppLayout';
+import { Button }    from '@/components/ui/Button';
+import { Avatar }    from '@/components/shared/Avatar';
+import { useAuth }   from '@/contexts/AuthContext';
 import { USER_TEAMS, USER_TEAM_LABEL } from '@/lib/enums';
+import * as api from '@/api';
+
+/**
+ * ProfilePage v2 — rebuilt on design-system primitives.
+ *
+ * v1 used three large bordered cards stacked, each with a section header
+ * row. v2 uses tighter spacing, semantic tokens, and v2 Button. The
+ * "phone is initialised to ''" bug fix (the Save would wipe a real phone)
+ * stays — that's correctness, not styling.
+ */
 
 export default function ProfilePage() {
   const { user, refreshProfile, updatePassword } = useAuth();
-  // Initialize from the user record. Previously phone was hardcoded to '' so
-  // every Save would wipe the user's real phone number.
-  const [name, setName]   = useState(user?.name || '');
-  const [phone, setPhone] = useState((user as any)?.phone || '');
-  const [team, setTeam]   = useState(user?.team || '');
+
+  const [name, setName]     = useState(user?.name || '');
+  const [phone, setPhone]   = useState((user as any)?.phone || '');
+  const [team, setTeam]     = useState(user?.team || '');
   const [saving, setSaving] = useState(false);
 
-  // Re-sync if `user` arrives later than first render (auth still loading).
   useEffect(() => {
     if (user) {
       setName(user.name || '');
@@ -25,8 +34,8 @@ export default function ProfilePage() {
     }
   }, [user]);
 
-  const [curPw, setCurPw] = useState('');
-  const [newPw, setNewPw] = useState('');
+  const [curPw, setCurPw]   = useState('');
+  const [newPw, setNewPw]   = useState('');
   const [pwSaving, setPwSaving] = useState(false);
 
   const saveProfile = async (e: React.FormEvent) => {
@@ -35,7 +44,7 @@ export default function ProfilePage() {
     try {
       await api.updateMe({ name, phone, team });
       await refreshProfile();
-      toast.success('Profile updated!');
+      toast.success('Profile updated');
     } catch { toast.error('Failed to update profile'); }
     finally { setSaving(false); }
   };
@@ -47,99 +56,98 @@ export default function ProfilePage() {
     const { error } = await updatePassword(curPw, newPw);
     setPwSaving(false);
     if (error) { toast.error(error); return; }
-    toast.success('Password changed!');
+    toast.success('Password changed');
     setCurPw(''); setNewPw('');
   };
 
   return (
     <AppLayout>
-      <div className="max-w-2xl mx-auto space-y-6 page-transition-enter">
-        <h1 className="text-2xl font-bold">Profile</h1>
+      <div className="max-w-2xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-[20px] font-bold tracking-tight">Profile</h1>
+          <p className="text-[12px] text-muted-foreground">Update your details and password.</p>
+        </div>
 
-        {/* Avatar */}
-        <div className="bg-card border border-border rounded-2xl p-6 flex items-center gap-5">
-          <Avatar name={user?.name} email={user?.email} url={user?.avatarUrl} size="lg" tone="primary" className="!rounded-2xl" />
-          <div>
-            <p className="font-semibold">{user?.name}</p>
-            <p className="text-sm text-muted-foreground">{user?.email}</p>
-            <span className="inline-block mt-1 text-[11px] bg-primary/15 text-primary px-2 py-0.5 rounded-full capitalize">{user?.role}</span>
+        {/* Identity card */}
+        <div className="border border-border rounded-xl bg-card p-5 flex items-center gap-4">
+          <Avatar name={user?.name} email={user?.email} url={user?.avatarUrl} size="lg" tone="primary" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] font-bold truncate">{user?.name || 'Unnamed'}</p>
+            <p className="text-[12px] text-muted-foreground flex items-center gap-1.5 truncate">
+              <Mail className="h-3 w-3" /> {user?.email}
+            </p>
+            <span className="inline-flex items-center mt-1.5 text-[10.5px] uppercase tracking-[0.16em] font-bold bg-primary/12 text-primary px-2 h-5 rounded">
+              {user?.role}
+            </span>
           </div>
         </div>
 
-        {/* Profile Form */}
-        <div className="bg-card border border-border rounded-2xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-border flex items-center gap-2">
-            <User className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold text-sm">Personal Information</h2>
-          </div>
-          <form onSubmit={saveProfile} className="p-6 space-y-4">
-            <div className="grid sm:grid-cols-2 gap-4">
-              {[
-                { label: 'Full Name', value: name, setter: setName, placeholder: 'Your name' },
-                { label: 'Phone', value: phone, setter: setPhone, placeholder: '+91 ...' },
-              ].map(f => (
-                <div key={f.label} className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">{f.label}</label>
-                  <input value={f.value} onChange={e => f.setter(e.target.value)} placeholder={f.placeholder}
-                    className="w-full px-3 py-2.5 bg-background border border-input rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring transition-all" />
-                </div>
-              ))}
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Team</label>
-                {/* Single source of truth — was previously a stale list (web/
-                    marketing) that didn't match the team chips admins see in
-                    AdminEmployees, so any team set here was orphaned. */}
+        {/* Personal info */}
+        <section className="border border-border rounded-xl bg-card overflow-hidden">
+          <header className="px-4 h-10 border-b border-border flex items-center gap-2">
+            <User className="h-3.5 w-3.5 text-primary" />
+            <p className="text-[12.5px] font-semibold">Personal information</p>
+          </header>
+          <form onSubmit={saveProfile} className="p-4 space-y-3.5">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label="Full name">
+                <input value={name} onChange={e => setName(e.target.value)} placeholder="Your name"
+                  className="w-full px-3 h-9 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              </Field>
+              <Field label="Phone">
+                <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 …"
+                  className="w-full px-3 h-9 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              </Field>
+              <Field label="Team">
                 <select value={team} onChange={e => setTeam(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-background border border-input rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring">
+                  className="w-full px-3 h-9 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring">
                   <option value="">None</option>
-                  {USER_TEAMS.map(t => (
-                    <option key={t} value={t}>{USER_TEAM_LABEL[t]}</option>
-                  ))}
+                  {USER_TEAMS.map(t => <option key={t} value={t}>{USER_TEAM_LABEL[t]}</option>)}
                 </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Email</label>
-                {/* `value={user?.email}` would be undefined on first render →
-                    React controlled-uncontrolled warning. Coerce to ''. */}
+              </Field>
+              <Field label="Email">
                 <input value={user?.email || ''} disabled
-                  className="w-full px-3 py-2.5 bg-muted border border-input rounded-xl text-sm text-muted-foreground cursor-not-allowed" />
-              </div>
+                  className="w-full px-3 h-9 bg-muted border border-input rounded-lg text-sm text-muted-foreground cursor-not-allowed" />
+              </Field>
             </div>
-            <button type="submit" disabled={saving}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-all">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Save Changes
-            </button>
+            <Button type="submit" size="sm" intent="primary" loading={saving} iconLeft={<Save className="h-3.5 w-3.5" />}>
+              Save changes
+            </Button>
           </form>
-        </div>
+        </section>
 
-        {/* Password Form */}
-        <div className="bg-card border border-border rounded-2xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-border flex items-center gap-2">
-            <Lock className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold text-sm">Change Password</h2>
-          </div>
-          <form onSubmit={savePassword} className="p-6 space-y-4">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Current Password</label>
+        {/* Password */}
+        <section className="border border-border rounded-xl bg-card overflow-hidden">
+          <header className="px-4 h-10 border-b border-border flex items-center gap-2">
+            <Lock className="h-3.5 w-3.5 text-primary" />
+            <p className="text-[12.5px] font-semibold">Change password</p>
+          </header>
+          <form onSubmit={savePassword} className="p-4 space-y-3.5">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label="Current password">
                 <input type="password" value={curPw} onChange={e => setCurPw(e.target.value)} placeholder="••••••••"
-                  className="w-full px-3 py-2.5 bg-background border border-input rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">New Password</label>
+                  className="w-full px-3 h-9 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              </Field>
+              <Field label="New password">
                 <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="Min. 6 characters"
-                  className="w-full px-3 py-2.5 bg-background border border-input rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-              </div>
+                  className="w-full px-3 h-9 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              </Field>
             </div>
-            <button type="submit" disabled={pwSaving || !curPw || !newPw}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-all">
-              {pwSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
-              Update Password
-            </button>
+            <Button type="submit" size="sm" intent="primary" loading={pwSaving} disabled={!curPw || !newPw} iconLeft={<Lock className="h-3.5 w-3.5" />}>
+              Update password
+            </Button>
           </form>
-        </div>
+        </section>
       </div>
     </AppLayout>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <label className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground">{label}</label>
+      {children}
+    </div>
   );
 }

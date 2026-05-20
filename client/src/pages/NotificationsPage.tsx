@@ -1,21 +1,36 @@
-import { useState, useEffect } from 'react';
-import { AppLayout } from '@/components/AppLayout';
-import { Bell, CheckCheck, Trash2, Info, AlertTriangle, CheckCircle2, AlertOctagon } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Bell, CheckCheck, Trash2, Info, AlertTriangle, CheckCircle2, AlertOctagon,
+} from 'lucide-react';
 import { format } from 'date-fns';
-import * as api from '@/api';
-import { EmptyState } from '@/components/ui/EmptyState';
 import { toast } from 'sonner';
 
-const typeConfig: Record<string, { icon: typeof Info; color: string }> = {
-  info:    { icon: Info,          color: 'text-blue-400'   },
-  success: { icon: CheckCircle2,  color: 'text-green-400'  },
-  warning: { icon: AlertTriangle, color: 'text-amber-400'  },
-  error:   { icon: AlertOctagon,  color: 'text-red-400'    },
+import { AppLayout }  from '@/components/AppLayout';
+import { Button }     from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import * as api from '@/api';
+
+/**
+ * NotificationsPage v2 — rebuilt on design-system primitives.
+ *
+ * What's changed:
+ *   • text-blue-400 / text-green-400 / text-amber-400 / text-red-400 icons
+ *     (washed out on white BG) → -700 weights aligned to StatusPill.
+ *   • Bespoke 8 × 8 rounded-2xl icon tile → smaller 7 × 7 rounded-md tile.
+ *   • Card chrome cleaned: single border-border + bg-card, no nested padding.
+ *   • Mark-read + delete actions use shared Button intents (no inline pills).
+ */
+
+const typeConfig: Record<string, { icon: typeof Info; color: string; bg: string }> = {
+  info:    { icon: Info,          color: 'text-blue-700',     bg: 'bg-blue-500/12'    },
+  success: { icon: CheckCircle2,  color: 'text-emerald-700',  bg: 'bg-emerald-500/12' },
+  warning: { icon: AlertTriangle, color: 'text-amber-700',    bg: 'bg-amber-500/12'   },
+  error:   { icon: AlertOctagon,  color: 'text-rose-700',     bg: 'bg-rose-500/12'    },
 };
 
 export default function NotificationsPage() {
-  const [notifs, setNotifs] = useState<any[]>([]);
+  const [notifs, setNotifs]   = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
@@ -26,9 +41,6 @@ export default function NotificationsPage() {
   };
   useEffect(() => { load(); }, []);
 
-  // Optimistic-with-rollback pattern: update UI immediately so the click
-  // feels instant, then revert if the server rejects. Previously every
-  // mutation just trusted the server and lied to the user when it failed.
   const readOne = async (id: string) => {
     const before = notifs;
     setNotifs(prev => prev.map(n => n._id === id ? { ...n, isRead: true } : n));
@@ -56,49 +68,63 @@ export default function NotificationsPage() {
 
   return (
     <AppLayout>
-      <div className="max-w-2xl mx-auto space-y-5 page-transition-enter">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold">Notifications</h1>
-            {unread > 0 && (
-              <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center">{unread}</span>
-            )}
+      <div className="max-w-2xl mx-auto space-y-5">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h1 className="text-[20px] font-bold tracking-tight">Notifications</h1>
+            <p className="text-[12px] text-muted-foreground">
+              {unread > 0 ? `${unread} unread of ${notifs.length}` : `${notifs.length} total`}
+            </p>
           </div>
           {unread > 0 && (
-            <button onClick={readAll}
-              className="flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors">
-              <CheckCheck className="h-4 w-4" /> Mark all read
-            </button>
+            <Button size="sm" intent="secondary" iconLeft={<CheckCheck className="h-3.5 w-3.5" />} onClick={readAll}>
+              Mark all read
+            </Button>
           )}
         </div>
 
         {loading ? (
-          <div className="bg-card border border-border rounded-2xl h-64 animate-pulse" />
+          <div className="h-48 rounded-xl bg-muted/30 animate-pulse" />
         ) : notifs.length === 0 ? (
-          <EmptyState icon={<Bell className="h-6 w-6" />} title="All good!" hint="No notifications at the moment." />
+          <EmptyState
+            size="lg"
+            icon={<Bell className="h-7 w-7" />}
+            title="All good"
+            hint="No notifications at the moment."
+          />
         ) : (
-          <div className="bg-card border border-border rounded-2xl divide-y divide-border/50 overflow-hidden">
+          <div className="border border-border rounded-xl bg-card overflow-hidden">
             <AnimatePresence initial={false}>
-              {notifs.map(n => {
-                const cfg = typeConfig[n.type] || typeConfig.info;
+              {notifs.map((n, i) => {
+                const cfg  = typeConfig[n.type] || typeConfig.info;
                 const Icon = cfg.icon;
                 return (
-                  <motion.div key={n._id} layout initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                    className={`flex gap-3 p-4 transition-colors ${!n.isRead ? 'bg-primary/5' : ''}`}>
-                    <div className={`h-8 w-8 rounded-2xl flex items-center justify-center shrink-0 ${!n.isRead ? 'bg-primary/15' : 'bg-muted'}`}>
-                      <Icon className={`h-4 w-4 ${cfg.color}`} />
+                  <motion.div
+                    key={n._id}
+                    layout
+                    initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                    className={`flex items-start gap-3 px-4 py-3 group transition-colors ${i > 0 ? 'border-t border-border' : ''} ${!n.isRead ? 'bg-primary/[0.03]' : ''}`}
+                  >
+                    <div className={`h-7 w-7 rounded-md flex items-center justify-center shrink-0 ${cfg.bg}`}>
+                      <Icon className={`h-3.5 w-3.5 ${cfg.color}`} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
-                        <p className={`text-sm font-medium ${!n.isRead ? 'text-foreground' : 'text-muted-foreground'}`}>{n.title}</p>
-                        <p className="text-[10px] text-muted-foreground shrink-0">{format(new Date(n.createdAt), 'MMM d, h:mm a')}</p>
+                        <p className={`text-[13px] font-semibold ${!n.isRead ? 'text-foreground' : 'text-muted-foreground'}`}>
+                          {n.title}
+                        </p>
+                        <p className="text-[10.5px] text-muted-foreground shrink-0 tabular-nums">
+                          {format(new Date(n.createdAt), 'MMM d, h:mm a')}
+                        </p>
                       </div>
-                      {(n.body || n.message) && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.body || n.message}</p>}
-                      <div className="flex gap-3 mt-1.5">
+                      {(n.body || n.message) && (
+                        <p className="text-[12px] text-muted-foreground mt-0.5 line-clamp-2">{n.body || n.message}</p>
+                      )}
+                      <div className="flex gap-3 mt-1">
                         {!n.isRead && (
-                          <button onClick={() => readOne(n._id)} className="text-[11px] text-primary hover:text-primary/80">Mark read</button>
+                          <button onClick={() => readOne(n._id)} className="text-[11px] text-primary hover:underline">Mark read</button>
                         )}
-                        <button onClick={() => deleteOne(n._id)} className="text-[11px] text-muted-foreground hover:text-destructive flex items-center gap-1">
+                        <button onClick={() => deleteOne(n._id)} className="text-[11px] text-muted-foreground hover:text-rose-600 inline-flex items-center gap-1">
                           <Trash2 className="h-3 w-3" /> Delete
                         </button>
                       </div>

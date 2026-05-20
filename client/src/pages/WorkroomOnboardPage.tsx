@@ -1,33 +1,23 @@
 import { useState } from 'react';
-import { AppLayout } from '@/components/AppLayout';
-import { useAuth } from '@/contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
-import { UserPlus, Loader2, Copy, Check, Headphones } from 'lucide-react';
+import { UserPlus, Copy, Check, Headphones } from 'lucide-react';
 import { toast } from 'sonner';
+
+import { AppLayout } from '@/components/AppLayout';
+import { Button }    from '@/components/ui/Button';
+import { useAuth }   from '@/contexts/AuthContext';
 import * as api from '@/api';
 
 /**
- * WorkroomOnboardPage — quick form that admin (always) and any user with
- * canManageWorkroom=true (e.g. Om the developer, once admin flips it on)
- * can use to spin up a new role='workroom' teammate.
+ * WorkroomOnboardPage v2 — rebuilt on design-system primitives.
  *
- * The new teammate gets:
- *   - role='workroom' (hard-locked by the server — caller can't elevate)
- *   - The default password 'Robin2024!' or one specified by the creator
- *
- * After creation, the credentials are shown ONCE so the creator can paste
- * them to the new teammate.
+ * Admin (always) + canManageWorkroom flagged users (e.g. Om) can spin up
+ * a role='workroom' teammate. Credentials are shown ONCE — copy or save.
  */
 export default function WorkroomOnboardPage() {
   const { user, role } = useAuth();
-  // Hardcoded fallback for Om — owner ask: "let him use this now, even
-  // before admin flips the toggle." Mirrors the server-side bypass.
-  const isOm =
-    /^om(\s|$)/i.test(user?.name || '') ||
-    /^om(\.|@|[._-])/i.test(user?.email || '');
-  const canAccess = role === 'admin' || user?.canManageWorkroom === true || isOm;
-
-  // Bounced to the right dashboard if they shouldn't see this page.
+  const isOm = /^om(\s|$)/i.test(user?.name || '') || /^om(\.|@|[._-])/i.test(user?.email || '');
+  const canAccess = role === 'admin' || (user as any)?.canManageWorkroom === true || isOm;
   if (!canAccess) return <Navigate to="/" replace />;
 
   const [email, setEmail]       = useState('');
@@ -63,91 +53,90 @@ export default function WorkroomOnboardPage() {
 
   return (
     <AppLayout>
-      <div className="max-w-xl mx-auto p-4 sm:p-8 space-y-5">
+      <div className="max-w-xl mx-auto space-y-5">
         {/* Header */}
         <div className="flex items-start gap-3">
-          <div className="h-10 w-10 rounded-xl bg-primary/15 text-primary flex items-center justify-center shrink-0">
+          <div className="h-10 w-10 rounded-lg bg-primary/12 text-primary flex items-center justify-center shrink-0">
             <Headphones className="h-5 w-5" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-xl font-bold">Onboard a workroom teammate</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
+            <h1 className="text-[20px] font-bold tracking-tight">Onboard a workroom teammate</h1>
+            <p className="text-[12px] text-muted-foreground mt-0.5">
               They'll only see a tiny dashboard and the Work Room — no tasks, no clients, no admin pages.
-              Perfect for floor/support staff who just join the huddle.
             </p>
           </div>
         </div>
 
         {/* Form */}
-        <form onSubmit={submit} className="rounded-2xl border border-border bg-card p-5 space-y-4">
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground">Email</label>
+        <form onSubmit={submit} className="border border-border rounded-xl bg-card p-5 space-y-3.5">
+          <Field label="Email *">
             <input
-              type="email"
-              required
-              value={email}
-              onChange={e => setEmail(e.target.value)}
+              type="email" required value={email} onChange={e => setEmail(e.target.value)}
               placeholder="teammate@hastagcreator.com"
-              className="mt-1 w-full px-3 py-2 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full px-3 h-9 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground">Name (optional)</label>
+          </Field>
+          <Field label="Name (optional)">
             <input
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="Janvi"
-              className="mt-1 w-full px-3 py-2 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              value={name} onChange={e => setName(e.target.value)} placeholder="Janvi"
+              className="w-full px-3 h-9 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground">Password</label>
+          </Field>
+          <Field label="Password" hint="They can change it after first login from their profile.">
             <input
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="Robin2024!"
-              className="mt-1 w-full px-3 py-2 bg-background border border-input rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+              value={password} onChange={e => setPassword(e.target.value)} placeholder="Robin2024!"
+              className="w-full px-3 h-9 bg-background border border-input rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
             />
-            <p className="text-[11px] text-muted-foreground mt-1">
-              They can change it after first login from their profile.
-            </p>
-          </div>
+          </Field>
 
-          <button
-            type="submit"
-            disabled={saving || !email.trim()}
-            className="w-full h-10 rounded-lg bg-primary text-primary-foreground text-sm font-semibold flex items-center justify-center gap-2 hover:bg-primary/90 disabled:opacity-50 transition-colors"
-          >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
-            {saving ? 'Creating…' : 'Create teammate'}
-          </button>
+          <Button type="submit" size="md" intent="primary" loading={saving} disabled={!email.trim()} iconLeft={<UserPlus className="h-3.5 w-3.5" />} full>
+            Create teammate
+          </Button>
         </form>
 
-        {/* Credentials surface — shown once after creation */}
+        {/* Credentials surface */}
         {created && (
-          <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5 space-y-3">
+          <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.05] p-5 space-y-3">
             <div className="flex items-center gap-2">
-              <div className="h-7 w-7 rounded-lg bg-emerald-500/15 text-emerald-700 flex items-center justify-center">
-                <Check className="h-4 w-4" />
+              <div className="h-7 w-7 rounded-md bg-emerald-500/15 text-emerald-700 flex items-center justify-center">
+                <Check className="h-3.5 w-3.5" />
               </div>
-              <p className="text-sm font-semibold">Account created — share these credentials</p>
+              <p className="text-[13px] font-semibold">Account created — share these credentials</p>
             </div>
-            <div className="font-mono text-xs bg-background border border-border rounded-lg p-3 space-y-1">
-              <div><span className="text-muted-foreground">Email:</span> {created.email}</div>
-              <div><span className="text-muted-foreground">Password:</span> {created.password}</div>
-              <div><span className="text-muted-foreground">Login at:</span> {window.location.origin}/login</div>
+            <div className="font-mono text-[11.5px] bg-background border border-border rounded-lg p-3 space-y-1">
+              <CredLine label="Email"     value={created.email} />
+              <CredLine label="Password"  value={created.password} />
+              <CredLine label="Login at"  value={`${window.location.origin}/login`} />
             </div>
-            <button onClick={copyCreds}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-xs font-semibold hover:bg-muted transition-colors">
-              {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-              {copied ? 'Copied' : 'Copy credentials'}
-            </button>
-            <p className="text-[11px] text-muted-foreground">
-              We won't show this password again. Save it now or use the Reset Password action from Admin → Employees later.
-            </p>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <Button size="xs" intent="secondary" iconLeft={copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />} onClick={copyCreds}>
+                {copied ? 'Copied' : 'Copy credentials'}
+              </Button>
+              <p className="text-[10.5px] text-muted-foreground">
+                We won't show this password again.
+              </p>
+            </div>
           </div>
         )}
       </div>
     </AppLayout>
+  );
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <label className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground">{label}</label>
+      {children}
+      {hint && <p className="text-[10.5px] text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
+function CredLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span className="text-muted-foreground">{label}:</span> {value}
+    </div>
   );
 }

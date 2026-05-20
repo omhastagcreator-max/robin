@@ -128,9 +128,11 @@ function AppRoutes() {
         {/* Public guest meeting page — no Robin login required */}
         <Route path="/meet/:slug"        element={<E><MeetGuest /></E>} />
 
-        {/* Root — intentionally blank. Users go to /login or deep-link to
-            their dashboard. Old auto-redirect to /login removed per req. */}
-        <Route path="/"                 element={<BlankRoot />} />
+        {/* Root — anyone landing on robin.hastagcreator.com goes straight
+            to the v2 login screen. Login.tsx itself auto-redirects to the
+            role-specific dashboard if a JWT is already in localStorage,
+            so logged-in users get the same fast-path they had before. */}
+        <Route path="/"                 element={<Navigate to="/login" replace />} />
 
         {/* ── Authenticated routes — persistent chrome via <AppShell /> ─
             All inner routes share a single AppLayout instance, so the

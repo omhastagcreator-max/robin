@@ -45,8 +45,8 @@ interface Meeting {
 const TYPE_COLORS: Record<string, { bg: string; border: string; text: string; label: string }> = {
   client:   { bg: 'bg-orange-500/30',  border: 'border-orange-500/50',  text: 'text-orange-700',  label: 'Client' },
   internal: { bg: 'bg-blue-500/30',    border: 'border-blue-500/50',    text: 'text-blue-700',    label: 'Internal' },
-  focus:    { bg: 'bg-green-500/30',   border: 'border-green-500/50',   text: 'text-green-700',   label: 'Focus' },
-  personal: { bg: 'bg-gray-500/30',    border: 'border-gray-500/50',    text: 'text-gray-700',    label: 'Personal' },
+  focus:    { bg: 'bg-emerald-500/25', border: 'border-emerald-500/50', text: 'text-emerald-700', label: 'Focus' },
+  personal: { bg: 'bg-slate-500/25',   border: 'border-slate-500/50',   text: 'text-slate-700',   label: 'Personal' },
 };
 
 const HOUR_START = 9;

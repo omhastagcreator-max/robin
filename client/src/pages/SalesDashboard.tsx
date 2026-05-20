@@ -22,19 +22,19 @@ const PIPELINE_STAGES = [
   { key: 'new_lead',         label: 'New Lead',         icon: Phone,        color: 'border-t-blue-500',    bg: 'bg-blue-50',     text: 'text-blue-600'   },
   { key: 'dialed',           label: 'Dialed',           icon: Phone,        color: 'border-t-purple-500',  bg: 'bg-purple-50',   text: 'text-purple-600' },
   { key: 'connected',        label: 'Connected',        icon: UserCheck,    color: 'border-t-indigo-500',  bg: 'bg-indigo-50',   text: 'text-indigo-600' },
-  { key: 'demo_booked',      label: 'Demo Booked',      icon: Calendar,     color: 'border-t-amber-500',   bg: 'bg-amber-50',    text: 'text-amber-600'  },
-  { key: 'demo_done',        label: 'Demo Done',        icon: Presentation, color: 'border-t-orange-500',  bg: 'bg-orange-50',   text: 'text-orange-600' },
+  { key: 'demo_booked',      label: 'Demo Booked',      icon: Calendar,     color: 'border-t-amber-500',   bg: 'bg-amber-50',    text: 'text-amber-700'  },
+  { key: 'demo_done',        label: 'Demo Done',        icon: Presentation, color: 'border-t-orange-500',  bg: 'bg-orange-50',   text: 'text-orange-700' },
   { key: 'demo2_conversion', label: 'Demo2 Conversion', icon: TrendingUp,   color: 'border-t-violet-500',  bg: 'bg-violet-50',   text: 'text-violet-600' },
 ] as const;
 
 const SALES_STAGES = [
   { key: 'follow_up',    label: 'Follow Up',    icon: Repeat,   color: 'border-t-sky-500',     bg: 'bg-sky-50',      text: 'text-sky-600'     },
-  { key: 'hot_follow_up',label: 'Hot Follow Up',icon: Flame,    color: 'border-t-red-500',     bg: 'bg-red-50',      text: 'text-red-600'     },
+  { key: 'hot_follow_up',label: 'Hot Follow Up',icon: Flame,    color: 'border-t-rose-500',     bg: 'bg-rose-500/10',      text: 'text-rose-700'     },
   { key: 'cooking',      label: 'Cooking',      icon: ChefHat,  color: 'border-t-emerald-500', bg: 'bg-emerald-50',  text: 'text-emerald-600' },
 ] as const;
 
 const OUTCOME_STAGES = [
-  { key: 'won',  label: 'Sale Won',  icon: Trophy,   color: 'border-t-green-500', bg: 'bg-green-50',  text: 'text-green-600'  },
+  { key: 'won',  label: 'Sale Won',  icon: Trophy,   color: 'border-t-emerald-500', bg: 'bg-emerald-500/10',  text: 'text-emerald-700'  },
   { key: 'lost', label: 'Sale Lost', icon: XCircle,  color: 'border-t-gray-400',  bg: 'bg-gray-50',   text: 'text-gray-500'   },
 ] as const;
 
@@ -105,6 +105,16 @@ export default function SalesDashboard() {
   // desktop, but on a phone we show one stage at a time via this picker).
   const [mobileStage, setMobileStage] = useState<string>('new_lead');
 
+  // Single shared fingerprint reference — used by BOTH the foreground
+  // load (after a CRUD action) and the background 2-min interval. Means
+  // a CRUD that didn't actually change anything visible won't re-render
+  // the kanban, and the interval can't undo an optimistic update.
+  const fgSigRef = useRef<string>('');
+  const fingerprint = (l: any[], u: any[], d: any[]) =>
+    `L:${l.map(x => `${x._id}/${x.stage || x.status}/${x.aiScore || ''}`).join(',')}|` +
+    `U:${u.map(x => x._id).join(',')}|` +
+    `D:${d.map(x => `${x._id}/${x.status || ''}`).join(',')}`;
+
   const load = useCallback(async () => {
     // First call → drive the full-screen spinner. Subsequent calls (after
     // any CRUD action) → silent refresh; keep the existing data visible
@@ -117,9 +127,20 @@ export default function SalesDashboard() {
         api.listUsers({ role: 'client' }),
         api.listDeals(),
       ]);
-      setLeads(Array.isArray(l) ? l : []);
-      setClients(Array.isArray(u) ? u : []);
-      setDeals(Array.isArray(d) ? d : []);
+      const ll = Array.isArray(l) ? l : [];
+      const uu = Array.isArray(u) ? u : [];
+      const dd = Array.isArray(d) ? d : [];
+      // FIRST load — always set state so the empty placeholder is replaced
+      // by real data. After that, skip setState if the data is identical
+      // to what we already rendered. This is what stops Rishi's kanban
+      // from "blinking" after every drag / quick-add / status change.
+      const sig = fingerprint(ll, uu, dd);
+      if (!initialLoadDone.current || sig !== fgSigRef.current) {
+        fgSigRef.current = sig;
+        setLeads(ll);
+        setClients(uu);
+        setDeals(dd);
+      }
     } finally {
       initialLoadDone.current = true;
       setLoading(false);
@@ -129,19 +150,11 @@ export default function SalesDashboard() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-refresh every 2 minutes (was 30s — too aggressive; the kanban felt
-  // like it was flickering because the array refs changed on every tick
-  // even when nothing in the data had moved). Pauses when the tab is hidden,
-  // and skips the setState entirely when the new data is structurally
-  // identical to what's already on screen. No data change → no re-render
-  // → no flicker.
-  const lastSigRef = useRef<string>('');
+  // Auto-refresh every 2 minutes. Skips setState when the data fingerprint
+  // matches the last-rendered one (set by EITHER this interval OR the
+  // foreground load above — they share `fgSigRef`). No data change → no
+  // re-render → no flicker.
   useEffect(() => {
-    const fingerprint = (l: any[], u: any[], d: any[]) =>
-      `L:${l.map(x => `${x._id}/${x.stage || x.status}`).join(',')}|` +
-      `U:${u.map(x => x._id).join(',')}|` +
-      `D:${d.map(x => `${x._id}/${x.stage || x.status}`).join(',')}`;
-
     const i = setInterval(async () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       try {
@@ -154,8 +167,8 @@ export default function SalesDashboard() {
         const uu = Array.isArray(u) ? u : [];
         const dd = Array.isArray(d) ? d : [];
         const sig = fingerprint(ll, uu, dd);
-        if (sig === lastSigRef.current) return;     // no change → no flicker
-        lastSigRef.current = sig;
+        if (sig === fgSigRef.current) return;     // no change → no flicker
+        fgSigRef.current = sig;
         setLeads(ll);
         setClients(uu);
         setDeals(dd);
@@ -412,7 +425,7 @@ export default function SalesDashboard() {
                   e.stopPropagation();
                   if (confirm(`Mark "${lead.name}" as Lost?`)) moveLeadStage(lead._id, 'lost');
                 }}
-                className="h-7 px-2 rounded-md bg-card border border-border text-muted-foreground text-[10px] font-semibold hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/30"
+                className="h-7 px-2 rounded-md bg-card border border-border text-muted-foreground text-[10px] font-semibold hover:bg-rose-500/100/10 hover:text-rose-600 hover:border-red-500/30"
                 title="Mark Lost"
               >
                 ✗
@@ -549,8 +562,8 @@ export default function SalesDashboard() {
         </div>
         {lastDeal && (
           <span className={`text-[10px] px-2 py-1 rounded-full font-medium hidden md:inline-flex ${
-            lastDeal.status === 'paid' ? 'bg-green-100 text-green-700' :
-            lastDeal.status === 'overdue' ? 'bg-red-100 text-red-700' :
+            lastDeal.status === 'paid' ? 'bg-emerald-500/12 text-emerald-700' :
+            lastDeal.status === 'overdue' ? 'bg-rose-500/12 text-rose-700' :
             'bg-amber-100 text-amber-700'
           }`}>
             {lastDeal.status || 'active'}
@@ -569,14 +582,14 @@ export default function SalesDashboard() {
   // ── Won Deal Row ──────────────────────────────────────────────────────────
   const WonRow = ({ lead }: { lead: any }) => (
     <div className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 rounded-xl transition-colors group">
-      <div className="h-9 w-9 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-        <Trophy className="h-4 w-4 text-green-600" />
+      <div className="h-9 w-9 rounded-full bg-emerald-500/12 flex items-center justify-center shrink-0">
+        <Trophy className="h-4 w-4 text-emerald-700" />
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-gray-800 truncate">{lead.name}</p>
         <p className="text-xs text-gray-400">{lead.company} {lead.closedAt ? `· Closed ${format(new Date(lead.closedAt), 'dd MMM yyyy')}` : ''}</p>
       </div>
-      <p className="text-sm font-bold text-green-600 shrink-0">₹{(lead.wonAmount || lead.estimatedValue || 0).toLocaleString('en-IN')}</p>
+      <p className="text-sm font-bold text-emerald-700 shrink-0">₹{(lead.wonAmount || lead.estimatedValue || 0).toLocaleString('en-IN')}</p>
       <button
         onClick={() => { setPaymentTarget(lead); setPaymentForm({ amount: String(lead.wonAmount || lead.estimatedValue || ''), dueDate: '', note: '' }); }}
         className="opacity-0 group-hover:opacity-100 flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-medium hover:bg-amber-100 transition-all"
@@ -637,9 +650,9 @@ export default function SalesDashboard() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: 'Pipeline Value', value: `₹${pipelineValue.toLocaleString('en-IN')}`, color: 'text-primary',     bg: 'bg-primary/5',   icon: IndianRupee },
-            { label: 'Won Revenue',    value: `₹${wonValue.toLocaleString('en-IN')}`,       color: 'text-green-600',  bg: 'bg-green-50',    icon: Trophy },
+            { label: 'Won Revenue',    value: `₹${wonValue.toLocaleString('en-IN')}`,       color: 'text-emerald-700',  bg: 'bg-emerald-500/10',    icon: Trophy },
             { label: 'Total Leads',    value: String(leads.length),                          color: 'text-gray-900',   bg: 'bg-gray-50',     icon: Users },
-            { label: 'Conversion',     value: `${leads.length ? Math.round((wonLeads.length / leads.length) * 100) : 0}%`, color: 'text-amber-600', bg: 'bg-amber-50', icon: TrendingUp },
+            { label: 'Conversion',     value: `${leads.length ? Math.round((wonLeads.length / leads.length) * 100) : 0}%`, color: 'text-amber-700', bg: 'bg-amber-50', icon: TrendingUp },
           ].map(k => (
             <div key={k.label} className={`${k.bg} border border-gray-100 rounded-2xl px-4 py-3 flex items-center gap-3`}>
               <k.icon className={`h-5 w-5 ${k.color} opacity-70`} />
@@ -665,7 +678,7 @@ export default function SalesDashboard() {
               }`}>
               <Icon className="h-3.5 w-3.5" />{label}
               {key === 'won' && wonLeads.length > 0 && (
-                <span className="bg-green-100 text-green-700 text-[10px] font-bold px-1.5 rounded-full">{wonLeads.length}</span>
+                <span className="bg-emerald-500/12 text-emerald-700 text-[10px] font-bold px-1.5 rounded-full">{wonLeads.length}</span>
               )}
             </button>
           ))}
@@ -821,7 +834,7 @@ export default function SalesDashboard() {
                   {viewLead.contact && <p>📱 {viewLead.contact}</p>}
                   {viewLead.email   && <p>✉️ {viewLead.email}</p>}
                   <p>🎯 Stage: <span className="font-semibold capitalize">{(viewLead.stage||viewLead.status||'new_lead').replace(/_/g,' ')}</span></p>
-                  {viewLead.estimatedValue > 0 && <p>💰 Value: <span className="font-semibold text-green-600">₹{viewLead.estimatedValue.toLocaleString('en-IN')}</span></p>}
+                  {viewLead.estimatedValue > 0 && <p>💰 Value: <span className="font-semibold text-emerald-700">₹{viewLead.estimatedValue.toLocaleString('en-IN')}</span></p>}
                   {viewLead.source && <p>📣 Source: <span className="capitalize">{viewLead.source.replace(/_/g,' ')}</span></p>}
                 </div>
                 <div className="space-y-2">
@@ -858,7 +871,7 @@ export default function SalesDashboard() {
                 className="bg-white border border-gray-100 rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-xl my-8">
                 <div className="flex items-start justify-between">
                   <div>
-                    <h2 className="font-bold text-xl text-green-700 inline-flex items-center gap-2"><Trophy className="h-5 w-5" /> Deal Won! Onboard Client</h2>
+                    <h2 className="font-bold text-xl text-emerald-700 inline-flex items-center gap-2"><Trophy className="h-5 w-5" /> Deal Won! Onboard Client</h2>
                     <p className="text-sm text-gray-500">Create client portal & set up projects/services</p>
                   </div>
                   <button type="button" onClick={() => setOnboardLead(null)}><X className="h-4 w-4 text-gray-400" /></button>
@@ -898,7 +911,7 @@ export default function SalesDashboard() {
 
                 <div className="flex gap-2">
                   <button type="button" onClick={() => setOnboardLead(null)} className="flex-1 py-2 text-gray-500 font-medium text-sm">Cancel</button>
-                  <button type="submit" disabled={onboarding || !onboardForm.email} className="flex-2 py-2 px-4 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2 flex-grow">
+                  <button type="submit" disabled={onboarding || !onboardForm.email} className="flex-2 py-2 px-4 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2 flex-grow">
                     {onboarding ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCheck className="h-4 w-4" />} Create Client & Handover
                   </button>
                 </div>
@@ -920,7 +933,7 @@ export default function SalesDashboard() {
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center">
-                        <Bell className="h-4 w-4 text-amber-600" />
+                        <Bell className="h-4 w-4 text-amber-700" />
                       </div>
                       <h2 className="font-bold text-gray-900">Payment Due Alert</h2>
                     </div>

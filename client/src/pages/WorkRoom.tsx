@@ -1,187 +1,147 @@
-import { AppLayout } from '@/components/AppLayout';
 import { motion } from 'framer-motion';
-import { useAuth } from '@/contexts/AuthContext';
 import {
-  Coffee, Users, Loader2, Headphones, CalendarOff, WifiOff,
+  Coffee, Users, Loader2, Headphones, CalendarOff,
 } from 'lucide-react';
-import { useTeamPresence, type TeamMember, type PresenceStatus } from '@/hooks/useTeamPresence';
+
+import { AppLayout }   from '@/components/AppLayout';
+import { Row }         from '@/components/ui/Row';
+import { StatusPill }  from '@/components/ui/StatusPill';
+import { Stat }        from '@/components/ui/Stat';
+import { EmptyState }  from '@/components/ui/EmptyState';
+import { Avatar }      from '@/components/shared/Avatar';
 import { HuddleStage } from '@/components/shared/HuddleStage';
+import { useAuth }     from '@/contexts/AuthContext';
+import { useUnifiedPresence, type UnifiedPresence } from '@/hooks/useUnifiedPresence';
 
 /**
- * WorkRoom — the agency's universal workroom.
+ * WorkRoom v2 — rebuilt on design-system primitives.
  *
- *   1. HuddleStage — the live Meet-style huddle (audio + screen share,
- *      no camera). All screen sharing happens here; anyone joining the
- *      huddle can share and anyone can pin a teammate's screen to fullscreen.
- *   2. Team roster — who's working, on break, on leave, off the clock.
+ * Same anatomy: HuddleStage on top, team roster below. v2 changes:
+ *   • Bespoke amber/purple banners → tighter inline strips, aligned tones.
+ *   • Roster card grid replaced with Row list (denser, scannable).
+ *   • Presence badges read from useUnifiedPresence — no more separate
+ *     useTeamPresence cross-referenced manually.
  */
 export default function WorkRoom() {
   const { role } = useAuth();
-  // Treat workroom-only employees as internal too — they need to see who's
-  // around in the team roster, otherwise the page is just a HuddleStage in
-  // isolation with no context.
   const isInternal = role === 'admin' || role === 'employee' || role === 'sales' || role === 'workroom';
+  const presence = useUnifiedPresence();
 
-  const presence = useTeamPresence();
+  const onBreak = presence.list.filter(r => r.displayState === 'on_break');
+  const onLeave = presence.list.filter(r => r.displayState === 'on_leave');
 
   return (
     <AppLayout>
-      <div className="max-w-6xl mx-auto space-y-6 page-transition-enter">
-        {/* Page header */}
+      <div className="max-w-6xl mx-auto space-y-5">
+        {/* Header */}
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Headphones className="h-6 w-6 text-primary" /> Work Room
+            <h1 className="text-[20px] font-bold tracking-tight flex items-center gap-2">
+              <Headphones className="h-5 w-5 text-primary" /> Work Room
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[12px] text-muted-foreground">
               The agency's universal huddle — mic + screen share, all in one tab.
             </p>
           </div>
         </div>
 
-        {/* Break banner */}
-        {presence.onBreak.length > 0 && (
+        {/* Banners */}
+        {onBreak.length > 0 && (
           <motion.div
-            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-start gap-3"
+            initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
+            className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 flex items-start gap-2 text-[12px] text-amber-700"
           >
-            <div className="h-9 w-9 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0">
-              <Coffee className="h-4 w-4 text-amber-600" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
-                {presence.onBreak.length} teammate{presence.onBreak.length === 1 ? ' is' : 's are'} on break — please don't ping them
+            <Coffee className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="font-semibold">
+                {onBreak.length} teammate{onBreak.length === 1 ? '' : 's'} on break — please don't ping them
               </p>
-              <p className="text-xs text-amber-700/70 dark:text-amber-400/70 mt-1">
-                {presence.onBreak.map(m => m.name).filter(Boolean).join(', ')}
+              <p className="text-[11px] text-amber-700/80 mt-0.5">
+                {onBreak.map(m => m.name).filter(Boolean).join(', ')}
               </p>
             </div>
           </motion.div>
         )}
 
-        {/* On-leave banner */}
-        {presence.onLeave && presence.onLeave.length > 0 && (
+        {onLeave.length > 0 && (
           <motion.div
-            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl border border-purple-500/30 bg-purple-500/10 p-4 flex items-start gap-3"
+            initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
+            className="rounded-lg border border-blue-500/25 bg-blue-500/[0.06] px-3 py-2 flex items-start gap-2 text-[12px] text-blue-700"
           >
-            <div className="h-9 w-9 rounded-xl bg-purple-500/20 flex items-center justify-center shrink-0">
-              <CalendarOff className="h-4 w-4 text-purple-500" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-purple-700 dark:text-purple-400">
-                {presence.onLeave.length} teammate{presence.onLeave.length === 1 ? ' is' : 's are'} on leave today
+            <CalendarOff className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="font-semibold">
+                {onLeave.length} teammate{onLeave.length === 1 ? '' : 's'} on leave today
               </p>
-              <p className="text-xs text-purple-700/70 dark:text-purple-400/70 mt-1">
-                {presence.onLeave.map(m => m.name).filter(Boolean).join(', ')}
+              <p className="text-[11px] text-blue-700/80 mt-0.5">
+                {onLeave.map(m => m.name).filter(Boolean).join(', ')}
               </p>
             </div>
           </motion.div>
         )}
 
-        {/* ── FULL HUDDLE STAGE — Meet-style, in-page ───────────────────────── */}
+        {/* Huddle stage */}
         <HuddleStage />
 
-        {/* ── TEAM ROSTER ─────────────────────────────────────────── */}
+        {/* Team roster */}
         {isInternal && (
           <section className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-primary" />
-              <h2 className="font-semibold text-sm">Team status</h2>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {presence.active.length} working · {presence.onBreak.length} on break · {presence.onLeave?.length || 0} on leave · {presence.off.length} off
-              </span>
+            <div className="flex items-end justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-primary" />
+                <h2 className="text-[14px] font-bold">Team status</h2>
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <Stat value={presence.working.length}  label="working"  tone="success" />
+                <Stat value={presence.inHuddle.length} label="in huddle" tone="primary" />
+                <Stat value={onBreak.length}            label="on break" tone="warning" />
+                <Stat value={onLeave.length}            label="on leave" tone="muted" />
+                <Stat value={presence.offClock.length}  label="off"      tone="muted" />
+              </div>
             </div>
 
             {presence.loading ? (
-              <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
+              <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
             ) : presence.list.length === 0 ? (
-              <p className="px-5 py-4 text-sm text-muted-foreground bg-card border border-border rounded-2xl text-center">
-                No teammates found.
-              </p>
+              <EmptyState
+                size="md"
+                icon={<Users className="h-7 w-7" />}
+                title="No teammates found"
+                hint="As people sign in their presence will appear here."
+              />
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {presence.list
-                  .slice()
-                  .sort((a, b) => statusRank(a.status) - statusRank(b.status))
-                  .map(m => <RosterCard key={m.userId} member={m} />)}
+              <div className="border border-border rounded-xl bg-card overflow-hidden">
+                {presence.list.map((m: UnifiedPresence) => (
+                  <Row
+                    key={m.userId}
+                    density="comfy"
+                    accent={
+                      m.displayState === 'in_huddle' ? 'primary' :
+                      m.displayState === 'working'   ? 'success' :
+                      m.displayState === 'on_break'  ? 'warning' :
+                      m.displayState === 'on_leave'  ? 'info'    :
+                                                        'none'
+                    }
+                  >
+                    <Row.Leading>
+                      <Avatar name={m.name} email={m.email} size="sm" tone="primary" />
+                    </Row.Leading>
+                    <Row.Main>
+                      <Row.Title>{m.name || 'Unnamed'}</Row.Title>
+                      <Row.Meta>
+                        {m.role || 'employee'}{m.team ? ` · ${m.team}` : ''}
+                      </Row.Meta>
+                    </Row.Main>
+                    <Row.Trail>
+                      <StatusPill state={m.displayState as any} size="xs" />
+                    </Row.Trail>
+                  </Row>
+                ))}
               </div>
             )}
           </section>
         )}
       </div>
     </AppLayout>
-  );
-}
-
-// ─── helpers ────────────────────────────────────────────────────────────────
-
-function statusRank(s: PresenceStatus) {
-  switch (s) {
-    case 'active':    return 0;
-    case 'on_break':  return 1;
-    case 'on_leave':  return 2;
-    case 'off_clock': return 3;
-    default:          return 4;
-  }
-}
-
-function StatusBadge({ status }: { status: PresenceStatus }) {
-  if (status === 'on_leave') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/15 text-purple-500 border border-purple-500/30">
-        <CalendarOff className="h-3 w-3" /> On leave
-      </span>
-    );
-  }
-  if (status === 'on_break') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-600 border border-amber-500/30">
-        <Coffee className="h-3 w-3" /> On break
-      </span>
-    );
-  }
-  if (status === 'active') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-500/15 text-green-600 border border-green-500/30">
-        <span className="h-1.5 w-1.5 rounded-full bg-green-500" /> Working
-      </span>
-    );
-  }
-  if (status === 'away') {
-    return (
-      <span title="Clocked in but Robin closed — timer paused"
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/15 text-slate-600 border border-slate-500/30">
-        <WifiOff className="h-3 w-3" /> Robin closed
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground">
-      Off the clock
-    </span>
-  );
-}
-
-function RosterCard({ member }: { member: TeamMember }) {
-  const accent =
-    member.status === 'active'    ? 'border-green-500/30 bg-green-500/5' :
-    member.status === 'on_break'  ? 'border-amber-500/30 bg-amber-500/5' :
-    member.status === 'on_leave'  ? 'border-purple-500/30 bg-purple-500/5' :
-    member.status === 'away'      ? 'border-slate-500/30 bg-slate-500/5' :
-                                    'border-border bg-card';
-  return (
-    <div className={`rounded-2xl border ${accent} p-4 flex flex-col items-center text-center gap-2 transition-colors hover:shadow-md`}>
-      <div className="h-12 w-12 rounded-2xl bg-primary/15 flex items-center justify-center text-base font-bold text-primary">
-        {(member.name || member.email || '?')[0].toUpperCase()}
-      </div>
-      <div className="min-w-0 w-full">
-        <p className="text-sm font-semibold truncate">{member.name || 'Unnamed'}</p>
-        {member.role && (
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{member.role}</p>
-        )}
-      </div>
-      <StatusBadge status={member.status} />
-    </div>
   );
 }

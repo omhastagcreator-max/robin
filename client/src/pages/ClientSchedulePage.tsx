@@ -151,7 +151,7 @@ export default function ClientSchedulePage() {
 
         {/* Error / Loading */}
         {error && (
-          <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-3 text-xs text-red-700">{error}</div>
+          <div className="rounded-lg border border-rose-500/25 bg-rose-500/[0.06] p-3 text-[12px] text-rose-700">{error}</div>
         )}
 
         {/* Week grid — 7 columns on desktop, stacked on mobile */}

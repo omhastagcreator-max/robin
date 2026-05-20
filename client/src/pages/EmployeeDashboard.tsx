@@ -1,145 +1,113 @@
-import { useState, useEffect, useRef } from 'react';
-import { AppLayout } from '@/components/AppLayout';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Clock, Play, Pause, StopCircle, CheckCircle2, AlertTriangle,
-  Plus, Calendar, Target, Bell, Loader2, X, Send, UserPlus, Info,
-  TrendingUp, Megaphone, Code2, Users, BarChart3, IndianRupee,
-  Star, Zap, Globe, Share2
+  Plus, Bell, X, Send, UserPlus, Info, Loader2, CheckCircle2, Circle,
+  Target, Calendar, KeyRound, CalendarOff, MessageSquare, Video,
+  ChevronDown,
 } from 'lucide-react';
 import { format, isToday, isBefore, startOfDay } from 'date-fns';
-import { useAuth } from '@/contexts/AuthContext';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import * as api from '@/api';
-import { useSession } from '@/hooks/useSession';
-import { useTasks } from '@/hooks/useTasks';
-import { SessionClockCard } from '@/components/shared/SessionClockCard';
-import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
-import { WeeklyPlanner } from '@/components/shared/WeeklyPlanner';
-import { AIMorningBrief } from '@/components/dashboard/AIMorningBrief';
-import { MetaAdsCard } from '@/components/dashboard/MetaAdsCard';
-import { TodayMeetingsStrip } from '@/components/dashboard/TodayMeetingsStrip';
+
+import { AppLayout }   from '@/components/AppLayout';
+import { Button }      from '@/components/ui/Button';
+import { Row }         from '@/components/ui/Row';
+import { Stat }        from '@/components/ui/Stat';
+import { EmptyState }  from '@/components/ui/EmptyState';
+import { Tabs }        from '@/components/ui/Tabs';
+
+import { useAuth }     from '@/contexts/AuthContext';
+import { useSession }  from '@/hooks/useSession';
+import { useTasks }    from '@/hooks/useTasks';
+
+import { HuddleQuickPill }       from '@/components/shared/HuddleQuickPill';
+import { WeeklyPlanner }         from '@/components/shared/WeeklyPlanner';
+import { HuddleDashboardCard }   from '@/components/shared/HuddleDashboardCard';
+import { AIMorningBrief }        from '@/components/dashboard/AIMorningBrief';
+import { MetaAdsCard }           from '@/components/dashboard/MetaAdsCard';
+import { TodayMeetingsStrip }    from '@/components/dashboard/TodayMeetingsStrip';
 import { ActiveClientMeetingsCard } from '@/components/dashboard/ActiveClientMeetingsCard';
 import { ScheduleMeetingsSection } from '@/components/dashboard/ScheduleMeetingsSection';
-import { HuddleDashboardCard } from '@/components/shared/HuddleDashboardCard';
-import { TodayClientsCard } from '@/components/dashboard/TodayClientsCard';
+import { TodayClientsCard }      from '@/components/dashboard/TodayClientsCard';
 import { MyAssignedServicesCard } from '@/components/dashboard/MyAssignedServicesCard';
-import { TASK_STATUSES, TASK_TYPES, nextTaskStatus, type TaskStatus } from '@/lib/enums';
 
+import {
+  TASK_STATUSES, TASK_TYPES, nextTaskStatus,
+  type TaskStatus, type TaskPriority,
+} from '@/lib/enums';
+import * as api from '@/api';
 
-const PRIORITY_COLORS: Record<string, string> = {
-  urgent: 'text-red-400', high: 'text-orange-400', medium: 'text-yellow-400', low: 'text-green-400'
+/**
+ * EmployeeDashboard v2 — rebuilt on design-system primitives.
+ *
+ * What's gone vs v1:
+ *   • Bespoke colored team-role KPI grids (4 different color families per
+ *     team → 12 total combinations). Unified to a single Stat strip that
+ *     reads from team data without bespoke palettes.
+ *   • Task list cards with hand-rolled border/divider/hover chrome →
+ *     a single Row list with proper accent.
+ *   • Hardcoded `text-red-400 / text-yellow-400` priority weights that
+ *     read too light on a white BG → matched StatusPill `-700` palette.
+ *   • Inline "🔑 / 📅 / 💬 / 🎙️" emoji-button quick links →
+ *     real v2 Buttons with lucide icons.
+ *   • Multiple competing card chrome variants (rounded-2xl border-border,
+ *     rounded-xl bg-muted, rounded-xl border-primary/30, bg-primary/5) →
+ *     consistent border-border + bg-card token.
+ */
+
+// ─── Priority chip (text-700, readable) ──────────────────────────────────
+const priorityTone: Record<TaskPriority, string> = {
+  urgent: 'bg-rose-500/12   text-rose-700    border-rose-500/25',
+  high:   'bg-orange-500/12 text-orange-700  border-orange-500/25',
+  medium: 'bg-amber-500/12  text-amber-700   border-amber-500/25',
+  low:    'bg-emerald-500/12 text-emerald-700 border-emerald-500/25',
 };
-// Server enum: pending | ongoing | done. The old in_progress/blocked values
-// 400'd on every dropdown change; single source of truth in lib/enums.ts.
-const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-muted text-muted-foreground',
-  ongoing: 'bg-blue-500/15 text-blue-400',
-  done:    'bg-green-500/15 text-green-400',
-};
-const STATUSES = TASK_STATUSES;
 
-// ── Team / Role specific widget ────────────────────────────────────────────
-function TeamRoleWidget({ team, tasks }: { team: string; tasks: any[] }) {
-  const done    = tasks.filter(t => t.status === 'done').length;
-  const total   = tasks.length;
-  const pct     = total ? Math.round((done / total) * 100) : 0;
-  const overdue = tasks.filter(t => t.status !== 'done' && t.dueDate && isBefore(new Date(t.dueDate), startOfDay(new Date()))).length;
-
-  if (team === 'ads') return (
-    <div className="grid sm:grid-cols-4 gap-3">
-      {[
-        { label: 'Active Campaigns', value: '3',     icon: Megaphone, color: 'text-blue-600',   bg: 'bg-blue-50'   },
-        { label: 'Avg. ROAS',        value: '2.8x',  icon: TrendingUp,color: 'text-green-600',  bg: 'bg-green-50'  },
-        { label: 'Tasks Done',       value: `${done}/${total}`, icon: BarChart3, color: 'text-violet-600', bg: 'bg-violet-50' },
-        { label: 'Overdue',          value: String(overdue),    icon: Zap, color: 'text-red-500', bg: 'bg-red-50' },
-      ].map(k => (
-        <div key={k.label} className={`${k.bg} rounded-2xl px-4 py-3 flex items-center gap-3 border border-gray-100`}>
-          <k.icon className={`h-5 w-5 ${k.color} opacity-80 shrink-0`} />
-          <div><p className="text-xs text-gray-500">{k.label}</p><p className={`text-lg font-bold ${k.color}`}>{k.value}</p></div>
-        </div>
-      ))}
-    </div>
+function PriorityChip({ p }: { p: TaskPriority }) {
+  return (
+    <span className={`inline-flex items-center text-[10px] uppercase tracking-wider font-bold px-1.5 h-[18px] rounded border ${priorityTone[p]}`}>
+      {p}
+    </span>
   );
-
-  if (team === 'influencer') return (
-    <div className="grid sm:grid-cols-4 gap-3">
-      {[
-        { label: 'Active Campaigns', value: '2',       icon: Star,    color: 'text-pink-600',   bg: 'bg-pink-50'   },
-        { label: 'Influencers Live', value: '12',      icon: Users,   color: 'text-purple-600', bg: 'bg-purple-50' },
-        { label: 'Avg Engagement',   value: '4.2%',    icon: Share2,  color: 'text-amber-600',  bg: 'bg-amber-50'  },
-        { label: 'Tasks Progress',   value: `${pct}%`, icon: Target,  color: 'text-emerald-600',bg: 'bg-emerald-50'},
-      ].map(k => (
-        <div key={k.label} className={`${k.bg} rounded-2xl px-4 py-3 flex items-center gap-3 border border-gray-100`}>
-          <k.icon className={`h-5 w-5 ${k.color} opacity-80 shrink-0`} />
-          <div><p className="text-xs text-gray-500">{k.label}</p><p className={`text-lg font-bold ${k.color}`}>{k.value}</p></div>
-        </div>
-      ))}
-    </div>
-  );
-
-  if (team === 'dev') return (
-    <div className="grid sm:grid-cols-4 gap-3">
-      {[
-        { label: 'Active Projects', value: '1',       icon: Globe,   color: 'text-indigo-600', bg: 'bg-indigo-50' },
-        { label: 'Tasks Done',      value: `${done}/${total}`, icon: Code2,   color: 'text-blue-600',   bg: 'bg-blue-50'   },
-        { label: 'Overdue',         value: String(overdue),    icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-50' },
-        { label: 'Progress',        value: `${pct}%`, icon: TrendingUp, color: 'text-green-600', bg: 'bg-green-50' },
-      ].map(k => (
-        <div key={k.label} className={`${k.bg} rounded-2xl px-4 py-3 flex items-center gap-3 border border-gray-100`}>
-          <k.icon className={`h-5 w-5 ${k.color} opacity-80 shrink-0`} />
-          <div><p className="text-xs text-gray-500">{k.label}</p><p className={`text-lg font-bold ${k.color}`}>{k.value}</p></div>
-        </div>
-      ))}
-    </div>
-  );
-
-  // default
-  return null;
 }
 
+const statusTone: Record<TaskStatus, string> = {
+  pending: 'bg-muted          text-muted-foreground border-border',
+  ongoing: 'bg-blue-500/12    text-blue-700         border-blue-500/25',
+  done:    'bg-emerald-500/12 text-emerald-700      border-emerald-500/25',
+};
+
 export default function EmployeeDashboard() {
-  const { user } = useAuth();
+  const { user }    = useAuth();
   const { session } = useSession();
   const { tasks, loading: tasksLoading, refresh, createTask, updateTask, deleteTask } = useTasks();
 
-  const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [projects, setProjects] = useState<any[]>([]);
+  const [allUsers, setAllUsers]   = useState<any[]>([]);
+  const [projects, setProjects]   = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [addingTask, setAddingTask] = useState(false);
-  const [newTask, setNewTask] = useState({ title: '', priority: 'medium', dueDate: '', taskType: 'dev', assignToId: '', projectId: '' });
-  const [saving, setSaving] = useState(false);
-  const [viewPast, setViewPast] = useState(false);
+  const [newTask, setNewTask]     = useState({ title: '', priority: 'medium' as TaskPriority, dueDate: '', taskType: 'dev', assignToId: '', projectId: '' });
+  const [saving, setSaving]       = useState(false);
 
-  // Task buckets — split is OPEN vs DONE so nothing disappears.
-  //   • todayTasks   = every open task you might work on (status !== done).
-  //                    Sorted so today's due dates and overdue surface first.
-  //   • pastTasks    = completed history (status === done).
-  //   • overdueTasks = open + dueDate < today, used for the KPI card.
-  //   The previous strict `dueDate === today` filter silently dropped tasks
-  //   with no due date or future dates, which looked like data loss.
-  const todayStartLocal = startOfDay(new Date());
-  const isOverdueT = (t: any) => t.status !== 'done' && t.dueDate && isBefore(new Date(t.dueDate), todayStartLocal);
-  const todayTasks = tasks
+  // ── Derived task buckets ─────────────────────────────────────────────
+  const todayStart = startOfDay(new Date());
+  const isOverdueT = (t: any) => t.status !== 'done' && t.dueDate && isBefore(new Date(t.dueDate), todayStart);
+
+  const openTasks = tasks
     .filter(t => t.status !== 'done')
     .slice()
     .sort((a, b) => {
-      // Overdue and "today" first, then no-due-date, then upcoming
       const ad = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
       const bd = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
       return ad - bd;
     });
-  const pendingToday = todayTasks.length;
+  const doneTasks    = tasks.filter(t => t.status === 'done');
   const overdueTasks = tasks.filter(isOverdueT);
-  const pastTasks = tasks.filter(t => t.status === 'done');
-  const dayLocked = !session && tasks.filter(t => t.dueDate && isToday(new Date(t.dueDate))).length < 3;
+  const stuckTasks   = tasks.filter(t => t.status === 'ongoing' && t.dueDate && isBefore(new Date(t.dueDate), todayStart));
+  const dayLocked    = !session && tasks.filter(t => t.dueDate && isToday(new Date(t.dueDate))).length < 3;
 
   useEffect(() => {
-    // Each call gets its own .catch so a single 5xx doesn't trigger an
-    // unhandled promise rejection. The axios interceptor still toasts the
-    // user-facing error; we just don't want to crash the dashboard if (e.g.)
-    // notifications fail to load while everything else works.
-    refresh().catch(() => {/* hook handles its own state */});
+    refresh().catch(() => {});
     api.listUsers()
       .then(d => setAllUsers(Array.isArray(d) ? d.filter((u: any) => u._id !== user?.id) : []))
       .catch(() => setAllUsers([]));
@@ -158,114 +126,86 @@ export default function EmployeeDashboard() {
     setSaving(true);
     try {
       const payload: any = { ...newTask, status: 'pending', dueDate: newTask.dueDate || new Date().toISOString().split('T')[0] };
-      // If an explicit teammate was picked, assign to them. Otherwise
-      // assign to ME so the task is actually visible in MY task list on
-      // next refresh — listTasks filters non-admins to assignedTo: userId
-      // so an unassigned task would "vanish" the moment you reload.
       payload.assignedTo = newTask.assignToId || user?.id;
       if (!payload.projectId) delete payload.projectId;
       await createTask(payload);
       setNewTask({ title: '', priority: 'medium', dueDate: '', taskType: 'dev', assignToId: '', projectId: '' });
       setAddingTask(false);
-      toast.success(newTask.assignToId ? 'Task assigned to teammate!' : 'Task added!');
+      toast.success(newTask.assignToId ? 'Task assigned' : 'Task added');
     } catch { toast.error('Failed to create task'); }
     finally { setSaving(false); }
   };
 
   const cycleStatus = async (task: any) => {
-    // Server enum is `pending | ongoing | done`. The old map used
-    // `in_progress`/`blocked` which 400'd every cycle and silently desynced
-    // the UI from the database. Use canonical helper from lib/enums.
-    const current = (TASK_STATUSES as readonly string[]).includes(task.status) ? task.status : 'pending';
+    const current = (TASK_STATUSES as readonly string[]).includes(task.status) ? task.status as TaskStatus : 'pending';
     const next = nextTaskStatus(current);
-    try {
-      await updateTask(task._id, { status: next });
-    } catch { /* axios interceptor toasts the error */ }
+    try { await updateTask(task._id, { status: next }); } catch {}
   };
 
-  // KPI summary — server has no 'blocked' status, so "stuck" is now derived
-  // from overdue+ongoing instead. Avoids showing a stat that's always zero.
-  const doneTasks    = tasks.filter(t => t.status === 'done').length;
-  const stuckTasks   = tasks.filter(t => t.status === 'ongoing' && t.dueDate && isBefore(new Date(t.dueDate), startOfDay(new Date()))).length;
+  const greeting = (() => {
+    const h = new Date().getHours();
+    return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  })();
+  const subline = (() => {
+    if (overdueTasks.length > 0) return `${overdueTasks.length} overdue ${overdueTasks.length === 1 ? 'task' : 'tasks'} — clear those first.`;
+    const dueToday = tasks.filter(t => t.dueDate && isToday(new Date(t.dueDate)) && t.status !== 'done').length;
+    if (dueToday > 0) return `${dueToday} ${dueToday === 1 ? 'task' : 'tasks'} due today.`;
+    if (openTasks.length > 0) return `${openTasks.length} open ${openTasks.length === 1 ? 'task' : 'tasks'} on your plate.`;
+    return 'Inbox zero on tasks — a good day to ship something deep.';
+  })();
+
+  const unread = notifications.filter(n => !n.isRead);
 
   return (
     <AppLayout>
-      <div className="max-w-5xl mx-auto space-y-6 page-transition-enter">
-        {/* Hero — slimmer header with the day, greeting, and one-line
-            status. Removed the card chrome (border + accent stripe + date
-            tile) so the page opens with breathing room instead of a heavy
-            "title block." */}
-        <div className="flex items-end justify-between gap-3 flex-wrap pt-1">
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* ── Header ─────────────────────────────────────────────────── */}
+        <header className="flex items-end justify-between gap-3 flex-wrap">
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] uppercase tracking-[0.18em] font-semibold text-muted-foreground">
+            <p className="text-[10px] uppercase tracking-[0.18em] font-bold text-muted-foreground">
               {format(new Date(), 'EEEE · dd MMM yyyy')}
             </p>
-            <h1 className="mt-0.5 text-2xl sm:text-3xl font-bold tracking-tight">
-              {(() => {
-                const h = new Date().getHours();
-                return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-              })()},{' '}
-              <span className="text-primary">{user?.name?.split(' ')[0] || 'there'}</span>.
+            <h1 className="mt-1 text-[26px] sm:text-[30px] font-bold tracking-tight">
+              {greeting}, <span className="text-primary">{user?.name?.split(' ')[0] || 'there'}</span>.
             </h1>
-            <p className="mt-1 text-xs text-muted-foreground max-w-xl">
-              {(() => {
-                const due = tasks.filter(t => t.dueDate && isToday(new Date(t.dueDate)) && t.status !== 'done').length;
-                const overdue = overdueTasks.length;
-                if (overdue > 0) return `${overdue} overdue ${overdue === 1 ? 'task' : 'tasks'} — clear those first.`;
-                if (due > 0)     return `${due} ${due === 1 ? 'task' : 'tasks'} due today.`;
-                if (todayTasks.length > 0) return `${todayTasks.length} open ${todayTasks.length === 1 ? 'task' : 'tasks'} on your plate.`;
-                return 'Inbox zero on tasks — a good day to ship something deep.';
-              })()}
-            </p>
+            <p className="mt-1 text-[12.5px] text-muted-foreground">{subline}</p>
           </div>
           <HuddleQuickPill />
-        </div>
+        </header>
 
-        {/* Day-start gate — slim inline strip when locked, replaces the
-            chunky banner that used to dominate the page. */}
+        {/* Day-lock banner */}
         <AnimatePresence>
           {dayLocked && (
-            <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-              className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 flex items-center gap-2 text-xs">
-              <Info className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-              <p className="flex-1 text-amber-700">
-                Plan {3 - todayTasks.length} more task{3 - todayTasks.length !== 1 ? 's' : ''} before clocking in.
+            <motion.div
+              initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 flex items-center gap-2 text-[12px] text-amber-700"
+            >
+              <Info className="h-3.5 w-3.5 shrink-0" />
+              <p className="flex-1">
+                Plan {3 - openTasks.length} more task{3 - openTasks.length !== 1 ? 's' : ''} before clocking in.
               </p>
-              <button onClick={() => setAddingTask(true)}
-                className="text-amber-700 font-semibold underline hover:no-underline">
+              <button onClick={() => setAddingTask(true)} className="font-semibold underline hover:no-underline">
                 + Add task
               </button>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* KPI strip — borderless, lightweight. Used to have hover-shadow
-            + colored dot + icon on every card; that made the dashboard feel
-            busy on landing. Now it's just numbers + labels. */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {[
-            { label: 'Open',       value: todayTasks.length,   num: 'text-primary' },
-            { label: 'Completed',  value: doneTasks,           num: 'text-foreground' },
-            { label: 'Overdue',    value: overdueTasks.length, num: overdueTasks.length ? 'text-red-500'    : 'text-foreground/60' },
-            { label: 'Stuck',      value: stuckTasks,          num: stuckTasks          ? 'text-amber-600'  : 'text-foreground/60' },
-          ].map(k => (
-            <div key={k.label} className="rounded-xl bg-muted/40 px-4 py-3">
-              <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">{k.label}</p>
-              <p className={`text-3xl font-black tabular-nums leading-none mt-1 ${k.num}`}>{k.value}</p>
-            </div>
-          ))}
+        {/* ── KPI strip ─────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Stat block value={openTasks.length}     label="Open"      tone="primary" />
+          <Stat block value={doneTasks.length}     label="Completed" />
+          <Stat block value={overdueTasks.length}  label="Overdue"   tone={overdueTasks.length ? 'danger' : 'muted'} />
+          <Stat block value={stuckTasks.length}    label="Stuck"     tone={stuckTasks.length ? 'warning' : 'muted'} />
         </div>
 
-        {/* Two columns where possible — keeps the page from feeling like an
-            endless stack of cards. Each widget hides itself when empty so
-            the layout stays clean on quiet days. */}
+        {/* ── Today + assigned services ──────────────────────────── */}
         <div className="grid lg:grid-cols-2 gap-4">
           <TodayClientsCard />
           <MyAssignedServicesCard />
         </div>
 
-        {/* AI brief on the left (when it has content), live status on the
-            right. Combined the three meeting widgets into a tighter stack. */}
+        {/* ── AI brief + meeting rail ─────────────────────────────── */}
         <div className="grid lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">
             <AIMorningBrief />
@@ -277,220 +217,131 @@ export default function EmployeeDashboard() {
           </div>
         </div>
 
-        {/* Conditional: Meta Ads (only renders for ads/admin) */}
+        {/* Meta Ads (only renders for ads/admin) */}
         <MetaAdsCard />
 
-        {/* Conditional: team-specific role widget */}
-        {user?.team && <TeamRoleWidget team={user.team} tasks={tasks} />}
-
-        {/* Notifications — slim if any, hidden otherwise */}
-        {notifications.filter(n => !n.isRead).length > 0 && (
-          <div className="bg-primary/5 border border-primary/20 rounded-xl px-3 py-2 flex items-start gap-2">
+        {/* Unread strip — slim, single row */}
+        {unread.length > 0 && (
+          <Link to="/notifications" className="block rounded-lg border border-primary/20 bg-primary/[0.04] px-3 py-2 flex items-start gap-2 hover:bg-primary/[0.07] transition-colors">
             <Bell className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <p className="text-[11px] uppercase tracking-wider font-semibold text-primary">
-                {notifications.filter(n => !n.isRead).length} unread
+              <p className="text-[11px] uppercase tracking-[0.14em] font-bold text-primary">
+                {unread.length} unread
               </p>
-              <div className="space-y-0.5 mt-1">
-                {notifications.filter(n => !n.isRead).slice(0, 3).map(n => (
-                  <p key={n._id} className="text-xs">
-                    <span className="font-medium">{n.title}</span>
-                    {n.message && <span className="text-muted-foreground"> · {n.message}</span>}
-                  </p>
-                ))}
-              </div>
+              <p className="text-[12px] text-muted-foreground truncate mt-0.5">
+                {unread.slice(0, 2).map(n => n.title).join(' · ')}
+              </p>
             </div>
-          </div>
+          </Link>
         )}
 
-        {/* Tasks (2/3) + Today rail (1/3) */}
+        {/* ── Tasks + side rail ──────────────────────────────────── */}
         <div className="grid lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-3">
+          {/* Tasks column */}
+          <div className="lg:col-span-2 space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-sm">My Tasks <span className="text-muted-foreground font-normal">({tasks.length})</span></h2>
-              <button onClick={() => setAddingTask(v => !v)}
-                className="flex items-center gap-1 text-xs text-primary hover:text-primary/80">
-                <Plus className="h-3.5 w-3.5" /> Add / Assign
-              </button>
+              <h2 className="text-[14px] font-bold">
+                My tasks <span className="text-muted-foreground font-normal">({tasks.length})</span>
+              </h2>
+              <Button size="xs" intent="ghost" iconLeft={<Plus className="h-3 w-3" />} onClick={() => setAddingTask(v => !v)}>
+                Add / assign
+              </Button>
             </div>
 
-            {/* Add task inline form */}
+            {/* New task form */}
             <AnimatePresence>
               {addingTask && (
-                <motion.form initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                  onSubmit={handleCreateTask} className="bg-card border border-primary/30 rounded-2xl p-4 space-y-3">
+                <motion.form
+                  initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                  onSubmit={handleCreateTask}
+                  className="border border-border rounded-xl bg-card p-4 space-y-2.5"
+                >
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold">New Task / Assign to Team</p>
-                    <button type="button" onClick={() => setAddingTask(false)}><X className="h-3.5 w-3.5 text-muted-foreground" /></button>
+                    <p className="text-[12.5px] font-semibold">New task / assign</p>
+                    <button type="button" onClick={() => setAddingTask(false)} className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
                   </div>
-                  <input autoFocus value={newTask.title} onChange={e => setNewTask(p => ({ ...p, title: e.target.value }))} required
-                    placeholder="Task title…" className="w-full px-3 py-2 bg-background border border-input rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                  <input
+                    autoFocus
+                    value={newTask.title}
+                    onChange={e => setNewTask(p => ({ ...p, title: e.target.value }))}
+                    required
+                    placeholder="What needs to get done?"
+                    className="w-full px-3 h-9 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
                   <div className="grid grid-cols-2 gap-2">
-                    <select value={newTask.priority} onChange={e => setNewTask(p => ({ ...p, priority: e.target.value }))}
-                      className="col-span-1 px-2 py-1.5 bg-background border border-input rounded-lg text-xs">
+                    <SelectChev value={newTask.priority} onChange={v => setNewTask(p => ({ ...p, priority: v as TaskPriority }))}>
                       {['low','medium','high','urgent'].map(v => <option key={v} value={v}>{v}</option>)}
-                    </select>
-                    <select value={newTask.taskType} onChange={e => setNewTask(p => ({ ...p, taskType: e.target.value }))}
-                      className="col-span-1 px-2 py-1.5 bg-background border border-input rounded-lg text-xs">
-                      {/* Server enum is dev/ads/content/admin_task/personal — sending design/pixel/seo would 400. */}
+                    </SelectChev>
+                    <SelectChev value={newTask.taskType} onChange={v => setNewTask(p => ({ ...p, taskType: v }))}>
                       {TASK_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
-                    </select>
-                    <input type="date" value={newTask.dueDate} onChange={e => setNewTask(p => ({ ...p, dueDate: e.target.value }))}
-                      className="col-span-1 px-2 py-1.5 bg-background border border-input rounded-lg text-xs" />
-                    <select value={newTask.assignToId} onChange={e => setNewTask(p => ({ ...p, assignToId: e.target.value }))}
-                      className="col-span-1 px-2 py-1.5 bg-background border border-input rounded-lg text-xs">
+                    </SelectChev>
+                    <input
+                      type="date"
+                      value={newTask.dueDate}
+                      onChange={e => setNewTask(p => ({ ...p, dueDate: e.target.value }))}
+                      className="px-3 h-9 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                    <SelectChev value={newTask.assignToId} onChange={v => setNewTask(p => ({ ...p, assignToId: v }))}>
                       <option value="">Assign to me</option>
-                      {allUsers.map((u: any) => <option key={u._id} value={u._id}>{u.name || u.email} ({u.team || u.role})</option>)}
-                    </select>
-                    <select value={newTask.projectId} onChange={e => setNewTask(p => ({ ...p, projectId: e.target.value }))}
-                      className="col-span-2 px-2 py-1.5 bg-background border border-input rounded-lg text-xs">
-                      <option value="">No Project</option>
+                      {allUsers.map((u: any) => <option key={u._id} value={u._id}>{u.name || u.email}</option>)}
+                    </SelectChev>
+                    <SelectChev value={newTask.projectId} onChange={v => setNewTask(p => ({ ...p, projectId: v }))} className="col-span-2">
+                      <option value="">No project</option>
                       {projects.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
-                    </select>
+                    </SelectChev>
                   </div>
                   {newTask.assignToId && (
-                    <div className="flex items-center gap-1.5 text-xs text-blue-400 bg-blue-500/10 rounded-lg px-2 py-1.5">
-                      <UserPlus className="h-3 w-3" /> Task will be assigned to teammate with notification
-                    </div>
+                    <p className="text-[11.5px] text-blue-700 bg-blue-500/[0.08] border border-blue-500/20 rounded-md px-2.5 py-1.5 inline-flex items-center gap-1.5">
+                      <UserPlus className="h-3 w-3" /> Will be assigned with a notification
+                    </p>
                   )}
-                  <button type="submit" disabled={!newTask.title || saving}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-xl text-xs font-medium hover:bg-primary/90 disabled:opacity-50">
-                    {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-                    {newTask.assignToId ? 'Assign Task' : 'Add Task'}
-                  </button>
+                  <Button type="submit" size="sm" intent="primary" loading={saving} disabled={!newTask.title} iconLeft={<Send className="h-3 w-3" />}>
+                    {newTask.assignToId ? 'Assign task' : 'Add task'}
+                  </Button>
                 </motion.form>
               )}
             </AnimatePresence>
 
-            {/* Open / Done tabs — Open shows everything not finished so
-                no task ever disappears just because the date drifted. */}
-            <div className="flex items-center gap-1 bg-muted/30 p-1 rounded-full w-fit">
-              <button
-                onClick={() => setViewPast(false)}
-                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  !viewPast ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                Open <span className="text-muted-foreground ml-0.5">{todayTasks.length}</span>
-              </button>
-              <button
-                onClick={() => setViewPast(true)}
-                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  viewPast ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                Done <span className="text-muted-foreground ml-0.5">{pastTasks.length}</span>
-              </button>
-              {viewPast && (
-                <span className="ml-2 text-[10px] text-muted-foreground italic">archive · view-only</span>
-              )}
-            </div>
-
-            {/* Task card grid */}
-            {tasksLoading ? (
-              <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
-            ) : (
-              <>
-                {!viewPast && todayTasks.length === 0 && (
-                  <div className="bg-card border border-dashed border-border rounded-2xl py-12 flex flex-col items-center gap-2">
-                    <Target className="h-8 w-8 text-muted-foreground/30" />
-                    <p className="text-sm text-muted-foreground">All caught up — no open tasks</p>
-                    <button onClick={() => setAddingTask(true)} className="text-xs text-primary hover:underline mt-1">+ Add a task</button>
-                  </div>
-                )}
-                {viewPast && pastTasks.length === 0 && (
-                  <div className="bg-card border border-dashed border-border rounded-2xl py-12 flex flex-col items-center gap-2">
-                    <Calendar className="h-8 w-8 text-muted-foreground/30" />
-                    <p className="text-sm text-muted-foreground">No completed tasks yet</p>
-                  </div>
-                )}
-
-                {/* ONE card containing all tasks as compact rows */}
-                {(viewPast ? pastTasks : todayTasks).length > 0 && (
-                  <div className="bg-card border border-border rounded-2xl divide-y divide-border/50 overflow-hidden">
-                    <AnimatePresence initial={false}>
-                      {(viewPast ? pastTasks : todayTasks).map(task => {
-                        const overdue = task.dueDate && isBefore(new Date(task.dueDate), startOfDay(new Date())) && task.status !== 'done';
-                        return (
-                          <motion.div
-                            key={task._id}
-                            layout
-                            initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                            className={`flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors ${viewPast ? 'opacity-90' : ''}`}
-                          >
-                            <button
-                              onClick={() => !viewPast && cycleStatus(task)}
-                              disabled={viewPast}
-                              className="shrink-0 disabled:cursor-default"
-                              title={viewPast ? 'Past tasks are view-only' : 'Cycle status'}
-                            >
-                              <CheckCircle2 className={`h-4 w-4 transition-colors ${
-                                task.status === 'done' ? 'text-green-500' :
-                                viewPast ? 'text-muted-foreground/40' :
-                                'text-muted-foreground/30 hover:text-green-500'
-                              }`} />
-                            </button>
-
-                            <div className="flex-1 min-w-0">
-                              <p className={`text-sm font-medium truncate ${task.status === 'done' ? 'line-through text-muted-foreground' : ''}`}>
-                                {task.title}
-                              </p>
-                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                {viewPast ? (
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${STATUS_COLORS[task.status]}`}>
-                                    {task.status.replace('_', ' ')}
-                                  </span>
-                                ) : (
-                                  <select
-                                    value={task.status}
-                                    onChange={e => {
-                                      // Wrap in try/catch — server only accepts pending|ongoing|done.
-                                      // The dropdown is now bound to TASK_STATUSES so invalid values
-                                      // can't reach this handler, but defensive catch keeps an
-                                      // unhandled rejection from bubbling up if something else fails.
-                                      updateTask(task._id, { status: e.target.value as TaskStatus })
-                                        .catch(() => {/* axios interceptor handles the toast */});
-                                    }}
-                                    onClick={e => e.stopPropagation()}
-                                    className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border-0 cursor-pointer ${STATUS_COLORS[task.status]}`}
-                                    style={{ background: 'transparent' }}
-                                  >
-                                    {STATUSES.map(s => <option key={s} value={s} className="bg-background text-foreground">{s.replace('_', ' ')}</option>)}
-                                  </select>
-                                )}
-                                <span className={`text-[10px] font-semibold uppercase tracking-wide ${PRIORITY_COLORS[task.priority]}`}>
-                                  {task.priority}
-                                </span>
-                                {task.taskType && (
-                                  <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium">
-                                    {task.taskType}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            {task.dueDate && (
-                              <span className={`text-[11px] flex items-center gap-1 shrink-0 ${overdue ? 'text-red-500 font-semibold' : 'text-muted-foreground'}`}>
-                                <Calendar className="h-3 w-3" />{format(new Date(task.dueDate), 'MMM d')}
-                              </span>
-                            )}
-                          </motion.div>
-                        );
-                      })}
-                    </AnimatePresence>
-                  </div>
-                )}
-              </>
-            )}
+            {/* Open / Done tabs */}
+            <Tabs initial="open">
+              <Tabs.List>
+                <Tabs.Tab id="open" count={openTasks.length}>Open</Tabs.Tab>
+                <Tabs.Tab id="done" count={doneTasks.length}>Done</Tabs.Tab>
+              </Tabs.List>
+              <Tabs.Panel id="open" className="mt-3">
+                <TaskList
+                  tasks={openTasks}
+                  loading={tasksLoading}
+                  emptyTitle="All caught up — no open tasks"
+                  emptyHint="Add one above to keep the rhythm going."
+                  cycleStatus={cycleStatus}
+                  setStatus={(t, s) => updateTask(t._id, { status: s }).catch(() => {})}
+                  deleteTask={async id => { try { await deleteTask(id); toast.success('Deleted'); } catch {} }}
+                  readOnly={false}
+                  onAdd={() => setAddingTask(true)}
+                />
+              </Tabs.Panel>
+              <Tabs.Panel id="done" className="mt-3">
+                <TaskList
+                  tasks={doneTasks}
+                  loading={tasksLoading}
+                  emptyTitle="No completed tasks yet"
+                  emptyHint="Tick off something above."
+                  cycleStatus={cycleStatus}
+                  setStatus={() => {}}
+                  deleteTask={async id => { try { await deleteTask(id); } catch {} }}
+                  readOnly
+                />
+              </Tabs.Panel>
+            </Tabs>
           </div>
 
-          {/* ─── Right rail — Meetings, weekly planner, reminders, quick links ─── */}
+          {/* Right rail */}
           <aside className="space-y-3">
-            {/* Meetings — sits beside tasks so the dashboard balances out
-                even when there are only a handful of tasks. */}
             <ScheduleMeetingsSection />
 
-            {/* Weekly planner — track every day this week + add reminders */}
             <WeeklyPlanner
               tasks={tasks}
               onDeleteTask={async (id) => {
@@ -499,56 +350,164 @@ export default function EmployeeDashboard() {
               }}
             />
 
-            {/* Reminders / unread notifications */}
-            {notifications.filter(n => !n.isRead).length > 0 && (
-              <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4">
-                <h3 className="font-semibold text-sm flex items-center gap-2 mb-3">
-                  <Bell className="h-4 w-4 text-primary" /> Reminders
-                  <span className="text-[10px] text-muted-foreground font-normal ml-auto">
-                    {notifications.filter(n => !n.isRead).length} unread
-                  </span>
-                </h3>
-                <div className="space-y-2">
-                  {notifications.filter(n => !n.isRead).slice(0, 4).map(n => (
-                    <div key={n._id} className="flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-primary/10 transition-colors">
-                      <span className="h-1.5 w-1.5 rounded-full bg-primary mt-2 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate">{n.title}</p>
-                        {n.message && (
-                          <p className="text-[10px] text-muted-foreground line-clamp-2">{n.message}</p>
-                        )}
-                      </div>
+            {/* Reminders */}
+            {unread.length > 0 && (
+              <section className="rounded-xl border border-primary/20 bg-primary/[0.03] overflow-hidden">
+                <div className="px-3 h-9 flex items-center gap-1.5 border-b border-primary/15">
+                  <Bell className="h-3.5 w-3.5 text-primary" />
+                  <p className="text-[11px] uppercase tracking-[0.16em] font-bold text-primary">Reminders</p>
+                  <span className="ml-auto text-[10.5px] text-muted-foreground">{unread.length} unread</span>
+                </div>
+                <div className="divide-y divide-border/40">
+                  {unread.slice(0, 4).map(n => (
+                    <div key={n._id} className="px-3 py-2 hover:bg-primary/[0.05] transition-colors">
+                      <p className="text-[12px] font-medium leading-tight">{n.title}</p>
+                      {n.message && <p className="text-[10.5px] text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>}
                     </div>
                   ))}
                 </div>
-              </div>
+              </section>
             )}
 
-            {/* Quick links — light, accessible from one place */}
-            <div className="bg-card border border-border rounded-2xl p-4">
-              <h3 className="font-semibold text-sm mb-3">Quick links</h3>
-              <div className="space-y-1">
-                <button onClick={() => window.location.assign('/vault')}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted/40 text-xs">
-                  <span className="text-violet-500">🔑</span> Client vault
-                </button>
-                <button onClick={() => window.location.assign('/leaves')}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted/40 text-xs">
-                  <span className="text-purple-500">📅</span> Apply leave
-                </button>
-                <button onClick={() => window.location.assign('/chat')}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted/40 text-xs">
-                  <span className="text-pink-500">💬</span> Group chat
-                </button>
-                <button onClick={() => window.location.assign('/workroom')}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted/40 text-xs">
-                  <span className="text-green-500">🎙️</span> Work room
-                </button>
+            {/* Quick links — v2 buttons, no emoji noise */}
+            <section className="rounded-xl border border-border bg-card overflow-hidden">
+              <div className="px-3 h-9 flex items-center border-b border-border">
+                <p className="text-[11px] uppercase tracking-[0.16em] font-bold text-muted-foreground">Quick links</p>
               </div>
-            </div>
+              <div className="p-2 grid grid-cols-2 gap-1.5">
+                <Link to="/vault" className="flex items-center gap-2 h-8 px-2 rounded-md text-[12px] hover:bg-muted/60 transition-colors">
+                  <KeyRound className="h-3.5 w-3.5 text-primary" /> Vault
+                </Link>
+                <Link to="/leaves" className="flex items-center gap-2 h-8 px-2 rounded-md text-[12px] hover:bg-muted/60 transition-colors">
+                  <CalendarOff className="h-3.5 w-3.5 text-primary" /> Leaves
+                </Link>
+                <Link to="/chat" className="flex items-center gap-2 h-8 px-2 rounded-md text-[12px] hover:bg-muted/60 transition-colors">
+                  <MessageSquare className="h-3.5 w-3.5 text-primary" /> Chat
+                </Link>
+                <Link to="/workroom" className="flex items-center gap-2 h-8 px-2 rounded-md text-[12px] hover:bg-muted/60 transition-colors">
+                  <Video className="h-3.5 w-3.5 text-primary" /> Workroom
+                </Link>
+              </div>
+            </section>
           </aside>
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+// ─── Task list (shared by Open / Done tabs) ───────────────────────────────
+function TaskList({
+  tasks, loading, emptyTitle, emptyHint, cycleStatus, setStatus, deleteTask, readOnly, onAdd,
+}: {
+  tasks: any[];
+  loading: boolean;
+  emptyTitle: string;
+  emptyHint: string;
+  cycleStatus: (t: any) => Promise<void>;
+  setStatus: (t: any, s: TaskStatus) => void;
+  deleteTask: (id: string) => Promise<void>;
+  readOnly: boolean;
+  onAdd?: () => void;
+}) {
+  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>;
+  if (tasks.length === 0) return (
+    <EmptyState
+      size="md"
+      icon={<Target className="h-7 w-7" />}
+      title={emptyTitle}
+      hint={emptyHint}
+      action={onAdd ? <Button size="xs" intent="primary" iconLeft={<Plus className="h-3 w-3" />} onClick={onAdd}>Add task</Button> : undefined}
+    />
+  );
+
+  return (
+    <div className="border border-border rounded-xl bg-card overflow-hidden">
+      <AnimatePresence initial={false}>
+        {tasks.map((t, i) => {
+          const overdue = t.dueDate && isBefore(new Date(t.dueDate), startOfDay(new Date())) && t.status !== 'done';
+          return (
+            <motion.div
+              key={t._id}
+              layout
+              initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className={`flex items-start gap-3 px-3 py-2.5 group hover:bg-primary/[0.03] transition-colors ${i > 0 ? 'border-t border-border' : ''}`}
+            >
+              <button
+                onClick={() => !readOnly && cycleStatus(t)}
+                disabled={readOnly}
+                className="mt-0.5 shrink-0 disabled:cursor-default"
+                title={readOnly ? 'Past tasks are view-only' : 'Cycle status'}
+              >
+                {t.status === 'done'
+                  ? <CheckCircle2 className="h-[18px] w-[18px] text-emerald-600" />
+                  : t.status === 'ongoing'
+                    ? <CheckCircle2 className="h-[18px] w-[18px] text-blue-600/60 hover:text-blue-600" />
+                    : <Circle className="h-[18px] w-[18px] text-muted-foreground/40 hover:text-emerald-600" />}
+              </button>
+              <div className="flex-1 min-w-0">
+                <p className={`text-[13.5px] font-medium leading-snug ${t.status === 'done' ? 'line-through text-muted-foreground' : ''}`}>
+                  {t.title}
+                </p>
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                  {readOnly ? (
+                    <span className={`inline-flex items-center text-[10px] uppercase tracking-wider font-bold px-1.5 h-[18px] rounded border ${statusTone[t.status as TaskStatus]}`}>
+                      {t.status}
+                    </span>
+                  ) : (
+                    <select
+                      value={t.status}
+                      onChange={e => setStatus(t, e.target.value as TaskStatus)}
+                      onClick={e => e.stopPropagation()}
+                      className={`text-[10px] uppercase tracking-wider font-bold pl-1.5 pr-1.5 h-[18px] rounded border cursor-pointer ${statusTone[t.status as TaskStatus]}`}
+                      style={{ background: 'transparent' }}
+                    >
+                      {TASK_STATUSES.map(s => <option key={s} value={s} className="bg-background text-foreground">{s}</option>)}
+                    </select>
+                  )}
+                  <PriorityChip p={t.priority} />
+                  {t.taskType && (
+                    <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground bg-muted px-1.5 h-[18px] rounded inline-flex items-center">
+                      {t.taskType}
+                    </span>
+                  )}
+                  {t.dueDate && (
+                    <span className={`text-[10.5px] inline-flex items-center gap-1 ${overdue ? 'text-rose-600 font-semibold' : 'text-muted-foreground'}`}>
+                      <Calendar className="h-2.5 w-2.5" />
+                      {format(new Date(t.dueDate), 'MMM d')}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => deleteTask(t._id)}
+                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-rose-600 transition-all p-1 rounded shrink-0"
+                title="Delete"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Helper: chevron-decorated select ─────────────────────────────────────
+function SelectChev({
+  value, onChange, children, className = '',
+}: { value: string; onChange: (v: string) => void; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`relative ${className}`}>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="appearance-none w-full pl-3 pr-8 h-9 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+      >
+        {children}
+      </select>
+      <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+    </div>
   );
 }

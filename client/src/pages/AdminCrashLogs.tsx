@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AppLayout } from '@/components/AppLayout';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   AlertTriangle, Bug, Loader2, RefreshCcw, Search, ChevronDown, ChevronRight,
@@ -7,6 +6,11 @@ import {
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
+
+import { AppLayout }  from '@/components/AppLayout';
+import { Button }     from '@/components/ui/Button';
+import { Stat }       from '@/components/ui/Stat';
+import { EmptyState } from '@/components/ui/EmptyState';
 import * as api from '@/api';
 
 /**
@@ -39,8 +43,8 @@ interface LogEntry {
 }
 
 const SOURCE_TONE: Record<string, string> = {
-  client: 'bg-amber-500/15 text-amber-700 border-amber-500/30',
-  server: 'bg-red-500/15 text-red-700 border-red-500/30',
+  client: 'bg-amber-500/12 text-amber-700 border-amber-500/25',
+  server: 'bg-rose-500/12  text-rose-700  border-rose-500/25',
 };
 
 export default function AdminCrashLogs() {
@@ -111,40 +115,23 @@ export default function AdminCrashLogs() {
         {/* Header */}
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Bug className="h-6 w-6 text-red-600" /> Crash & Error Logs
+            <h1 className="text-[20px] font-bold tracking-tight inline-flex items-center gap-2">
+              <Bug className="h-5 w-5 text-rose-600" /> Crash &amp; error logs
             </h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Most recent {logs.length} errors from your agency. Identical messages are grouped so noisy ones don't drown out the rest.
+            <p className="text-[12px] text-muted-foreground mt-0.5">
+              Most recent {logs.length} errors. Identical messages are grouped so noisy ones don't drown out the rest.
             </p>
           </div>
-          <button onClick={load} disabled={loading}
-            className="h-9 px-3 flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-50">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+          <Button size="sm" intent="primary" loading={loading} onClick={load} iconLeft={<RefreshCcw className="h-3.5 w-3.5" />}>
             Reload
-          </button>
+          </Button>
         </div>
 
-        {/* KPIs */}
+        {/* KPI strip */}
         <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: 'All',    value: counts.total,  icon: AlertTriangle, tone: 'text-foreground'   },
-            { label: 'Server', value: counts.server, icon: Server,        tone: 'text-red-600'      },
-            { label: 'Client', value: counts.client, icon: Globe,         tone: 'text-amber-600'    },
-          ].map(c => {
-            const Icon = c.icon;
-            return (
-              <div key={c.label} className="rounded-xl border border-border bg-card p-3 flex items-center gap-3">
-                <div className={`h-9 w-9 rounded-lg bg-muted/50 flex items-center justify-center ${c.tone}`}>
-                  <Icon className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{c.label}</p>
-                  <p className="text-xl font-bold">{c.value}</p>
-                </div>
-              </div>
-            );
-          })}
+          <KpiBlock icon={<AlertTriangle className="h-4 w-4" />} label="All"    value={counts.total}  tone="muted"   />
+          <KpiBlock icon={<Server className="h-4 w-4" />}        label="Server" value={counts.server} tone="danger"  />
+          <KpiBlock icon={<Globe className="h-4 w-4" />}         label="Client" value={counts.client} tone="warning" />
         </div>
 
         {/* Filter pills + search */}
@@ -169,24 +156,22 @@ export default function AdminCrashLogs() {
 
         {/* Body */}
         {error && (
-          <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-3 text-xs text-red-700">
+          <div className="rounded-lg border border-rose-500/25 bg-rose-500/[0.06] p-3 text-[12px] text-rose-700">
             {error}
           </div>
         )}
 
         {loading && logs.length === 0 ? (
-          <div className="py-12 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
+          <div className="py-12 text-center text-[12.5px] text-muted-foreground flex items-center justify-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading logs…
           </div>
         ) : grouped.length === 0 ? (
-          <div className="rounded-2xl border border-border bg-card p-10 text-center">
-            <CheckIcon />
-            <p className="mt-3 text-sm font-semibold">No errors recorded</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Either everything's running clean, or the reporter isn't catching what you're seeing. If users say things are crashing but nothing
-              shows here, check the Render dashboard logs (server) and your browser DevTools console (client).
-            </p>
-          </div>
+          <EmptyState
+            size="lg"
+            icon={<Bug className="h-6 w-6" />}
+            title="No errors recorded"
+            hint="Either everything's clean, or the reporter isn't catching what you're seeing. Check Render server logs or DevTools console for anything missing."
+          />
         ) : (
           <div className="rounded-2xl border border-border bg-card divide-y divide-border overflow-hidden">
             {grouped.map(({ sample, count, last, first, users }) => {
@@ -306,10 +291,30 @@ function Meta({ label, value, mono, linkify }: { label: string; value: string; m
   );
 }
 
-function CheckIcon() {
+// Small KPI block with icon + tone (shared shape with AdminReports).
+function KpiBlock({
+  icon, label, value, tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  tone: 'muted' | 'danger' | 'warning';
+}) {
+  const toneCls =
+    tone === 'danger'  ? 'text-rose-700  bg-rose-500/12'  :
+    tone === 'warning' ? 'text-amber-700 bg-amber-500/12' :
+                         'text-muted-foreground bg-muted/40';
   return (
-    <div className="mx-auto h-12 w-12 rounded-full bg-green-500/15 text-green-600 flex items-center justify-center">
-      <Bug className="h-5 w-5" />
+    <div className="border border-border rounded-xl bg-card p-3 flex items-center gap-3">
+      <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${toneCls}`}>
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground">{label}</p>
+        <p className="text-[18px] font-bold tabular-nums">{value}</p>
+      </div>
     </div>
   );
 }
+// (unused Stat import retained for future use elsewhere)
+void Stat;

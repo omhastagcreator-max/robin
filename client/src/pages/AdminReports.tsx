@@ -1,16 +1,36 @@
-import { useState, useEffect } from 'react';
-import { AppLayout } from '@/components/AppLayout';
+import { useEffect, useState } from 'react';
 import { BarChart2, CreditCard, TrendingUp, AlertCircle, Loader2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+
+import { AppLayout }  from '@/components/AppLayout';
+import { Stat }       from '@/components/ui/Stat';
+import { EmptyState } from '@/components/ui/EmptyState';
 import * as api from '@/api';
 
-const COLORS = ['hsl(265 85% 65%)', 'hsl(215 100% 60%)', 'hsl(142 70% 45%)', 'hsl(38 95% 55%)', 'hsl(0 63% 55%)'];
+/**
+ * AdminReports v2 — rebuilt on design-system primitives.
+ *
+ * v1 used bespoke KPI cards with custom-colored icon tiles + hardcoded
+ * `text-green-400` / `text-red-400` weights. v2 uses v2 Stat blocks tied
+ * to semantic tones (primary/success/warning/danger).
+ *
+ * Charts (recharts) kept — the chart colors now read from the token
+ * palette via CSS variables so they match the rest of the app.
+ */
+
+const CHART_PALETTE = [
+  'hsl(var(--primary))',
+  'hsl(217 91% 60%)',
+  'hsl(142 71% 45%)',
+  'hsl(38 92% 50%)',
+  'hsl(351 83% 61%)',
+];
 
 export default function AdminReports() {
-  const [stats, setStats]     = useState<any>(null);
-  const [txns, setTxns]       = useState<any[]>([]);
+  const [stats, setStats]       = useState<any>(null);
+  const [txns, setTxns]         = useState<any[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]   = useState(true);
 
   useEffect(() => {
     Promise.all([
@@ -24,14 +44,20 @@ export default function AdminReports() {
     }).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="min-h-screen bg-background flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+  if (loading) {
+    return (
+      <AppLayout requiredRole="admin">
+        <div className="py-16 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      </AppLayout>
+    );
+  }
 
-  const revenue = txns.reduce((s, t) => t.status === 'paid' ? s + t.amount : s, 0);
-  const pending  = txns.reduce((s, t) => t.status === 'pending' ? s + t.amount : s, 0);
-  const overdue  = txns.reduce((s, t) => t.status === 'overdue' ? s + t.amount : s, 0);
+  const revenue = txns.reduce((s, t) => t.status === 'paid'    ? s + t.amount : s, 0);
+  const pending = txns.reduce((s, t) => t.status === 'pending' ? s + t.amount : s, 0);
+  const overdue = txns.reduce((s, t) => t.status === 'overdue' ? s + t.amount : s, 0);
 
   const txnStatus = [
-    { name: 'Paid',    value: txns.filter(t => t.status === 'paid').length },
+    { name: 'Paid',    value: txns.filter(t => t.status === 'paid').length    },
     { name: 'Pending', value: txns.filter(t => t.status === 'pending').length },
     { name: 'Overdue', value: txns.filter(t => t.status === 'overdue').length },
   ].filter(d => d.value > 0);
@@ -43,89 +69,115 @@ export default function AdminReports() {
       }, 0) / sessions.length * 10) / 10
     : 0;
 
-  const KPI = ({ label, value, sub, icon: Icon, color }: any) => (
-    <div className="bg-card border border-border rounded-2xl p-5 flex items-start gap-3">
-      <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
-        <Icon className="h-5 w-5" />
-      </div>
-      <div>
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-xl font-bold">{value}</p>
-        {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
-      </div>
-    </div>
-  );
-
   return (
     <AppLayout requiredRole="admin">
-      <div className="max-w-6xl mx-auto space-y-6 page-transition-enter">
-        <h1 className="text-2xl font-bold">Reports &amp; Analytics</h1>
-
-        {/* Revenue KPIs */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPI label="Revenue Collected" value={`₹${revenue.toLocaleString('en-IN')}`} icon={CreditCard} color="bg-green-500/15" sub="Paid invoices" />
-          <KPI label="Pending Amount" value={`₹${pending.toLocaleString('en-IN')}`} icon={TrendingUp} color="bg-amber-500/15" sub="Awaiting payment" />
-          <KPI label="Overdue Amount" value={`₹${overdue.toLocaleString('en-IN')}`} icon={AlertCircle} color="bg-red-500/15" sub="Past due" />
-          <KPI label="Avg Session" value={`${avgSession}h`} icon={BarChart2} color="bg-blue-500/15" sub="per employee/day" />
+      <div className="max-w-6xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-[20px] font-bold tracking-tight">Reports &amp; Analytics</h1>
+          <p className="text-[12px] text-muted-foreground">Revenue, sessions, and task throughput.</p>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-4">
-          {/* Task completion trend */}
-          <div className="lg:col-span-2 bg-card border border-border rounded-2xl p-5">
-            <h2 className="font-semibold text-sm mb-4">Task Completion (14 days)</h2>
-            {stats?.taskTrend?.length > 0 ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={stats.taskTrend}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(216 34% 13%)" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'hsl(215 20% 55%)' }} />
-                  <YAxis tick={{ fontSize: 10, fill: 'hsl(215 20% 55%)' }} />
-                  <Tooltip contentStyle={{ background: 'hsl(222 47% 7%)', border: '1px solid hsl(216 34% 13%)', borderRadius: 8, fontSize: 12 }} />
-                  <Bar dataKey="done" fill="hsl(265 85% 65%)" radius={4} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">No data yet</div>}
-          </div>
+        {/* KPI strip */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <KpiBlock icon={<CreditCard className="h-3.5 w-3.5" />} label="Revenue"       value={`₹${revenue.toLocaleString('en-IN')}`} sub="Paid invoices"   tone="success" />
+          <KpiBlock icon={<TrendingUp className="h-3.5 w-3.5" />} label="Pending"       value={`₹${pending.toLocaleString('en-IN')}`} sub="Awaiting payment" tone="warning" />
+          <KpiBlock icon={<AlertCircle className="h-3.5 w-3.5" />} label="Overdue"       value={`₹${overdue.toLocaleString('en-IN')}`} sub="Past due"        tone="danger"  />
+          <KpiBlock icon={<BarChart2 className="h-3.5 w-3.5" />}  label="Avg session"   value={`${avgSession}h`} sub="per employee/day" tone="primary" />
+        </div>
 
-          {/* Invoice status pie */}
-          <div className="bg-card border border-border rounded-2xl p-5">
-            <h2 className="font-semibold text-sm mb-4">Invoice Status</h2>
-            {txnStatus.length > 0 ? (
-              <>
-                <ResponsiveContainer width="100%" height={150}>
-                  <PieChart>
-                    <Pie data={txnStatus} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={4}>
-                      {txnStatus.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip contentStyle={{ background: 'hsl(222 47% 7%)', border: '1px solid hsl(216 34% 13%)', borderRadius: 8, fontSize: 12 }} />
-                  </PieChart>
+        {/* Charts */}
+        <div className="grid lg:grid-cols-3 gap-4">
+          <section className="lg:col-span-2 border border-border rounded-xl bg-card overflow-hidden">
+            <header className="px-4 h-10 border-b border-border flex items-center">
+              <p className="text-[11px] uppercase tracking-[0.16em] font-bold text-muted-foreground">Tasks done · last 14 days</p>
+            </header>
+            <div className="p-4">
+              {stats?.taskTrend?.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={stats.taskTrend}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
+                    <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
+                    <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} />
+                    <Bar dataKey="done" fill={CHART_PALETTE[0]} radius={4} />
+                  </BarChart>
                 </ResponsiveContainer>
-                <div className="space-y-1.5 mt-2">
-                  {txnStatus.map((s, i) => (
-                    <div key={s.name} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full" style={{ background: COLORS[i] }} />{s.name}</div>
-                      <span className="font-medium">{s.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : <div className="h-40 flex items-center justify-center text-muted-foreground text-sm">No invoices</div>}
-          </div>
+              ) : (
+                <div className="h-48"><EmptyState size="sm" title="No task data yet" /></div>
+              )}
+            </div>
+          </section>
+
+          <section className="border border-border rounded-xl bg-card overflow-hidden">
+            <header className="px-4 h-10 border-b border-border flex items-center">
+              <p className="text-[11px] uppercase tracking-[0.16em] font-bold text-muted-foreground">Invoice mix</p>
+            </header>
+            <div className="p-4">
+              {txnStatus.length > 0 ? (
+                <>
+                  <ResponsiveContainer width="100%" height={150}>
+                    <PieChart>
+                      <Pie data={txnStatus} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={4}>
+                        {txnStatus.map((_, idx) => <Cell key={idx} fill={CHART_PALETTE[idx % CHART_PALETTE.length]} />)}
+                      </Pie>
+                      <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-1.5 mt-2">
+                    {txnStatus.map((s, i) => (
+                      <div key={s.name} className="flex items-center justify-between text-[11.5px]">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full" style={{ background: CHART_PALETTE[i] }} />
+                          {s.name}
+                        </div>
+                        <span className="font-bold tabular-nums">{s.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="h-40"><EmptyState size="sm" title="No invoices yet" /></div>
+              )}
+            </div>
+          </section>
         </div>
 
         {/* Task summary */}
-        <div className="grid grid-cols-3 gap-4">
-          {[
-            { label: 'Total Tasks', value: stats?.totalTasks || 0, color: 'text-foreground' },
-            { label: 'Completed', value: stats?.completedTasks || 0, color: 'text-green-400' },
-            { label: 'Overdue', value: stats?.overdueTasks || 0, color: 'text-red-400' },
-          ].map(s => (
-            <div key={s.label} className="bg-card border border-border rounded-2xl p-5 text-center">
-              <p className={`text-3xl font-bold ${s.color}`}>{s.value}</p>
-              <p className="text-xs text-muted-foreground mt-1">{s.label}</p>
-            </div>
-          ))}
+        <div className="grid grid-cols-3 gap-3">
+          <Stat block value={stats?.totalTasks ?? 0}      label="Total tasks" />
+          <Stat block value={stats?.completedTasks ?? 0}  label="Completed"   tone="success" />
+          <Stat block value={stats?.overdueTasks ?? 0}    label="Overdue"     tone="danger"  />
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+// Small KPI block with icon + sub-label.
+function KpiBlock({
+  icon, label, value, sub, tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub: string;
+  tone: 'success' | 'warning' | 'danger' | 'primary';
+}) {
+  const toneCls =
+    tone === 'success' ? 'text-emerald-700 bg-emerald-500/12' :
+    tone === 'warning' ? 'text-amber-700   bg-amber-500/12'   :
+    tone === 'danger'  ? 'text-rose-700    bg-rose-500/12'    :
+                         'text-primary     bg-primary/12';
+  return (
+    <div className="border border-border rounded-xl bg-card p-4 flex items-start gap-3">
+      <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${toneCls}`}>
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground">{label}</p>
+        <p className="text-[18px] font-bold tabular-nums leading-tight">{value}</p>
+        <p className="text-[10.5px] text-muted-foreground">{sub}</p>
+      </div>
+    </div>
   );
 }

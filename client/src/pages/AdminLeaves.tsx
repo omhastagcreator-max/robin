@@ -35,10 +35,10 @@ interface AdminLeave {
 }
 
 const STATUS_META = {
-  pending:   { label: 'Pending',   color: 'bg-amber-500/15 text-amber-600 border-amber-500/30',  icon: Clock },
-  approved:  { label: 'Approved',  color: 'bg-green-500/15 text-green-600 border-green-500/30',  icon: CheckCircle2 },
-  rejected:  { label: 'Rejected',  color: 'bg-red-500/15 text-red-600 border-red-500/30',         icon: XCircle },
-  cancelled: { label: 'Cancelled', color: 'bg-muted text-muted-foreground border-border',         icon: X },
+  pending:   { label: 'Pending',   color: 'bg-amber-500/12   text-amber-700   border-amber-500/25',   icon: Clock },
+  approved:  { label: 'Approved',  color: 'bg-emerald-500/12 text-emerald-700 border-emerald-500/25', icon: CheckCircle2 },
+  rejected:  { label: 'Rejected',  color: 'bg-rose-500/12    text-rose-700    border-rose-500/25',    icon: XCircle },
+  cancelled: { label: 'Cancelled', color: 'bg-muted          text-muted-foreground border-border',    icon: X },
 } as const;
 
 type Status = keyof typeof STATUS_META;
@@ -294,7 +294,7 @@ export default function AdminLeaves() {
                               <button
                                 onClick={() => reject(l._id)}
                                 disabled={busy}
-                                className="flex items-center gap-1 px-3 py-2 bg-red-500 text-white rounded-lg text-xs font-medium hover:bg-red-600 disabled:opacity-50"
+                                className="flex items-center gap-1 px-3 py-2 bg-rose-500 text-white rounded-lg text-xs font-medium hover:bg-rose-600 disabled:opacity-50"
                               >
                                 {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
                                 Confirm reject
@@ -316,7 +316,7 @@ export default function AdminLeaves() {
                           <button
                             onClick={() => approve(l._id)}
                             disabled={busy}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-green-500/15 text-green-600 border border-green-500/30 rounded-lg text-xs font-medium hover:bg-green-500/25 disabled:opacity-50"
+                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-500/12 text-emerald-700 border border-emerald-500/25 rounded-lg text-xs font-medium hover:bg-emerald-500/20 disabled:opacity-50"
                             title="Approve"
                           >
                             {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
@@ -324,7 +324,7 @@ export default function AdminLeaves() {
                           </button>
                           <button
                             onClick={() => { setRejectFor(l._id); setRejectNote(''); }}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-red-500/15 text-red-600 border border-red-500/30 rounded-lg text-xs font-medium hover:bg-red-500/25"
+                            className="flex items-center gap-1 px-3 py-1.5 bg-rose-500/12 text-rose-700 border border-rose-500/25 rounded-lg text-xs font-medium hover:bg-rose-500/20"
                             title="Reject"
                           >
                             <X className="h-3 w-3" /> Reject

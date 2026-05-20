@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
-import { AppLayout } from '@/components/AppLayout';
-import * as api from '@/api';
 import { Loader2, AlertTriangle, ChevronDown, ChevronRight, Check, Eye, RefreshCw, Activity } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+
+import { AppLayout }  from '@/components/AppLayout';
+import { Button }     from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import * as api from '@/api';
 
 /**
  * AdminIssues — clustered view of user-reported issues + a full list.
@@ -83,22 +86,20 @@ export default function AdminIssues() {
 
   return (
     <AppLayout requiredRole="admin">
-      <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-5">
+      <div className="max-w-6xl mx-auto space-y-5">
         {/* Header */}
         <div className="flex items-end justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <AlertTriangle className="h-6 w-6 text-primary" /> Issues
+            <h1 className="text-[20px] font-bold tracking-tight inline-flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-primary" /> Issues
             </h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
+            <p className="text-[12px] text-muted-foreground mt-0.5">
               User reports + AI-suggested fixes. Click a row to see the full context.
             </p>
           </div>
-          <button onClick={() => load(true)}
-            className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-card border border-border text-xs font-semibold hover:bg-muted">
-            {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          <Button size="sm" intent="secondary" loading={refreshing} onClick={() => load(true)} iconLeft={<RefreshCw className="h-3.5 w-3.5" />}>
             Refresh
-          </button>
+          </Button>
         </div>
 
         {/* Clusters strip */}
@@ -143,12 +144,14 @@ export default function AdminIssues() {
 
         {/* List */}
         {loading ? (
-          <div className="py-12 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          <div className="py-12 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         ) : issues.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center">
-            <p className="text-sm font-semibold">No {STATUS_TABS.find(t => t.key === status)?.label.toLowerCase()} issues</p>
-            <p className="text-xs text-muted-foreground mt-1">When teammates report bugs via the floating help bubble, they show up here.</p>
-          </div>
+          <EmptyState
+            size="lg"
+            icon={<AlertTriangle className="h-7 w-7" />}
+            title={`No ${STATUS_TABS.find(t => t.key === status)?.label.toLowerCase()} issues`}
+            hint="When teammates report bugs via the floating help bubble, they show up here."
+          />
         ) : (
           <div className="space-y-2">
             {issues.map(i => <IssueRowView key={i._id} issue={i} onUpdate={updateStatus} />)}
