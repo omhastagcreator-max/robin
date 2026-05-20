@@ -295,6 +295,21 @@ export const aiLeadInsights         = (id: string) =>
     aiNextAction?:      string;
   });
 
+// Task AI Focus — "what should I do RIGHT NOW?". Heuristic, no LLM call.
+// Server ranks the calling user's open tasks; UI picks top N.
+export const aiFocus                = (limit = 5) =>
+  api.get('/ai-automation/focus', { params: { limit } }).then(r => r.data as {
+    items: Array<{
+      _id: string; title: string; priority: 'low'|'medium'|'high'|'urgent';
+      dueDate?: string; status: 'pending'|'ongoing'|'done';
+      taskType?: string; projectName?: string;
+      focusScore: number; reason: string;
+      bucket: 'overdue' | 'today' | 'next' | 'unblock';
+    }>;
+    totalOpen: number;
+    generatedAt: string;
+  });
+
 export const aiLeadFollowup         = (id: string, body: { channel?: 'whatsapp' | 'email' } = {}) =>
   api.post(`/ai-automation/lead-followup/${id}`, body).then(r => r.data as {
     message:               string;

@@ -7,11 +7,12 @@ import {
 import { format, isToday, isBefore, startOfDay } from 'date-fns';
 import { toast } from 'sonner';
 
-import { AppLayout }   from '@/components/AppLayout';
-import { Button }      from '@/components/ui/Button';
-import { EmptyState }  from '@/components/ui/EmptyState';
-import { useTasks }    from '@/hooks/useTasks';
-import { useAuth }     from '@/contexts/AuthContext';
+import { AppLayout }     from '@/components/AppLayout';
+import { Button }        from '@/components/ui/Button';
+import { EmptyState }    from '@/components/ui/EmptyState';
+import { TaskFocusCard } from '@/components/ai/TaskFocusCard';
+import { useTasks }      from '@/hooks/useTasks';
+import { useAuth }       from '@/contexts/AuthContext';
 import {
   TASK_STATUSES, TASK_TYPES, TASK_PRIORITIES,
   TASK_STATUS_LABEL, TASK_TYPE_LABEL, nextTaskStatus,
@@ -158,6 +159,10 @@ export default function TasksPage() {
             </Button>
           </div>
         </div>
+
+        {/* AI Focus Mode — heuristic "what should I do RIGHT NOW?" card.
+            Auto-hides when there is no open work; collapse state persisted. */}
+        <TaskFocusCard onTaskChanged={refresh} />
 
         {/* Filters */}
         <div className="flex gap-1.5 flex-wrap">

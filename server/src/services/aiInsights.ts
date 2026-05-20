@@ -349,6 +349,122 @@ export function computeLeadInsights(lead: MinimalLeadForInsight): LeadInsightsRe
   return { closingProbability, ghostingRisk, nextMove };
 }
 
+// ─── Task focus — what to do RIGHT NOW (pure scheduling math) ─────────
+
+export interface TaskFocusItem {
+  _id:       string;
+  title:     string;
+  priority:  'low' | 'medium' | 'high' | 'urgent';
+  dueDate?:  string;
+  status:    'pending' | 'ongoing' | 'done';
+  taskType?: string;
+  projectName?: string;
+  /** 0–100, derived. Higher = more important to do NOW. */
+  focusScore: number;
+  /** One-line reason — "Overdue · urgent" / "Due today" / "In progress / blocked". */
+  reason:     string;
+  /** Bucket the UI groups by. */
+  bucket:     'overdue' | 'today' | 'next' | 'unblock';
+}
+
+interface MinimalTaskForFocus {
+  _id:        any;
+  title:      string;
+  priority:   string;
+  dueDate?:   Date | string | null;
+  status:     string;
+  taskType?:  string;
+  createdAt?: Date | string;
+  projectId?: any;
+}
+
+/**
+ * computeTaskFocus — given a user's open tasks, return the top N ranked
+ * by what the user should DO NOW. Pure scheduling math, no LLM call.
+ *
+ * Scoring (capped 0-100):
+ *   • Priority:        urgent +40 · high +25 · medium +10 · low 0
+ *   • Overdue:         +30 base, +3 per day past (cap +20 from age)
+ *   • Due today:       +25
+ *   • Due in 1-3 days: +15
+ *   • In progress:     +10 (don't context-switch off ongoing work)
+ *   • Age-as-pending:  +1/day capped +10 (stale pending → bubble up)
+ *
+ * The function returns ALL ranked tasks; the caller picks top N for UI.
+ */
+export function computeTaskFocus(tasks: MinimalTaskForFocus[]): TaskFocusItem[] {
+  const now      = Date.now();
+  const startToday = (() => { const d = new Date(); d.setHours(0,0,0,0); return d.getTime(); })();
+  const endToday   = startToday + 24 * 3600 * 1000;
+
+  const ranked: TaskFocusItem[] = tasks.map(t => {
+    let score = 0;
+    const parts: string[] = [];
+    const dueMs = t.dueDate ? new Date(t.dueDate).getTime() : null;
+
+    // Priority lift.
+    if (t.priority === 'urgent')      { score += 40; parts.push('urgent'); }
+    else if (t.priority === 'high')   { score += 25; parts.push('high priority'); }
+    else if (t.priority === 'medium') { score += 10; }
+
+    // Time pressure.
+    let bucket: TaskFocusItem['bucket'] = 'next';
+    if (dueMs && dueMs < startToday) {
+      const days = Math.floor((startToday - dueMs) / (24 * 3600 * 1000));
+      const lift = 30 + Math.min(20, days * 3);
+      score += lift;
+      parts.unshift(`overdue ${days}d`);
+      bucket = 'overdue';
+    } else if (dueMs && dueMs < endToday) {
+      score += 25;
+      parts.unshift('due today');
+      bucket = 'today';
+    } else if (dueMs && dueMs < endToday + 3 * 24 * 3600 * 1000) {
+      score += 15;
+      parts.unshift('due soon');
+    }
+
+    // In-progress nudge — keep them from abandoning half-done work.
+    if (t.status === 'ongoing') {
+      score += 10;
+      parts.push('in progress');
+      if (bucket === 'next') bucket = 'unblock';
+    }
+
+    // Pending age — old pending tasks bubble up.
+    if (t.status === 'pending' && t.createdAt) {
+      const ageDays = Math.floor((now - new Date(t.createdAt).getTime()) / (24 * 3600 * 1000));
+      if (ageDays > 1) {
+        const lift = Math.min(10, ageDays);
+        score += lift;
+        if (ageDays > 7) parts.push(`stale ${ageDays}d`);
+      }
+    }
+
+    const reason = parts.length > 0 ? parts.join(' · ') : 'On your plate';
+    return {
+      _id:        String(t._id),
+      title:      t.title,
+      priority:   (t.priority as TaskFocusItem['priority']) || 'medium',
+      dueDate:    t.dueDate ? new Date(t.dueDate).toISOString() : undefined,
+      status:     (t.status as TaskFocusItem['status']) || 'pending',
+      taskType:   t.taskType,
+      projectName: undefined,         // populated by caller if joined
+      focusScore: Math.max(0, Math.min(100, score)),
+      reason:     reason.charAt(0).toUpperCase() + reason.slice(1),
+      bucket,
+    };
+  });
+
+  // Sort: highest focusScore first, ties broken by overdue > today > next.
+  const bucketOrder: Record<TaskFocusItem['bucket'], number> = { overdue: 0, today: 1, unblock: 2, next: 3 };
+  ranked.sort((a, b) => {
+    if (b.focusScore !== a.focusScore) return b.focusScore - a.focusScore;
+    return bucketOrder[a.bucket] - bucketOrder[b.bucket];
+  });
+  return ranked;
+}
+
 // ─── Test helper export ───────────────────────────────────────────────
 
 export const _internal = {

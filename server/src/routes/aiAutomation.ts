@@ -6,6 +6,7 @@ import {
   getOrgMorningBrief, regenerateOrgMorningBrief,
   getAiHealth, getAiHealthPublic, parseCommandEndpoint,
   copilotEndpoint, leadInsightsEndpoint, leadFollowupEndpoint,
+  focusEndpoint,
 } from '../controllers/aiAutomationController';
 
 const router = Router();
@@ -48,5 +49,9 @@ router.post('/copilot',                requireRole('admin', 'employee', 'sales')
 // for 5 min so a salesperson toggling channels doesn't re-bill.
 router.get ('/lead-insights/:id',      requireRole('admin', 'sales'),                          leadInsightsEndpoint);
 router.post('/lead-followup/:id',      requireRole('admin', 'sales'),                          leadFollowupEndpoint);
+
+// Task AI Focus Mode — "what should I do RIGHT NOW?". Heuristic, no LLM.
+// Returns top-N user's open tasks ranked by priority × overdue × age.
+router.get ('/focus',                  requireRole('admin', 'employee', 'sales'),             focusEndpoint);
 
 export default router;

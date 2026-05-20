@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
 import { scoreLead, summarizeWorkflow, summarizeAllProjects, generateMorningBrief, aiHealth, parseCommand, askRobin, draftLeadFollowup } from '../services/aiTriage';
-import { withAICache, withRateLimit, computeLeadInsights } from '../services/aiInsights';
+import { withAICache, withRateLimit, computeLeadInsights, computeTaskFocus } from '../services/aiInsights';
 import User from '../models/User';
 import Lead from '../models/Lead';
 import ClientWorkflow from '../models/ClientWorkflow';
@@ -400,6 +400,49 @@ export async function leadInsightsEndpoint(req: AuthRequest, res: Response): Pro
       aiNextAction: lead.aiNextAction,
     });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * GET /api/ai-automation/focus?limit=5
+ * Returns the calling user's tasks ranked by what they should do RIGHT
+ * NOW. Heuristic — no LLM call. Each task carries focusScore (0-100),
+ * a one-line reason, and a bucket (overdue / today / unblock / next)
+ * so the UI can group them.
+ */
+export async function focusEndpoint(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.id;
+    const limit  = Math.min(Math.max(parseInt(String(req.query.limit || '5'), 10) || 5, 1), 20);
+
+    const open = await ProjectTask.find({
+      assignedTo: userId,
+      status: { $in: ['pending', 'ongoing'] },
+    }).select('title priority dueDate status taskType createdAt projectId').sort({ dueDate: 1 }).limit(100).lean();
+
+    // Join project names so the UI can show "Acme Corp · ad creative"
+    const projectIds = Array.from(new Set((open as any[]).map(t => t.projectId).filter(Boolean).map(String)));
+    let projectMap: Record<string, string> = {};
+    if (projectIds.length) {
+      const Project = (await import('../models/Project')).default as any;
+      const projects = await Project.find({ _id: { $in: projectIds } }).select('name').lean();
+      for (const p of projects as any[]) projectMap[String(p._id)] = p.name || '';
+    }
+
+    const ranked = computeTaskFocus(open as any[]);
+    // Splice project name in. computeTaskFocus is pure / doesn't know about projects.
+    const enriched = ranked.map(r => {
+      const orig = (open as any[]).find(t => String(t._id) === r._id);
+      return { ...r, projectName: orig?.projectId ? projectMap[String(orig.projectId)] : undefined };
+    });
+
+    res.json({
+      items:     enriched.slice(0, limit),
+      totalOpen: open.length,
+      generatedAt: new Date(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 }
 
 /**
