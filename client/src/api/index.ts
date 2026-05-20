@@ -283,6 +283,25 @@ export const aiCopilot              = (body: {
   workflowId?: string;
   leadId?:     string;
 }) => api.post('/ai-automation/copilot', body).then(r => r.data as { answer: string; aiUsed: boolean });
+
+// Sales lead AI — heuristic insights (no LLM call) + drafted follow-up (Gemini).
+export const aiLeadInsights         = (id: string) =>
+  api.get(`/ai-automation/lead-insights/${id}`).then(r => r.data as {
+    closingProbability: number;
+    ghostingRisk:       number;
+    nextMove:           string;
+    aiScore?:           '' | 'hot' | 'warm' | 'cold';
+    aiReason?:          string;
+    aiNextAction?:      string;
+  });
+
+export const aiLeadFollowup         = (id: string, body: { channel?: 'whatsapp' | 'email' } = {}) =>
+  api.post(`/ai-automation/lead-followup/${id}`, body).then(r => r.data as {
+    message:               string;
+    aiUsed:                boolean;
+    channel:               'whatsapp' | 'email';
+    daysSinceLastContact:  number;
+  });
 export const aiOrgMorningBrief      = ()           => api.get('/ai-automation/morning-brief').then(r => r.data);
 export const aiRegenerateOrgBrief   = ()           => api.post('/ai-automation/morning-brief', {}).then(r => r.data);
 export const adminRemoveUser = (id: string)                              => api.delete(`/admin/users/${id}`).then(r => r.data);

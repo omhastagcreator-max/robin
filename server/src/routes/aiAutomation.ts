@@ -5,7 +5,7 @@ import {
   rescoreLead, summarizeWorkflowEndpoint, briefAllProjects,
   getOrgMorningBrief, regenerateOrgMorningBrief,
   getAiHealth, getAiHealthPublic, parseCommandEndpoint,
-  copilotEndpoint,
+  copilotEndpoint, leadInsightsEndpoint, leadFollowupEndpoint,
 } from '../controllers/aiAutomationController';
 
 const router = Router();
@@ -42,5 +42,11 @@ router.get('/health-authed',           requireRole('admin'),                    
 // Body: { question, route, workflowId?, leadId? }. Caches identical
 // questions per (user, route, context) for 60 s; 30 req/min per user.
 router.post('/copilot',                requireRole('admin', 'employee', 'sales'),             copilotEndpoint);
+
+// Lead AI — heuristic insights + drafted follow-up message. Insights are
+// free (no LLM); follow-up is one Gemini call cached per (user, lead, channel)
+// for 5 min so a salesperson toggling channels doesn't re-bill.
+router.get ('/lead-insights/:id',      requireRole('admin', 'sales'),                          leadInsightsEndpoint);
+router.post('/lead-followup/:id',      requireRole('admin', 'sales'),                          leadFollowupEndpoint);
 
 export default router;

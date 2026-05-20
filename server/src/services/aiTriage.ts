@@ -536,6 +536,125 @@ export async function summarizeAllProjects(projects: Array<{
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Command parser — lets users tell Robin AI "do X" instead of clicking
+// through Robin's UI. Gemini classifies the intent + returns structured
+// args; the frontend confirms and dispatches to the relevant API. ONLY
+// the actions listed below are supported — anything else gets parsed as
+// "unsupported" and we politely tell the user.
+// ─────────────────────────────────────────────────────────────────────────
+const COMMAND_SYSTEM = `You are Robin AI's command parser. The user typed something — figure out if it's an ACTION (do something) or a QUESTION (info request).
+
+Reply with ONLY valid JSON, no markdown, in this exact shape:
+{
+  "isAction":  true | false,
+  "action":    "create_task" | "mark_workflow_done" | "mark_service_done" | "schedule_meeting" | "unsupported" | "question",
+  "params":    { ...action-specific keys... },
+  "confirm":   one short sentence describing what you'll do, in second person ("I'll create a task to..."),
+  "userReply": only set when action="question" or "unsupported" — what to say back to the user
+}
+
+ACTIONS the user can request (use EXACTLY these action strings):
+- create_task         → params: { title: string, priority?: "low"|"medium"|"high", dueDate?: "YYYY-MM-DD" }
+- mark_workflow_done  → params: { clientName: string }
+- mark_service_done   → params: { clientName: string, serviceType: "shopify" | "meta_ads" | "influencer" }
+- schedule_meeting    → params: { clientName?: string, when?: human string like "tomorrow 3pm", title?: string }
+
+If the user is asking a HOW-TO or status question, set isAction=false, action="question", userReply=null (handled elsewhere).
+If the user wants something we don't support (delete a user, generate a report, edit a price, etc.), set action="unsupported" and userReply tells them politely.
+
+NEVER invent params. If the user said "mark project done" without a client name, set isAction=true, action="mark_workflow_done", params={} (empty), and confirm asks "which client?"`;
+
+export interface CommandResult {
+  isAction: boolean;
+  action: 'create_task' | 'mark_workflow_done' | 'mark_service_done' | 'schedule_meeting' | 'unsupported' | 'question';
+  params: Record<string, any>;
+  confirm: string;
+  userReply: string | null;
+  aiUsed: boolean;
+}
+
+export async function parseCommand(message: string): Promise<CommandResult> {
+  const fallback: CommandResult = {
+    isAction: false, action: 'question', params: {}, confirm: '', userReply: null, aiUsed: false,
+  };
+  if (!apiKey) return fallback;
+  try {
+    let raw = await callGemini(COMMAND_SYSTEM, message, 400);
+    raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+    const parsed = JSON.parse(raw);
+    return {
+      isAction:  !!parsed.isAction,
+      action:    parsed.action || 'question',
+      params:    parsed.params || {},
+      confirm:   String(parsed.confirm   || ''),
+      userReply: parsed.userReply ? String(parsed.userReply) : null,
+      aiUsed: true,
+    };
+  } catch (err) {
+    console.error('[parseCommand] failed:', (err as Error).message);
+    return fallback;
+  }
+}
+
+/**
+ * draftLeadFollowup — write a single follow-up message a salesperson can
+ * paste into WhatsApp or email. Tone-matched to the lead's stage + score.
+ *
+ * Falls back to a templated default when Gemini isn't configured so the UI
+ * always has *something* to show. Caller is expected to wrap this in
+ * withAICache + withRateLimit (see aiInsights).
+ */
+export async function draftLeadFollowup(input: {
+  name?: string;
+  company?: string;
+  stage?: string;
+  aiScore?: string;
+  aiNextAction?: string;
+  estimatedValue?: number;
+  daysSinceLastContact?: number;
+  channel?: 'whatsapp' | 'email';
+}): Promise<{ message: string; aiUsed: boolean }> {
+  const channel = input.channel || 'whatsapp';
+  const name    = (input.name || 'there').split(' ')[0];
+
+  // Fallback template — used when no API key OR Gemini errors.
+  const fallback = channel === 'whatsapp'
+    ? `Hi ${name}, just checking in. Wanted to see if you've had a chance to look at what we discussed. Happy to jump on a quick call this week — what's a good time?`
+    : `Hi ${name},\n\nJust following up to see where things stand on your end. Happy to schedule a quick call this week to walk through next steps.\n\nBest,`;
+
+  if (!apiKey) return { message: fallback, aiUsed: false };
+
+  const system = [
+    'You write short, professional sales follow-up messages for an Indian digital marketing agency.',
+    'Tone: warm, direct, not pushy. Always second-person ("you").',
+    `Channel: ${channel}. ${channel === 'whatsapp' ? 'Keep it to 1-2 sentences, conversational, no greeting line.' : 'Keep it under 4 sentences, with a one-line opener and a clear next step.'}`,
+    'Never invent specifics not in the data. If the lead is going cold, acknowledge the gap gently — never accuse.',
+    'No emojis. No exclamation marks. No "I hope this finds you well".',
+    'Output ONLY the message text — no preamble, no JSON, no markdown.',
+  ].join(' ');
+
+  const payload = JSON.stringify({
+    name:                 input.name             || '',
+    company:              input.company          || '',
+    stage:                input.stage            || 'new_lead',
+    aiScore:              input.aiScore          || 'warm',
+    aiNextAction:         input.aiNextAction     || '',
+    estimatedValue:       input.estimatedValue   || 0,
+    daysSinceLastContact: input.daysSinceLastContact ?? 0,
+    channel,
+  });
+
+  try {
+    const raw = await callGemini(system, payload, 300);
+    const message = raw.trim();
+    return { message: message || fallback, aiUsed: true };
+  } catch (err) {
+    console.error('[draftLeadFollowup] failed:', (err as Error).message);
+    return { message: fallback, aiUsed: false };
+  }
+}
+
 export async function askRobin(question: string, context: any): Promise<{ answer: string; aiUsed: boolean }> {
   if (!apiKey) {
     return {

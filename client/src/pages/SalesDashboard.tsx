@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppLayout } from '@/components/AppLayout';
+import { useDrawer } from '@/components/ui/RightDrawer';
+import { LeadAIPanel } from '@/components/panels/LeadAIPanel';
+import { Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Phone, UserCheck, Calendar, Presentation, CheckCheck,
@@ -66,6 +69,15 @@ function parseContactBlob(blob: string): { name: string; phone?: string; email?:
 type Tab = 'pipeline' | 'list' | 'clients' | 'won';
 
 export default function SalesDashboard() {
+  const drawer = useDrawer();
+  const openLeadAI = (lead: any) => {
+    drawer.open({
+      title: lead.name || 'Lead',
+      subtitle: lead.company || undefined,
+      width: 'lg',
+      content: <LeadAIPanel lead={lead} onChanged={() => load()} />,
+    });
+  };
   const [tab, setTab]         = useState<Tab>('pipeline');
   const [leads, setLeads]     = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -855,6 +867,12 @@ export default function SalesDashboard() {
                     {ALL_STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                   </select>
                 </div>
+                <button
+                  onClick={() => { const l = viewLead; setViewLead(null); openLeadAI(l); }}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all"
+                >
+                  <Sparkles className="h-4 w-4" /> Open AI insights + draft follow-up
+                </button>
                 <button
                   onClick={() => { setViewLead(null); setPaymentTarget(viewLead); setPaymentForm({ amount: String(viewLead.estimatedValue||''), dueDate: '', note: '' }); }}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500/10 text-amber-700 border border-amber-500/25 rounded-xl text-sm font-medium hover:bg-amber-500/20 transition-all">

@@ -266,6 +266,89 @@ export async function withRateLimit<T>(userId: string, fn: () => Promise<T>): Pr
   return fn();
 }
 
+// ─── Lead insights — closing probability + ghosting risk (heuristic) ──
+
+export interface LeadInsightsResult {
+  /** 0–100 — composite estimate of close probability. NOT a Gemini call;
+   *  derived from stage + aiScore + estimatedValue + age. */
+  closingProbability: number;
+  /** 0–100 — risk that the lead has gone silent. Based on days since the
+   *  most recent note + scaled by aiScore. */
+  ghostingRisk: number;
+  /** One-line "what next" derived from stage + ghosting risk. */
+  nextMove: string;
+}
+
+interface MinimalLeadForInsight {
+  stage?:          string;
+  aiScore?:        '' | 'hot' | 'warm' | 'cold';
+  estimatedValue?: number;
+  createdAt?:      Date | string;
+  notes?:          Array<{ createdAt?: Date | string }>;
+}
+
+const STAGE_BASE: Record<string, number> = {
+  new_lead:          5,
+  dialed:           10,
+  connected:        20,
+  demo_booked:      35,
+  demo_done:        45,
+  demo2_conversion: 60,
+  follow_up:        45,
+  hot_follow_up:    65,
+  cooking:          75,
+  won:              100,
+  lost:             0,
+};
+
+export function computeLeadInsights(lead: MinimalLeadForInsight): LeadInsightsResult {
+  const stage = String(lead.stage || 'new_lead');
+  const base  = STAGE_BASE[stage] ?? 15;
+
+  // AI score adjusts the base.
+  const scoreLift =
+    lead.aiScore === 'hot'  ? +15 :
+    lead.aiScore === 'cold' ? -15 :
+                                0;
+  // Value lift — big-ticket deals tend to close more deliberately, so we
+  // slightly bump credibility but cap the effect.
+  const valueLift = lead.estimatedValue && lead.estimatedValue > 100_000 ? +5 : 0;
+  const closingProbability = Math.max(0, Math.min(100, Math.round(base + scoreLift + valueLift)));
+
+  // Ghosting risk — days since most recent activity.
+  const lastNoteAt = (() => {
+    const dates = (lead.notes || []).map(n => n.createdAt ? new Date(n.createdAt).getTime() : 0).filter(Boolean);
+    if (dates.length === 0) return lead.createdAt ? new Date(lead.createdAt).getTime() : 0;
+    return Math.max(...dates);
+  })();
+  let ghostingRisk = 0;
+  let nextMove = '';
+  if (stage === 'won' || stage === 'lost') {
+    ghostingRisk = 0;
+  } else if (lastNoteAt > 0) {
+    const days = (Date.now() - lastNoteAt) / (24 * 3600 * 1000);
+    if (days > 21)      ghostingRisk = 90;
+    else if (days > 14) ghostingRisk = 70;
+    else if (days > 7)  ghostingRisk = 50;
+    else if (days > 3)  ghostingRisk = 25;
+    else                ghostingRisk = 5;
+    // Hot leads that go silent are more urgent.
+    if (lead.aiScore === 'hot' && days > 3) ghostingRisk = Math.min(100, ghostingRisk + 15);
+  }
+
+  // nextMove text — opinionated based on the combo.
+  if (stage === 'won')        nextMove = 'Convert to client + start onboarding';
+  else if (stage === 'lost')  nextMove = 'Archive — close cleanly';
+  else if (ghostingRisk >= 70) nextMove = lead.aiScore === 'hot' ? 'Call right now — hot lead going silent' : 'Send a re-engagement message';
+  else if (ghostingRisk >= 50) nextMove = 'Follow up today — gone quiet';
+  else if (stage === 'demo_booked')   nextMove = 'Confirm demo time + send agenda';
+  else if (stage === 'demo_done')     nextMove = 'Send recap + propose next step';
+  else if (stage === 'new_lead')      nextMove = 'First call within 24h';
+  else                                nextMove = 'Move to next stage';
+
+  return { closingProbability, ghostingRisk, nextMove };
+}
+
 // ─── Test helper export ───────────────────────────────────────────────
 
 export const _internal = {

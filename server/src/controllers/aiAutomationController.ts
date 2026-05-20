@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
-import { scoreLead, summarizeWorkflow, summarizeAllProjects, generateMorningBrief, aiHealth, parseCommand, askRobin } from '../services/aiTriage';
-import { withAICache, withRateLimit } from '../services/aiInsights';
+import { scoreLead, summarizeWorkflow, summarizeAllProjects, generateMorningBrief, aiHealth, parseCommand, askRobin, draftLeadFollowup } from '../services/aiTriage';
+import { withAICache, withRateLimit, computeLeadInsights } from '../services/aiInsights';
 import User from '../models/User';
 import Lead from '../models/Lead';
 import ClientWorkflow from '../models/ClientWorkflow';
@@ -367,6 +367,84 @@ export async function copilotEndpoint(req: AuthRequest, res: Response): Promise<
       res.status(429).json({ error: err.message });
       return;
     }
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
+
+// ─── Lead AI insights + drafted follow-up ─────────────────────────────
+/**
+ * GET /api/ai-automation/lead-insights/:id
+ * Returns the heuristic AI insight block (closingProbability, ghostingRisk,
+ * nextMove) for one lead. No LLM call — derived from stage + aiScore +
+ * notes timeline. Free, fast, always populated.
+ */
+export async function leadInsightsEndpoint(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const lead = await Lead.findOne({ _id: req.params.id, organizationId: orgId })
+      .select('stage aiScore aiReason aiNextAction estimatedValue createdAt notes')
+      .lean() as any;
+    if (!lead) { res.status(404).json({ error: 'Lead not found' }); return; }
+    const insights = computeLeadInsights({
+      stage:          lead.stage,
+      aiScore:        lead.aiScore,
+      estimatedValue: lead.estimatedValue,
+      createdAt:      lead.createdAt,
+      notes:          lead.notes,
+    });
+    res.json({
+      ...insights,
+      aiScore:      lead.aiScore,
+      aiReason:     lead.aiReason,
+      aiNextAction: lead.aiNextAction,
+    });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * POST /api/ai-automation/lead-followup/:id
+ * Body: { channel?: 'whatsapp' | 'email' }
+ *
+ * Drafts a paste-ready follow-up message tuned to the lead's stage + score +
+ * how long they've been silent. Cached per (user, lead, channel) for 5 min.
+ */
+export async function leadFollowupEndpoint(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const userId  = req.user!.id;
+    const orgId   = await getOrgId(userId);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const channel: 'whatsapp' | 'email' = req.body?.channel === 'email' ? 'email' : 'whatsapp';
+
+    const lead = await Lead.findOne({ _id: req.params.id, organizationId: orgId })
+      .select('name company stage aiScore aiNextAction estimatedValue notes createdAt')
+      .lean() as any;
+    if (!lead) { res.status(404).json({ error: 'Lead not found' }); return; }
+
+    // Days since most recent contact — used by the prompt to soften the tone.
+    const lastNoteAt = (() => {
+      const dates = (lead.notes || []).map((n: any) => n.createdAt ? new Date(n.createdAt).getTime() : 0).filter(Boolean);
+      if (!dates.length) return lead.createdAt ? new Date(lead.createdAt).getTime() : Date.now();
+      return Math.max(...dates);
+    })();
+    const daysSinceLastContact = Math.max(0, Math.round((Date.now() - lastNoteAt) / (24 * 3600 * 1000)));
+
+    const cacheKey = `leadfollowup:${userId}:${req.params.id}:${channel}`;
+    const result = await withRateLimit(userId, () =>
+      withAICache(cacheKey, 5 * 60_000, () => draftLeadFollowup({
+        name:                 lead.name,
+        company:              lead.company,
+        stage:                lead.stage,
+        aiScore:              lead.aiScore,
+        aiNextAction:         lead.aiNextAction,
+        estimatedValue:       lead.estimatedValue,
+        daysSinceLastContact,
+        channel,
+      }))
+    );
+    res.json({ ...result, channel, daysSinceLastContact });
+  } catch (err: any) {
+    if (err?.status === 429) { res.status(429).json({ error: err.message }); return; }
     res.status(500).json({ error: (err as Error).message });
   }
 }
