@@ -1,6 +1,7 @@
 import { useLocation, Link } from 'react-router-dom';
 import { Search, Bell } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useUnreadCounts } from '@/contexts/UnreadCountsContext';
 
 /**
  * Robin v2 topbar — 44px tall, sticky, dense.
@@ -33,6 +34,7 @@ function labelize(seg: string) {
 export function TopBar() {
   const location = useLocation();
   const { user } = useAuth();
+  const { notifications: notifUnread } = useUnreadCounts();
   const segs = location.pathname.split('/').filter(Boolean);
 
   return (
@@ -70,8 +72,17 @@ export function TopBar() {
 
         {/* Right: notifications + profile */}
         <div className="flex items-center gap-1 ml-auto">
-          <Link to="/notifications" className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" title="Notifications">
+          <Link
+            to="/notifications"
+            className="relative h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            title={notifUnread > 0 ? `${notifUnread} unread notification${notifUnread === 1 ? '' : 's'}` : 'Notifications'}
+          >
             <Bell className="h-4 w-4" />
+            {notifUnread > 0 && (
+              <span className="absolute -top-1 -right-1 inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[9.5px] font-bold tabular-nums ring-2 ring-card">
+                {notifUnread > 99 ? '99+' : notifUnread}
+              </span>
+            )}
           </Link>
         </div>
 

@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { AppLayout }  from '@/components/AppLayout';
 import { Button }     from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { useUnreadCounts } from '@/contexts/UnreadCountsContext';
 import * as api from '@/api';
 
 /**
@@ -32,6 +33,7 @@ const typeConfig: Record<string, { icon: typeof Info; color: string; bg: string 
 export default function NotificationsPage() {
   const [notifs, setNotifs]   = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const { resetNotifications } = useUnreadCounts();
 
   const load = async () => {
     try {
@@ -44,8 +46,14 @@ export default function NotificationsPage() {
   const readOne = async (id: string) => {
     const before = notifs;
     setNotifs(prev => prev.map(n => n._id === id ? { ...n, isRead: true } : n));
-    try { await api.readNotification(id); }
-    catch { setNotifs(before); }
+    // Optimistically nudge the badge count down so the sidebar/topbar feel
+    // instant — the next visible poll will reconcile against the server.
+    try {
+      await api.readNotification(id);
+      // We can't safely decrement here without knowing prior state, so let
+      // the 60s context poll catch up. resetNotifications() would be too
+      // aggressive — there may be other unreads we haven't seen yet.
+    } catch { setNotifs(before); }
   };
 
   const deleteOne = async (id: string) => {
@@ -58,6 +66,10 @@ export default function NotificationsPage() {
   const readAll = async () => {
     const before = notifs;
     setNotifs(prev => prev.map(n => ({ ...n, isRead: true })));
+    // Mark-all is unambiguous — zero the badge immediately so the user sees
+    // their click register. The 60s poll will reconcile if the server
+    // disagreed (rollback below covers the failure case).
+    resetNotifications();
     try {
       await api.readAllNotifications();
       toast.success('All marked as read');

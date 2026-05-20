@@ -189,6 +189,7 @@ function AppRoutes() {
 import { ScreenShareProvider } from '@/contexts/ScreenShareContext';
 import { HuddleProvider } from '@/contexts/HuddleContext';
 import { ClientMeetingProvider } from '@/contexts/ClientMeetingContext';
+import { UnreadCountsProvider } from '@/contexts/UnreadCountsContext';
 import { BreakOverlay } from '@/components/shared/BreakOverlay';
 import { NetworkStatus } from '@/components/shared/NetworkStatus';
 import { RightDrawerProvider } from '@/components/ui/RightDrawer';
@@ -216,15 +217,17 @@ export default function App() {
             {/* Client-meeting room state lives here so navigation between
                 Robin pages doesn't kick the host out mid-call. */}
             <ClientMeetingProvider>
-              {/* RightDrawer (v2) — contextual side panel, opened from
-                  any page via useDrawer(). Mounted at the app root so
-                  state survives navigation. */}
-              <RightDrawerProvider>
-                <AppRoutes />
-                {/* Top-most break overlay — freezes the UI while user is on break. */}
-                <BreakOverlay />
-                <Toaster position="top-right" richColors expand />
-              </RightDrawerProvider>
+              <UnreadCountsProvider>
+                {/* RightDrawer (v2) — contextual side panel, opened from
+                    any page via useDrawer(). Mounted at the app root so
+                    state survives navigation. */}
+                <RightDrawerProvider>
+                  <AppRoutes />
+                  {/* Top-most break overlay — freezes the UI while user is on break. */}
+                  <BreakOverlay />
+                  <Toaster position="top-right" richColors expand />
+                </RightDrawerProvider>
+              </UnreadCountsProvider>
             </ClientMeetingProvider>
           </HuddleProvider>
         </ScreenShareProvider>

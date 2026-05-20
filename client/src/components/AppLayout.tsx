@@ -1,5 +1,4 @@
 import { useEffect, createContext, useContext, type ReactNode } from 'react';
-import { useVisiblePoll } from '@/hooks/useVisiblePoll';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { MonitorOff } from 'lucide-react';
@@ -73,16 +72,9 @@ function AppLayoutInner({ children }: Props) {
   const socket = useSocket();
   const { isSharing, stopSharing } = useScreenShare();
 
-  // ── Notification REST poll — silent, paused when tab is hidden ─────────
-  // We don't render an unread badge anywhere (SlimSidebar doesn't have one).
-  // The poll exists purely so a new notification fires a toast within ~60s
-  // even if the socket connection is napping. If you re-introduce a badge,
-  // this is where the count would come from.
-  useVisiblePoll(async () => {
-    try {
-      await api.listNotifications({ limit: 50, silent: true });
-    } catch { /* swallow — silent header keeps interceptor quiet */ }
-  }, 60_000);
+  // (Notification poll lives in UnreadCountsProvider now — that's where the
+  // sidebar + topbar badges get their counts. The toast-on-new logic below
+  // is independent and runs off the socket event directly.)
 
   // ── Today's client schedule reminder ────────────────────────────────────
   // Fires ONCE per session (per logged-in user, per IST day) when the user

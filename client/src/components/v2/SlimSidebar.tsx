@@ -7,6 +7,7 @@ import {
   Sparkles, LogOut, Bird, ChevronsLeft, ChevronsRight,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useUnreadCounts } from '@/contexts/UnreadCountsContext';
 import { Avatar } from '@/components/shared/Avatar';
 import { dashboardForRole } from '@/components/ProtectedRoute';
 
@@ -77,6 +78,7 @@ const PIN_KEY = 'robin.sidebar.pinned';
 export function SlimSidebar({ children }: { children: ReactNode }) {
   const { user, role, logout } = useAuth();
   const location = useLocation();
+  const { chat: chatUnread } = useUnreadCounts();
   const [pinned, setPinned] = useState<boolean>(() => {
     try { return localStorage.getItem(PIN_KEY) === '1'; } catch { return false; }
   });
@@ -161,6 +163,10 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
               : item.to === '/dashboard'
               ? location.pathname === '/dashboard'
               : location.pathname.startsWith(item.to);
+            // Per-item unread badge. Today only chat surfaces a count here
+            // (notifications are reached from the TopBar bell — that lives
+            // in TopBar.tsx and reads from the same useUnreadCounts hook).
+            const badge = item.to === '/chat' ? chatUnread : 0;
             return (
               <Link key={item.to + item.label} to={item.to}
                 className={`
@@ -170,12 +176,25 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
                     ? 'bg-primary/10 text-primary'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground'}
                 `}
-                title={!expanded ? item.label : undefined}
+                title={!expanded ? `${item.label}${badge > 0 ? ` · ${badge}` : ''}` : undefined}
               >
                 {active && <span className="absolute left-0 top-1 bottom-1 w-[3px] rounded-r bg-primary" />}
-                <item.icon className={`h-[15px] w-[15px] shrink-0 ${active ? 'text-primary' : ''}`} />
+                <div className="relative shrink-0">
+                  <item.icon className={`h-[15px] w-[15px] ${active ? 'text-primary' : ''}`} />
+                  {/* Collapsed-mode dot — quietly signals unread without taking space. */}
+                  {!expanded && badge > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-primary ring-1 ring-card" />
+                  )}
+                </div>
                 {expanded && (
-                  <span className="text-[12.5px] font-medium truncate whitespace-nowrap">{item.label}</span>
+                  <>
+                    <span className="text-[12.5px] font-medium truncate whitespace-nowrap flex-1">{item.label}</span>
+                    {badge > 0 && (
+                      <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold tabular-nums">
+                        {badge > 99 ? '99+' : badge}
+                      </span>
+                    )}
+                  </>
                 )}
               </Link>
             );
