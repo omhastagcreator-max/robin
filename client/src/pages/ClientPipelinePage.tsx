@@ -19,6 +19,7 @@ import { ProjectDetailPanel } from '@/components/panels/ProjectDetailPanel';
 import { useShortcut } from '@/hooks/useShortcut';
 import { StatusPill, type Status } from '@/components/ui/StatusPill';
 import { Avatar } from '@/components/shared/Avatar';
+import { AIInsight } from '@/components/ai/AIInsight';
 
 /**
  * ClientPipelinePage — universal "where is X at?" view.
@@ -77,6 +78,12 @@ interface Workflow {
   blockerType?:    '' | 'waiting_client_input' | 'waiting_internal_approval' | 'dependency' | 'technical' | 'budget';
   blockerReason?:  string;
   blockedSince?:   string | null;
+  // ── AI operational insights (computed by healthInference cron) ────
+  riskScore?:             number;            // 0–100
+  delayCause?:             string;
+  nextBestAction?:        string;
+  predictedCompletionAt?: string | null;
+  insightsComputedAt?:    string | null;
 }
 
 interface UserLite { _id: string; name?: string; email?: string; avatarUrl?: string }
@@ -584,8 +591,23 @@ function ClientCard({ wf, users, highlightServiceType, onMutated, onOpenDrawer }
     return items;
   }, [relevant, wf.services]);
 
-  // Next action — first un-ticked step on relevant (or first non-done service).
-  const nextAction = wf.nextAction || remaining[0]?.title || '';
+  // Next action — prefer the cron-computed `nextBestAction`, then the
+  // workflow's explicit `nextAction`, then the first un-ticked step.
+  const nextAction = wf.nextBestAction || wf.nextAction || remaining[0]?.title || '';
+
+  // ── AI predicted-completion (cron-derived heuristic) ──────────────
+  let predictedLabel = '';
+  if (wf.predictedCompletionAt) {
+    const predMs = new Date(wf.predictedCompletionAt).getTime();
+    const days   = Math.round((predMs - Date.now()) / (24 * 3600 * 1000));
+    if (days < 0)       predictedLabel = `${Math.abs(days)}d past prediction`;
+    else if (days === 0) predictedLabel = 'Predicts today';
+    else                predictedLabel = `Predicts in ${days}d`;
+  }
+  const riskTone: 'success' | 'warning' | 'danger' | 'muted' =
+    (wf.riskScore ?? 0) >= 70 ? 'danger'  :
+    (wf.riskScore ?? 0) >= 40 ? 'warning' :
+                                'muted';
 
   // ── ETA logic ──────────────────────────────────────────────────────
   let etaLabel = '';
@@ -788,6 +810,38 @@ function ClientCard({ wf, users, highlightServiceType, onMutated, onOpenDrawer }
             >
               <Unlock className="h-2.5 w-2.5" /> Unblock
             </button>
+          </div>
+        )}
+
+        {/* ── AI insight strip ─ risk / delay cause / predicted ETA ─────
+            Heuristic-derived (no model call). Always-fresh because the
+            healthInference cron computes them every 15 min and on every
+            workflow mutation via performWorkflowAction's postHook.
+            Hidden when the workflow is healthy + on track. */}
+        {((wf.riskScore ?? 0) >= 40 || (wf.delayCause && !isBlocked) || predictedLabel) && (
+          <div className="flex items-center gap-1.5 text-[10.5px] flex-wrap rounded-md bg-muted/40 border border-border px-2 py-1">
+            <AIInsight.Badge aiUsed={false} />
+            {typeof wf.riskScore === 'number' && wf.riskScore > 0 && (
+              <span className={`inline-flex items-center gap-1 font-bold ${
+                riskTone === 'danger'  ? 'text-rose-700'   :
+                riskTone === 'warning' ? 'text-amber-700'  :
+                                         'text-muted-foreground'
+              }`}>
+                Risk {wf.riskScore}
+              </span>
+            )}
+            {wf.delayCause && !isBlocked && (
+              <>
+                <span className="text-muted-foreground/40">·</span>
+                <span className="text-foreground/80 line-clamp-1" title={wf.delayCause}>{wf.delayCause}</span>
+              </>
+            )}
+            {predictedLabel && (
+              <>
+                <span className="text-muted-foreground/40">·</span>
+                <span className="text-muted-foreground">{predictedLabel}</span>
+              </>
+            )}
           </div>
         )}
 

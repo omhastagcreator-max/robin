@@ -1,5 +1,6 @@
 import ClientWorkflow from '../models/ClientWorkflow';
 import WorkflowActivity from '../models/WorkflowActivity';
+import { computeInsights, type InsightsResult } from '../services/aiInsights';
 
 /**
  * Pipeline 2.0 health inference.
@@ -95,32 +96,56 @@ export async function recomputeWorkflowHealth(workflowId: string): Promise<void>
   const wf = await ClientWorkflow.findById(workflowId).lean() as any;
   if (!wf) return;
   const { health, reason } = await computeHealth(wf);
-  if (wf.health === health && wf.healthReason === reason) return;
-  await ClientWorkflow.updateOne(
-    { _id: workflowId },
-    { $set: { health, healthReason: reason, healthComputedAt: new Date() } },
-  );
+  const insights: InsightsResult = computeInsights({ ...wf, health, healthReason: reason });
+  const changes: any = {};
+  if (wf.health !== health)                          changes.health = health;
+  if (wf.healthReason !== reason)                    changes.healthReason = reason;
+  if (wf.riskScore !== insights.riskScore)           changes.riskScore = insights.riskScore;
+  if (wf.delayCause !== insights.delayCause)         changes.delayCause = insights.delayCause;
+  if (wf.nextBestAction !== insights.nextBestAction) changes.nextBestAction = insights.nextBestAction;
+  // Date comparison via .getTime() — Mongo will hand us Date objects, never strings on lean reads.
+  const oldEta = wf.predictedCompletionAt ? new Date(wf.predictedCompletionAt).getTime() : 0;
+  const newEta = insights.predictedCompletionAt ? insights.predictedCompletionAt.getTime() : 0;
+  if (oldEta !== newEta)                             changes.predictedCompletionAt = insights.predictedCompletionAt;
+  if (Object.keys(changes).length === 0) return;
+  changes.healthComputedAt = new Date();
+  changes.insightsComputedAt = new Date();
+  await ClientWorkflow.updateOne({ _id: workflowId }, { $set: changes });
 }
 
 async function tick() {
   try {
     // Cap to 200 workflows per tick — covers any sane single-agency workload.
     // Larger orgs would shard by org; out of scope today.
+    //
+    // NOTE: we pull MORE fields now (`createdAt` for the predicted-completion
+    // extrapolation, and the existing AI fields so we can diff before write).
+    // The select list is still small enough that this stays O(workflow_count).
     const wfs = await ClientWorkflow.find({
-      // Skip workflows that are entirely done — no health to compute.
       'services.status': { $ne: 'done' },
-    }).select('_id services health healthReason blockerType blockerReason eta lastActivityAt').limit(200).lean();
+    }).select(
+      '_id services health healthReason blockerType blockerReason eta lastActivityAt ' +
+      'riskScore delayCause nextBestAction predictedCompletionAt createdAt updatedAt'
+    ).limit(200).lean();
 
     let touched = 0;
     for (const wf of wfs as any[]) {
       const { health, reason } = await computeHealth(wf);
-      if (wf.health !== health || wf.healthReason !== reason) {
-        await ClientWorkflow.updateOne(
-          { _id: wf._id },
-          { $set: { health, healthReason: reason, healthComputedAt: new Date() } },
-        );
-        touched += 1;
-      }
+      const insights = computeInsights({ ...wf, health, healthReason: reason });
+      const changes: any = {};
+      if (wf.health !== health)                          changes.health = health;
+      if (wf.healthReason !== reason)                    changes.healthReason = reason;
+      if ((wf.riskScore ?? 0) !== insights.riskScore)    changes.riskScore = insights.riskScore;
+      if ((wf.delayCause ?? '') !== insights.delayCause) changes.delayCause = insights.delayCause;
+      if ((wf.nextBestAction ?? '') !== insights.nextBestAction) changes.nextBestAction = insights.nextBestAction;
+      const oldEta = wf.predictedCompletionAt ? new Date(wf.predictedCompletionAt).getTime() : 0;
+      const newEta = insights.predictedCompletionAt ? insights.predictedCompletionAt.getTime() : 0;
+      if (oldEta !== newEta)                             changes.predictedCompletionAt = insights.predictedCompletionAt;
+      if (Object.keys(changes).length === 0) continue;
+      changes.healthComputedAt = new Date();
+      changes.insightsComputedAt = new Date();
+      await ClientWorkflow.updateOne({ _id: wf._id }, { $set: changes });
+      touched += 1;
     }
     if (touched > 0) console.log(`[health] recomputed ${touched}/${wfs.length} workflow(s)`);
   } catch (err) {

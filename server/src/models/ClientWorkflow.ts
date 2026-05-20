@@ -143,6 +143,24 @@ const ClientWorkflowSchema = new Schema({
   clientSummary:           { type: String, default: '' },
   clientSummaryUpdatedAt:  { type: Date,   default: null },
 
+  // ── AI operational insights ────────────────────────────────────────────
+  // These four fields are computed every 15 min by the healthInference
+  // cron (same tick that sets `health` + `healthReason`). They use cheap
+  // heuristics — NO Gemini call — so they're free, deterministic, and
+  // always populated. Surface them inline on every pipeline card so admin
+  // never has to ask "why is this stalled?" twice.
+  //
+  // riskScore             0-100 (0 = perfectly on track, 100 = on fire)
+  // delayCause            short reason in plain English ("past ETA 3 days")
+  // nextBestAction        first un-ticked checklist step on the active service
+  // predictedCompletionAt linear extrapolation of pct done vs days elapsed,
+  //                       OR the existing `eta` field when set, whichever is later
+  riskScore:             { type: Number, default: 0, min: 0, max: 100 },
+  delayCause:            { type: String, default: '' },
+  nextBestAction:        { type: String, default: '' },
+  predictedCompletionAt: { type: Date,   default: null },
+  insightsComputedAt:    { type: Date,   default: null },
+
   // Priority + tags — for filtering and prioritization in the table view.
   priority: { type: String, enum: ['low', 'medium', 'high', 'urgent'], default: 'medium' },
   tags:     { type: [String], default: [] },
