@@ -4,6 +4,7 @@ import { Search, Bell, Plus, Sparkles, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnreadCounts } from '@/contexts/UnreadCountsContext';
 import { useRobinCopilot } from '@/components/ai/RobinCopilot';
+import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 
 /**
  * Robin v2 topbar — 44 px tall, sticky, dense.
@@ -118,7 +119,18 @@ export function TopBar() {
         </button>
 
         {/* Right cluster */}
-        <div className="flex items-center gap-1 ml-auto">
+        <div className="flex items-center gap-1.5 ml-auto">
+          {/* Persistent Huddle pill — always visible so the team's "join the
+              room" button is one click away on every page, not buried in the
+              Workroom tab. Hidden on /workroom because HuddleStage already
+              shows the full controls there (avoid duplicate UI). The pill
+              auto-adapts to mode: Join / Connecting / In-huddle. */}
+          {role !== 'client' && !location.pathname.startsWith('/workroom') && (
+            <div className="hidden md:block">
+              <HuddleQuickPill />
+            </div>
+          )}
+
           {/* Quick create */}
           {hasCreate && (
             <div className="relative" ref={createRef}>

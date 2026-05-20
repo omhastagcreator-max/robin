@@ -4,14 +4,12 @@ import {
 } from 'lucide-react';
 
 import { AppLayout }   from '@/components/AppLayout';
-import { Row }         from '@/components/ui/Row';
-import { StatusPill }  from '@/components/ui/StatusPill';
 import { Stat }        from '@/components/ui/Stat';
 import { EmptyState }  from '@/components/ui/EmptyState';
-import { Avatar }      from '@/components/shared/Avatar';
+import { PeopleGrid, type PeopleGridItem } from '@/components/ui/PeopleGrid';
 import { HuddleStage } from '@/components/shared/HuddleStage';
 import { useAuth }     from '@/contexts/AuthContext';
-import { useUnifiedPresence, type UnifiedPresence } from '@/hooks/useUnifiedPresence';
+import { useUnifiedPresence } from '@/hooks/useUnifiedPresence';
 
 /**
  * WorkRoom v2 — rebuilt on design-system primitives.
@@ -102,42 +100,26 @@ export default function WorkRoom() {
 
             {presence.loading ? (
               <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-            ) : presence.list.length === 0 ? (
-              <EmptyState
-                size="md"
-                icon={<Users className="h-7 w-7" />}
-                title="No teammates found"
-                hint="As people sign in their presence will appear here."
-              />
             ) : (
-              <div className="border border-border rounded-xl bg-card overflow-hidden">
-                {presence.list.map((m: UnifiedPresence) => (
-                  <Row
-                    key={m.userId}
-                    density="comfy"
-                    accent={
-                      m.displayState === 'in_huddle' ? 'primary' :
-                      m.displayState === 'working'   ? 'success' :
-                      m.displayState === 'on_break'  ? 'warning' :
-                      m.displayState === 'on_leave'  ? 'info'    :
-                                                        'none'
-                    }
-                  >
-                    <Row.Leading>
-                      <Avatar name={m.name} email={m.email} size="sm" tone="primary" />
-                    </Row.Leading>
-                    <Row.Main>
-                      <Row.Title>{m.name || 'Unnamed'}</Row.Title>
-                      <Row.Meta>
-                        {m.role || 'employee'}{m.team ? ` · ${m.team}` : ''}
-                      </Row.Meta>
-                    </Row.Main>
-                    <Row.Trail>
-                      <StatusPill state={m.displayState as any} size="xs" />
-                    </Row.Trail>
-                  </Row>
-                ))}
-              </div>
+              <PeopleGrid
+                storageKey="people.workroom.layout"
+                items={presence.list.map((m) => ({
+                  id:    m.userId,
+                  name:  m.name,
+                  email: m.email,
+                  role:  m.role || 'employee',
+                  team:  m.team,
+                  state: m.displayState as PeopleGridItem['state'],
+                }))}
+                empty={
+                  <EmptyState
+                    size="md"
+                    icon={<Users className="h-7 w-7" />}
+                    title="No teammates found"
+                    hint="As people sign in their presence will appear here."
+                  />
+                }
+              />
             )}
           </section>
         )}
