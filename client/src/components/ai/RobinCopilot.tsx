@@ -126,10 +126,33 @@ export function RobinCopilotPanel() {
       setHistory(prev => [{ question: q, answer: result.answer, aiUsed: result.aiUsed, at: Date.now() }, ...prev]);
       setInput('');
     } catch (e: any) {
-      if (e?.response?.status === 429) {
+      const status = e?.response?.status;
+      const serverError = e?.response?.data?.error;
+      const url = e?.config?.url || '(unknown URL)';
+      if (status === 429) {
         toast.error('AI rate limit — try again in a moment.');
+      } else if (status === 404) {
+        // The server's catch-all 404 returns "Route not found". When the
+        // user sees this generic message, surface enough detail to debug:
+        // which URL was hit + the HTTP status. Usually means the server
+        // hasn't redeployed the /copilot route yet (Render free tier rebuilds
+        // can take 2-5 min after a push).
+        toast.error(
+          `Copilot endpoint not reachable yet: ${url} → 404. ` +
+          'The server may be redeploying — try again in a minute.',
+          { duration: 8000 },
+        );
+        // Add a one-time fallback turn so the drawer doesn't just look empty.
+        setHistory(prev => [{
+          question: q,
+          answer:   `I couldn't reach the Copilot endpoint (\`${url}\` returned 404). The server may still be redeploying after the latest push — try again in ~2 minutes, or hard-refresh the page (⌘⇧R) to drop any cached JS.`,
+          aiUsed:   false,
+          at:       Date.now(),
+        }, ...prev]);
+      } else if (status >= 500) {
+        toast.error(`Copilot server error (${status}) — ${serverError || 'try again in a moment.'}`);
       } else {
-        toast.error(e?.response?.data?.error || 'Copilot is unavailable right now.');
+        toast.error(serverError || `Copilot is unavailable (${status ?? 'no response'}).`);
       }
     } finally {
       setBusy(false);
