@@ -4,7 +4,8 @@ import { requireRole } from '../middleware/roleMiddleware';
 import {
   rescoreLead, summarizeWorkflowEndpoint, briefAllProjects,
   getOrgMorningBrief, regenerateOrgMorningBrief,
-  getAiHealth, getAiHealthPublic,
+  getAiHealth, getAiHealthPublic, parseCommandEndpoint,
+  copilotEndpoint,
 } from '../controllers/aiAutomationController';
 
 const router = Router();
@@ -25,6 +26,10 @@ router.post('/summarize-workflow/:id', requireRole('admin', 'employee', 'sales')
 // One brief summarizing EVERY active project in the org.
 router.post('/brief-all-projects',     requireRole('admin', 'employee', 'sales'),             briefAllProjects);
 
+// Command parser — turns "mark Velloer Living done" / "create task X"
+// into structured intent. Frontend confirms + dispatches to the real API.
+router.post('/parse-command',          requireRole('admin', 'employee', 'sales'),             parseCommandEndpoint);
+
 // Morning brief — read for any internal staff, admin can regenerate
 router.get('/morning-brief',           requireRole('admin', 'employee', 'sales'),             getOrgMorningBrief);
 router.post('/morning-brief',          requireRole('admin'),                                   regenerateOrgMorningBrief);
@@ -32,5 +37,10 @@ router.post('/morning-brief',          requireRole('admin'),                    
 // Authenticated health probe (admin-only). Mirrors the public /health
 // but live behind auth for the UI panel that polls it from inside Robin.
 router.get('/health-authed',           requireRole('admin'),                                   getAiHealth);
+
+// Robin Copilot — context-aware free-form Q&A for any internal staff.
+// Body: { question, route, workflowId?, leadId? }. Caches identical
+// questions per (user, route, context) for 60 s; 30 req/min per user.
+router.post('/copilot',                requireRole('admin', 'employee', 'sales'),             copilotEndpoint);
 
 export default router;

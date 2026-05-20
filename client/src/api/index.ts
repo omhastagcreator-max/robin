@@ -274,6 +274,15 @@ export const aiRescoreLead          = (id: string) => api.post(`/ai-automation/s
 export const aiSummarizeWorkflow    = (id: string) => api.post(`/ai-automation/summarize-workflow/${id}`).then(r => r.data);
 export const aiBriefAllProjects     = ()           => api.post('/ai-automation/brief-all-projects', {}).then(r => r.data);
 export const aiParseCommand         = (message: string) => api.post('/ai-automation/parse-command', { message }).then(r => r.data);
+// Robin Copilot — context-aware Q&A. The page passes its current route plus
+// any contextual IDs (workflow / lead) so the server can pull a tight slice
+// of the org's data to feed the model. Server caches per (user, ctx, q).
+export const aiCopilot              = (body: {
+  question:    string;
+  route:       string;
+  workflowId?: string;
+  leadId?:     string;
+}) => api.post('/ai-automation/copilot', body).then(r => r.data as { answer: string; aiUsed: boolean });
 export const aiOrgMorningBrief      = ()           => api.get('/ai-automation/morning-brief').then(r => r.data);
 export const aiRegenerateOrgBrief   = ()           => api.post('/ai-automation/morning-brief', {}).then(r => r.data);
 export const adminRemoveUser = (id: string)                              => api.delete(`/admin/users/${id}`).then(r => r.data);

@@ -3,6 +3,7 @@ import { useLocation, Link, useNavigate } from 'react-router-dom';
 import { Search, Bell, Plus, Sparkles, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnreadCounts } from '@/contexts/UnreadCountsContext';
+import { useRobinCopilot } from '@/components/ai/RobinCopilot';
 
 /**
  * Robin v2 topbar — 44 px tall, sticky, dense.
@@ -39,7 +40,21 @@ export function TopBar() {
   const navigate = useNavigate();
   const { user, role } = useAuth();
   const { notifications: notifUnread } = useUnreadCounts();
+  const openCopilot = useRobinCopilot();
   const segs = location.pathname.split('/').filter(Boolean);
+
+  // Global hotkey ⌘⇧K / Ctrl-Shift-K to open the Copilot drawer from any
+  // page. Pairs with the Sparkles button below — both hit the same opener.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        openCopilot();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openCopilot]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const createRef = useRef<HTMLDivElement | null>(null);
@@ -145,14 +160,14 @@ export function TopBar() {
             </div>
           )}
 
-          {/* AI Copilot — opens the global command palette in AI mode.
-              The palette already supports natural-language → action via
-              aiParseCommand; this button surfaces it as an explicit entry
-              point rather than buried behind ⌘K. */}
+          {/* Robin Copilot — context-aware AI drawer. Reads the current
+              route + role on the server side to pull the right slice of
+              operational data (workflow / leads / tasks / at-risk projects)
+              into the prompt. Hotkey: ⌘⇧K. */}
           <button
-            onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, shiftKey: true }))}
+            onClick={openCopilot}
             className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:bg-accent/15 hover:text-accent transition-colors"
-            title="AI Copilot — ⌘⇧K"
+            title="Robin Copilot — ⌘⇧K"
           >
             <Sparkles className="h-4 w-4" />
           </button>

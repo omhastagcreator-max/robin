@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
-import { scoreLead, summarizeWorkflow, summarizeAllProjects, generateMorningBrief, aiHealth } from '../services/aiTriage';
+import { scoreLead, summarizeWorkflow, summarizeAllProjects, generateMorningBrief, aiHealth, parseCommand, askRobin } from '../services/aiTriage';
+import { withAICache, withRateLimit } from '../services/aiInsights';
 import User from '../models/User';
 import Lead from '../models/Lead';
 import ClientWorkflow from '../models/ClientWorkflow';
@@ -14,6 +15,28 @@ import MorningBrief from '../models/MorningBrief';
 async function getOrgId(userId: string): Promise<string | null> {
   const u = await User.findById(userId).select('organizationId').lean();
   return u?.organizationId ? String(u.organizationId) : null;
+}
+
+/**
+ * POST /api/ai-automation/parse-command
+ *
+ * Takes a natural-language message ("mark velloer living done") and
+ * returns the structured action the AI extracted, so the frontend can
+ * confirm + dispatch to the real API endpoint.
+ *
+ * We deliberately DON'T execute the action server-side — the frontend
+ * shows a confirmation card first, then calls the existing endpoint
+ * (api.createTask, api.cwCompleteService, etc.). Keeps the AI in the
+ * advisory loop and lets the user veto.
+ */
+export async function parseCommandEndpoint(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const message = String(req.body.message || '').trim();
+    if (!message) { res.status(400).json({ error: 'Please type a command.' }); return; }
+    if (message.length > 600) { res.status(400).json({ error: 'Command too long.' }); return; }
+    const r = await parseCommand(message);
+    res.json(r);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
 /**
@@ -215,4 +238,135 @@ export async function buildAndSaveMorningBrief(orgId: string, generatedBy: 'cron
     { new: true, upsert: true },
   );
   return doc;
+}
+
+// ─── Robin Copilot ─────────────────────────────────────────────────────
+/**
+ * POST /api/ai-automation/copilot
+ * Body: { question, route, workflowId?, leadId? }
+ *
+ * The context-aware "Robin Copilot" — the user types a question, we pull
+ * the minimum useful slice of agency context based on the route they're
+ * on, and pass it to Gemini via askRobin().
+ *
+ * Caching: identical (user, route, question, contextId) within 60s → cached
+ * answer. Stops the same prompt being re-billed when the user toggles the
+ * drawer or re-clicks a quick prompt.
+ *
+ * Rate limit: 30 req/min per user (token bucket in aiInsights). Returns
+ * 429 with a helpful message when exhausted.
+ */
+export async function copilotEndpoint(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const userId   = req.user!.id;
+    const role     = req.user!.role;
+    const question = String(req.body?.question || '').trim();
+    const route    = String(req.body?.route || '').trim() || '/';
+    const wfId     = req.body?.workflowId ? String(req.body.workflowId) : null;
+    const leadId   = req.body?.leadId     ? String(req.body.leadId)     : null;
+
+    if (!question)           { res.status(400).json({ error: 'Please type a question.' }); return; }
+    if (question.length > 800) { res.status(400).json({ error: 'Question too long (max 800 chars).' }); return; }
+
+    const orgId = await getOrgId(userId);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    // Build context based on route + IDs the caller surfaced.
+    const context: any = { url: route, userRole: role };
+
+    if (wfId) {
+      const wf = await ClientWorkflow.findOne({ _id: wfId, organizationId: orgId })
+        .select('clientName clientPhone services health healthReason blockerType blockerReason eta riskScore delayCause nextBestAction predictedCompletionAt lastActivityAt lastActivitySummary priority')
+        .lean() as any;
+      if (wf) {
+        context.workflow = {
+          name:           wf.clientName,
+          health:         wf.health,
+          healthReason:   wf.healthReason,
+          blockerType:    wf.blockerType,
+          blockerReason:  wf.blockerReason,
+          eta:            wf.eta,
+          predictedEnd:   wf.predictedCompletionAt,
+          riskScore:      wf.riskScore,
+          delayCause:     wf.delayCause,
+          nextBestAction: wf.nextBestAction,
+          priority:       wf.priority,
+          lastActivity:   wf.lastActivitySummary,
+          services: (wf.services || []).map((s: any) => ({
+            type:     s.serviceType,
+            label:    s.label,
+            status:   s.status,
+            progress: `${(s.checklist || []).filter((c: any) => c.done).length}/${(s.checklist || []).length}`,
+          })),
+        };
+      }
+    }
+
+    if (leadId) {
+      const lead = await Lead.findOne({ _id: leadId, organizationId: orgId })
+        .select('name company contact email stage estimatedValue aiScore aiReason aiNextAction')
+        .lean() as any;
+      if (lead) {
+        context.lead = {
+          name:           lead.name,
+          company:        lead.company,
+          stage:          lead.stage,
+          estimatedValue: lead.estimatedValue,
+          aiScore:        lead.aiScore,
+          aiNextAction:   lead.aiNextAction,
+        };
+      }
+    }
+
+    // Generic context when on a "list" route — pull a tiny operational
+    // snapshot scoped to the role. Cheap; Mongo indexes cover it.
+    if (route.startsWith('/clients/pipeline') && !wfId) {
+      const wfs = await ClientWorkflow.find({
+        organizationId: orgId,
+        'services.status': { $ne: 'done' },
+      })
+        .select('clientName health riskScore delayCause nextBestAction')
+        .sort({ riskScore: -1, lastActivityAt: -1 })
+        .limit(15).lean();
+      context.atRiskProjects = (wfs as any[]).filter(w => (w.riskScore || 0) >= 40).map(w => ({
+        name: w.clientName, risk: w.riskScore, reason: w.delayCause, next: w.nextBestAction,
+      }));
+    }
+
+    if (route.startsWith('/tasks')) {
+      const tasks = await ProjectTask.find({
+        assignedTo: userId,
+        status: { $in: ['pending', 'ongoing'] },
+      }).select('title priority dueDate status').sort({ dueDate: 1, priority: -1 }).limit(10).lean();
+      context.myOpenTasks = (tasks as any[]).map(t => ({
+        title: t.title, priority: t.priority, due: t.dueDate, status: t.status,
+      }));
+    }
+
+    if (route.startsWith('/sales')) {
+      const leads = await Lead.find({
+        organizationId: orgId,
+        stage: { $nin: ['won', 'lost'] },
+      }).select('name company stage aiScore aiNextAction').sort({ aiScore: 1 }).limit(15).lean();
+      context.openLeads = (leads as any[]).map(l => ({
+        name: l.name, company: l.company, stage: l.stage, score: l.aiScore, next: l.aiNextAction,
+      }));
+    }
+
+    // Cache key = question + route + ID context. 60s TTL.
+    const ctxKey  = wfId ? `wf:${wfId}` : leadId ? `lead:${leadId}` : route;
+    const cacheKey = `copilot:${userId}:${ctxKey}:${question.toLowerCase().slice(0, 120)}`;
+
+    const result = await withRateLimit(userId, () =>
+      withAICache(cacheKey, 60_000, () => askRobin(question, context))
+    );
+
+    res.json({ answer: result.answer, aiUsed: result.aiUsed });
+  } catch (err: any) {
+    if (err?.status === 429) {
+      res.status(429).json({ error: err.message });
+      return;
+    }
+    res.status(500).json({ error: (err as Error).message });
+  }
 }
