@@ -103,8 +103,18 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
   const { user, role, logout } = useAuth();
   const location = useLocation();
   const { chat: chatUnread, notifications: notifUnread } = useUnreadCounts();
+  // Default: PINNED OPEN. Owner-mandated — Robin is an operational system,
+  // not a focus app. The sidebar carries critical real-time signals
+  // (chat/notif badges, role-grouped sections); hiding it behind a hover
+  // forces an extra mental hop on every page nav. Users who want it
+  // collapsed can still toggle the pin; we just persist their choice via
+  // localStorage. The flag stored is now an explicit "0" vs "1" instead
+  // of "presence vs absence" so first-load = pinned without a missing key.
   const [pinned, setPinned] = useState<boolean>(() => {
-    try { return localStorage.getItem(PIN_KEY) === '1'; } catch { return false; }
+    try {
+      const v = localStorage.getItem(PIN_KEY);
+      return v === null ? true : v === '1';
+    } catch { return true; }
   });
   const [hover, setHover] = useState(false);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -114,7 +124,9 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
   const togglePin = () => {
     setPinned(p => {
       const v = !p;
-      try { v ? localStorage.setItem(PIN_KEY, '1') : localStorage.removeItem(PIN_KEY); } catch {}
+      // Persist explicit '0' so a user who CHOSE to collapse stays collapsed
+      // across reloads (a missing key now defaults back to pinned open).
+      try { localStorage.setItem(PIN_KEY, v ? '1' : '0'); } catch {}
       return v;
     });
   };

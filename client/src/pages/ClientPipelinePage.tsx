@@ -5,8 +5,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Plus, Loader2, X, Sparkles, Workflow,
   ChevronDown, ChevronRight, CheckCircle2, Circle, AlertTriangle,
-  MoreVertical, ArrowRight, TrendingUp, Users, Activity, Clock,
+  ArrowRight, Users, Activity, Clock, ShieldX, Unlock, MessageSquare,
+  Send, Flame, CalendarClock, Wifi,
 } from 'lucide-react';
+import { formatDistanceToNowStrict } from 'date-fns';
 import { toast } from 'sonner';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -16,6 +18,7 @@ import { useDrawer } from '@/components/ui/RightDrawer';
 import { ProjectDetailPanel } from '@/components/panels/ProjectDetailPanel';
 import { useShortcut } from '@/hooks/useShortcut';
 import { StatusPill, type Status } from '@/components/ui/StatusPill';
+import { Avatar } from '@/components/shared/Avatar';
 
 /**
  * ClientPipelinePage — universal "where is X at?" view.
@@ -59,7 +62,24 @@ interface Workflow {
     serviceType?: string;
     actorId?: string;
   } | null;
+  // ── Operational fields surfaced inline on each pipeline card ─────────
+  // All of these are already on the ClientWorkflow Mongo doc and shipped
+  // by /api/client-workflows. We just weren't rendering them before.
+  health?:         Status;
+  healthReason?:   string;
+  eta?:            string | null;
+  etaConfidence?:  '' | 'high' | 'medium' | 'low';
+  lastActivityAt?: string | null;
+  priority?:       'low' | 'medium' | 'high' | 'urgent';
+  currentOwnerTeam?: '' | 'sales' | 'development' | 'meta' | 'influencer' | 'qa';
+  nextActionOwnerId?: string | null;
+  nextAction?:     string;
+  blockerType?:    '' | 'waiting_client_input' | 'waiting_internal_approval' | 'dependency' | 'technical' | 'budget';
+  blockerReason?:  string;
+  blockedSince?:   string | null;
 }
+
+interface UserLite { _id: string; name?: string; email?: string; avatarUrl?: string }
 
 export default function ClientPipelinePage() {
   const { role } = useAuth();
@@ -70,6 +90,21 @@ export default function ClientPipelinePage() {
   const [list, setList]         = useState<Workflow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+
+  // Page-level users lookup — every card needs the owner's name+avatar but
+  // listWorkflows ships userIds, not populated documents. Loading the team
+  // once here is far cheaper than every card hitting its own endpoint.
+  const [users, setUsers] = useState<Record<string, UserLite>>({});
+  useEffect(() => {
+    api.listUsers()
+      .then((arr: any[]) => {
+        const map: Record<string, UserLite> = {};
+        (Array.isArray(arr) ? arr : []).forEach(u => { map[u._id] = u; });
+        setUsers(map);
+      })
+      .catch(() => {});
+  }, []);
+
   const drawer = useDrawer();
 
   // Open a workflow in the drawer (rather than navigating to a detail page).
@@ -200,6 +235,7 @@ export default function ClientPipelinePage() {
         ) : (
           <PipelineKanban
             list={list}
+            users={users}
             isAdminOrSales={isAdminOrSales}
             onAdd={() => setShowCreate(true)}
             onMutated={load}
@@ -351,8 +387,8 @@ const PIPELINE_COLUMNS: ColumnDef[] = [
   },
 ];
 
-function PipelineKanban({ list, isAdminOrSales, onAdd, onMutated, onOpenDrawer }: {
-  list: Workflow[]; isAdminOrSales: boolean; onAdd: () => void; onMutated: () => void;
+function PipelineKanban({ list, users, isAdminOrSales, onAdd, onMutated, onOpenDrawer }: {
+  list: Workflow[]; users: Record<string, UserLite>; isAdminOrSales: boolean; onAdd: () => void; onMutated: () => void;
   onOpenDrawer?: (wfId: string, clientName?: string) => void;
 }) {
   // Bucket each workflow into the FIRST matching column so a client only
@@ -384,6 +420,7 @@ function PipelineKanban({ list, isAdminOrSales, onAdd, onMutated, onOpenDrawer }
             <Column
               col={col}
               clients={byColumn[col.key]}
+              users={users}
               isAdminOrSales={isAdminOrSales}
               onAdd={onAdd}
               onMutated={onMutated}
@@ -415,6 +452,7 @@ function PipelineKanban({ list, isAdminOrSales, onAdd, onMutated, onOpenDrawer }
             <Column
               col={col}
               clients={byColumn[col.key]}
+              users={users}
               isAdminOrSales={isAdminOrSales}
               onAdd={onAdd}
               onMutated={onMutated}
@@ -436,8 +474,8 @@ function PipelineKanban({ list, isAdminOrSales, onAdd, onMutated, onOpenDrawer }
   );
 }
 
-function Column({ col, clients, isAdminOrSales, onAdd, onMutated, onOpenDrawer }: {
-  col: ColumnDef; clients: Workflow[]; isAdminOrSales: boolean; onAdd: () => void; onMutated: () => void;
+function Column({ col, clients, users, isAdminOrSales, onAdd, onMutated, onOpenDrawer }: {
+  col: ColumnDef; clients: Workflow[]; users: Record<string, UserLite>; isAdminOrSales: boolean; onAdd: () => void; onMutated: () => void;
   onOpenDrawer?: (wfId: string, clientName?: string) => void;
 }) {
   // Map column key → soft tinted top accent strip + matching count chip
@@ -495,7 +533,7 @@ function Column({ col, clients, isAdminOrSales, onAdd, onMutated, onOpenDrawer }
           </div>
         ) : (
           clients.map(wf => (
-            <ClientCard key={wf._id} wf={wf} highlightServiceType={col.serviceType} onMutated={onMutated} onOpenDrawer={onOpenDrawer} />
+            <ClientCard key={wf._id} wf={wf} users={users} highlightServiceType={col.serviceType} onMutated={onMutated} onOpenDrawer={onOpenDrawer} />
           ))
         )}
       </div>
@@ -503,38 +541,38 @@ function Column({ col, clients, isAdminOrSales, onAdd, onMutated, onOpenDrawer }
   );
 }
 
-function ClientCard({ wf, highlightServiceType, onMutated, onOpenDrawer }: {
-  wf: Workflow; highlightServiceType?: string; onMutated: () => void; onOpenDrawer?: (wfId: string, clientName?: string) => void;
+function ClientCard({ wf, users, highlightServiceType, onMutated, onOpenDrawer }: {
+  wf: Workflow;
+  users: Record<string, UserLite>;
+  highlightServiceType?: string;
+  onMutated: () => void;
+  onOpenDrawer?: (wfId: string, clientName?: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [expanded, setExpanded]   = useState(false);
+  const [busy, setBusy]           = useState(false);
+  const [confirmMarkDone, setConfirmMarkDone] = useState(false);
+  const [blockModal, setBlockModal] = useState(false);
+  const [unblockModal, setUnblockModal] = useState(false);
+  const [commentOpen, setCommentOpen]   = useState(false);
+  const [commentText, setCommentText]   = useState('');
 
-  // Close the popover when clicking outside
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [menuOpen]);
-
-  // Overall % across all services
+  // ── Derived data ───────────────────────────────────────────────────
   const totalItems = wf.services.reduce((n, s) => n + (s.checklist?.length || 0), 0);
   const doneItems  = wf.services.reduce((n, s) => n + (s.checklist?.filter(c => c.done).length || 0), 0);
   const pct        = totalItems ? Math.round((doneItems / totalItems) * 100) : 0;
 
-  // The service relevant to THIS column (if any) — show its progress
-  // inline so you can see "Website: 2/7" without opening the workflow.
-  const relevant = highlightServiceType ? wf.services.find(s => s.serviceType === highlightServiceType) : undefined;
-  const relTicked = relevant?.checklist.filter(c => c.done).length || 0;
-  const relTotal  = relevant?.checklist.length || 0;
+  // Relevant service for the column we're in (Website / Meta / Influencer)
+  const relevant   = highlightServiceType ? wf.services.find(s => s.serviceType === highlightServiceType) : undefined;
+  const relTicked  = relevant?.checklist.filter(c => c.done).length || 0;
+  const relTotal   = relevant?.checklist.length || 0;
+  const relPct     = relTotal ? Math.round((relTicked / relTotal) * 100) : 0;
 
-  // The "what's left" list — pending checklist items on the relevant
-  // service (or overall pending across all services if no column-specific
-  // service was found, e.g. the All Done column).
+  // Owner — the assignee on the relevant service (or the first non-done
+  // service when we're on the All-Done column). userId → user via the map.
+  const ownerId    = relevant?.assignedTo || wf.services.find(s => s.status !== 'done')?.assignedTo || wf.services[0]?.assignedTo;
+  const owner      = ownerId ? users[ownerId] : undefined;
+
+  // What's left on the relevant service (or all services on All-Done).
   const remaining = useMemo(() => {
     const src = relevant ? [relevant] : wf.services;
     const items: { service: string; title: string }[] = [];
@@ -546,7 +584,38 @@ function ClientCard({ wf, highlightServiceType, onMutated, onOpenDrawer }: {
     return items;
   }, [relevant, wf.services]);
 
-  // Status pill colour for the relevant service (or overall completion if none)
+  // Next action — first un-ticked step on relevant (or first non-done service).
+  const nextAction = wf.nextAction || remaining[0]?.title || '';
+
+  // ── ETA logic ──────────────────────────────────────────────────────
+  let etaLabel = '';
+  let etaTone: 'muted' | 'warning' | 'danger' = 'muted';
+  if (wf.eta) {
+    const etaMs = new Date(wf.eta).getTime();
+    const now   = Date.now();
+    const days  = Math.round((etaMs - now) / (24 * 3600 * 1000));
+    if (days < 0)         { etaLabel = `${Math.abs(days)}d past ETA`; etaTone = 'danger'; }
+    else if (days === 0)  { etaLabel = 'ETA today';                   etaTone = 'warning'; }
+    else if (days <= 3)   { etaLabel = `ETA in ${days}d`;             etaTone = 'warning'; }
+    else                  { etaLabel = `ETA in ${days}d`;             etaTone = 'muted'; }
+  }
+
+  // ── Inactivity ─────────────────────────────────────────────────────
+  let inactivityLabel = '';
+  let inactivityTone: 'muted' | 'warning' | 'danger' = 'muted';
+  if (wf.lastActivityAt) {
+    const idleH = (Date.now() - new Date(wf.lastActivityAt).getTime()) / (3600 * 1000);
+    if (idleH > 72)      { inactivityLabel = `Quiet ${Math.round(idleH / 24)}d`; inactivityTone = 'danger'; }
+    else if (idleH > 24) { inactivityLabel = `Quiet ${Math.round(idleH / 24)}d`; inactivityTone = 'warning'; }
+  }
+
+  // ── Priority chip (only when not 'medium') ────────────────────────
+  const priorityTone: Record<string, string> =
+    { urgent: 'bg-rose-500/12 text-rose-700 border-rose-500/25',
+      high:   'bg-orange-500/12 text-orange-700 border-orange-500/25',
+      low:    'bg-muted text-muted-foreground border-border' };
+
+  // ── Status pill for the relevant service ──────────────────────────
   const status = relevant?.status || (wf.services.every(s => s.status === 'done') ? 'done' : 'in_progress');
   const statusStyle =
     status === 'done'        ? 'bg-emerald-500/15 text-emerald-700' :
@@ -559,17 +628,7 @@ function ClientCard({ wf, highlightServiceType, onMutated, onOpenDrawer }: {
     status === 'in_progress' ? 'In progress' :
                                'Pending';
 
-  const [confirmMarkDone, setConfirmMarkDone] = useState(false);
-
-  const markDone = () => {
-    if (!relevant?._id || busy) return;
-    setMenuOpen(false);
-    // Open the proper styled modal instead of window.prompt. The actual
-    // API call happens in modal.onSubmit so the modal can render a
-    // loading state while it's in flight.
-    setConfirmMarkDone(true);
-  };
-
+  // ── Mutations ──────────────────────────────────────────────────────
   const performMarkDone = async (comment: string) => {
     if (!relevant?._id) return;
     setBusy(true);
@@ -581,121 +640,270 @@ function ClientCard({ wf, highlightServiceType, onMutated, onOpenDrawer }: {
     finally { setBusy(false); }
   };
 
+  const handleBlock = async (payload: { blockerType: string; blockerReason: string; comment: string }) => {
+    setBusy(true);
+    try {
+      await api.cwBlock(wf._id, payload);
+      toast.success('Marked blocked');
+      onMutated();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to block');
+      throw err;
+    } finally { setBusy(false); }
+  };
+
+  const handleUnblock = async (comment: string) => {
+    setBusy(true);
+    try {
+      await api.cwUnblock(wf._id, { comment });
+      toast.success('Unblocked');
+      onMutated();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to unblock');
+      throw err;
+    } finally { setBusy(false); }
+  };
+
+  const submitComment = async () => {
+    const text = commentText.trim();
+    if (text.length < 3) { toast.error('At least 3 characters'); return; }
+    setBusy(true);
+    try {
+      await api.cwAddNote(wf._id, { detail: text, serviceType: relevant?.serviceType });
+      setCommentText('');
+      setCommentOpen(false);
+      toast.success('Note added');
+      onMutated();
+    } catch { /* interceptor toasts */ }
+    finally { setBusy(false); }
+  };
+
+  const isBlocked = Boolean(wf.blockerType);
+
   return (
-    <div className="bg-card border border-border rounded-xl overflow-hidden hover:border-primary/30 hover:shadow-sm transition-all">
-      {/* Top row — name + status pill + action menu */}
-      <div className="px-3 pt-3 pb-2">
+    <div className={`bg-card border rounded-xl overflow-hidden transition-all ${
+      isBlocked ? 'border-rose-500/30 shadow-sm shadow-rose-500/5' : 'border-border hover:border-primary/30'
+    }`}>
+      <div className="px-3 pt-2.5 pb-2 space-y-2">
+        {/* ── Line 1 ─ Identity + priority + health ─────────────────── */}
         <div className="flex items-start gap-2">
           <button
-            onClick={() => setExpanded(e => !e)}
+            onClick={() => onOpenDrawer?.(wf._id, wf.clientName)}
             className="flex-1 min-w-0 text-left group"
-            title={expanded ? 'Hide what\'s left' : 'See what\'s left'}
+            title="Open project"
           >
-            <div className="flex items-center gap-1.5">
-              <p className="text-sm font-bold truncate group-hover:text-primary transition-colors">{wf.clientName || 'Unnamed client'}</p>
-              {expanded
-                ? <ChevronDown className="h-3 w-3 text-muted-foreground/60 shrink-0" />
-                : <ChevronRight className="h-3 w-3 text-muted-foreground/60 shrink-0" />}
-            </div>
-            <div className="flex items-center gap-1.5 mt-1">
-              {wf.clientPhone && (
-                <span className="text-[10px] text-muted-foreground truncate tabular-nums">{wf.clientPhone}</span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <p className="text-[13px] font-bold truncate group-hover:text-primary transition-colors">
+                {wf.clientName || 'Unnamed client'}
+              </p>
+              {wf.priority === 'urgent' && (
+                <span className={`inline-flex items-center gap-0.5 px-1 h-[15px] rounded text-[9px] font-bold uppercase border ${priorityTone.urgent}`}>
+                  <Flame className="h-2.5 w-2.5" /> urgent
+                </span>
               )}
-              {/* Health pill — defaults to 'healthy' until the inference job
-                  is wired (Phase 5). Renders consistently with project
-                  detail and admin dashboard. */}
-              {(wf as any).health && (
-                <StatusPill state={(wf as any).health as Status} size="xs" icon="none" />
+              {wf.priority === 'high' && (
+                <span className={`inline-flex items-center px-1 h-[15px] rounded text-[9px] font-bold uppercase border ${priorityTone.high}`}>
+                  high
+                </span>
+              )}
+              {wf.health && (
+                <StatusPill state={wf.health as Status} size="xs" icon="none" />
               )}
             </div>
+            {wf.clientPhone && (
+              <p className="text-[10px] text-muted-foreground tabular-nums truncate mt-0.5">
+                {wf.clientPhone}
+              </p>
+            )}
           </button>
 
-          {/* Open in drawer — single click, keeps the kanban context. */}
-          {onOpenDrawer && (
-            <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpenDrawer(wf._id, wf.clientName); }}
-              className="h-6 w-6 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center justify-center transition-colors"
-              title="Open project (drawer)"
-            >
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          )}
-
-          {/* Stage dropdown — change the service status without leaving the
-              board. Mark done, bounce back, or jump to full detail. */}
-          <div className="relative shrink-0" ref={menuRef}>
-            <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMenuOpen(v => !v); }}
-              className={`px-1.5 h-6 rounded-md text-[10px] font-semibold flex items-center gap-0.5 ${statusStyle} hover:opacity-90 transition`}
-              title="Update stage"
-            >
-              {statusLabel}
-              <ChevronDown className="h-3 w-3" />
-            </button>
-            <AnimatePresence>
-              {menuOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                  className="absolute right-0 top-full mt-1 w-44 bg-card border border-border rounded-lg shadow-lg z-20 overflow-hidden"
-                >
-                  {relevant && relevant.status !== 'done' && (
-                    <button
-                      onClick={markDone}
-                      disabled={busy}
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-muted flex items-center gap-2 disabled:opacity-50"
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                      Mark this stage done
-                    </button>
-                  )}
-                  <Link
-                    to={`/clients/pipeline/${wf._id}`}
-                    className="w-full text-left px-3 py-2 text-xs hover:bg-muted flex items-center gap-2"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    <MoreVertical className="h-3.5 w-3.5 text-muted-foreground" />
-                    Open full pipeline
-                  </Link>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+          {/* Status mini-pill — quick visual scan of the relevant service */}
+          <span className={`shrink-0 px-1.5 h-[18px] inline-flex items-center rounded-md text-[10px] font-semibold ${statusStyle}`}>
+            {statusLabel}
+          </span>
         </div>
 
-        {/* Progress — thicker bar + clearer step count. Shows the
-            relevant-service progress when in a service column; overall
-            otherwise (e.g. "All Done"). */}
-        <div className="mt-2.5">
+        {/* ── Line 2 ─ Owner + service + ETA + inactivity ──────────── */}
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground flex-wrap">
+          {owner ? (
+            <div className="flex items-center gap-1 min-w-0">
+              <Avatar name={owner.name} email={owner.email} url={owner.avatarUrl} size="xs" tone="primary" />
+              <span className="truncate text-foreground/80 font-medium">{owner.name || owner.email || 'Owner'}</span>
+            </div>
+          ) : (
+            <span className="text-muted-foreground italic">Unassigned</span>
+          )}
+          {relevant && (
+            <>
+              <span className="text-muted-foreground/40">·</span>
+              <span className="font-medium text-foreground/70 truncate">{relevant.label || relevant.serviceType}</span>
+            </>
+          )}
+          {etaLabel && (
+            <>
+              <span className="text-muted-foreground/40">·</span>
+              <span className={`inline-flex items-center gap-0.5 ${
+                etaTone === 'danger'  ? 'text-rose-600 font-semibold'  :
+                etaTone === 'warning' ? 'text-amber-700 font-semibold' :
+                                        'text-muted-foreground'
+              }`}>
+                <CalendarClock className="h-2.5 w-2.5" /> {etaLabel}
+              </span>
+            </>
+          )}
+          {inactivityLabel && (
+            <>
+              <span className="text-muted-foreground/40">·</span>
+              <span className={`inline-flex items-center gap-0.5 ${
+                inactivityTone === 'danger' ? 'text-rose-600 font-semibold' : 'text-amber-700'
+              }`}>
+                <Wifi className="h-2.5 w-2.5" /> {inactivityLabel}
+              </span>
+            </>
+          )}
+        </div>
+
+        {/* ── Line 3 ─ Next action (when set) ───────────────────────── */}
+        {nextAction && (
+          <p className="text-[11.5px] leading-snug text-foreground/85 flex items-start gap-1.5">
+            <ArrowRight className="h-3 w-3 text-primary shrink-0 mt-0.5" />
+            <span className="line-clamp-1" title={nextAction}>{nextAction}</span>
+          </p>
+        )}
+
+        {/* ── Blocker strip ─ red, mandatory visibility ─────────────── */}
+        {isBlocked && (
+          <div className="flex items-start gap-1.5 text-[11px] rounded-md border border-rose-500/25 bg-rose-500/[0.06] px-2 py-1">
+            <ShieldX className="h-3 w-3 text-rose-600 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-rose-700 capitalize">{wf.blockerType?.replace(/_/g, ' ')}</p>
+              {wf.blockerReason && (
+                <p className="text-rose-700/85 line-clamp-2 leading-snug">{wf.blockerReason}</p>
+              )}
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); setUnblockModal(true); }}
+              className="shrink-0 inline-flex items-center gap-0.5 px-1.5 h-[20px] rounded text-[10px] font-semibold text-rose-700 hover:bg-rose-500/12 transition-colors"
+              title="Unblock"
+            >
+              <Unlock className="h-2.5 w-2.5" /> Unblock
+            </button>
+          </div>
+        )}
+
+        {/* ── Progress + step count ────────────────────────────────── */}
+        <div>
           <div className="flex items-center justify-between mb-1">
             <span className="text-[10px] font-semibold text-muted-foreground tabular-nums">
-              {relevant ? `${relTicked} of ${relTotal} steps` : `${pct}% overall`}
+              {relevant ? `${relTicked}/${relTotal} steps` : `${pct}% overall`}
             </span>
             <span className="text-[10px] text-muted-foreground tabular-nums">
-              {relevant ? `${relTotal ? Math.round((relTicked / relTotal) * 100) : 0}%` : `${doneItems}/${totalItems}`}
+              {relevant ? `${relPct}%` : `${doneItems}/${totalItems}`}
             </span>
           </div>
           <div className="h-1.5 rounded-full bg-muted/40 overflow-hidden">
             <div className={`h-full transition-all duration-300 ${
-              (relevant ? relTicked === relTotal : pct === 100) ? 'bg-emerald-500' : 'bg-primary'
+              (relevant ? relTicked === relTotal : pct === 100) ? 'bg-emerald-500'
+              : isBlocked ? 'bg-rose-500'
+              : 'bg-primary'
             }`}
-              style={{ width: `${relevant ? (relTotal ? (relTicked / relTotal) * 100 : 0) : pct}%` }} />
+              style={{ width: `${relevant ? relPct : pct}%` }} />
           </div>
         </div>
 
-        {/* Last major update — most recent activity-log entry, pulled
-            from the server. Anyone glancing at the board sees what just
-            happened on this project. */}
+        {/* ── Last update ─ "2h ago — Sakshi ticked Pixel verified" ── */}
         {wf.lastUpdate?.detail && (
-          <div className="mt-2.5 -mx-3 px-3 py-1.5 bg-muted/30 border-t border-border">
-            <p className="text-[9px] uppercase tracking-wider text-muted-foreground/80 font-bold">Last update</p>
-            <p className="text-[11px] text-foreground line-clamp-2 mt-0.5 leading-snug">{wf.lastUpdate.detail}</p>
-          </div>
+          <p className="text-[10.5px] text-muted-foreground leading-snug">
+            <Clock className="h-2.5 w-2.5 inline-block -mt-0.5 mr-1" />
+            {wf.lastUpdate.at && (
+              <span className="font-medium text-foreground/70">
+                {formatDistanceToNowStrict(new Date(wf.lastUpdate.at), { addSuffix: true })}
+              </span>
+            )}
+            <span className="ml-1 line-clamp-1 inline">— {wf.lastUpdate.detail}</span>
+          </p>
         )}
+
+        {/* ── Inline action row ────────────────────────────────────── */}
+        <div className="flex items-center gap-1 flex-wrap pt-0.5">
+          {relevant && relevant.status !== 'done' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setConfirmMarkDone(true); }}
+              disabled={busy}
+              className="inline-flex items-center gap-0.5 px-1.5 h-[22px] rounded text-[10.5px] font-semibold bg-emerald-500/12 text-emerald-700 hover:bg-emerald-500/20 disabled:opacity-50"
+              title="Mark current stage done"
+            >
+              <CheckCircle2 className="h-2.5 w-2.5" /> Done
+            </button>
+          )}
+          {!isBlocked && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setBlockModal(true); }}
+              disabled={busy}
+              className="inline-flex items-center gap-0.5 px-1.5 h-[22px] rounded text-[10.5px] font-semibold text-muted-foreground hover:bg-rose-500/10 hover:text-rose-700 disabled:opacity-50"
+              title="Mark blocked"
+            >
+              <ShieldX className="h-2.5 w-2.5" /> Block
+            </button>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); setCommentOpen(v => !v); }}
+            disabled={busy}
+            className={`inline-flex items-center gap-0.5 px-1.5 h-[22px] rounded text-[10.5px] font-semibold disabled:opacity-50 ${
+              commentOpen
+                ? 'bg-primary/15 text-primary'
+                : 'text-muted-foreground hover:bg-primary/10 hover:text-primary'
+            }`}
+            title="Drop a quick comment"
+          >
+            <MessageSquare className="h-2.5 w-2.5" /> Note
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
+            className="ml-auto inline-flex items-center gap-0.5 px-1.5 h-[22px] rounded text-[10.5px] text-muted-foreground hover:bg-muted hover:text-foreground"
+            title={expanded ? "Hide what's left" : "See what's left"}
+          >
+            {expanded ? <ChevronDown className="h-2.5 w-2.5" /> : <ChevronRight className="h-2.5 w-2.5" />}
+            {remaining.length > 0 ? `${remaining.length} left` : 'detail'}
+          </button>
+        </div>
+
+        {/* ── Inline comment row ─ no modal, just a one-line input ─── */}
+        <AnimatePresence>
+          {commentOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="flex items-center gap-1.5 pt-1">
+                <input
+                  autoFocus
+                  value={commentText}
+                  onChange={e => setCommentText(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); submitComment(); }
+                    if (e.key === 'Escape') { setCommentOpen(false); setCommentText(''); }
+                  }}
+                  placeholder="Quick note for the audit log…"
+                  className="flex-1 min-w-0 px-2 h-7 bg-background border border-input rounded-md text-[11.5px] focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <button
+                  onClick={(e) => { e.stopPropagation(); submitComment(); }}
+                  disabled={busy || commentText.trim().length < 3}
+                  className="h-7 w-7 rounded-md bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-50 hover:bg-primary/90"
+                  title="Send"
+                >
+                  <Send className="h-3 w-3" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Expandable "what's left" — checklist of pending items so you can
-          see EXACTLY what's blocking the move to the next stage without
-          having to open the workflow detail page. */}
+      {/* Expandable "what's left" — checklist of pending items so admin
+          can see EXACTLY what's blocking advance without opening the
+          detail page. */}
       <AnimatePresence initial={false}>
         {expanded && (
           <motion.div
@@ -708,11 +916,11 @@ function ClientCard({ wf, highlightServiceType, onMutated, onOpenDrawer }: {
             <div className="px-3 py-2 space-y-1">
               {remaining.length === 0 ? (
                 <div className="flex items-center gap-1.5 text-[11px] text-emerald-700">
-                  <CheckCircle2 className="h-3 w-3" /> Nothing left in this stage — ready to advance.
+                  <CheckCircle2 className="h-3 w-3" /> Nothing left — ready to advance.
                 </div>
               ) : (
                 <>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1">
                     {remaining.length} step{remaining.length === 1 ? '' : 's'} left
                   </p>
                   {remaining.slice(0, 5).map((r, idx) => (
@@ -722,24 +930,21 @@ function ClientCard({ wf, highlightServiceType, onMutated, onOpenDrawer }: {
                     </div>
                   ))}
                   {remaining.length > 5 && (
-                    <Link to={`/clients/pipeline/${wf._id}`} className="block text-[10px] text-primary hover:underline mt-1">
+                    <button
+                      onClick={() => onOpenDrawer?.(wf._id, wf.clientName)}
+                      className="block text-[10px] text-primary hover:underline mt-1"
+                    >
                       View all {remaining.length} →
-                    </Link>
+                    </button>
                   )}
                 </>
               )}
-              <Link
-                to={`/clients/pipeline/${wf._id}`}
-                className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline mt-1.5"
-              >
-                Click for details <ArrowRight className="h-3 w-3" />
-              </Link>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Comment-required modal — replaces the old window.prompt(). */}
+      {/* ── Modals ──────────────────────────────────────────────────── */}
       {confirmMarkDone && (
         <CommentRequiredModal
           title={`Mark "${relevant?.label || 'service'}" done`}
@@ -751,7 +956,130 @@ function ClientCard({ wf, highlightServiceType, onMutated, onOpenDrawer }: {
           onClose={() => setConfirmMarkDone(false)}
         />
       )}
+      {blockModal && (
+        <InlineBlockModal
+          onSubmit={handleBlock}
+          onClose={() => setBlockModal(false)}
+        />
+      )}
+      {unblockModal && (
+        <CommentRequiredModal
+          title="Unblock this project?"
+          description="What changed — e.g. client confirmed assets received."
+          placeholder="What unblocked the project?"
+          primaryLabel="Unblock"
+          tone="success"
+          onSubmit={handleUnblock}
+          onClose={() => setUnblockModal(false)}
+        />
+      )}
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// InlineBlockModal — same UX as drawer's BlockProjectModal but inlined here
+// so cards don't need to import that big component. Captures blockerType +
+// reason and uses the audit-trail comment field as both the reason AND
+// the log entry (they're the same thing in a Block action).
+// ─────────────────────────────────────────────────────────────────────────
+const BLOCKER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'waiting_client_input',      label: 'Waiting on client'             },
+  { value: 'waiting_internal_approval', label: 'Waiting on internal approval'  },
+  { value: 'dependency',                label: 'Dependency blocked'            },
+  { value: 'technical',                 label: 'Technical issue'               },
+  { value: 'budget',                    label: 'Budget / scope hold'           },
+];
+
+function InlineBlockModal({
+  onSubmit, onClose,
+}: {
+  onSubmit: (p: { blockerType: string; blockerReason: string; comment: string }) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [blockerType, setBlockerType] = useState('waiting_client_input');
+  const [reason, setReason]           = useState('');
+  const [submitting, setSubmitting]   = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !submitting) onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [submitting, onClose]);
+
+  const trimmed = reason.trim();
+  const canSubmit = trimmed.length >= 3 && !submitting;
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    try {
+      await onSubmit({ blockerType, blockerReason: trimmed, comment: trimmed });
+      onClose();
+    } catch { /* caller toasts */ }
+    finally { setSubmitting(false); }
+  };
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.96, y: 8 }}
+          onClick={e => e.stopPropagation()}
+          className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+        >
+          <div className="px-5 py-3 border-b border-border flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldX className="h-4 w-4 text-rose-600" />
+              <p className="text-sm font-semibold">Mark project blocked</p>
+            </div>
+            <button onClick={onClose} disabled={submitting} className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted disabled:opacity-50">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="p-5 space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground">Blocker type</label>
+              <select
+                value={blockerType}
+                onChange={e => setBlockerType(e.target.value)}
+                disabled={submitting}
+                className="w-full px-3 h-9 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                {BLOCKER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground">Reason</label>
+              <textarea
+                autoFocus
+                value={reason}
+                onChange={e => setReason(e.target.value)}
+                rows={3}
+                placeholder="Say WHY this is blocked — e.g. waiting on Meta ad-account access."
+                className="w-full px-3 py-2 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <button onClick={onClose} disabled={submitting}
+                className="px-3 h-9 rounded-lg text-xs font-semibold text-muted-foreground hover:bg-muted disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={submit} disabled={!canSubmit}
+                className="px-4 h-9 rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50 bg-rose-600 hover:bg-rose-700 text-white">
+                {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {submitting ? 'Saving…' : 'Mark blocked'}
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
