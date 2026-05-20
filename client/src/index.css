@@ -6,60 +6,85 @@
 @tailwind utilities;
 
 /*
- * Robin "Robin's-Egg" theme — DEFAULT.
+ * Robin "Forest Clay" theme — DEFAULT.
  *
- * This is the brand palette: deep teal primary + saffron-gold accent,
- * bone-cream background. Restored on owner request after a brief detour
- * to a Rani Pink experiment (now preserved as opt-in via
- * `<html data-theme="pink">` if it's ever wanted back).
+ * Owner-asked rebrand to a calm, premium, operational palette inspired by
+ * Google AI Studio's restraint + Linear's density. Goal: agency tooling
+ * that feels like a control room, not a marketing site.
  *
- * Primary       Deep teal (#155F5A) — robin's-egg blue dialled to a
- *               serious/premium tone. Most SaaS picks generic blue/violet;
- *               teal sets Robin apart.
- * Accent        Saffron gold — culturally Indian, contrasts the teal cleanly,
- *               reads as "premium" not "playful". Used sparingly: gradient
- *               heroes (Login, WorkroomHome, ClientDashboard), CTAs, deal-
- *               won surfaces.
- * Background    Bone cream — warm off-white, never the cold blue-grey
- *               "Tailwind default" look.
- * Foreground    Deep charcoal with the slightest blue tint — softer on
- *               eyes than pure black, sharper than navy.
- * Border        Hairline warm grey to keep everything calm.
- *
- * Why this is "the brand": it pairs (a) the literal robin's-egg colour
- * association of the product name with (b) saffron, the most recognisable
- * Indian colour signal. Together: Indian agency tooling, considered.
+ * Primary       Forest green (#4F6F52) — muted, mature, never neon. Reads
+ *               as "considered" — the brand color you'd expect from an
+ *               agency that ships, not one that pitches.
+ * Hover         Deeper forest (#3F5B41) — used on primary hover states.
+ * Accent        Warm clay (#A67C52) — earthy, contrasts the forest cleanly,
+ *               surfaces on secondary actions + gradient heroes only.
+ * Background    Warm cream (#F6F1E8) — not the cold blue-grey "Tailwind
+ *               default" look. Sits beautifully under both forest and clay.
+ * Card          Near-white cream (#FFFCF7) — surfaces lift gently off bg.
+ * Foreground    Deep slate (#1E293B) — sharper than navy, softer than black.
+ * Border        Soft warm grey (#DED6C8) — hairline, calm.
+ * Success       Forest-leaning green (#4D7C5A) — adjacent to primary so
+ *               the palette stays unified.
+ * Warning       Antique gold (#C08A3E) — sits in the clay family.
+ * Danger        Muted brick (#C75C5C) — not the alarmist rose-500.
  *
  * Every page in Robin reads from these tokens (`hsl(var(--primary))`,
  * `bg-card`, `text-muted-foreground`, etc.), so swapping the palette here
- * cascades to the gradient heroes, status pills, accent strips, the SlimSidebar
- * logo lockup — everything — without touching individual pages.
+ * cascades to the gradient heroes, status pills, accent strips, sidebar
+ * logo lockup — everything — without per-page edits. Previous themes
+ * (Robin's-Egg teal/saffron, Rani Pink) are preserved as opt-in:
+ *   <html data-theme="classic">  → teal + saffron
+ *   <html data-theme="pink">     → Rani Pink
  */
 :root {
-  --background:          36 30% 97%;        /* bone cream */
+  --background:          39 47% 94%;        /* #F6F1E8 — warm cream */
+  --foreground:          217 33% 17%;       /* #1E293B — deep slate */
+  --card:                38 100% 98%;       /* #FFFCF7 — near-white cream */
+  --card-foreground:     217 33% 17%;
+  --popover:             38 100% 98%;
+  --popover-foreground:  217 33% 17%;
+  --border:              38 24% 83%;        /* #DED6C8 — soft warm grey */
+  --input:               38 24% 83%;
+  --primary:             126 17% 37%;       /* #4F6F52 — forest green */
+  --primary-foreground:  38 100% 98%;
+  --muted:               39 33% 89%;        /* #EEE7DA — secondary bg */
+  --muted-foreground:    220 13% 46%;       /* #667085 — muted text */
+  --accent:              30 34% 49%;        /* #A67C52 — warm clay */
+  --accent-foreground:   38 100% 98%;
+  --ring:                126 17% 37%;
+  --destructive:         0   51% 57%;       /* #C75C5C — muted brick */
+  --success:             135 23% 39%;       /* #4D7C5A — forest-green */
+  --warning:             35  51% 50%;       /* #C08A3E — antique gold */
+  --radius:              0.625rem;          /* tight, productive */
+  color-scheme: light;
+}
+
+/* ── Opt-in themes (data-theme attribute on <html>) ────────────────── */
+
+/* Robin's-Egg — the previous brand teal+saffron palette. */
+:root[data-theme='classic'] {
+  --background:          36 30% 97%;
   --foreground:          218 20% 14%;
   --card:                0 0% 100%;
   --card-foreground:     218 20% 14%;
   --popover:             0 0% 100%;
   --popover-foreground:  218 20% 14%;
-  --border:              35 14% 91%;        /* warm hairline grey */
+  --border:              35 14% 91%;
   --input:               35 14% 89%;
-  --primary:             178 65% 26%;       /* deep teal — Robin's-Egg */
+  --primary:             178 65% 26%;
   --primary-foreground:  36 30% 98%;
   --muted:               36 22% 95%;
   --muted-foreground:    218 8% 44%;
-  --accent:              38 88% 52%;        /* saffron gold */
+  --accent:              38 88% 52%;
   --accent-foreground:   218 20% 14%;
   --ring:                178 65% 26%;
   --destructive:         358 65% 50%;
   --success:             158 50% 32%;
   --warning:             38 88% 52%;
   --radius:              0.75rem;
-  color-scheme: light;
 }
 
-/* Optional Rani Pink theme — opt-in via <html data-theme="pink">.
-   Preserved so we can A/B it later if needed; not used in production. */
+/* Rani Pink — the prior experiment, kept for A/B if needed. */
 :root[data-theme='pink'] {
   --background:          30 6% 99%;
   --foreground:          220 20% 10%;
@@ -69,11 +94,11 @@
   --popover-foreground:  220 20% 10%;
   --border:              220 8% 90%;
   --input:               220 8% 88%;
-  --primary:             340 82% 52%;       /* Rani Pink */
+  --primary:             340 82% 52%;
   --primary-foreground:  0 0% 100%;
   --muted:               220 8% 94%;
   --muted-foreground:    220 8% 44%;
-  --accent:              280 65% 60%;       /* deep magenta */
+  --accent:              280 65% 60%;
   --accent-foreground:   0 0% 100%;
   --ring:                340 82% 52%;
   --destructive:         354 75% 55%;
