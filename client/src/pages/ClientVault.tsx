@@ -9,6 +9,7 @@ import {
 import * as api from '@/api';
 import { toast } from 'sonner';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Button } from '@/components/ui/Button';
 
 type CredType = 'website' | 'social' | 'ad' | 'email' | 'api' | 'hosting' | 'analytics' | 'other';
 
@@ -114,21 +115,20 @@ export default function ClientVault() {
 
   return (
     <AppLayout>
-      <div className="max-w-5xl mx-auto space-y-5 page-transition-enter">
+      <div className="max-w-5xl mx-auto space-y-5">
         {/* Header */}
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <KeyRound className="h-6 w-6 text-primary" /> Client Vault
+            <h1 className="text-[20px] font-bold tracking-tight inline-flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-primary" /> Client Vault
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[12px] text-muted-foreground">
               All client logins, accounts and links in one place. Click any field to copy.
             </p>
           </div>
-          <button onClick={() => setAdding(v => !v)}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 shadow-sm">
-            <Plus className="h-4 w-4" /> Add credential
-          </button>
+          <Button size="sm" intent="primary" iconLeft={<Plus className="h-3.5 w-3.5" />} onClick={() => setAdding(v => !v)}>
+            Add credential
+          </Button>
         </div>
 
         {/* Inline create form */}
