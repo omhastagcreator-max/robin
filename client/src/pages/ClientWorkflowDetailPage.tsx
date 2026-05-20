@@ -800,6 +800,22 @@ export default function ClientWorkflowDetailPage() {
               </div>
             )}
 
+            {/* Permission hint — when canEditActive is false the user has
+                been quietly seeing greyed-out checkboxes with no explanation.
+                Now we say why explicitly so the bug-report "can't tick" gets
+                a real cause instead of silence. */}
+            {!canEditActive && active.checklist.length > 0 && (
+              <div className="flex items-start gap-2 text-[11.5px] text-amber-700 bg-amber-500/[0.06] border border-amber-500/20 rounded-lg px-3 py-2">
+                <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <p className="leading-snug">
+                  Read-only view — this service is owned by{' '}
+                  <strong>{active.assignee?.name || 'someone else'}</strong>.
+                  Only the assignee or an admin can tick steps. If you should
+                  own this, ask admin to reassign it to you.
+                </p>
+              </div>
+            )}
+
             {/* Checklist — always editable when user has access; deps don't block prep */}
             <div className="space-y-0.5">
               {active.checklist.length === 0 ? (
@@ -810,8 +826,10 @@ export default function ClientWorkflowDetailPage() {
                   return (
                     <label key={i}
                       className={`flex items-start gap-3 px-2 py-2 rounded-lg transition-colors ${
-                        editable ? 'hover:bg-primary/[0.03] cursor-pointer' : 'opacity-70'
-                      }`}>
+                        editable ? 'hover:bg-primary/[0.03] cursor-pointer' : 'opacity-70 cursor-not-allowed'
+                      }`}
+                      title={editable ? undefined : 'Read-only — not the assignee'}
+                    >
                       <input type="checkbox" checked={c.done}
                         disabled={!editable}
                         onChange={e => askToggle(active._id, i, e.target.checked, c.text, active.label)}
