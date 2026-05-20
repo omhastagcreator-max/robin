@@ -9,6 +9,7 @@ import {
   ConnectionState,
 } from 'livekit-client';
 import * as api from '@/api';
+import { logShareEvent } from '@/lib/screenShareDebug';
 
 // Dev-only debug logger. In production these are no-ops — the ~10 calls
 // per huddle session were filling clients' DevTools consoles with chatter
@@ -73,6 +74,12 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
   const [joining, setJoining]     = useState(false);
   const [audioOn, setAudioOn]     = useState(false);
   const [screenOn, setScreenOn]   = useState(false);
+  // Mirror `screenOn` in a ref so the LiveKit ConnectionStateChanged
+  // listener (declared once at join time, never re-created) can read
+  // the LATEST value when it fires on reconnect. Without this we'd
+  // capture the value-at-join, which is always false.
+  const screenOnRef = useRef(false);
+  useEffect(() => { screenOnRef.current = screenOn; }, [screenOn]);
   const [peers, setPeers]         = useState<Record<string, PeerView>>({});
   const [error, setError]         = useState<string | null>(null);
   const [networkBlocked, setNetworkBlocked] = useState(false);
@@ -222,8 +229,30 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
         .on(RoomEvent.LocalTrackUnpublished,   () => syncLocal(room.localParticipant))
         .on(RoomEvent.ConnectionStateChanged,  (state) => {
           log('connection', state);
+          logShareEvent('note', `livekit connection=${state}`);
           if (state === ConnectionState.Disconnected) {
             setNetworkBlocked(false);
+          }
+          // ── Re-publish screen share after LiveKit reconnects ─────────
+          // When the room comes back online (TCP/UDP fluctuation, server
+          // restart on Render, etc.), check whether we WERE sharing before
+          // the drop. LiveKit's SDK auto-resubscribes remote tracks, but
+          // LOCAL screen-share publications are sometimes lost when the
+          // SFU session is re-established. We re-publish iff our React
+          // state says we were sharing and no current ScreenShare pub
+          // exists post-reconnect.
+          if (state === ConnectionState.Connected) {
+            try {
+              const lp = room.localParticipant;
+              const hasScreenPub = Array.from(lp.videoTrackPublications.values())
+                .some(p => p.source === Track.Source.ScreenShare);
+              if (screenOnRef.current && !hasScreenPub) {
+                logShareEvent('livekit-reconnect-republish', 'screen pub missing after reconnect — re-publishing');
+                lp.setScreenShareEnabled(true).catch((e) => {
+                  logShareEvent('error', 'livekit re-publish failed', { message: e?.message });
+                });
+              }
+            } catch { /* ignore */ }
           }
         })
         .on(RoomEvent.Disconnected,            () => {
@@ -317,12 +346,16 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
     const room = roomRef.current;
     if (!room) return;
     const next = !screenOn;
+    logShareEvent('note', `livekit toggleScreen → ${next}`);
     try {
       await room.localParticipant.setScreenShareEnabled(next);
       setScreenOn(next);
-    } catch (e) {
-      // User cancelled the screen picker — silent.
+      logShareEvent('note', `livekit screen share=${next}`);
+    } catch (e: any) {
+      // User cancelled the screen picker — silent in console, recorded in
+      // the share-event ring so support can see why.
       log('toggleScreen failed/cancelled', e);
+      logShareEvent('error', `livekit toggleScreen failed`, { message: e?.message });
     }
   }, [screenOn]);
 

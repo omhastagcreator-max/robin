@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 import * as api from '@/api';
 import { getIceServers } from '@/lib/iceServers';
 import { getSharedSocket } from '@/hooks/useSocket';
+import { screenShareManager } from '@/lib/screenShareManager';
+import { logShareEvent } from '@/lib/screenShareDebug';
 
 // Resolved at first use via getIceServers() — see lib/iceServers.ts. Order:
 // (1) Metered.live REST API   (2) static VITE_TURN_*   (3) public STUN.
@@ -28,111 +30,155 @@ function getSocket(userId: string): Socket | null {
 }
 
 // ── Sender (Employee broadcasting their screen) ──────────────────────────────
+//
+// As of Phase 7, the MediaStream lifecycle lives in screenShareManager. This
+// hook is a thin React adapter that:
+//   1. Subscribes to the manager's snapshot for UI (isSharing, recovering…).
+//   2. Owns the RTCPeerConnection mesh + signaling: when an admin asks to view,
+//      we build a PC and attach the manager's track. When the manager hands us
+//      a new track (after recovery), we replaceTrack on every existing PC so
+//      the watcher's view doesn't break.
+//   3. Re-emits screen:start on socket reconnect so the server's presence
+//      table doesn't drift after a transient drop.
+//   4. Surfaces a sticky toast when the share dies unexpectedly. Recovery
+//      itself is handled by the manager — the toast is purely informative.
+//
+// Why this split: the manager state machine is plain TypeScript, free of
+// React's render lifecycle, so a remount of AppLayout (or React 18 StrictMode
+// double-mount in dev) doesn't kill an in-flight share.
+
 export function useWebRTCSender(userId: string) {
-  const [isSharing, setIsSharing] = useState(false);
-  // "Brute-force keep alive" — once the user has consciously started a
-  // share, this stays true until they explicitly stop. If sharing dies
-  // for ANY reason other than their click (OS sleep, Chrome Stop pill,
-  // tab discard, etc.), the UI keeps showing the "Resume sharing" pill
-  // and the next click anywhere on the page is treated as a retry
-  // gesture for getDisplayMedia.
-  //
-  // Persisted in localStorage so a reload doesn't lose the intent. We
-  // use a global key (not per-user) because (a) userId is often empty
-  // on the very first render before AuthProvider settles, and (b)
-  // there's only one user signed into the browser at a time anyway —
-  // we wipe on logout. The earlier per-user key meant the state was
-  // initialised as `false` on the first render and never picked up
-  // when userId resolved a tick later.
-  const PERSIST_KEY = 'robin.screenShare.persist';
-  const [persistentIntent, setPersistentIntentState] = useState<boolean>(() => {
-    try { return localStorage.getItem(PERSIST_KEY) === '1'; } catch { return false; }
-  });
-  const setPersistentIntent = useCallback((on: boolean) => {
-    setPersistentIntentState(on);
-    try { on ? localStorage.setItem(PERSIST_KEY, '1') : localStorage.removeItem(PERSIST_KEY); }
-    catch { /* private mode */ }
+  // Subscribe to the manager's snapshot. The manager IS the source of truth.
+  const [snap, setSnap] = useState(() => screenShareManager.getSnapshot());
+  useEffect(() => {
+    return screenShareManager.subscribe(() => {
+      setSnap(screenShareManager.getSnapshot());
+    });
   }, []);
+
+  const isSharing       = snap.isSharing;
+  const persistentIntent = snap.intent;
+
+  const setPersistentIntent = useCallback((on: boolean) => {
+    screenShareManager.setIntent(on);
+  }, []);
+
   // Sender keeps one PC per admin watching, so multiple admins can view at once.
   const pcMap = useRef<Map<string, RTCPeerConnection>>(new Map());
-  const streamRef = useRef<MediaStream | null>(null);
   const socketRef = useRef<Socket | null>(null);
   // Buffer ICE candidates that arrive before remoteDescription is set on a PC.
   const pendingIce = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
-  // True while a teardown is already in flight — prevents the onended →
-  // stopSharing → t.stop() → onended recursion that was double-emitting
-  // screen:stop and double-firing updateScreenStatus on every manual stop.
+  // True while we're currently mid-stop, so onended events from t.stop()
+  // don't trigger a spurious resume toast.
   const stoppingRef = useRef(false);
-  // True ONLY when the user clicked Stop in our UI. If onended fires while
-  // this is false, the browser ended the track unexpectedly (user clicked
-  // Chrome's native Stop pill, the source window closed, OS sleep, etc.).
-  // Lets us surface a "Sharing ended — resume?" toast instead of silently
-  // killing the share.
-  const manualStopRef = useRef(false);
-  // Wake-lock keeps the Mac display from sleeping while we're sharing —
-  // macOS aggressively cuts screen-capture when the display sleeps. Held
-  // for the lifetime of the share, released in stopSharing.
-  const wakeLockRef = useRef<any>(null);
-  // Keep-alive interval that polls track.readyState. When the OS, browser
-  // tab discard, or memory-saver kills the track WITHOUT firing onended
-  // (which happens on Mac under tab freezing), this catches it within 2s
-  // instead of leaving the UI stuck on "Sharing".
-  const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Forward declarations so closures can call each other
   const stopAllPCs = useCallback(() => {
-    pcMap.current.forEach(pc => pc.close());
+    pcMap.current.forEach(pc => { try { pc.close(); } catch { /* ignore */ } });
     pcMap.current.clear();
     pendingIce.current.clear();
   }, []);
 
-  const stopSharing = useCallback(async () => {
-    // Guard against re-entry: t.stop() below fires onended → onended calls
-    // stopSharing → infinite recursion + double network emits. The ref-flag
-    // is the only way to break the cycle since onended runs async.
-    if (stoppingRef.current) return;
-    stoppingRef.current = true;
-    manualStopRef.current = true;
-    // User clicked stop on PURPOSE → clear the persistent-intent flag so
-    // the resume banner / click-armed retry don't trigger.
-    setPersistentIntent(false);
-    console.log('[screen-share] stopSharing called');
-    try {
-      // Clear watchdog before tearing down tracks so it doesn't fire
-      // mid-teardown and trigger spurious "share ended" diagnostics.
-      if (watchdogRef.current) { clearInterval(watchdogRef.current); watchdogRef.current = null; }
-      // Release the screen wake-lock so the Mac can sleep normally.
-      if (wakeLockRef.current) {
-        try { await wakeLockRef.current.release(); } catch { /* ignore */ }
-        wakeLockRef.current = null;
-      }
-      streamRef.current?.getTracks().forEach(t => {
-        // Clear onended FIRST so t.stop() can't re-enter via the handler.
-        t.onended = null;
-        try { t.stop(); } catch { /* track already ended */ }
+  // ── Track lifecycle from the manager ────────────────────────────────────
+  // The manager notifies us when a new track is acquired (initial start
+  // OR recovery). On every track change we hot-swap it onto all existing
+  // RTCRtpSenders so admins watching us don't have to re-request a view.
+  useEffect(() => {
+    const onTrack = (newTrack: MediaStreamTrack | null) => {
+      if (!newTrack) return;
+      logShareEvent('note', `useWebRTCSender — hot-swap track onto ${pcMap.current.size} PCs`);
+      pcMap.current.forEach((pc) => {
+        const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+        if (sender) {
+          sender.replaceTrack(newTrack).catch((e) => {
+            logShareEvent('error', 'replaceTrack failed', { message: (e as Error).message });
+          });
+        } else {
+          // No existing video sender — add a fresh one.
+          try { pc.addTrack(newTrack); } catch { /* ignore */ }
+        }
       });
-      streamRef.current = null;
-      stopAllPCs();
-      setIsSharing(false);
-      try { await api.updateScreenStatus({ status: 'inactive' }); } catch { /* ignore */ }
-      socketRef.current?.emit('screen:stop', { userId });
-    } finally {
-      stoppingRef.current = false;
-      // Reset manualStop so the NEXT share's onended fires correctly.
-      // Defer to next tick so any racing onended sees true (no auto-toast).
-      setTimeout(() => { manualStopRef.current = false; }, 0);
-    }
-  }, [userId, stopAllPCs]);
+    };
+    return screenShareManager.subscribeTrack(onTrack);
+  }, []);
 
+  // ── React to state transitions: side-effects (server status, toasts) ────
+  const prevSharingRef = useRef<boolean>(false);
+  const prevStateRef = useRef(snap.state);
+  useEffect(() => {
+    const prev = prevSharingRef.current;
+    const prevState = prevStateRef.current;
+    prevSharingRef.current = isSharing;
+    prevStateRef.current = snap.state;
+
+    const socket = socketRef.current;
+
+    // Share started (true edge)
+    if (!prev && isSharing) {
+      api.updateScreenStatus({ status: 'active', startedAt: new Date().toISOString() }).catch(() => {});
+      socket?.emit('screen:start', { userId });
+      // Dismiss any lingering resume toast.
+      toast.dismiss('screen-share-resume');
+    }
+
+    // Share stopped (true edge)
+    if (prev && !isSharing) {
+      stopAllPCs();
+      api.updateScreenStatus({ status: 'inactive' }).catch(() => {});
+      socket?.emit('screen:stop', { userId });
+
+      // Distinguish user-stop (clean) from anything else (toast).
+      const reason = snap.lastEndReason;
+      const userIntended = reason === 'user';
+      if (!userIntended && !stoppingRef.current) {
+        const reasonCopy: Record<string, string> = {
+          'browser-stop-pill': 'You clicked Chrome\'s "Stop sharing" toolbar.',
+          'source-closed':     'The window or tab you were sharing was closed.',
+          'system-sleep':      'Your Mac display went to sleep — capture stopped.',
+          'tab-discard':       'Chrome\'s Memory Saver paused this tab.',
+          'device-change':     'A display change was detected.',
+          'network':           'A network blip ended the share.',
+          'unknown':           'The browser ended the share without telling us why.',
+        };
+        const description = reasonCopy[reason || 'unknown'] || reasonCopy.unknown;
+        toast.error('Screen sharing stopped — click anywhere to resume', {
+          id:       'screen-share-resume',
+          description,
+          duration: 1_000 * 60 * 10,  // 10 min — long but not Infinity (Sonner leaks elements at Infinity)
+          action:   { label: 'Resume now', onClick: () => { void screenShareManager.start(); } },
+        });
+      }
+    }
+
+    // State transitions worth surfacing — blocked / recovering
+    if (snap.state === 'blocked' && prevState !== 'blocked') {
+      const desc = snap.blockReason === 'cross-tab'
+        ? 'Another Robin tab is already sharing. Close it and try again.'
+        : snap.blockReason === 'unsupported'
+        ? 'Your browser doesn\'t support screen capture.'
+        : 'Browser denied permission. Check System Settings → Screen Recording.';
+      toast.error('Screen sharing blocked', { id: 'screen-share-blocked', description: desc, duration: 8_000 });
+    }
+  }, [isSharing, snap.state, snap.lastEndReason, snap.blockReason, stopAllPCs, userId]);
+
+  // ── Socket signaling (offer / answer / ICE) + reconnect re-announce ────
   useEffect(() => {
     if (!userId) return;
     const socket = getSocket(userId);
-    if (!socket) return;            // shared socket not ready yet
+    if (!socket) return;
     socketRef.current = socket;
+
+    const announce = () => {
+      if (screenShareManager.isSharing()) {
+        logShareEvent('socket-reconnect-republish', 're-announcing screen:start to server');
+        socket.emit('screen:start', { userId });
+        api.updateScreenStatus({ status: 'active', startedAt: new Date().toISOString() }).catch(() => {});
+      }
+    };
 
     // Admin asks to view our screen — create a PC just for them.
     const onViewRequest = async ({ adminId }: { adminId: string }) => {
-      if (!streamRef.current) return; // not broadcasting yet
+      const track = screenShareManager.getTrack();
+      if (!track) return; // not broadcasting yet
       // Tear down any prior PC for this admin (they may be reconnecting).
       pcMap.current.get(adminId)?.close();
 
@@ -140,7 +186,9 @@ export function useWebRTCSender(userId: string) {
       attachConnLogging(pc, `sender→${adminId.slice(0, 6)}`);
       pcMap.current.set(adminId, pc);
 
-      streamRef.current.getTracks().forEach(t => pc.addTrack(t, streamRef.current!));
+      try { pc.addTrack(track); } catch (e: any) {
+        logShareEvent('error', 'addTrack failed', { message: e?.message });
+      }
 
       pc.onicecandidate = (e) => {
         if (e.candidate) socket.emit('webrtc:ice', { target: adminId, candidate: e.candidate, senderId: userId });
@@ -169,7 +217,7 @@ export function useWebRTCSender(userId: string) {
     const onIce = async ({ candidate, senderId }: any) => {
       if (!candidate) return;
       const pc = pcMap.current.get(senderId);
-      if (!pc) return; // not a PC we manage (could be receiver-side ICE)
+      if (!pc) return;
       if (!pc.remoteDescription) {
         const list = pendingIce.current.get(senderId) || [];
         list.push(candidate);
@@ -182,179 +230,36 @@ export function useWebRTCSender(userId: string) {
     socket.on('view:request',  onViewRequest);
     socket.on('webrtc:answer', onAnswer);
     socket.on('webrtc:ice',    onIce);
+    // Re-announce on reconnect so the server's screen-sessions row
+    // reflects ground truth instead of the snapshot before the drop.
+    socket.on('connect',       announce);
 
-    // Use named callbacks in cleanup so we don't trample sibling listeners.
     return () => {
       socket.off('view:request',  onViewRequest);
       socket.off('webrtc:answer', onAnswer);
       socket.off('webrtc:ice',    onIce);
+      socket.off('connect',       announce);
     };
   }, [userId]);
 
   const startSharing = useCallback(async () => {
+    // ICE resolution is async; kick it off so TURN creds are warm by the
+    // time the first admin sends view:request. We don't await it because
+    // the user already clicked — we MUST issue getDisplayMedia inside the
+    // activation window.
+    void ensureIce();
+    await screenShareManager.start();
+  }, []);
+
+  const stopSharing = useCallback(async () => {
+    stoppingRef.current = true;
     try {
-      // Resolve ICE servers up front — guarantees TURN is fetched before
-      // an admin asks to view this stream.
-      await ensureIce();
-      // Higher framerate + content hint keep the share crisp without taxing
-      // the network. Audio off because Chrome will prompt for tab audio.
-      const stream = await (navigator.mediaDevices as any).getDisplayMedia({
-        video: { frameRate: { ideal: 15, max: 24 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      manualStopRef.current = false;
-      const track = stream.getVideoTracks()[0];
-      console.log('[screen-share] started', {
-        label: track.label, settings: track.getSettings?.(),
-        platform: navigator.userAgent,
-      });
-
-      // ── 1. Screen wake-lock so the Mac display doesn't sleep ─────────
-      // macOS aggressively ends screen-capture when the display sleeps
-      // (lock screen, hot corners, energy saver). Hold a wake-lock while
-      // sharing to prevent that. Best-effort — older browsers don't have
-      // the API; that's fine.
-      try {
-        if ('wakeLock' in navigator) {
-          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
-          console.log('[screen-share] wake-lock acquired');
-        }
-      } catch (e) {
-        console.log('[screen-share] wake-lock unavailable', e);
-      }
-
-      // Re-acquire wake-lock if the browser drops it on tab focus change
-      // (it auto-releases when document.hidden becomes true).
-      const onVis = async () => {
-        if (document.visibilityState === 'visible' && streamRef.current && !wakeLockRef.current) {
-          try {
-            wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
-            console.log('[screen-share] wake-lock re-acquired on visibility change');
-          } catch { /* ignore */ }
-        }
-      };
-      document.addEventListener('visibilitychange', onVis);
-
-      // ── 2. Listen to track ending ───────────────────────────────────
-      // Could be from:
-      //   1. Our stopSharing() calling t.stop() (manualStopRef = true)
-      //   2. User clicked Chrome's native "Stop sharing" pill
-      //   3. The captured window/tab closed
-      //   4. macOS display sleep / lock screen / energy saver
-      //   5. Chrome Memory Saver discarding a backgrounded tab
-      track.onended = () => {
-        const wasManual = manualStopRef.current;
-        console.warn('[screen-share] track.onended fired', {
-          wasManual, readyState: track.readyState, muted: track.muted,
-        });
-        document.removeEventListener('visibilitychange', onVis);
-        // Note: do NOT call stopSharing here when wasManual=false, because
-        // stopSharing clears persistentIntent. Instead, just tear down the
-        // stream + PCs but leave the intent so the resume banner / click-
-        // armed retry kick in immediately.
-        if (wasManual) {
-          stopSharing();
-        } else {
-          // Non-manual end (OS sleep, Chrome Stop pill, tab discard, etc.) —
-          // tear down WITHOUT killing the intent.
-          if (watchdogRef.current) { clearInterval(watchdogRef.current); watchdogRef.current = null; }
-          if (wakeLockRef.current) {
-            try { wakeLockRef.current.release(); } catch { /* ignore */ }
-            wakeLockRef.current = null;
-          }
-          streamRef.current?.getTracks().forEach(t => { t.onended = null; try { t.stop(); } catch {} });
-          streamRef.current = null;
-          stopAllPCs();
-          setIsSharing(false);
-          api.updateScreenStatus({ status: 'inactive' }).catch(() => {});
-          socketRef.current?.emit('screen:stop', { userId });
-          // Loud sticky toast — auto-resume happens via click-armed retry
-          // (any click on the page within the next 60s re-prompts the
-          // browser picker). See the resumeArmedRef effect below.
-          toast.error('Screen sharing stopped — click anywhere to resume', {
-            description: 'Common cause: display sleep, Chrome\'s Stop pill, or the source window closed. The next click anywhere on Robin will re-pop the picker.',
-            action: {
-              label: 'Resume now',
-              onClick: () => { startSharingRef.current?.(); },
-            },
-            duration: Infinity,
-            id: 'screen-share-resume',                       // single toast at a time
-          });
-        }
-      };
-      // Mute = source backgrounded (don't tear down). Unmute = back.
-      track.onmute   = () => console.log('[screen-share] track muted (source backgrounded?)');
-      track.onunmute = () => console.log('[screen-share] track unmuted (source foregrounded)');
-
-      // ── 3. Watchdog — readyState polling ────────────────────────────
-      // Sometimes (especially on Mac with Chrome Memory Saver / tab freeze)
-      // the track gets killed without firing onended. Poll readyState
-      // every 2s and force-cleanup if it ever flips to 'ended'.
-      if (watchdogRef.current) clearInterval(watchdogRef.current);
-      watchdogRef.current = setInterval(() => {
-        const t = streamRef.current?.getVideoTracks()[0];
-        if (!t) return;
-        if (t.readyState === 'ended') {
-          console.warn('[screen-share] watchdog detected ended track without onended firing');
-          // Trigger the onended path manually
-          if (t.onended) (t.onended as any)(new Event('ended'));
-          else stopSharing();
-        }
-      }, 2000);
-
-      setIsSharing(true);
-      setPersistentIntent(true);                   // user wants this on; keep it on
-      try { await api.updateScreenStatus({ status: 'active', startedAt: new Date().toISOString() }); } catch { /* ignore */ }
-      socketRef.current?.emit('screen:start', { userId });
-    } catch (err: any) {
-      const name = err?.name;
-      console.warn('[screen-share] startSharing failed', { name, message: err?.message });
-      if (name && name !== 'NotAllowedError' && name !== 'AbortError') {
-        toast.error('Could not start screen sharing', {
-          description: name === 'NotReadableError'
-            ? 'The source might be in use by another app. Close it and try again.'
-            : name === 'NotFoundError'
-            ? 'No screen / window / tab was selected.'
-            : 'Browser declined the request. Try a different source.',
-        });
-      }
+      await screenShareManager.stop();
+    } finally {
+      // Defer so the snapshot transition fires before we drop the flag.
+      setTimeout(() => { stoppingRef.current = false; }, 50);
     }
-  }, [userId, stopSharing]);
-
-  // Stable ref so the onended toast's "Share again" button can call the
-  // current startSharing even after it's been regenerated by a userId change.
-  const startSharingRef = useRef(startSharing);
-  useEffect(() => { startSharingRef.current = startSharing; }, [startSharing]);
-
-  // ── Click-armed auto-resume ─────────────────────────────────────────
-  // When persistentIntent is true but we're NOT sharing, listen for ANY
-  // pointerdown anywhere on the document. That click counts as a fresh
-  // user activation for getDisplayMedia, so we use it to silently kick
-  // off startSharing — the picker pops, the user picks the source, share
-  // resumes. Browsers won't let us bypass the picker (security), but
-  // we can make sure every click is a retry opportunity.
-  useEffect(() => {
-    if (!persistentIntent || isSharing) return;
-    // Suppress retries for 10s after manual stop / page load to avoid an
-    // immediate auto-re-prompt the user didn't expect.
-    let armedAt = Date.now() + 1500;
-    let retrying = false;
-    const onClick = async () => {
-      if (Date.now() < armedAt || retrying) return;
-      // Ignore clicks on the resume toast / banner — those have their own
-      // onClick handlers already. We're catching "ambient" clicks.
-      retrying = true;
-      try { await startSharingRef.current?.(); }
-      catch { /* user dismissed picker; we'll try again on next click */ }
-      // Re-arm with a short cooldown so a double-click doesn't double-fire.
-      armedAt = Date.now() + 2000;
-      // Allow another retry attempt next time isSharing is still false.
-      setTimeout(() => { retrying = false; }, 2000);
-    };
-    document.addEventListener('pointerdown', onClick, { capture: false });
-    return () => document.removeEventListener('pointerdown', onClick);
-  }, [persistentIntent, isSharing]);
+  }, []);
 
   return { isSharing, startSharing, stopSharing, persistentIntent, setPersistentIntent };
 }
