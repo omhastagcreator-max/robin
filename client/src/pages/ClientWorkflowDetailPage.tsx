@@ -17,8 +17,53 @@ import { Row }         from '@/components/ui/Row';
 import { EmptyState }  from '@/components/ui/EmptyState';
 import { Avatar }      from '@/components/shared/Avatar';
 import { CommentRequiredModal } from '@/components/shared/CommentRequiredModal';
+import { AIInsight } from '@/components/ai/AIInsight';
+import { Send } from 'lucide-react';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
+
+/**
+ * InlineNoteInput — single-line input replacing the old "Add a note" button
+ * that used to open the CommentRequiredModal. Notes don't need a modal; they
+ * need to land fast. Enter sends; Cmd-Enter also sends. Empty/short text is
+ * ignored. Multi-paragraph notes still go through the modal via Cmd-Shift
+ * (future).
+ */
+function InlineNoteInput({ onSubmit }: { onSubmit: (text: string) => Promise<void> }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    const t = text.trim();
+    if (t.length < 3 || busy) return;
+    setBusy(true);
+    try {
+      await onSubmit(t);
+      setText('');
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="px-3 py-2 border-b border-border flex items-center gap-2">
+      <input
+        value={text}
+        onChange={e => setText(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); send(); }
+        }}
+        placeholder="Drop a note — visible to the whole team on this client…"
+        maxLength={600}
+        className="flex-1 min-w-0 px-3 h-9 bg-background border border-input rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-ring"
+      />
+      <button
+        onClick={send}
+        disabled={busy || text.trim().length < 3}
+        className="h-9 w-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-50 hover:bg-primary/90"
+        title="Send (Enter)"
+      >
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+      </button>
+    </div>
+  );
+}
 
 /**
  * ClientWorkflowDetailPage — v2 rebuild.
@@ -76,6 +121,11 @@ interface Workflow {
   blockerType?: string;
   blockerReason?: string;
   blockedSince?: string;
+  // AI insights from the healthInference cron — see server/services/aiInsights.ts
+  riskScore?:             number;
+  delayCause?:             string;
+  nextBestAction?:        string;
+  predictedCompletionAt?: string | null;
 }
 interface ActivityRow {
   _id: string;
@@ -577,23 +627,77 @@ export default function ClientWorkflowDetailPage() {
           </div>
         </div>
 
-        {/* AI snapshot */}
-        <div className="rounded-2xl border border-primary/20 bg-primary/[0.03] p-3 flex items-start gap-3 flex-wrap">
-          <div className="flex-1 min-w-0">
-            <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-primary/80">AI status snapshot</p>
-            {aiSummary ? (
-              <p className="text-[13px] mt-1 leading-relaxed">{aiSummary.text}</p>
-            ) : (
-              <p className="text-[11.5px] text-muted-foreground mt-0.5">
-                Get a 1-paragraph "where is this client?" summary — paste-ready to send.
-              </p>
+        {/* ── AI operational insight strip ─ inline, no model call ──────
+            Always-fresh from the healthInference cron (no Gemini bill).
+            Hidden when the workflow is healthy + on track. */}
+        {((wf.riskScore ?? 0) >= 40 || wf.delayCause || wf.nextBestAction || wf.predictedCompletionAt) && (
+          <div className="flex items-center gap-2 text-[12px] flex-wrap rounded-lg bg-muted/40 border border-border px-3 py-2">
+            <AIInsight.Badge aiUsed={false} />
+            {typeof wf.riskScore === 'number' && wf.riskScore > 0 && (
+              <span className={`inline-flex items-center gap-1 font-bold ${
+                wf.riskScore >= 70 ? 'text-rose-700'  :
+                wf.riskScore >= 40 ? 'text-amber-700' :
+                                     'text-muted-foreground'
+              }`}>
+                Risk {wf.riskScore}
+              </span>
+            )}
+            {wf.delayCause && (
+              <>
+                <span className="text-muted-foreground/40">·</span>
+                <span className="text-foreground/80">{wf.delayCause}</span>
+              </>
+            )}
+            {wf.nextBestAction && (
+              <>
+                <span className="text-muted-foreground/40">·</span>
+                <span className="text-foreground/80 inline-flex items-center gap-1">
+                  <ArrowLeft className="h-2.5 w-2.5 rotate-180 text-primary" />
+                  Next: <span className="font-medium">{wf.nextBestAction}</span>
+                </span>
+              </>
+            )}
+            {wf.predictedCompletionAt && (
+              <>
+                <span className="text-muted-foreground/40">·</span>
+                <span className="text-muted-foreground">
+                  Predicts {(() => {
+                    const days = Math.round((new Date(wf.predictedCompletionAt).getTime() - Date.now()) / (24 * 3600 * 1000));
+                    return days < 0 ? `${Math.abs(days)}d past` : days === 0 ? 'today' : `in ${days}d`;
+                  })()}
+                </span>
+              </>
             )}
           </div>
-          <Button size="sm" intent="primary" loading={aiLoading} onClick={generateAiSummary}
-            iconLeft={<Sparkles className="h-3.5 w-3.5" />}>
-            {aiSummary ? 'Regenerate' : 'Generate'}
-          </Button>
-        </div>
+        )}
+
+        {/* ── AI status snapshot ─ one-line strip, expand into AIInsight.Summary
+            when the model has actually produced something. No more giant
+            empty placeholder card. */}
+        {aiSummary ? (
+          <AIInsight.Summary
+            text={aiSummary.text}
+            aiUsed={aiSummary.aiUsed}
+            label="Client-facing summary"
+            loading={aiLoading}
+            onRegenerate={generateAiSummary}
+            onDismiss={() => setAiSummary(null)}
+          />
+        ) : (
+          <div className="flex items-center gap-2 text-[12px] rounded-lg border border-primary/15 bg-primary/[0.03] px-3 py-1.5">
+            <Sparkles className="h-3 w-3 text-primary" />
+            <span className="text-muted-foreground">Need a paste-ready client update?</span>
+            <Button
+              size="xs"
+              intent="primary"
+              loading={aiLoading}
+              onClick={generateAiSummary}
+              className="ml-auto"
+            >
+              Generate
+            </Button>
+          </div>
+        )}
 
         {/* Service tabs (slim, dotted) */}
         <div className="flex items-center gap-0 overflow-x-auto border-b border-border">
@@ -746,21 +850,20 @@ export default function ClientWorkflowDetailPage() {
         )}
 
         {/* Activity log */}
-        <section className="border border-border rounded-2xl bg-card overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-            <MessageSquare className="h-4 w-4 text-primary" />
-            <h3 className="text-sm font-bold">Activity log</h3>
-            <span className="text-[11px] text-muted-foreground">— everyone on this client sees this</span>
+        <section className="border border-border rounded-xl bg-card overflow-hidden">
+          <div className="px-3 h-10 border-b border-border flex items-center gap-2">
+            <MessageSquare className="h-3.5 w-3.5 text-primary" />
+            <h3 className="text-[12.5px] font-bold">Activity log</h3>
+            <span className="text-[10.5px] text-muted-foreground">— everyone on this client sees this</span>
           </div>
-          <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-            <button
-              onClick={askNote}
-              disabled={busy}
-              className="flex-1 text-left px-3 h-9 bg-background border border-input rounded-lg text-sm text-muted-foreground hover:bg-muted/40 disabled:opacity-50"
-            >
-              Add a note (visible to the whole team on this client)…
-            </button>
-          </div>
+          <InlineNoteInput onSubmit={async (text) => {
+            try {
+              const updated = await api.cwAddNote(wf._id, { detail: text, serviceType: active?.serviceType });
+              setWf(updated);
+              bumpActivity();
+              toast.success('Note added');
+            } catch { /* interceptor toasts */ }
+          }} />
           <div className="max-h-[480px] overflow-y-auto">
             <ActivityTimeline workflowId={wf._id} refreshKey={activityRev} />
           </div>

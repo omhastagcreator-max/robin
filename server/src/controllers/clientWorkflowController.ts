@@ -364,10 +364,14 @@ export async function toggleChecklist(req: AuthRequest, res: Response): Promise<
       res.status(403).json({ error: 'You can only update your own assigned service' });
       return;
     }
-    if (svcPreview.status === 'blocked') {
-      res.status(409).json({ error: 'Service is blocked by another service that isn\'t done yet' });
-      return;
-    }
+    // NOTE: we deliberately do NOT block prep-ticks on services that are
+    // 'blocked' by dependencies. The 'blocked' status here means an EARLIER
+    // service (e.g. Shopify) isn't done yet — but the team owning the
+    // dependent service should still be able to prep their checklist
+    // (gather assets, set up accounts, draft creative) while they wait.
+    // Only `completeService` enforces the dependency rule. This was the
+    // 409 "Service is blocked by another service that isn't done yet"
+    // that broke teams trying to make any forward progress.
     if (!svcPreview.checklist?.[index]) {
       res.status(400).json({ error: 'Invalid checklist index' });
       return;
