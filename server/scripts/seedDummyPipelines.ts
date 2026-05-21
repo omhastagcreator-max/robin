@@ -1,13 +1,19 @@
 /**
- * seedDummyPipelines.ts — populate the database with realistic dummy
- * projects so you can click through every Project Pipeline feature
- * (board view, needs-attention view, list view, filters, saved filters,
- * bulk actions, mine-only, key facts strip, blockers, priorities,
- * activity log, AI client update, focus list, leads with all sources).
+ * seedDummyPipelines.ts — seed the Projects board with the three real
+ * clients Hastag is currently delivering (Vellore Living, Darpan, Oudfy)
+ * plus a small lead set so the sales board isn't empty.
  *
- * Every dummy carries `tags: ['dummy']` (or for leads, `tags: ['dummy']`
- * on the lead) so the script is idempotent — re-running just upserts
- * matching docs by clientName / leadName rather than duplicating.
+ * Each project's ticked checklist matches reality so the page tells the
+ * true story the moment you open it:
+ *   - Vellore Living: site live, Meta sales campaign launched
+ *   - Darpan: website 4/7 done, influencer not started, no Meta scope
+ *   - Oudfy: website 6/7 (payment gateway pending), Meta not started,
+ *            influencer 2/4 done
+ *
+ * Each seeded doc carries `tags: ['dummy']` so the script is idempotent —
+ * re-running upserts matching docs by clientName / email rather than
+ * duplicating, and `--wipe` removes only the seeded set (leaves anything
+ * you've created by hand alone).
  *
  * Run (from `server/` directory):
  *
@@ -98,13 +104,16 @@ async function resolvePeople(): Promise<SeededIds> {
   };
 }
 
-// ── Dummy project recipes — each one exercises a different feature ─────
-// `tickFrom` says how many checklist steps are ticked (so a service can
-// appear 0/N, 2/N, all done, etc.).
+// ── Project recipes ─────────────────────────────────────────────────────
+// `tickFrom`     — tick the FIRST N steps (use when progress is linear)
+// `tickIndices`  — tick the SPECIFIC step indices listed (use when a step
+//                  is skipped, e.g. Oudfy's "payment gateway is the only
+//                  one not done")
 interface ServiceSpec {
   type: 'shopify' | 'meta_ads' | 'influencer';
   status: 'pending' | 'in_progress' | 'done' | 'blocked';
-  tickFrom?: number;
+  tickFrom?:    number;
+  tickIndices?: number[];
   assignedTo?: string | null;
 }
 
@@ -139,209 +148,106 @@ const daysFromNow = (n: number) => new Date(today.getTime() + n * DAY);
 function recipes(ids: SeededIds): ProjectRecipe[] {
   const dev   = ids.omId       || null;
   const meta1 = ids.shakshiId  || ids.sakshiId  || null;
-  const meta2 = ids.sakshiId   || ids.shakshiId || null;
-  const sales = ids.rishiId    || null;
 
+  // Real clients. Three projects, each a different shape so the Projects
+  // page covers all the visual states without becoming noisy.
   return [
-    // 1. URGENT, BLOCKED on client — exercises blocker chip + urgency
+    // ── 1. Vellore Living ────────────────────────────────────────────
+    // Shopify store is fully delivered. Meta sales campaign has launched
+    // and we're letting the data settle before scaling spend.
     {
-      clientName:    'Velloer Living',
-      clientPhone:   '9876500001',
-      clientEmail:   'team@velloerliving.com',
-      priority:      'urgent',
-      health:        'blocked',
-      healthReason:  'Waiting on Business Manager access from client.',
-      blockerType:   'waiting_client_input',
-      blockerReason: 'Need Business Manager access and pixel approval from client.',
-      blockedSince:  daysFromNow(-3),
-      eta:           daysFromNow(2),
-      etaConfidence: 'low',
-      riskScore:     82,
-      delayCause:    'Past due. Waiting on client for 3 days.',
-      nextBestAction:'Follow up with client for Business Manager access.',
-      predictedCompletionAt: daysFromNow(7),
-      ownerTeam:     'meta',
-      nextOwner:     'shakshi',
+      clientName:   'Vellore Living',
+      clientPhone:  '9876500001',
+      clientEmail:  'team@vellore-living.com',
+      priority:     'high',
+      health:       'healthy',
+      healthReason: 'Site live, sales campaign running. Watching numbers before scaling.',
+      eta:          daysFromNow(10),
+      etaConfidence:'high',
+      riskScore:    18,
+      delayCause:   '',
+      nextBestAction:'Pull 7-day ad numbers and decide whether to scale spend.',
+      predictedCompletionAt: daysFromNow(9),
+      ownerTeam:    'meta',
+      nextOwner:    'shakshi',
       services: [
-        { type: 'shopify',    status: 'done',        tickFrom: SHOPIFY_STEPS.length, assignedTo: dev },
-        { type: 'meta_ads',   status: 'blocked',     tickFrom: 1,                    assignedTo: meta1 },
-        { type: 'influencer', status: 'in_progress', tickFrom: 1,                    assignedTo: null },
+        // Website fully done.
+        { type: 'shopify',  status: 'done',        tickFrom: SHOPIFY_STEPS.length, assignedTo: dev   },
+        // Account ready + awareness live + sales campaign launched (steps 0,1,2)
+        // — last tick (Weekly reporting cadence) still pending while we
+        // analyse the early data.
+        { type: 'meta_ads', status: 'in_progress', tickFrom: 3,                    assignedTo: meta1 },
       ],
       notes: [
-        'Sent the access request email — waiting on client to reply.',
-        'Client said access will come by end of week. Will follow up Friday.',
+        'Website handed over. Looks great in the store.',
+        'Sales campaign launched yesterday. Letting it run a few days before we touch budget.',
       ],
     },
 
-    // 2. HIGH priority, AT-RISK — exercises risk-score chip + attention bucket
+    // ── 2. Darpan ────────────────────────────────────────────────────
+    // Shopify build still in progress (3 steps left). Influencer side
+    // hasn't started. No Meta ads scope on this client.
     {
-      clientName:    'Quanta Robotics',
-      clientPhone:   '9876500002',
-      clientEmail:   'sales@quanta.io',
-      priority:      'high',
-      health:        'at_risk',
-      healthReason:  'Two services moving slowly. Risk of slipping past due date.',
-      eta:           daysFromNow(10),
-      etaConfidence: 'medium',
-      riskScore:     58,
-      delayCause:    'Slow product upload pace — only 12 of ~80 SKUs done.',
-      nextBestAction:'Schedule a working session with client to bulk-import remaining SKUs.',
+      clientName:   'Darpan',
+      clientPhone:  '9876500002',
+      clientEmail:  'hello@darpan.in',
+      priority:     'medium',
+      health:       'at_risk',
+      healthReason: 'Three website steps still open; influencer plan not started yet.',
+      eta:          daysFromNow(12),
+      etaConfidence:'medium',
+      riskScore:    42,
+      delayCause:   '3 website steps still pending.',
+      nextBestAction:'Finish payment + tracking + handover on the store. Pick an influencer in parallel.',
       predictedCompletionAt: daysFromNow(14),
-      ownerTeam:     'development',
-      nextOwner:     'om',
+      ownerTeam:    'development',
+      nextOwner:    'om',
       services: [
-        { type: 'shopify',  status: 'in_progress', tickFrom: 3, assignedTo: dev   },
-        { type: 'meta_ads', status: 'pending',    tickFrom: 0, assignedTo: meta1 },
+        // 4 of 7 done (kickoff, theme, products, payment) — 3 left
+        // (tracking pixel, test order, handover).
+        { type: 'shopify',    status: 'in_progress', tickFrom: 4, assignedTo: dev },
+        // Influencer plan not started.
+        { type: 'influencer', status: 'pending',     tickFrom: 0, assignedTo: null },
+        // (No meta_ads service — client doesn't need ads.)
       ],
       notes: [
-        'Big SKU catalogue — 80+ products. Discussed bulk upload approach.',
+        'No Meta ads scope on this client — only website + influencer.',
+        'Three website steps left. Influencer shortlist still to be put together.',
       ],
     },
 
-    // 3. ON TRACK — exercises healthy state + on-track group
+    // ── 3. Oudfy ─────────────────────────────────────────────────────
+    // Website almost done — only payment gateway pending. Meta hasn't
+    // started. Influencer videos only 2 of 4 done.
     {
-      clientName:    'Greenfield Farms',
-      clientPhone:   '9876500003',
-      clientEmail:   'hi@greenfield.ag',
-      priority:      'medium',
-      health:        'healthy',
-      eta:           daysFromNow(12),
-      etaConfidence: 'high',
-      riskScore:     12,
-      delayCause:    '',
-      nextBestAction:'Continue running awareness campaigns; review after this week.',
-      predictedCompletionAt: daysFromNow(11),
-      ownerTeam:     'meta',
-      nextOwner:     'sakshi',
+      clientName:   'Oudfy',
+      clientPhone:  '9876500003',
+      clientEmail:  'team@oudfy.com',
+      priority:     'high',
+      health:       'at_risk',
+      healthReason: 'Payment gateway holds website launch. Meta not started. Influencer halfway.',
+      eta:          daysFromNow(7),
+      etaConfidence:'medium',
+      riskScore:    55,
+      delayCause:   'Payment gateway not set up — store cannot go live yet.',
+      nextBestAction:'Finish payment gateway on the store, then start Meta account setup.',
+      predictedCompletionAt: daysFromNow(9),
+      ownerTeam:    'development',
+      nextOwner:    'om',
       services: [
-        { type: 'shopify',    status: 'done',        tickFrom: SHOPIFY_STEPS.length, assignedTo: dev },
-        { type: 'meta_ads',   status: 'in_progress', tickFrom: 2,                    assignedTo: meta2 },
-        { type: 'influencer', status: 'in_progress', tickFrom: 1,                    assignedTo: null },
+        // Everything ticked EXCEPT step 3 (Payment and shipping set up).
+        // tickIndices lets us model "the only one not done is payment".
+        { type: 'shopify',    status: 'in_progress', tickIndices: [0, 1, 2, 4, 5, 6], assignedTo: dev   },
+        // Meta hasn't started.
+        { type: 'meta_ads',   status: 'pending',     tickFrom: 0,                    assignedTo: meta1 },
+        // Influencer: videos only 2 of 4 done — influencer picked + product
+        // shipped done; script + final video delivery still pending.
+        { type: 'influencer', status: 'in_progress', tickFrom: 2,                    assignedTo: null  },
       ],
       notes: [
-        'Store handover went smoothly. Ads launched this Monday.',
-      ],
-    },
-
-    // 4. ALL DONE — exercises the Done group + collapsed-by-default
-    {
-      clientName:    'Helix Bio',
-      clientPhone:   '9876500004',
-      clientEmail:   'kira@helixbio.com',
-      priority:      'medium',
-      health:        'ready_to_deliver',
-      eta:           daysFromNow(-2),
-      etaConfidence: 'high',
-      riskScore:     3,
-      delayCause:    '',
-      nextBestAction:'',
-      ownerTeam:     '',
-      services: [
-        { type: 'shopify',    status: 'done', tickFrom: SHOPIFY_STEPS.length,    assignedTo: dev },
-        { type: 'meta_ads',   status: 'done', tickFrom: META_STEPS.length,       assignedTo: meta1 },
-        { type: 'influencer', status: 'done', tickFrom: INFLUENCER_STEPS.length, assignedTo: null },
-      ],
-      notes: [
-        'All services complete. Final report sent to client.',
-      ],
-    },
-
-    // 5. WAITING ON INTERNAL APPROVAL — different blocker type
-    {
-      clientName:    'Northwind Logistics',
-      clientPhone:   '9876500005',
-      clientEmail:   'ops@northwind.co',
-      priority:      'medium',
-      health:        'waiting_internal',
-      healthReason:  'Waiting on internal copy review before going live.',
-      blockerType:   'waiting_internal_approval',
-      blockerReason: 'Sales team is reviewing the campaign copy before we push live.',
-      blockedSince:  daysFromNow(-1),
-      eta:           daysFromNow(6),
-      etaConfidence: 'medium',
-      riskScore:     35,
-      delayCause:    'Internal copy review pending since yesterday.',
-      nextBestAction:'Get sales sign-off on campaign copy.',
-      ownerTeam:     'sales',
-      nextOwner:     'rishi',
-      services: [
-        { type: 'shopify',  status: 'done',        tickFrom: SHOPIFY_STEPS.length, assignedTo: dev },
-        { type: 'meta_ads', status: 'in_progress', tickFrom: 2,                    assignedTo: meta1 },
-      ],
-      notes: [
-        'Sent campaign copy to Rishi for review.',
-      ],
-    },
-
-    // 6. LOW priority, slow but steady — exercises low-priority filter
-    {
-      clientName:    'Pelican Press',
-      clientPhone:   '9876500006',
-      clientEmail:   'team@pelican.media',
-      priority:      'low',
-      health:        'healthy',
-      eta:           daysFromNow(25),
-      etaConfidence: 'high',
-      riskScore:     8,
-      ownerTeam:     'development',
-      nextOwner:     'om',
-      services: [
-        { type: 'shopify', status: 'in_progress', tickFrom: 1, assignedTo: dev },
-      ],
-      notes: [
-        'Kickoff done. Theme picked. Slow build — client okay with 4-week timeline.',
-      ],
-    },
-
-    // 7. TECHNICAL BLOCKER — exercises that specific blocker type
-    {
-      clientName:    'Lumina Studios',
-      clientPhone:   '9876500007',
-      clientEmail:   'rio@luminastud.co',
-      priority:      'high',
-      health:        'blocked',
-      healthReason:  'Meta API outage affecting catalogue sync.',
-      blockerType:   'technical',
-      blockerReason: 'Meta product-catalogue API has been failing for the last 24h. Filed support ticket.',
-      blockedSince:  daysFromNow(-1),
-      eta:           daysFromNow(9),
-      etaConfidence: 'low',
-      riskScore:     65,
-      delayCause:    'Meta API issue — workaround being tested.',
-      nextBestAction:'Switch to manual product upload as a temporary fix.',
-      ownerTeam:     'meta',
-      nextOwner:     'shakshi',
-      services: [
-        { type: 'shopify',  status: 'done',    tickFrom: SHOPIFY_STEPS.length, assignedTo: dev },
-        { type: 'meta_ads', status: 'blocked', tickFrom: 1,                    assignedTo: meta1 },
-      ],
-      notes: [
-        'Found the issue — Meta catalogue API is down. Trying the manual workaround.',
-      ],
-    },
-
-    // 8. INFLUENCER-only, dependency blocker — exercises the third service path
-    {
-      clientName:    'Maple Marketing',
-      clientPhone:   '9876500008',
-      clientEmail:   'hello@maple.in',
-      priority:      'medium',
-      health:        'at_risk',
-      healthReason:  'Influencer reschedule pushed delivery back a week.',
-      blockerType:   'dependency',
-      blockerReason: 'Influencer pushed shoot date to next week.',
-      blockedSince:  daysFromNow(-2),
-      eta:           daysFromNow(15),
-      etaConfidence: 'medium',
-      riskScore:     45,
-      delayCause:    'Waiting for new shoot date confirmation.',
-      nextBestAction:'Confirm the new shoot date with the influencer team.',
-      ownerTeam:     'influencer',
-      services: [
-        { type: 'influencer', status: 'in_progress', tickFrom: 2, assignedTo: null },
-      ],
-      notes: [
-        'Influencer pushed the shoot — waiting on a new date.',
+        'Store is ready apart from payment gateway. Payment vendor onboarding still in progress.',
+        'Meta ads work pending — will start the moment the store is live.',
+        '2 of 4 influencer steps complete. Script and final video delivery still pending.',
       ],
     },
   ];
@@ -356,7 +262,14 @@ function buildServiceDocs(specs: ServiceSpec[]): any[] {
     const steps = s.type === 'shopify' ? SHOPIFY_STEPS
                 : s.type === 'meta_ads' ? META_STEPS
                 : INFLUENCER_STEPS;
-    const tick = Math.min(s.tickFrom ?? 0, steps.length);
+    // Resolve which indices are ticked. tickIndices wins when present (lets
+    // us model "everything except payment is done"); otherwise fall back to
+    // the linear tickFrom count.
+    const tickedSet = new Set<number>(
+      s.tickIndices
+        ? s.tickIndices.filter(i => i >= 0 && i < steps.length)
+        : Array.from({ length: Math.min(s.tickFrom ?? 0, steps.length) }, (_, i) => i),
+    );
     out.push({
       serviceType: s.type,
       label,
@@ -364,8 +277,8 @@ function buildServiceDocs(specs: ServiceSpec[]): any[] {
       status:      s.status,
       checklist: steps.map((text, idx) => ({
         text,
-        done:   idx < tick,
-        doneAt: idx < tick ? new Date(Date.now() - (steps.length - idx) * 6 * 3600 * 1000) : undefined,
+        done:   tickedSet.has(idx),
+        doneAt: tickedSet.has(idx) ? new Date(Date.now() - (steps.length - idx) * 6 * 3600 * 1000) : undefined,
       })),
       startedAt:   s.status === 'pending' ? undefined : daysFromNow(-7),
       completedAt: s.status === 'done'    ? daysFromNow(-1) : undefined,
@@ -440,16 +353,15 @@ async function seedOne(recipe: ProjectRecipe, ids: SeededIds) {
   );
 }
 
-// ── Lead seeds — one of each (Outbound / Inbound / Organic), one of each
-//    AI score (hot / warm / cold), one of each stage bucket. ────────────
+// ── A small believable lead set so the sales board isn't empty. Three
+// leads, one each of Outbound / Inbound / Organic, across early/mid/late
+// pipeline stages. Names are placeholders — replace with your real leads
+// over time. ───────────────────────────────────────────────────────────
 async function seedLeads(ids: SeededIds) {
   const leads = [
-    { name: 'Riya Mehra',   company: 'Riya Living',   email: 'riya@riyaliving.com',  contact: '9876511111', source: 'outbound', stage: 'demo_booked',      aiScore: 'hot',  aiNextAction: 'Confirm Tuesday demo slot.', estimatedValue: 45000 },
-    { name: 'Karan Joshi',  company: 'Karan Crafts',  email: 'k@karancrafts.in',     contact: '9876522222', source: 'inbound',  stage: 'connected',        aiScore: 'warm', aiNextAction: 'Send portfolio + case studies.',  estimatedValue: 30000 },
-    { name: 'Aanya Roy',    company: 'Aanya Aesthetics', email: 'aanya@aestheticslab.in', contact: '9876533333', source: 'organic',  stage: 'hot_follow_up', aiScore: 'hot',  aiNextAction: 'Call today — they asked us to follow up Friday.', estimatedValue: 60000 },
-    { name: 'Vikram Saini', company: 'Vikram Foods',  email: 'vikram@vsfoods.in',    contact: '9876544444', source: 'outbound', stage: 'follow_up',        aiScore: 'cold', aiNextAction: 'One last nudge before parking this lead.', estimatedValue: 15000 },
-    { name: 'Priya Sharma', company: 'PS Wellness',   email: 'priya@pswellness.in',  contact: '9876555555', source: 'inbound',  stage: 'demo_done',        aiScore: 'warm', aiNextAction: 'Send proposal + pricing.', estimatedValue: 80000 },
-    { name: 'Dev Nair',     company: 'Nair Studios',  email: 'dev@nairstudios.in',   contact: '9876566666', source: 'organic',  stage: 'new_lead',         aiScore: 'warm', aiNextAction: 'First call — qualify need + budget.', estimatedValue: 25000 },
+    { name: 'Riya Mehra',  company: 'Riya Living',      email: 'riya@riyaliving.com', contact: '9876511111', source: 'outbound', stage: 'demo_booked',   aiScore: 'hot',  aiNextAction: 'Confirm demo slot for Tuesday.',                          estimatedValue: 45000 },
+    { name: 'Karan Joshi', company: 'Karan Crafts',     email: 'k@karancrafts.in',    contact: '9876522222', source: 'inbound',  stage: 'demo_done',     aiScore: 'warm', aiNextAction: 'Send proposal and pricing.',                              estimatedValue: 30000 },
+    { name: 'Aanya Roy',   company: 'Aanya Aesthetics', email: 'aanya@aestheticslab.in', contact: '9876533333', source: 'organic', stage: 'hot_follow_up', aiScore: 'hot',  aiNextAction: 'Call today — they asked us to follow up by Friday.',     estimatedValue: 60000 },
   ];
 
   for (const l of leads) {
@@ -492,10 +404,10 @@ async function seedFocusList(ids: SeededIds) {
   const weekStart = d.toISOString().split('T')[0];
 
   const items = [
-    { label: 'Velloer Living',  subLabel: 'Meta Ads blocked on client access', urgency: 'critical', note: 'Need to push the client today.', assignedTo: ids.shakshiId ? [ids.shakshiId] : [] },
-    { label: 'Quanta Robotics', subLabel: 'SKU upload pace slipping',          urgency: 'high',     note: 'Book a working session this week.', assignedTo: ids.omId      ? [ids.omId]      : [] },
-    { label: 'Aanya Aesthetics',subLabel: 'Lead asked us to follow up Friday', urgency: 'high',     note: 'Call before noon.', assignedTo: [] },
-    { label: 'Lumina Studios',  subLabel: 'Meta API outage — workaround',     urgency: 'watch',    note: 'Track the support ticket.', assignedTo: ids.shakshiId ? [ids.shakshiId] : [] },
+    { label: 'Vellore Living', subLabel: 'Meta sales campaign — pull 7-day numbers', urgency: 'high',     note: 'Decide if we scale spend this week.',                assignedTo: ids.shakshiId ? [ids.shakshiId] : [] },
+    { label: 'Oudfy',          subLabel: 'Payment gateway pending',                  urgency: 'critical', note: 'Store can\'t go live until this is sorted.',         assignedTo: ids.omId      ? [ids.omId]      : [] },
+    { label: 'Darpan',         subLabel: '3 website steps left + influencer plan',   urgency: 'high',     note: 'Close the remaining steps and pick an influencer.', assignedTo: ids.omId      ? [ids.omId]      : [] },
+    { label: 'Aanya Aesthetics', subLabel: 'Lead asked us to follow up by Friday',    urgency: 'watch',    note: 'Quick call before noon.',                            assignedTo: [] },
   ];
 
   await FocusList.updateOne(
@@ -525,8 +437,8 @@ async function wipeDummies(orgId: string) {
   const ld = await Lead.deleteMany({ organizationId: orgId, tags: 'dummy' });
   // Focus list seed — keyed on (org, ownerId, weekStart). The dummy is the
   // weekly list we created for Rishi this week; only delete if items match
-  // our seed-prefix subLabel pattern so we don't nuke a user's real list.
-  const fl = await FocusList.deleteMany({ organizationId: orgId, 'items.label': { $in: ['Velloer Living', 'Quanta Robotics', 'Aanya Aesthetics', 'Lumina Studios'] } });
+  // our seed labels so we don't nuke a user's real list.
+  const fl = await FocusList.deleteMany({ organizationId: orgId, 'items.label': { $in: ['Vellore Living', 'Velloer Living', 'Oudfy', 'Darpan', 'Aanya Aesthetics', 'Quanta Robotics', 'Lumina Studios'] } });
   console.log(`  · wiped ${wf.deletedCount} dummy workflows, ${ld.deletedCount} dummy leads, ${fl.deletedCount} seeded focus lists`);
 }
 
@@ -553,11 +465,11 @@ async function main() {
     console.log(`  · ${r.clientName} — priority=${r.priority} health=${r.health} risk=${r.riskScore}`);
   }
   await seedLeads(ids);
-  console.log(`  · seeded 6 leads (Outbound / Inbound / Organic, mixed stages + AI scores)`);
+  console.log(`  · seeded 3 leads (one Outbound, one Inbound, one Organic)`);
   await seedFocusList(ids);
-  console.log(`  · seeded Focus This Week for Rishi (4 items)`);
+  console.log(`  · seeded This week's focus for Rishi (4 items)`);
 
-  console.log(`\n[seedDummyPipelines] done. Open the Projects page to see the dummy set; re-run anytime to refresh.`);
+  console.log(`\n[seedDummyPipelines] done. Open the Projects page — Vellore Living, Darpan and Oudfy are now visible.`);
   await mongoose.disconnect();
 }
 
