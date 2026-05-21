@@ -307,8 +307,22 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
 
       setJoined(true);
     } catch (e: any) {
-      const msg = e?.message || 'Could not join the huddle';
-      log('joinMeeting failed:', msg);
+      // Translate the common failure modes into copy that points at a real
+      // remedy. Generic "Error" pills used to send people to support when
+      // the answer was "wait 1 min" or "wake the server".
+      const raw = e?.message || '';
+      let msg = e?.message || 'Could not join the huddle';
+      const status = e?.response?.status;
+      if (status === 429 || /Too Many Requests|429/i.test(raw)) {
+        msg = 'LiveKit Cloud rate limited too many connect attempts. Wait ~1 minute and try again.';
+      } else if (status === 401 || status === 403) {
+        msg = 'Your session may have expired — sign out and back in, then try the huddle again.';
+      } else if (e?.code === 'ECONNABORTED' || /timeout/i.test(raw)) {
+        msg = 'The Robin API didn\'t respond — server may be redeploying. Wait ~30 seconds and retry.';
+      } else if (/Failed to fetch|Network Error|ERR_NETWORK/i.test(raw)) {
+        msg = 'No connection to the Robin API. Check your internet, then retry.';
+      }
+      log('joinMeeting failed:', msg, { rawMessage: raw, status });
       setError(msg);
       // Drop any partially-initialised room so the next attempt starts fresh.
       try { roomRef.current?.disconnect(true); } catch { /* ignore */ }

@@ -442,7 +442,13 @@ export const clientMeetingsGuestToken = (slug: string, name: string) =>
   api.post(`/meet/${slug}/guest-token`, { name }).then(r => r.data);
 
 // ── Huddle (LiveKit) ──────────────────────────────────────────────────────────
-export const getHuddleToken    = () => api.post('/huddle/token', {}).then(r => r.data);
+// Explicit 8s timeout: axios's default is no-timeout, so when the Render API
+// is mid-deploy / paused / OOM-killed, this call would hang for ~minutes and
+// the user would sit at "Connecting…" with no signal. 8s is plenty for a
+// healthy server (the controller just signs a JWT) and short enough that the
+// user gets a real error if things are wrong.
+export const getHuddleToken    = () =>
+  api.post('/huddle/token', {}, { timeout: 8_000 }).then(r => r.data);
 
 // ── Reminders / Weekly Planner ────────────────────────────────────────────────
 export const listMyReminders   = (params?: { from?: string; to?: string }) =>

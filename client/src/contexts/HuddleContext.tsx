@@ -347,28 +347,12 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
   // synchronously inside the click handler so the browser sees a valid user
   // activation. (Open later in a useEffect → "Transient activation required".)
   const join = useCallback(() => {
-    // ── Safari mic-permission prime ─────────────────────────────────────
-    // Safari ties the mic permission prompt to the user-activation token of
-    // the originating click. By the time joinMeeting() awaits the JWT,
-    // then awaits room.connect(), then asks LiveKit to publish audio, the
-    // activation has expired and Safari silently drops the prompt → no
-    // popup, no error, Janvi never gets in. Chrome / Firefox are lenient
-    // and still show the prompt; Safari is strict.
-    //
-    // Calling getUserMedia synchronously in the click handler pops the
-    // permission UI immediately. We stop the resulting tracks right away
-    // — LiveKit re-acquires the mic later and reuses the now-granted
-    // permission. On non-Safari browsers this is harmless; on Safari it
-    // is the difference between "join works" and "nothing happens".
-    try {
-      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-        navigator.mediaDevices
-          .getUserMedia({ audio: true })
-          .then(stream => { stream.getTracks().forEach(t => t.stop()); })
-          .catch(() => { /* user denied / no mic — LiveKit will surface a clearer error */ });
-      }
-    } catch { /* unsupported (very old Safari, in-app webview, etc.) */ }
-
+    // NOTE: an earlier version of this function primed mic permission
+    // synchronously via getUserMedia({ audio: true }) to work around a
+    // Safari user-activation issue. That turned out to race with
+    // LiveKit's own mic acquisition and stalled connections at
+    // "connecting…" for everyone. Removed. Safari mic prompt is now
+    // handled by joinMeeting() itself; see useMeetingRoom.ts.
     setMode(m => (m === 'idle' ? 'joining' : m));
     if (pipAutoEnabled && pipSupported && !pipWindowRef.current) {
       // Fire-and-forget; the click activation flows into requestWindow.
@@ -384,11 +368,41 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
   const collapse = useCallback(() => setMode(m => (m === 'expanded' ? 'collapsed' : m)), []);
   const expand   = useCallback(() => setMode(m => (m === 'collapsed' || m === 'joining' ? 'expanded' : m)), []);
 
+  // ── Single-shot join (no auto-retry loop) ──────────────────────────────
+  //
+  // Earlier this useEffect re-fired joinMeeting() every time `meeting.joining`
+  // flipped false. Intended as a "retry on failure" but produced the worst
+  // possible behaviour: after a single failure (e.g. server outage), the loop
+  // would dial LiveKit Cloud every ~15s until they returned 429 Too Many
+  // Requests, after which NO connection could ever establish and the UI sat
+  // at "Connecting…" indefinitely. (See May-2026 incident — Om's machine.)
+  //
+  // Now: we attempt exactly ONCE per click. If it fails, mode flips back to
+  // 'idle' and `meetingError` surfaces the cause so the user can decide
+  // whether to retry. The user re-clicks Join to try again. Rate limits
+  // clear in ~minutes; we don't poke the server during that window.
+  const attemptedRef = useRef(false);
   useEffect(() => {
-    if (mode === 'joining' && !meeting.joined && !meeting.joining) {
+    if (mode === 'joining' && !meeting.joined && !meeting.joining && !attemptedRef.current) {
+      attemptedRef.current = true;
       meeting.joinMeeting();
     }
+    // Reset the latch whenever we leave the 'joining' state so the next
+    // user click is a fresh attempt.
+    if (mode !== 'joining') attemptedRef.current = false;
   }, [mode, meeting.joined, meeting.joining, meeting]);
+
+  // ── Auto-recover when joinMeeting() surfaces an error ──────────────────
+  // joinMeeting catches its own errors and calls setError(msg) — but it
+  // doesn't (and shouldn't) know about the higher-level `mode` state. Here
+  // we flip mode back to 'idle' so the pill returns to "Join huddle"
+  // instead of "Connecting…" indefinitely. The error message stays on
+  // meeting.error so the UI can show it.
+  useEffect(() => {
+    if (mode === 'joining' && meeting.error && !meeting.joined && !meeting.joining) {
+      setMode('idle');
+    }
+  }, [mode, meeting.error, meeting.joined, meeting.joining]);
 
   // Once useMeetingRoom is fully joined, flip to expanded so the panel shows.
   useEffect(() => {
