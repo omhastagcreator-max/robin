@@ -216,10 +216,10 @@ export default function ClientPipelinePage() {
         <div className="flex items-end justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Workflow className="h-6 w-6 text-primary" /> Project Pipeline
+              <Workflow className="h-6 w-6 text-primary" /> Projects
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Every project, every stage — searchable by phone, name or email. Click any card to see what's left.
+              Every client, every step. Search by phone, name or email. Click any card to see what's left to do.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -229,7 +229,7 @@ export default function ClientPipelinePage() {
             {isAdminOrSales && (
               <button onClick={() => setShowCreate(true)}
                 className="h-9 px-3 flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold shadow-sm">
-                <Plus className="h-4 w-4" /> New project
+                <Plus className="h-4 w-4" /> Add client
               </button>
             )}
           </div>

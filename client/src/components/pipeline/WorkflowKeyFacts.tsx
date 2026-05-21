@@ -105,10 +105,10 @@ export function WorkflowKeyFacts({ wf, onPriority, onPostNote }: Props) {
           }
         />
 
-        {/* Risk score */}
+        {/* Worry level (was: Risk score) */}
         <FactChip
           icon={<AlertTriangle className="h-3 w-3" />}
-          label="Risk"
+          label="Worry"
           value={
             <span className={`text-[12.5px] font-bold tabular-nums ${
               riskTone === 'danger' ? 'text-rose-700' :
@@ -121,10 +121,10 @@ export function WorkflowKeyFacts({ wf, onPriority, onPostNote }: Props) {
           }
         />
 
-        {/* ETA */}
+        {/* Due (was: ETA) */}
         <FactChip
           icon={<CalendarClock className="h-3 w-3" />}
-          label="ETA"
+          label="Due"
           value={
             etaInfo
               ? <span className={`text-[12.5px] font-semibold ${
@@ -136,12 +136,12 @@ export function WorkflowKeyFacts({ wf, onPriority, onPostNote }: Props) {
           }
         />
 
-        {/* AI predicted */}
+        {/* Robin's guess (was: AI predicts) */}
         {predInfo && (
           <FactChip
             icon={<Sparkles className="h-3 w-3" />}
-            label="AI predicts"
-            value={<span className="text-[12.5px] text-muted-foreground">{predInfo.label}</span>}
+            label="Robin thinks"
+            value={<span className="text-[12.5px] text-muted-foreground">done {predInfo.label}</span>}
           />
         )}
 
@@ -154,12 +154,18 @@ export function WorkflowKeyFacts({ wf, onPriority, onPostNote }: Props) {
           />
         )}
 
-        {/* Blocker fact (only when present) */}
+        {/* Stuck on (was: Blocker / Blocked) */}
         {wf.blockerType && (
           <FactChip
             icon={<ShieldCheck className="h-3 w-3 text-rose-600" />}
-            label="Blocked"
-            value={<span className="text-[12.5px] font-semibold text-rose-700 capitalize">{wf.blockerType.replace(/_/g, ' ')}</span>}
+            label="Stuck on"
+            value={<span className="text-[12.5px] font-semibold text-rose-700">{({
+              waiting_client_input:      'waiting on client',
+              waiting_internal_approval: 'waiting on our team',
+              dependency:                'waiting on someone else',
+              technical:                 'tech issue',
+              budget:                    'budget / scope',
+            } as Record<string, string>)[wf.blockerType] || wf.blockerType.replace(/_/g, ' ')}</span>}
           />
         )}
       </div>

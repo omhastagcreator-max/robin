@@ -201,13 +201,13 @@ export function RobinCopilotPanel() {
 
   // ── Reset thread ──────────────────────────────────────────────────
   const resetThread = async () => {
-    if (!confirm('Start a fresh conversation? Pinned note is kept; history will be erased.')) return;
+    if (!confirm('Start fresh? Your saved note stays; the chat will be cleared.')) return;
     try {
       await api.aiCopilotReset();
       setTurns([]);
-      toast.success('Conversation reset.');
+      toast.success('Chat cleared.');
     } catch (e: any) {
-      toast.error('Could not reset conversation.');
+      toast.error('Could not clear the chat.');
     }
   };
 
@@ -250,18 +250,18 @@ export function RobinCopilotPanel() {
         <div className="flex items-center gap-1.5">
           <Sparkles className="h-3.5 w-3.5 text-primary" />
           <p className="text-[10.5px] uppercase tracking-[0.16em] font-bold text-primary">
-            Robin Copilot
+            Ask Robin
           </p>
           {turns.length > 0 && (
             <span className="text-[10.5px] text-muted-foreground/70 tabular-nums ml-1">
-              · {turns.length} turn{turns.length === 1 ? '' : 's'}
+              · {turns.length} message{turns.length === 1 ? '' : 's'}
             </span>
           )}
           <span className="ml-auto text-[10.5px] text-muted-foreground">⌘⏎ to send</span>
         </div>
         <p className="text-[12px] text-muted-foreground leading-snug">
-          Your dedicated AI. Looking at <span className="font-semibold text-foreground">{routeLabel}</span>.
-          Remembers prior turns. Knows your projects, tasks, leads, and focus list.
+          Your own AI helper. Looking at <span className="font-semibold text-foreground">{routeLabel}</span>.
+          Remembers what you've talked about. Knows your projects, tasks, leads, and weekly focus.
         </p>
 
         {/* Pinned note — "always remember this" */}
@@ -278,7 +278,7 @@ export function RobinCopilotPanel() {
                 <PinOff className="h-3 w-3 text-muted-foreground mt-[2px] shrink-0" />
               )}
               <span className={pinnedNote ? 'text-foreground' : 'text-muted-foreground'}>
-                {pinnedNote || 'Pin a note Robin should always remember about you (e.g. "I focus on Velloer client").'}
+                {pinnedNote || 'Add a note Robin should always remember about you (e.g. "I work mostly on Velloer").'}
               </span>
             </button>
           )}
@@ -338,7 +338,7 @@ export function RobinCopilotPanel() {
               ))}
             </div>
             <p className="pt-2 text-[11px] text-muted-foreground italic">
-              Tip: I keep our conversation across sessions. Reset with the↻ button when you want a fresh start.
+              Tip: I remember our chat the next time you come back. Hit Start fresh when you want a clean slate.
             </p>
           </section>
         )}
@@ -413,9 +413,9 @@ export function RobinCopilotPanel() {
                 type="button"
                 onClick={resetThread}
                 className="inline-flex items-center gap-1 px-2 h-7 rounded-md text-[11.5px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                title="Start a fresh conversation (pinned note is kept)"
+                title="Clear chat (your saved note stays)"
               >
-                <RotateCcw className="h-3 w-3" /> Reset
+                <RotateCcw className="h-3 w-3" /> Start fresh
               </button>
             )}
             <button

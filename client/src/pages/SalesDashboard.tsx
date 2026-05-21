@@ -55,9 +55,9 @@ const EMPTY_FORM = { name: '', contact: '', email: '', company: '', source: 'inb
 // values (referral/cold_call/website/social/other), but new leads created
 // from this UI always pick one of these.
 const SOURCE_OPTIONS = [
-  { key: 'outbound', label: 'Outbound', sub: 'We reached out',  bg: 'bg-violet-500/12',   text: 'text-violet-700',   ring: 'ring-violet-400' },
-  { key: 'inbound',  label: 'Inbound',  sub: 'Form / paid ad',  bg: 'bg-sky-500/12',      text: 'text-sky-700',      ring: 'ring-sky-400'    },
-  { key: 'organic',  label: 'Organic',  sub: 'SEO / referral',  bg: 'bg-emerald-500/12',  text: 'text-emerald-700',  ring: 'ring-emerald-400'},
+  { key: 'outbound', label: 'Outbound', sub: 'We reached out first',      bg: 'bg-violet-500/12',   text: 'text-violet-700',   ring: 'ring-violet-400' },
+  { key: 'inbound',  label: 'Inbound',  sub: 'They filled our form / ad', bg: 'bg-sky-500/12',      text: 'text-sky-700',      ring: 'ring-sky-400'    },
+  { key: 'organic',  label: 'Organic',  sub: 'Found us / word of mouth',  bg: 'bg-emerald-500/12',  text: 'text-emerald-700',  ring: 'ring-emerald-400'},
 ] as const;
 
 /** Normalise legacy source values into one of the 3 primary categories. */
@@ -720,11 +720,11 @@ export default function SalesDashboard() {
         {/* Tabs */}
         <div className="flex gap-1 bg-muted p-1 rounded-xl w-fit">
           {([
-            ['pipeline', 'Pipeline', LayoutDashboard],
-            ['focus',    'Focus This Week', Flame],
-            ['list',     'All leads · list', List],
-            ['clients',  'Clients',  Building2],
-            ['won',      'Won Deals', Trophy],
+            ['pipeline', 'Board',           LayoutDashboard],
+            ['focus',    'This week',       Flame],
+            ['list',     'All leads',       List],
+            ['clients',  'Clients',         Building2],
+            ['won',      'Won deals',       Trophy],
           ] as const).map(([key, label, Icon]) => (
             <button key={key} onClick={() => setTab(key)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${

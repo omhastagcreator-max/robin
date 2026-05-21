@@ -24,9 +24,9 @@ import * as api from '@/api';
  */
 
 const URGENCY = [
-  { key: 'critical', label: 'Critical', icon: Flame,          bg: 'bg-rose-500/15',    text: 'text-rose-700',    ring: 'ring-rose-400'    },
-  { key: 'high',     label: 'High',     icon: AlertTriangle,  bg: 'bg-amber-500/15',   text: 'text-amber-700',   ring: 'ring-amber-400'   },
-  { key: 'watch',    label: 'Watch',    icon: Eye,            bg: 'bg-sky-500/15',     text: 'text-sky-700',     ring: 'ring-sky-400'     },
+  { key: 'critical', label: 'On fire',     icon: Flame,          bg: 'bg-rose-500/15',    text: 'text-rose-700',    ring: 'ring-rose-400'    },
+  { key: 'high',     label: 'Important',   icon: AlertTriangle,  bg: 'bg-amber-500/15',   text: 'text-amber-700',   ring: 'ring-amber-400'   },
+  { key: 'watch',    label: 'Keep an eye', icon: Eye,            bg: 'bg-sky-500/15',     text: 'text-sky-700',     ring: 'ring-sky-400'     },
 ] as const;
 type Urgency = typeof URGENCY[number]['key'];
 
@@ -138,8 +138,8 @@ function AddPicker({ leads, clients, staff, onClose, onSubmit }: AddPickerProps)
         className="bg-card border border-border rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-xl my-8">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-bold text-lg">Add to Focus This Week</h2>
-            <p className="text-xs text-muted-foreground">Search a lead or client → set urgency → assign teammates</p>
+            <h2 className="font-bold text-lg">Add to this week's focus</h2>
+            <p className="text-xs text-muted-foreground">Find a lead or client, mark how urgent, pick teammates to help</p>
           </div>
           <button type="button" onClick={onClose}><X className="h-4 w-4 text-muted-foreground" /></button>
         </div>

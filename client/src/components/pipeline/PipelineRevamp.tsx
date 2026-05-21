@@ -180,9 +180,9 @@ export function PipelineToolbar({
         {/* View toggle */}
         <div className="inline-flex items-center rounded-lg border border-border bg-card overflow-hidden">
           {[
-            { key: 'kanban' as const, label: 'Kanban', icon: LayoutGrid },
-            { key: 'focus'  as const, label: 'Focus',  icon: Flame },
-            { key: 'table'  as const, label: 'Table',  icon: Rows3 },
+            { key: 'kanban' as const, label: 'Board',            icon: LayoutGrid },
+            { key: 'focus'  as const, label: 'Needs attention',  icon: Flame },
+            { key: 'table'  as const, label: 'List',             icon: Rows3 },
           ].map(o => {
             const Icon = o.icon;
             const active = view === o.key;
@@ -229,7 +229,7 @@ export function PipelineToolbar({
             onChange={e => onMineOnly(e.target.checked)}
             className="h-3 w-3 accent-primary"
           />
-          <span className={mineOnly ? 'text-primary' : 'text-muted-foreground'}>Only mine</span>
+          <span className={mineOnly ? 'text-primary' : 'text-muted-foreground'}>Just mine</span>
         </label>
 
         {/* Counts on the right */}
@@ -243,9 +243,9 @@ export function PipelineToolbar({
         <button
           onClick={() => setSaveOpen(o => !o)}
           className="inline-flex items-center gap-1 h-[30px] px-2 rounded-lg border border-dashed border-border bg-card text-[11px] text-muted-foreground hover:text-foreground"
-          title="Save current view"
+          title="Save these filters for later"
         >
-          <Save className="h-3 w-3" /> Save view
+          <Save className="h-3 w-3" /> Save these filters
         </button>
       </div>
 
@@ -286,15 +286,15 @@ export function PipelineToolbar({
             className="overflow-hidden"
           >
             <div className="rounded-xl border border-border bg-card px-3 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11.5px]">
-              <FilterSelect label="Health" value={filters.health} onChange={v => onFilters({ ...filters, health: v as any })}
+              <FilterSelect label="Status" value={filters.health} onChange={v => onFilters({ ...filters, health: v as any })}
                 options={[
-                  ['', 'Any health'],
-                  ['blocked',  'Blocked'],
-                  ['at_risk',  'At risk'],
-                  ['on_track', 'On track'],
+                  ['', 'Any status'],
+                  ['blocked',  'Stuck'],
+                  ['at_risk',  'Needs attention'],
+                  ['on_track', 'Going well'],
                   ['done',     'Done'],
                 ]} />
-              <FilterSelect label="Owner team" value={filters.team} onChange={v => onFilters({ ...filters, team: v as any })}
+              <FilterSelect label="Team" value={filters.team} onChange={v => onFilters({ ...filters, team: v as any })}
                 options={[
                   ['', 'Any team'],
                   ['sales',       'Sales'],
@@ -311,16 +311,16 @@ export function PipelineToolbar({
                   ['medium', 'Medium'],
                   ['low',    'Low'],
                 ]} />
-              <FilterSelect label="Blocker" value={filters.blocker} onChange={v => onFilters({ ...filters, blocker: v as any })}
+              <FilterSelect label="Stuck on" value={filters.blocker} onChange={v => onFilters({ ...filters, blocker: v as any })}
                 options={[
                   ['', 'Any'],
-                  ['any',  'Blocked (any reason)'],
-                  ['none', 'Not blocked'],
+                  ['any',  'Stuck (any reason)'],
+                  ['none', 'Not stuck'],
                   ['waiting_client_input',      'Waiting on client'],
-                  ['waiting_internal_approval', 'Waiting internal'],
-                  ['dependency', 'Dependency'],
-                  ['technical',  'Technical'],
-                  ['budget',     'Budget'],
+                  ['waiting_internal_approval', 'Waiting on our team'],
+                  ['dependency', 'Waiting on someone else'],
+                  ['technical',  'Tech issue'],
+                  ['budget',     'Budget / scope'],
                 ]} />
               {filterCount > 0 && (
                 <button
@@ -441,7 +441,7 @@ function BulkBar({ selectedIds, onClear, onBulk, role }: {
       <span className="text-[11.5px] font-semibold text-primary px-1.5 py-0.5 rounded bg-primary/15">
         {selectedIds.length} selected
       </span>
-      <span className="text-[11px] text-muted-foreground">Apply to all:</span>
+      <span className="text-[11px] text-muted-foreground">Update all at once:</span>
 
       {/* Priority bump — admin / sales only */}
       {canEdit && (
@@ -472,14 +472,14 @@ function BulkBar({ selectedIds, onClear, onBulk, role }: {
         <MessagesSquare className="h-3 w-3 text-sky-600" /> Post note
       </button>
 
-      {/* Mark all on-track — admin / sales only */}
+      {/* Mark all going-well — admin / sales only */}
       {canEdit && (
         <button
           onClick={() => run(() => onBulk('mark-on-track'))}
           disabled={busy}
           className="inline-flex items-center gap-1 h-7 px-2 rounded-md bg-card border border-border text-[11.5px] font-semibold hover:border-primary/30 disabled:opacity-50"
         >
-          <ShieldCheck className="h-3 w-3 text-emerald-600" /> Mark on-track
+          <ShieldCheck className="h-3 w-3 text-emerald-600" /> Mark going well
         </button>
       )}
 
@@ -529,10 +529,10 @@ function BulkBar({ selectedIds, onClear, onBulk, role }: {
 // PipelineFocusView — auto-grouping by health
 // ─────────────────────────────────────────────────────────────────────
 const FOCUS_GROUPS = [
-  { key: 'blocked',  label: 'Blocked',  icon: ShieldCheck,  hint: 'Cannot move forward right now',  accent: 'border-rose-500/30  bg-rose-500/[0.06]  text-rose-700',  pill: 'bg-rose-500/15 text-rose-700'   },
-  { key: 'at_risk',  label: 'At risk',  icon: AlertTriangle, hint: 'High risk score or quiet',     accent: 'border-amber-500/30 bg-amber-500/[0.06] text-amber-700', pill: 'bg-amber-500/15 text-amber-700' },
-  { key: 'on_track', label: 'On track', icon: Sparkles,      hint: 'Healthy and moving',            accent: 'border-sky-500/30   bg-sky-500/[0.06]   text-sky-700',   pill: 'bg-sky-500/15 text-sky-700'     },
-  { key: 'done',     label: 'Done',     icon: CheckCircle2,  hint: 'Everything ticked',             accent: 'border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-700', pill: 'bg-emerald-500/15 text-emerald-700' },
+  { key: 'blocked',  label: 'Stuck',           icon: ShieldCheck,   hint: 'Cannot move forward right now',  accent: 'border-rose-500/30  bg-rose-500/[0.06]  text-rose-700',  pill: 'bg-rose-500/15 text-rose-700'   },
+  { key: 'at_risk',  label: 'Needs attention', icon: AlertTriangle, hint: 'Slipping or quiet for too long',  accent: 'border-amber-500/30 bg-amber-500/[0.06] text-amber-700', pill: 'bg-amber-500/15 text-amber-700' },
+  { key: 'on_track', label: 'Going well',      icon: Sparkles,      hint: 'Healthy and moving',              accent: 'border-sky-500/30   bg-sky-500/[0.06]   text-sky-700',   pill: 'bg-sky-500/15 text-sky-700'     },
+  { key: 'done',     label: 'Done',            icon: CheckCircle2,  hint: 'Everything ticked',               accent: 'border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-700', pill: 'bg-emerald-500/15 text-emerald-700' },
 ] as const;
 type FocusKey = typeof FOCUS_GROUPS[number]['key'];
 
@@ -668,11 +668,11 @@ export function PipelineTableView<T extends {
           <tr className="border-b border-border">
             <th className="w-8 px-3 py-2"></th>
             <th className="text-left px-3 py-2">Client</th>
-            <th className="text-left px-3 py-2">Health</th>
+            <th className="text-left px-3 py-2">Status</th>
             <th className="text-left px-3 py-2">Priority</th>
-            <th className="text-left px-3 py-2">Risk</th>
-            <th className="text-left px-3 py-2">ETA</th>
-            <th className="text-left px-3 py-2">Next action</th>
+            <th className="text-left px-3 py-2">Worry</th>
+            <th className="text-left px-3 py-2">Due</th>
+            <th className="text-left px-3 py-2">Next step</th>
           </tr>
         </thead>
         <tbody>
@@ -708,7 +708,10 @@ export function PipelineTableView<T extends {
                     wf.health === 'done'     ? 'bg-emerald-500/15 text-emerald-700' :
                                               'bg-sky-500/15 text-sky-700'
                   }`}>
-                    {blocked ? 'Blocked' : (wf.health || 'on_track').replace('_', ' ')}
+                    {blocked ? 'Stuck'
+                      : wf.health === 'at_risk' ? 'Needs attention'
+                      : wf.health === 'done'    ? 'Done'
+                                                : 'Going well'}
                   </span>
                 </td>
                 <td className="px-3 py-2 capitalize">

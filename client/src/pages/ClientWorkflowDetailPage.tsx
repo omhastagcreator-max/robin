@@ -195,11 +195,11 @@ function blockingLabels(
 
 // ─── Block project modal — same UX as drawer panel ────────────────────────────
 const BLOCKER_OPTIONS: Array<{ value: string; label: string; hint: string }> = [
-  { value: 'waiting_client_input',      label: 'Waiting on client',            hint: 'Surfaces as waiting_client; client-relevant.' },
-  { value: 'waiting_internal_approval', label: 'Waiting on internal approval', hint: 'Surfaces as waiting_internal.' },
-  { value: 'dependency',                label: 'Dependency blocked',           hint: 'Another team / vendor / asset.' },
-  { value: 'technical',                 label: 'Technical issue',              hint: 'Bug / API outage / data issue.' },
-  { value: 'budget',                    label: 'Budget / scope hold',          hint: 'Awaiting commercial sign-off.' },
+  { value: 'waiting_client_input',      label: 'Waiting on the client',     hint: 'Client needs to send us something — access, content, approval.' },
+  { value: 'waiting_internal_approval', label: 'Waiting on our team',       hint: 'Someone inside our team needs to sign off first.' },
+  { value: 'dependency',                label: 'Waiting on someone else',   hint: 'A vendor, influencer, or partner is the holdup.' },
+  { value: 'technical',                 label: 'Tech issue',                hint: 'Bug, outage, or data problem we need to fix.' },
+  { value: 'budget',                    label: 'Budget / scope question',   hint: 'Waiting for a commercial decision.' },
 ];
 
 function BlockProjectModal({
@@ -249,7 +249,7 @@ function BlockProjectModal({
           <div className="px-5 py-3 border-b border-border flex items-center justify-between">
             <div className="flex items-center gap-2 min-w-0">
               <ShieldX className="h-4 w-4 text-rose-500 shrink-0" />
-              <p className="text-sm font-semibold truncate">Mark project blocked</p>
+              <p className="text-sm font-semibold truncate">Mark this project as stuck</p>
             </div>
             <button onClick={onClose} disabled={submitting} className="text-muted-foreground hover:text-foreground disabled:opacity-50">
               <X className="h-4 w-4" />
@@ -257,7 +257,7 @@ function BlockProjectModal({
           </div>
           <div className="p-5 space-y-3">
             <div className="space-y-1.5">
-              <label className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground">Blocker type</label>
+              <label className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground">What are you stuck on?</label>
               <div className="relative">
                 <select
                   value={blockerType}
@@ -279,7 +279,7 @@ function BlockProjectModal({
                 onChange={e => setBlockerReason(e.target.value)}
                 maxLength={600}
                 rows={4}
-                placeholder="Say WHY this is blocked — e.g. waiting on Meta ad-account access from client."
+                placeholder="In one line: what's the holdup? e.g. waiting on Meta ad-account access from the client."
                 className="w-full px-3 py-2 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
               />
               <div className="flex items-center justify-between text-[11px] text-muted-foreground">
@@ -601,7 +601,7 @@ export default function ClientWorkflowDetailPage() {
       <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
         {/* Back link */}
         <Link to="/clients/pipeline" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-3 w-3" /> Back to pipeline
+          <ArrowLeft className="h-3 w-3" /> Back to all projects
         </Link>
 
         {/* Identity + overall progress */}
@@ -627,13 +627,13 @@ export default function ClientWorkflowDetailPage() {
               {!isBlocked ? (
                 <Button size="xs" intent="secondary" iconLeft={<ShieldX className="h-3 w-3" />}
                   onClick={() => setBlockModalOpen(true)}>
-                  Mark blocked
+                  We're stuck
                 </Button>
               ) : (
                 <>
                   <Button size="xs" intent="primary" iconLeft={<Unlock className="h-3 w-3" />}
                     onClick={() => setUnblockModalOpen(true)}>
-                    Unblock
+                    Unstuck — back to work
                   </Button>
                 </>
               )}
@@ -843,7 +843,7 @@ export default function ClientWorkflowDetailPage() {
                   disabled={!canMarkServiceDone || busy}
                   onClick={() => askComplete(active._id, active.label)}
                 >
-                  Mark service done
+                  Mark this step done
                 </Button>
                 {!canMarkServiceDone && allItemsDone && blockingSiblings.length > 0 && (
                   <span className="text-[10.5px] text-muted-foreground">
@@ -852,7 +852,7 @@ export default function ClientWorkflowDetailPage() {
                 )}
                 {!canMarkServiceDone && !allItemsDone && (
                   <span className="text-[10.5px] text-muted-foreground">
-                    Tick every step first
+                    Tick everything above first
                   </span>
                 )}
               </div>
@@ -863,8 +863,8 @@ export default function ClientWorkflowDetailPage() {
               <div className="flex items-start gap-2 text-[12px] text-amber-700 bg-amber-500/[0.06] border border-amber-500/20 rounded-lg px-3 py-2">
                 <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                 <p className="leading-snug">
-                  This service can't be marked done until {blockingSiblings.map(b => <strong key={b.type}>{b.label}</strong>).reduce((acc: any, el, i) => acc.length ? [...acc, ', ', el] : [el], [])} finish{blockingSiblings.length > 1 ? '' : 'es'}.
-                  You can still tick prep items now — server only gates the "Mark service done" action.
+                  This step can't be marked done until {blockingSiblings.map(b => <strong key={b.type}>{b.label}</strong>).reduce((acc: any, el, i) => acc.length ? [...acc, ', ', el] : [el], [])} finish{blockingSiblings.length > 1 ? '' : 'es'}.
+                  You can still tick boxes here — the "Mark this step done" button waits for the others.
                 </p>
               </div>
             )}
@@ -961,7 +961,7 @@ export default function ClientWorkflowDetailPage() {
         {/* Footer */}
         <div className="pt-2">
           <Link to="/clients/pipeline" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-            <ExternalLink className="h-3 w-3" /> All pipelines
+            <ExternalLink className="h-3 w-3" /> See all projects
           </Link>
         </div>
       </div>
