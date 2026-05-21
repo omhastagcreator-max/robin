@@ -450,48 +450,114 @@ export async function generateMorningBrief(snapshot: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Pipeline workflow summarizer — on-demand "where is this client?" answer.
+// Client-update generator — paste-ready paragraph for the client.
+//
+// What changed (May 2026): the previous version saw only the last 8
+// generic activity entries and dropped every per-step audit comment on
+// the floor (`checklist[].title` was undefined because the real field
+// is `text`). The owner reported AI updates that "looked plausible but
+// missed the actual reason a step was slow". This version takes:
+//
+//   - every checklist step + whether it's done (with the actual text)
+//   - every per-step AUDIT COMMENT from WorkflowActivity (the mandatory
+//     3-600 char note attached to each tick / untick / completion /
+//     return / note). Caller passes them with the team that posted
+//     each one so the prompt can attribute the delay to a department.
+//   - the structured blocker (type + reason + how long)
+//   - the team currently holding the next move
+//
+// The prompt explicitly asks the model to NAME THE DEPARTMENT where
+// any delay sits, using the team labels we pass (Dev / Meta Ads /
+// Influencer / Sales / QA), and to lean on real comments verbatim
+// rather than guessing.
 // ─────────────────────────────────────────────────────────────────────────
-const WORKFLOW_SYSTEM = `You summarize the current state of a client onboarding workflow for an agency.
+const WORKFLOW_SYSTEM = `You write a paste-ready client update for an agency.
 
-Output: one short paragraph (40-90 words), plain text, no markdown, no bullets. Tell the reader:
-1) which service(s) are in progress and how far along
-2) what's blocking, if anything
-3) the single most useful next action for the team
-4) optional: how to phrase it to the client if asked
+You will receive a JSON payload describing one client's project: every service line with its checklist (each step has \`text\`, whether \`done\`, and any \`stepComments\` left by the team when they ticked/unticked/finished it), the structured blocker if any, and which DEPARTMENT currently owns the next move.
 
-Tone: factual, concise, no hype.`;
+Output: ONE short paragraph (50-100 words), plain text, no markdown, no bullets, no greeting / sign-off. Inside the paragraph you must:
 
-export async function summarizeWorkflow(wf: {
+1. Say what's already done (services and roughly how far).
+2. Say what's in progress.
+3. If something is delayed or stuck, name the responsible DEPARTMENT explicitly using the friendly label we provided (e.g. "delayed on the Dev side", "the Meta Ads team is waiting on…", "Influencer side is mid-shoot"). NEVER use internal team codes like 'meta', 'qa', 'development' — use the friendly label.
+4. Use the real \`stepComments\` and \`blockerReason\` text verbatim or near-verbatim when they explain a delay. Don't invent reasons.
+5. End with the single most useful next thing — phrased the way you'd say it to the client (e.g. "we'll send the next update on Friday once campaigns have a week of data").
+
+Tone: calm, honest, no hype, no apology unless the data clearly demands one. If everything is on track, say so simply.`;
+
+interface WorkflowSummaryInput {
   clientName?: string;
+  blockerType?:   string;
+  blockerReason?: string;
+  blockedSince?:  string | Date | null;
+  currentOwnerTeam?: string;        // raw code: sales / development / meta / influencer / qa
   services: Array<{
     label?: string;
     serviceType: string;
     status: string;
-    checklist?: Array<{ done: boolean; title?: string }>;
+    /** Friendly department label, e.g. "Dev" / "Meta Ads" / "Influencer". */
+    departmentLabel?: string;
+    checklist?: Array<{ text?: string; title?: string; done: boolean }>;
+    /** Per-step audit comments — keyed by checklist index. */
+    stepComments?: Array<{ index: number; text: string; actorTeam?: string; at?: string | Date }>;
   }>;
-  activity?: Array<{ at?: Date | string; type?: string; detail?: string }>;
-}): Promise<{ text: string; aiUsed: boolean }> {
+  /** All free-form activity-log notes (no checklist tie-in). Caller passes
+   *  these directly so the model can see the team's running commentary. */
+  notes?: Array<{ at?: string | Date; actorTeam?: string; text: string }>;
+}
+
+// Map a team code → friendly client-facing department name. The model
+// is also told via the system prompt to use these.
+function departmentLabel(team?: string): string {
+  switch ((team || '').toLowerCase()) {
+    case 'sales':       return 'Sales';
+    case 'development': return 'Dev';
+    case 'meta':        return 'Meta Ads';
+    case 'influencer':  return 'Influencer';
+    case 'qa':          return 'QA';
+    default:            return '';
+  }
+}
+
+export async function summarizeWorkflow(wf: WorkflowSummaryInput): Promise<{ text: string; aiUsed: boolean }> {
   if (!apiKey) {
-    return { text: 'AI summary not configured. Add GEMINI_API_KEY to enable.', aiUsed: false };
+    return { text: 'AI updates are not set up yet. Ask your admin to add GEMINI_API_KEY on the server.', aiUsed: false };
   }
   try {
     const payload = JSON.stringify({
-      clientName: wf.clientName || 'Unnamed client',
+      clientName:    wf.clientName || 'Unnamed client',
+      ownerDepartment: departmentLabel(wf.currentOwnerTeam),
+      blocker: wf.blockerType ? {
+        type:   wf.blockerType,
+        reason: wf.blockerReason || '',
+        since:  wf.blockedSince || null,
+      } : null,
       services: (wf.services || []).map(s => ({
-        label:  s.label || s.serviceType,
-        status: s.status,
-        done:   s.checklist?.filter(c => c.done).length || 0,
-        total:  s.checklist?.length || 0,
-        remaining: (s.checklist || []).filter(c => !c.done).slice(0, 5).map(c => c.title || ''),
+        name:      s.label || s.serviceType,
+        status:    s.status,
+        department: s.departmentLabel || departmentLabel((s as any).team) || '',
+        steps: (s.checklist || []).map((c, i) => ({
+          step: c.text || c.title || `Step ${i + 1}`,
+          done: !!c.done,
+        })),
+        stepComments: (s.stepComments || []).map(c => ({
+          step:       c.index,
+          comment:    c.text,
+          department: departmentLabel(c.actorTeam) || '',
+          at:         c.at || null,
+        })),
       })),
-      recentActivity: (wf.activity || []).slice(-8).map(a => `${a.type || ''}: ${a.detail || ''}`),
+      notes: (wf.notes || []).map(n => ({
+        department: departmentLabel(n.actorTeam) || '',
+        text:       n.text,
+        at:         n.at || null,
+      })),
     });
-    const text = await callGemini(WORKFLOW_SYSTEM, payload, 300);
+    const text = await callGemini(WORKFLOW_SYSTEM, payload, 400);
     return { text: text.trim(), aiUsed: true };
   } catch (err) {
     console.error('[summarizeWorkflow] failed:', (err as Error).message);
-    return { text: 'Summary generation failed. Try again in a moment.', aiUsed: false };
+    return { text: 'Could not generate the client update just now. Try again in a moment.', aiUsed: false };
   }
 }
 

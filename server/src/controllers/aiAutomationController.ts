@@ -142,17 +142,126 @@ export async function briefAllProjects(req: AuthRequest, res: Response): Promise
 
 /**
  * POST /api/ai-automation/summarize-workflow/:id
- * "Where is this client?" — one paragraph the team can paste to the client.
+ * "Where is this client?" — paste-ready paragraph for the client.
+ *
+ * Reads the FULL audit trail (every checklist comment + every note) from
+ * the WorkflowActivity collection — not just the last 8 entries from the
+ * legacy inline wf.activity[] array. Also looks up the team of each
+ * service's current assignee so the AI can attribute delays to a named
+ * department instead of saying "the team is working on it".
  */
 export async function summarizeWorkflowEndpoint(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await getOrgId(req.user!.id);
-    const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId }).lean();
+    const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId }).lean() as any;
     if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
+
+    // ── 1. Pull the canonical audit trail. WorkflowActivity is the
+    //       source of truth (each row has the mandatory 3-600 char
+    //       comment); the inline wf.activity is a legacy backstop. Read
+    //       both and dedupe by (action, serviceType, checklistIndex, at).
+    const WorkflowActivity = (await import('../models/WorkflowActivity')).default as any;
+    const rows = await WorkflowActivity.find({ workflowId: wf._id })
+      .sort({ createdAt: -1 })
+      .limit(120)  // generous — months of work for a normal client
+      .select('action serviceType serviceId checklistIndex actorId actorRole comment createdAt')
+      .lean();
+
+    // ── 2. Look up actor teams in one query. We need this to attribute
+    //       each comment to a department (Dev / Meta / Influencer / …).
+    const actorIds = Array.from(new Set([
+      ...rows.map((r: any) => String(r.actorId)).filter(Boolean),
+      ...((wf.services || []) as any[]).map(s => String(s.assignedTo || '')).filter(Boolean),
+    ]));
+    const actors = await User.find({ _id: { $in: actorIds } }).select('_id teams role').lean() as any[];
+    const teamByUserId: Record<string, string> = {};
+    for (const a of actors) {
+      // Pick the first team that maps to a department label. If a user is
+      // on multiple teams (rare) we go with the first — good enough for
+      // client-facing prose.
+      const t = (a.teams || []).find((x: string) => ['sales','development','meta','influencer','qa'].includes(x))
+             || (a.role === 'sales' ? 'sales' : '');
+      teamByUserId[String(a._id)] = t || '';
+    }
+
+    // ── 3. Group activity into per-service step comments + free notes.
+    //       Step comments: action ∈ {checklist_checked, checklist_unchecked,
+    //       service_completed, service_returned} with a checklistIndex.
+    //       Free notes: action='note' (no checklistIndex).
+    const stepCommentsByService: Record<string, Array<{ index: number; text: string; actorTeam?: string; at?: string | Date }>> = {};
+    const notes: Array<{ at?: string | Date; actorTeam?: string; text: string }> = [];
+
+    for (const r of rows as any[]) {
+      if (!r.comment) continue;
+      const actorTeam = teamByUserId[String(r.actorId)] || '';
+      if (r.action === 'note') {
+        notes.push({ at: r.createdAt, actorTeam, text: r.comment });
+      } else if (typeof r.checklistIndex === 'number' && r.serviceType) {
+        if (!stepCommentsByService[r.serviceType]) stepCommentsByService[r.serviceType] = [];
+        stepCommentsByService[r.serviceType].push({
+          index:     r.checklistIndex,
+          text:      r.comment,
+          actorTeam,
+          at:        r.createdAt,
+        });
+      } else if (r.action === 'service_completed' || r.action === 'service_returned') {
+        // No checklistIndex but still useful narrative — push as a note.
+        notes.push({ at: r.createdAt, actorTeam, text: `${r.action.replace(/_/g,' ')}: ${r.comment}` });
+      }
+    }
+
+    // ── 3b. Fallback — the WorkflowActivity collection is the canonical
+    //       source, but older workflows (and the seeded dummies) only
+    //       have entries on the legacy inline wf.activity[] array. When
+    //       WorkflowActivity returns nothing, pull from the inline array
+    //       so the AI still has the team's running commentary to use.
+    if (rows.length === 0 && Array.isArray(wf.activity) && wf.activity.length > 0) {
+      for (const a of wf.activity as any[]) {
+        if (!a.detail) continue;
+        const actorTeam = teamByUserId[String(a.actorId)] || '';
+        if (a.action === 'note' || !a.serviceType) {
+          notes.push({ at: a.at, actorTeam, text: a.detail });
+        } else {
+          // The legacy array doesn't carry checklistIndex, so we attribute
+          // these as free notes scoped to the service via the prose.
+          notes.push({
+            at:        a.at,
+            actorTeam,
+            text:      `(${a.serviceType.replace(/_/g, ' ')}) ${a.detail}`,
+          });
+        }
+      }
+    }
+
+    // ── 4. Translate the team code on each service into the friendly
+    //       department label the AI prompt uses.
+    const TEAM_TO_DEPT: Record<string, string> = {
+      sales: 'Sales', development: 'Dev', meta: 'Meta Ads', influencer: 'Influencer', qa: 'QA',
+    };
+    const services = (wf.services || []).map((s: any) => {
+      const ownerTeam = teamByUserId[String(s.assignedTo || '')] || '';
+      const fallbackTeam = s.serviceType === 'shopify' ? 'development'
+                        :  s.serviceType === 'meta_ads' ? 'meta'
+                        :  s.serviceType === 'influencer' ? 'influencer'
+                        :  '';
+      return {
+        label:        s.label,
+        serviceType:  s.serviceType,
+        status:       s.status,
+        departmentLabel: TEAM_TO_DEPT[ownerTeam || fallbackTeam] || '',
+        checklist:    s.checklist || [],
+        stepComments: stepCommentsByService[s.serviceType] || [],
+      };
+    });
+
     const r = await summarizeWorkflow({
-      clientName: (wf as any).clientName,
-      services:   (wf as any).services || [],
-      activity:   (wf as any).activity || [],
+      clientName:       wf.clientName,
+      blockerType:      wf.blockerType,
+      blockerReason:    wf.blockerReason,
+      blockedSince:     wf.blockedSince,
+      currentOwnerTeam: wf.currentOwnerTeam,
+      services,
+      notes,
     });
     res.json(r);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
