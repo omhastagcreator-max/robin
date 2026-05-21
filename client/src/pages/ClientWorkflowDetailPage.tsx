@@ -590,7 +590,15 @@ export default function ClientWorkflowDetailPage() {
   // ── Render ──────────────────────────────────────────────────────────────
   return (
     <AppLayout>
-      <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
+      {/* Layout: header stays full-width (identity / KeyFacts / AI insight
+          strip). Below lg, everything stacks single-column as before. At
+          lg+ the body splits — service tabs + active service block on the
+          LEFT (where your hands live: ticking checklist), AI client-facing
+          summary + Activity log on the RIGHT (sticky, so context stays
+          visible while you work). Container widened from max-w-6xl to
+          max-w-7xl to actually USE the dead right-rail space we used to
+          waste. */}
+      <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
         {/* Back link */}
         <Link to="/clients/pipeline" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3 w-3" /> Back to pipeline
@@ -710,33 +718,55 @@ export default function ClientWorkflowDetailPage() {
           </div>
         )}
 
-        {/* ── AI status snapshot ─ one-line strip, expand into AIInsight.Summary
-            when the model has actually produced something. No more giant
-            empty placeholder card. */}
-        {aiSummary ? (
-          <AIInsight.Summary
-            text={aiSummary.text}
-            aiUsed={aiSummary.aiUsed}
-            label="Client-facing summary"
-            loading={aiLoading}
-            onRegenerate={generateAiSummary}
-            onDismiss={() => setAiSummary(null)}
-          />
-        ) : (
-          <div className="flex items-center gap-2 text-[12px] rounded-lg border border-primary/15 bg-primary/[0.03] px-3 py-1.5">
-            <Sparkles className="h-3 w-3 text-primary" />
-            <span className="text-muted-foreground">Need a paste-ready client update?</span>
-            <Button
-              size="xs"
-              intent="primary"
-              loading={aiLoading}
-              onClick={generateAiSummary}
-              className="ml-auto"
-            >
-              Generate
-            </Button>
-          </div>
-        )}
+        {/* ── Body split ─ LEFT main work column, RIGHT context rail ─────
+            On mobile (< lg) everything stacks single-column. At lg+ we
+            slice into a 1fr / 360px grid with the context rail sticky to
+            the top so AI summary + activity log stay visible while the
+            user works the checklist on the left. */}
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6 lg:items-start">
+          {/* ── RIGHT RAIL ─ context: AI summary + activity log ──────────
+              JSX-second / order-2 on mobile (stacks below the work
+              column), JSX-first conceptually on desktop via explicit
+              lg:col-start-2. Sticky so it stays in view as the user
+              scrolls through a long service-block checklist on the left. */}
+          <aside
+            className="space-y-4 order-2 lg:order-2 lg:col-start-2 lg:row-start-1 lg:sticky lg:top-4"
+          >
+            {/* ── AI status snapshot ─ one-line strip, expand into AIInsight.Summary
+                when the model has actually produced something. No more giant
+                empty placeholder card. */}
+            {aiSummary ? (
+              <AIInsight.Summary
+                text={aiSummary.text}
+                aiUsed={aiSummary.aiUsed}
+                label="Client-facing summary"
+                loading={aiLoading}
+                onRegenerate={generateAiSummary}
+                onDismiss={() => setAiSummary(null)}
+              />
+            ) : (
+              <div className="flex items-center gap-2 text-[12px] rounded-lg border border-primary/15 bg-primary/[0.03] px-3 py-1.5">
+                <Sparkles className="h-3 w-3 text-primary" />
+                <span className="text-muted-foreground">Need a paste-ready client update?</span>
+                <Button
+                  size="xs"
+                  intent="primary"
+                  loading={aiLoading}
+                  onClick={generateAiSummary}
+                  className="ml-auto"
+                >
+                  Generate
+                </Button>
+              </div>
+            )}
+          </aside>
+
+          {/* ── LEFT MAIN ─ service tabs + active service block ──────────
+              Spans both grid rows on lg+ so it fills the full left column
+              under (visually beside) the Activity log section. min-w-0
+              prevents long client names / step text from blowing out the
+              column and pushing the right rail off-screen. */}
+          <main className="space-y-4 order-1 lg:order-1 lg:col-start-1 lg:row-start-1 lg:row-span-2 min-w-0">
 
         {/* Service tabs (slim, dotted) */}
         <div className="flex items-center gap-0 overflow-x-auto border-b border-border">
@@ -906,25 +936,27 @@ export default function ClientWorkflowDetailPage() {
           </motion.div>
         )}
 
-        {/* Activity log */}
-        <section className="border border-border rounded-xl bg-card overflow-hidden">
-          <div className="px-3 h-10 border-b border-border flex items-center gap-2">
-            <MessageSquare className="h-3.5 w-3.5 text-primary" />
-            <h3 className="text-[12.5px] font-bold">Activity log</h3>
-            <span className="text-[10.5px] text-muted-foreground">— everyone on this client sees this</span>
-          </div>
-          <InlineNoteInput onSubmit={async (text) => {
-            try {
-              const updated = await api.cwAddNote(wf._id, { detail: text, serviceType: active?.serviceType });
-              setWf(updated);
-              bumpActivity();
-              toast.success('Note added');
-            } catch { /* interceptor toasts */ }
-          }} />
-          <div className="max-h-[480px] overflow-y-auto">
-            <ActivityTimeline workflowId={wf._id} refreshKey={activityRev} />
-          </div>
-        </section>
+          </main>
+          {/* ── RIGHT RAIL ─ row 2: Activity log ──────────────────────── */}
+          <section className="order-3 lg:order-3 lg:col-start-2 lg:row-start-2 border border-border rounded-xl bg-card overflow-hidden">
+            <div className="px-3 h-10 border-b border-border flex items-center gap-2">
+              <MessageSquare className="h-3.5 w-3.5 text-primary" />
+              <h3 className="text-[12.5px] font-bold">Activity log</h3>
+              <span className="text-[10.5px] text-muted-foreground">— everyone on this client sees this</span>
+            </div>
+            <InlineNoteInput onSubmit={async (text) => {
+              try {
+                const updated = await api.cwAddNote(wf._id, { detail: text, serviceType: active?.serviceType });
+                setWf(updated);
+                bumpActivity();
+                toast.success('Note added');
+              } catch { /* interceptor toasts */ }
+            }} />
+            <div className="max-h-[480px] overflow-y-auto">
+              <ActivityTimeline workflowId={wf._id} refreshKey={activityRev} />
+            </div>
+          </section>
+        </div>
 
         {/* Footer */}
         <div className="pt-2">
