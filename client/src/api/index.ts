@@ -351,6 +351,44 @@ export const aiLeadInsights         = (id: string) =>
     aiNextAction?:      string;
   });
 
+// Admin one-click "how is this person doing?" — last N days of sessions
+// (break-credit math applied), tasks, attendance patterns. Server batches
+// it into one Gemini call cached per (user, periodDays, recent activity).
+export const aiEmployeeReport       = (userId: string, periodDays = 7) =>
+  api.post(`/ai-automation/employee-report/${userId}`, { periodDays }).then(r => r.data as {
+    text: string;
+    aiUsed: boolean;
+    snapshot: {
+      name: string;
+      role?: string;
+      team?: string;
+      periodDays: number;
+      days: Array<{
+        date: string;
+        workedMin: number;
+        grossMin: number;
+        breakMin: number;
+        onCallMin: number;
+        huddleMin: number;
+        awayMin: number;
+        firstStart?: string;
+        lastEnd?: string;
+        sessionCount: number;
+      }>;
+      patterns: {
+        avgWorkedHoursPerDay: number;
+        avgBreakMin: number;
+        shortBreakDays: number;
+        longBreakDays: number;
+        noBreakDays: number;
+        lateStartDays: number;
+        onCallDays: number;
+        huddleDayPct: number;
+      };
+      tasks: { completed: number; assigned: number; ongoing: number; overdue: number };
+    };
+  });
+
 // Task AI Focus — "what should I do RIGHT NOW?". Heuristic, no LLM call.
 // Server ranks the calling user's open tasks; UI picks top N.
 export const aiFocus                = (limit = 5) =>

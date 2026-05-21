@@ -184,33 +184,46 @@ export function useSession() {
     }, 0);
   }, [session, now]);
 
+  // STANDARD_BREAK_MS — the break allowance built into a working day.
+  // Mirrors server/src/services/sessionTime.ts. Up to this much break is
+  // free; only minutes BEYOND it reduce effective working hours. Keep in
+  // lockstep with the server (1 hour today).
+  const STANDARD_BREAK_MS = 60 * 60 * 1000;
+
   const workedMs = useMemo(() => {
     if (!session) return 0;
     const start = new Date(session.startTime).getTime();
-    // Working time = total elapsed since clock-in MINUS breaks MINUS away.
+    // Working time with break-credit:
+    //   gross elapsed - max(0, breakMs - 1h) - awayMs
     //
-    // Reverted from huddle-only tracking — that broke the live timer for
-    // anyone not currently in the huddle (showed 00:00:00 even while
-    // working). Huddle attendance is still tracked on the server (huddleMs
-    // / huddleJoinedAt) for future reports + analytics, but the LIVE
-    // counter is the simple, predictable elapsed-minus-stuff calculation.
+    // i.e. up to 1h of break is "free" (built into the working day).
+    // Take 30min → no penalty; take 90min → 30min comes off. Matches the
+    // server's sessionTotals() so the live ticker and the daily report
+    // never disagree.
     //
-    // Three pause sources, all subtracted:
-    //   1. Breaks (totalBreakMs) — explicit "I'm taking 5"
-    //   2. Away time (session.awayMs) — gaps between heartbeats > 90s,
-    //      detected server-side when the user comes back from a closed tab
-    //   3. Heartbeat clamp — between heartbeats, while the tab is closed
-    //      RIGHT NOW, the local timer would keep ticking until the next
-    //      successful ping. We clamp the upper bound to lastHeartbeatAt +
-    //      90s grace so the LIVE counter freezes within ~90s of going
-    //      offline (matches the server's effectiveEndMs logic).
+    // Three other pause sources still apply:
+    //   1. Breaks ABOVE the standard allowance (the credit math above)
+    //   2. Away time (session.awayMs) — gaps between heartbeats > 90s
+    //   3. Heartbeat clamp — once the tab is closed, the upper bound
+    //      stops at lastHeartbeatAt + 90s grace so the live counter
+    //      freezes within ~90s of going offline.
     let upper = now;
     if (session.lastHeartbeatAt) {
       const hb = new Date(session.lastHeartbeatAt).getTime();
       upper = Math.min(now, hb + 90_000);
     }
-    return Math.max(0, (upper - start) - totalBreakMs - (session.awayMs || 0));
+    const breakPenaltyMs = Math.max(0, totalBreakMs - STANDARD_BREAK_MS);
+    return Math.max(0, (upper - start) - breakPenaltyMs - (session.awayMs || 0));
   }, [session, now, totalBreakMs]);
+
+  // Bonus surfaced for the UI hint chip — "+30m credited for short break".
+  // Positive value = the difference between what would have been counted
+  // under the OLD strict rule and the NEW credit-included rule. Zero when
+  // the break exceeded the allowance.
+  const breakCreditMs = useMemo(() => {
+    if (!session) return 0;
+    return Math.max(0, Math.min(totalBreakMs, STANDARD_BREAK_MS));
+  }, [session, totalBreakMs]);
 
   return {
     session,
@@ -229,5 +242,7 @@ export function useSession() {
     currentBreakMs,
     totalBreakMs,
     workedMs,
+    breakCreditMs,
+    breakAllowanceMs: STANDARD_BREAK_MS,
   };
 }

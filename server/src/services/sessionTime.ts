@@ -18,6 +18,24 @@
 
 const GRACE_MS = 90_000; // 90 seconds — covers network blips between pings
 
+/**
+ * STANDARD_BREAK_MS — the break allowance everyone gets for free as part
+ * of a normal working day. Take 30 minutes off, no penalty. Only the
+ * MINUTES BEYOND this allowance get deducted from effective working time.
+ *
+ * Why: the team complained that a colleague who took 30min for lunch was
+ * showing fewer "worked hours" than someone who didn't break at all —
+ * which penalised the healthy behaviour. Now the allowance is built in:
+ * take 30min → still credited the full clocked-in window; take 1h 15min
+ * → only the extra 15min counts against worked hours.
+ *
+ * Example: clocked in 9:00, out 5:20, took 30min break.
+ *   gross elapsed = 8h 20min
+ *   break = 30min  (≤ 60min allowance → penalty = 0)
+ *   effective working = 8h 20min   (not 7h 50min)
+ */
+export const STANDARD_BREAK_MS = 60 * 60 * 1000; // 1 hour
+
 export interface SessionLike {
   startTime: Date | string;
   endTime?: Date | string | null;
@@ -100,15 +118,23 @@ export function sessionTotals(
   const windowFraction    = Math.max(0, Math.min(1, workedMs / sessionDurationMs));
   const awayInWindowMs    = Math.round((s.awayMs || 0) * windowFraction);
 
-  // Reverted to the simple elapsed-minus-breaks-minus-away formula —
-  // the previous huddle-as-source-of-truth version showed 00:00:00 to
-  // anyone who wasn't currently in the huddle, which broke the live
-  // timer for legitimate solo work. Huddle attendance is still tracked
-  // (huddleMs / huddleJoinedAt) for separate reports + analytics — see
-  // the dedicated huddleTotalMs helper below.
-  const activeMs = Math.max(0, workedMs - breakMs - awayInWindowMs);
+  // Break-credit math (May 2026). Up to STANDARD_BREAK_MS of break time
+  // is "free" — built into the working day. Only minutes BEYOND that
+  // allowance reduce effective working hours. Someone who took 30min for
+  // lunch keeps their full clocked-in time as worked hours; someone who
+  // took 90min loses 30min. Reverses the older "every minute of break is
+  // a minute deducted" rule that was penalising healthy behaviour.
+  const breakPenaltyMs = Math.max(0, breakMs - STANDARD_BREAK_MS);
+  const activeMs       = Math.max(0, workedMs - breakPenaltyMs - awayInWindowMs);
 
-  return { workedMs, breakMs, awayMs: awayInWindowMs, activeMs };
+  return {
+    workedMs,                    // gross clocked-in time inside the window
+    breakMs,                     // actual break minutes
+    awayMs:        awayInWindowMs,
+    activeMs,                    // effective working hours (post break-credit)
+    breakPenaltyMs,              // 0 when break ≤ allowance; surfaced for UI hints
+    breakAllowanceMs: STANDARD_BREAK_MS,
+  };
 }
 
 /**

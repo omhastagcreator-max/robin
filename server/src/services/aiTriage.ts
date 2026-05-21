@@ -812,3 +812,81 @@ If asked about a Robin feature that doesn't exist, say so honestly and suggest t
     };
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Employee report — admin-facing one-click "how is this person doing?"
+//
+// Built off the same data the structured report uses (sessions, tasks,
+// activity, attendance). The AI's job is to TURN A WALL OF NUMBERS INTO
+// A SHORT NARRATIVE the admin can scan in 15 seconds. Specifically:
+//
+//   - Effective working hours over the period (break-credit included).
+//   - Break behaviour — calls out "took short breaks" as a positive.
+//   - On-call / huddle attendance pattern.
+//   - Task throughput vs. assigned.
+//   - Anything notable: late starts, no-break days, missed deadlines.
+//
+// Output is two short paragraphs. No grades, no judgement, no apology.
+// ─────────────────────────────────────────────────────────────────────────
+const EMPLOYEE_REPORT_SYSTEM = `You write an admin-facing employee status report for an agency.
+
+You will receive a JSON snapshot of one employee's recent work: per-day session totals (worked, break, on-call), task throughput (completed, ongoing, overdue), activity counts, and pattern flags ("shortBreakDays", "noBreakDays", "lateStartDays", "longBreakDays").
+
+Output: TWO short paragraphs of plain text, no markdown, no bullets, no greeting / sign-off. Roughly 60-120 words total.
+
+Paragraph 1 — the headline. State effective working hours over the period, average per day, and the strongest positive pattern. The break allowance is 1 hour per day; anyone whose typical break is below that is doing the healthy thing — say so directly ("takes short breaks", "doesn't overspend on lunch"). Mention task completion rate when notable.
+
+Paragraph 2 — anything the admin should know. Late starts, no-break days, overdue tasks, low huddle attendance, missed deadlines. Phrase concerns as observations, not accusations ("two days last week started after 11am", not "is consistently late"). If there's nothing concerning, say so honestly — don't manufacture issues.
+
+Tone: factual, calm, no hype. NEVER use internal codes like 'meta' or 'qa' — use the friendly labels we provide ("on the Meta Ads team", "Dev side", etc.).`;
+
+export interface EmployeeReportInput {
+  name: string;
+  role?: string;
+  team?: string;
+  periodDays: number;
+  // Per-day totals (minutes for human-readability — model will compute hours)
+  days: Array<{
+    date: string;            // YYYY-MM-DD
+    workedMin: number;       // effective working time (break-credit applied)
+    grossMin: number;        // total clocked-in time before any deductions
+    breakMin: number;
+    onCallMin: number;
+    huddleMin: number;
+    awayMin: number;
+    firstStart?: string;     // HH:mm local
+    lastEnd?:    string;     // HH:mm local
+    sessionCount: number;
+  }>;
+  // Computed pattern flags so the model doesn't have to do arithmetic.
+  patterns: {
+    avgWorkedHoursPerDay: number;
+    avgBreakMin: number;
+    shortBreakDays: number;   // days where break ≤ 30min
+    longBreakDays:  number;   // days where break > 75min
+    noBreakDays:    number;   // days where break = 0
+    lateStartDays:  number;   // days where firstStart > 10:30
+    onCallDays:     number;
+    huddleDayPct:   number;   // % of days with > 1h huddle attendance
+  };
+  tasks: {
+    completed: number;
+    assigned:  number;
+    ongoing:   number;
+    overdue:   number;
+  };
+}
+
+export async function generateEmployeeReport(snap: EmployeeReportInput): Promise<{ text: string; aiUsed: boolean }> {
+  if (!apiKey) {
+    return { text: 'AI reports are not set up yet. Ask your admin to add GEMINI_API_KEY on the server.', aiUsed: false };
+  }
+  try {
+    const payload = JSON.stringify(snap);
+    const text = await callGemini(EMPLOYEE_REPORT_SYSTEM, payload, 500);
+    return { text: text.trim(), aiUsed: true };
+  } catch (err) {
+    console.error('[generateEmployeeReport] failed:', (err as Error).message);
+    return { text: 'Could not generate the report just now. Try again in a moment.', aiUsed: false };
+  }
+}

@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
-import { scoreLead, summarizeWorkflow, summarizeAllProjects, generateMorningBrief, aiHealth, parseCommand, askRobin, askRobinThread, draftLeadFollowup } from '../services/aiTriage';
+import { scoreLead, summarizeWorkflow, summarizeAllProjects, generateMorningBrief, aiHealth, parseCommand, askRobin, askRobinThread, draftLeadFollowup, generateEmployeeReport, type EmployeeReportInput } from '../services/aiTriage';
+import { sessionTotals, huddleTotalMs } from '../services/sessionTime';
 import { withAICache, withRateLimit, computeLeadInsights, computeTaskFocus } from '../services/aiInsights';
 import { buildUserContext, rolePersona, getOrCreateThread, appendTurn, resetThread, recentTurnsForPrompt } from '../services/robinAI';
 import User from '../models/User';
@@ -670,6 +671,146 @@ export async function leadFollowupEndpoint(req: AuthRequest, res: Response): Pro
       }))
     );
     res.json({ ...result, channel, daysSinceLastContact });
+  } catch (err: any) {
+    if (err?.status === 429) { res.status(429).json({ error: err.message }); return; }
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
+
+// ─── Employee report — admin one-click AI summary ─────────────────────
+/**
+ * POST /api/ai-automation/employee-report/:userId
+ * Body: { periodDays?: number }   // default 7
+ *
+ * Builds a per-day snapshot of one employee's recent work (sessions,
+ * breaks, on-call, huddle, tasks) using the same sessionTotals() helper
+ * the dashboard timer uses, then asks Gemini for a short admin-facing
+ * narrative. The "break credit" rule (≤1h break is free) is honoured
+ * everywhere: the snapshot reports effective working hours, and the
+ * pattern flags call out "short break" days as a positive.
+ *
+ * Admin-only. Rate-limited like the rest of the AI surface.
+ */
+export async function employeeReportEndpoint(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    if (req.user!.role !== 'admin') { res.status(403).json({ error: 'Admin only' }); return; }
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    const userId     = String(req.params.userId);
+    const periodDays = Math.max(1, Math.min(30, parseInt(String(req.body?.periodDays || '7'), 10) || 7));
+
+    const emp = await User.findOne({ _id: userId, organizationId: orgId }).select('name email role teams').lean() as any;
+    if (!emp) { res.status(404).json({ error: 'Employee not found' }); return; }
+
+    // Window — last `periodDays` calendar days ending today.
+    const now      = Date.now();
+    const dayMs    = 24 * 3600 * 1000;
+    const startMs  = now - (periodDays * dayMs);
+
+    const sessions = await Session.find({
+      organizationId: orgId,
+      userId,
+      startTime: { $gte: new Date(startMs) },
+    }).select('startTime endTime breakEvents lastHeartbeatAt awayMs status huddleMs huddleJoinedAt onCallSince').lean() as any[];
+
+    // Group sessions by local date (IST). For simplicity we bucket by the
+    // UTC date of startTime — fine for a 7-day report; precision-by-tz can
+    // be refined later if the org goes multi-timezone.
+    const byDate: Record<string, any[]> = {};
+    for (const s of sessions) {
+      const d = new Date(s.startTime);
+      const key = d.toISOString().split('T')[0];
+      (byDate[key] = byDate[key] || []).push(s);
+    }
+
+    const days: EmployeeReportInput['days'] = [];
+    for (let i = periodDays - 1; i >= 0; i--) {
+      const date = new Date(now - i * dayMs);
+      const key  = date.toISOString().split('T')[0];
+      const ss   = byDate[key] || [];
+
+      let workedMin = 0, grossMin = 0, breakMin = 0, awayMin = 0, huddleMin = 0, onCallMin = 0;
+      let firstStart: string | undefined;
+      let lastEnd:    string | undefined;
+      const dayStart = new Date(`${key}T00:00:00.000Z`).getTime();
+      const dayEnd   = dayStart + dayMs;
+
+      for (const s of ss) {
+        const t = sessionTotals(s, dayStart, dayEnd);
+        workedMin += Math.round(t.activeMs / 60_000);
+        grossMin  += Math.round(t.workedMs / 60_000);
+        breakMin  += Math.round(t.breakMs  / 60_000);
+        awayMin   += Math.round(t.awayMs   / 60_000);
+        huddleMin += Math.round(huddleTotalMs(s, dayEnd) / 60_000);
+
+        const ts = new Date(s.startTime);
+        const tsHM = ts.toISOString().substring(11, 16); // HH:mm UTC — good enough
+        if (!firstStart || tsHM < firstStart) firstStart = tsHM;
+        if (s.endTime) {
+          const te = new Date(s.endTime).toISOString().substring(11, 16);
+          if (!lastEnd || te > lastEnd) lastEnd = te;
+        }
+      }
+
+      days.push({
+        date: key,
+        workedMin, grossMin, breakMin, onCallMin, huddleMin, awayMin,
+        firstStart, lastEnd,
+        sessionCount: ss.length,
+      });
+    }
+
+    // Pattern flags — let the model focus on narrative, not arithmetic.
+    const workedDays = days.filter(d => d.workedMin > 30);
+    const avgWorkedHoursPerDay = workedDays.length
+      ? +(workedDays.reduce((a, d) => a + d.workedMin, 0) / workedDays.length / 60).toFixed(1)
+      : 0;
+    const avgBreakMin = workedDays.length
+      ? Math.round(workedDays.reduce((a, d) => a + d.breakMin, 0) / workedDays.length)
+      : 0;
+
+    // Tasks — completed / assigned / ongoing / overdue inside the window.
+    const tasksOngoing  = await ProjectTask.countDocuments({ assignedTo: userId, status: { $in: ['pending', 'ongoing'] } });
+    const tasksDone     = await ProjectTask.countDocuments({ assignedTo: userId, status: 'done', updatedAt: { $gte: new Date(startMs) } });
+    const tasksAssigned = await ProjectTask.countDocuments({ assignedTo: userId, createdAt:  { $gte: new Date(startMs) } });
+    const tasksOverdue  = await ProjectTask.countDocuments({
+      assignedTo: userId, status: { $in: ['pending', 'ongoing'] },
+      dueDate: { $lt: new Date() },
+    });
+
+    const snap: EmployeeReportInput = {
+      name: emp.name || emp.email || 'Unknown',
+      role: emp.role,
+      team: (emp.teams || [])[0],
+      periodDays,
+      days,
+      patterns: {
+        avgWorkedHoursPerDay,
+        avgBreakMin,
+        shortBreakDays: workedDays.filter(d => d.breakMin > 0 && d.breakMin <= 30).length,
+        longBreakDays:  workedDays.filter(d => d.breakMin > 75).length,
+        noBreakDays:    workedDays.filter(d => d.breakMin === 0).length,
+        lateStartDays:  workedDays.filter(d => d.firstStart && d.firstStart > '10:30').length,
+        onCallDays:     workedDays.filter(d => d.onCallMin > 0).length,
+        huddleDayPct:   workedDays.length
+          ? Math.round(100 * workedDays.filter(d => d.huddleMin > 60).length / workedDays.length)
+          : 0,
+      },
+      tasks: {
+        completed: tasksDone,
+        assigned:  tasksAssigned,
+        ongoing:   tasksOngoing,
+        overdue:   tasksOverdue,
+      },
+    };
+
+    const cacheKey = `emp-report:${userId}:${periodDays}d:${days[days.length-1]?.workedMin || 0}`;
+    const result = await withRateLimit(req.user!.id, () =>
+      withAICache(cacheKey, 5 * 60_000, () => generateEmployeeReport(snap))
+    );
+
+    res.json({ ...result, snapshot: snap });
   } catch (err: any) {
     if (err?.status === 429) { res.status(429).json({ error: err.message }); return; }
     res.status(500).json({ error: (err as Error).message });

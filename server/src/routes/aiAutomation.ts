@@ -7,7 +7,7 @@ import {
   getAiHealth, getAiHealthPublic, parseCommandEndpoint,
   copilotEndpoint, getCopilotThread, deleteCopilotThread, updateCopilotPin,
   leadInsightsEndpoint, leadFollowupEndpoint,
-  focusEndpoint,
+  focusEndpoint, employeeReportEndpoint,
 } from '../controllers/aiAutomationController';
 
 const router = Router();
@@ -60,5 +60,10 @@ router.post('/lead-followup/:id',      requireRole('admin', 'sales'),           
 // Task AI Focus Mode — "what should I do RIGHT NOW?". Heuristic, no LLM.
 // Returns top-N user's open tasks ranked by priority × overdue × age.
 router.get ('/focus',                  requireRole('admin', 'employee', 'sales'),             focusEndpoint);
+
+// Admin one-click "how is this person doing?" — pulls last N days of
+// sessions (with break-credit math), tasks, attendance patterns; Gemini
+// turns it into a 2-paragraph narrative the admin can scan in 15 seconds.
+router.post('/employee-report/:userId', requireRole('admin'),                                  employeeReportEndpoint);
 
 export default router;

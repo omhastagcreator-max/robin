@@ -273,10 +273,42 @@ export function EmployeeReportModal({ open, employee, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
 
+  // AI summary state — admin one-click "how is this person doing?"
+  // Lazy by default (we don't burn a Gemini call on every modal open);
+  // user clicks the AI button when they want the narrative.
+  const [aiText, setAiText]       = useState<string | null>(null);
+  const [aiUsed, setAiUsed]       = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSnap, setAiSnap]       = useState<any | null>(null);
+
   // Reset state on open/close
   useEffect(() => {
-    if (open) { setPeriod('daily'); setReport(null); setError(null); }
+    if (open) {
+      setPeriod('daily'); setReport(null); setError(null);
+      setAiText(null); setAiSnap(null); setAiUsed(false);
+    }
   }, [open, employee?._id]);
+
+  const generateAi = async () => {
+    if (!employee?._id || aiLoading) return;
+    // AI uses a calendar-day window; map our period to a sensible N.
+    const periodDays = period === 'monthly' ? 30 : period === 'weekly' ? 7 : 7;
+    setAiLoading(true);
+    try {
+      const data = await (await import('@/api')).aiEmployeeReport(employee._id, periodDays);
+      setAiText(data.text);
+      setAiUsed(data.aiUsed);
+      setAiSnap(data.snapshot);
+    } catch (e: any) {
+      const status = e?.response?.status;
+      if (status === 429)      setAiText('AI is rate-limited right now. Try again in a moment.');
+      else if (status === 403) setAiText('Admin only — your account cannot generate this report.');
+      else                     setAiText(e?.response?.data?.error || 'Could not generate the AI report.');
+      setAiUsed(false);
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   // Fetch report when employee/period changes
   useEffect(() => {
@@ -363,6 +395,71 @@ export function EmployeeReportModal({ open, employee, onClose }: Props) {
                   <Calendar className="h-3 w-3" />
                   Since {format(new Date(report.startDate), 'EEE, dd MMM yyyy h:mm a')}
                 </p>
+              )}
+            </div>
+
+            {/* AI one-click summary — admin's "how is this person doing?"
+                Lazy: we don't burn a Gemini call on every modal open.
+                Click the button to generate; result stays until the modal
+                closes or period changes. */}
+            <div className="px-5 py-3 border-b border-border bg-primary/[0.025]">
+              <div className="flex items-center gap-2">
+                <div className="h-7 w-7 rounded-lg bg-primary/15 flex items-center justify-center text-primary shrink-0">
+                  <Zap className="h-3.5 w-3.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] font-semibold leading-snug">AI summary</p>
+                  <p className="text-[10.5px] text-muted-foreground leading-snug">
+                    2-paragraph narrative — effective hours, break habits, anything notable.
+                  </p>
+                </div>
+                <button
+                  onClick={generateAi}
+                  disabled={aiLoading || !employee?._id}
+                  className="inline-flex items-center gap-1.5 px-3 h-7 rounded-md bg-primary text-primary-foreground text-[11.5px] font-semibold hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {aiLoading
+                    ? <><Loader2 className="h-3 w-3 animate-spin" /> Generating…</>
+                    : aiText ? 'Regenerate' : 'Generate'}
+                </button>
+              </div>
+              {aiText && (
+                <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2.5 space-y-2">
+                  <p className="text-[12.5px] leading-relaxed whitespace-pre-wrap">{aiText}</p>
+                  {aiSnap?.patterns && (
+                    <div className="pt-2 mt-2 border-t border-border/60 flex flex-wrap gap-2 text-[10.5px]">
+                      <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                        ~{aiSnap.patterns.avgWorkedHoursPerDay}h/day
+                      </span>
+                      {aiSnap.patterns.shortBreakDays > 0 && (
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 font-semibold">
+                          short breaks ×{aiSnap.patterns.shortBreakDays}
+                        </span>
+                      )}
+                      {aiSnap.patterns.longBreakDays > 0 && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700 font-semibold">
+                          long breaks ×{aiSnap.patterns.longBreakDays}
+                        </span>
+                      )}
+                      {aiSnap.patterns.noBreakDays > 0 && (
+                        <span className="px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-700 font-semibold">
+                          no break ×{aiSnap.patterns.noBreakDays}
+                        </span>
+                      )}
+                      {aiSnap.patterns.lateStartDays > 0 && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700">
+                          late start ×{aiSnap.patterns.lateStartDays}
+                        </span>
+                      )}
+                      {aiSnap.tasks && (aiSnap.tasks.completed > 0 || aiSnap.tasks.ongoing > 0) && (
+                        <span className="px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-700">
+                          {aiSnap.tasks.completed} done · {aiSnap.tasks.ongoing} ongoing
+                        </span>
+                      )}
+                      <span className="ml-auto text-muted-foreground italic">{aiUsed ? 'AI' : 'fallback'}</span>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
