@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Calendar as CalIcon, List, CheckCircle2, Circle, Clock,
-  Trash2, Loader2, X, ChevronDown,
+  Trash2, Loader2, X, ChevronDown, AlignJustify, Rows3,
 } from 'lucide-react';
 import { format, isToday, isBefore, startOfDay } from 'date-fns';
 import { toast } from 'sonner';
@@ -83,6 +83,16 @@ export default function TasksPage() {
   const [form, setForm]       = useState<NewTaskForm>(EMPTY_FORM);
   const [saving, setSaving]   = useState(false);
   const [filter, setFilter]   = useState<'all' | 'today' | 'overdue' | 'done'>('all');
+  // Density — compact mode collapses each task to a single line, ~doubling
+  // the rows-per-fold. The chips still render but inline at smaller scale.
+  const [density, setDensity] = useState<'compact' | 'comfy'>(() => {
+    try { return (localStorage.getItem('tasks.density') as any) === 'compact' ? 'compact' : 'comfy'; }
+    catch { return 'comfy'; }
+  });
+  const setDensityPersist = (d: 'compact' | 'comfy') => {
+    setDensity(d);
+    try { localStorage.setItem('tasks.density', d); } catch { /* private mode */ }
+  };
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -154,6 +164,27 @@ export default function TasksPage() {
                 {v === 'list' ? <List className="h-3.5 w-3.5" /> : <CalIcon className="h-3.5 w-3.5" />}
               </button>
             ))}
+            {/* Density toggle — only meaningful in list view (board cards
+                are already compact). Compact mode shows ~2× the rows per
+                fold by collapsing chips + due date to a single line. */}
+            {view === 'list' && (
+              <div className="inline-flex items-center rounded-md border border-border bg-card overflow-hidden ml-1">
+                <button
+                  onClick={() => setDensityPersist('comfy')}
+                  className={`h-7 px-2 flex items-center gap-1 text-[11px] transition-colors ${density === 'comfy' ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                  title="Comfortable density"
+                >
+                  <Rows3 className="h-3 w-3" />
+                </button>
+                <button
+                  onClick={() => setDensityPersist('compact')}
+                  className={`h-7 px-2 flex items-center gap-1 text-[11px] transition-colors ${density === 'compact' ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                  title="Compact density — ~2× rows per page"
+                >
+                  <AlignJustify className="h-3 w-3" />
+                </button>
+              </div>
+            )}
             <Button size="sm" intent="primary" iconLeft={<Plus className="h-3.5 w-3.5" />} onClick={() => setAdding(v => !v)} className="ml-1">
               Add task
             </Button>
@@ -242,7 +273,49 @@ export default function TasksPage() {
         ) : view === 'list' ? (
           <div className="border border-border rounded-xl bg-card overflow-hidden">
             <AnimatePresence initial={false}>
-              {filtered.map((t, i) => (
+              {filtered.map((t, i) => density === 'compact' ? (
+                // ── COMPACT — single 32px row, chips + due date inline. ──
+                // The classic Linear / Todoist density: title takes priority,
+                // chips and due date fall to a narrow trailing cluster on
+                // the right so the eye can skim 25+ tasks per fold.
+                <motion.div
+                  key={t._id}
+                  layout
+                  initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className={`flex items-center gap-2 px-3 h-8 group transition-colors hover:bg-primary/[0.03] ${i > 0 ? 'border-t border-border' : ''}`}
+                >
+                  <button onClick={() => toggle(t._id, t.status)} className="shrink-0" title="Cycle status">
+                    {t.status === 'done'
+                      ? <CheckCircle2 className="h-[14px] w-[14px] text-emerald-600" />
+                      : t.status === 'ongoing'
+                        ? <CheckCircle2 className="h-[14px] w-[14px] text-blue-600/60 hover:text-blue-600" />
+                        : <Circle className="h-[14px] w-[14px] text-muted-foreground/40 hover:text-emerald-600" />}
+                  </button>
+                  <p className={`text-[12.5px] font-medium flex-1 min-w-0 truncate ${t.status === 'done' ? 'line-through text-muted-foreground' : ''}`}>
+                    {t.title}
+                  </p>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <PriorityChip priority={t.priority} />
+                    {t.dueDate && (
+                      <span className={`text-[10.5px] flex items-center gap-0.5 tabular-nums ${
+                        isBefore(new Date(t.dueDate), startOfDay(new Date())) && t.status !== 'done'
+                          ? 'text-rose-600 font-semibold'
+                          : 'text-muted-foreground'
+                      }`}>
+                        <Clock className="h-2.5 w-2.5" />
+                        {format(new Date(t.dueDate), 'MMM d')}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => remove(t._id)}
+                      className="opacity-0 group-hover:opacity-100 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 transition-all"
+                      title="Delete task"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                </motion.div>
+              ) : (
                 <motion.div
                   key={t._id}
                   layout

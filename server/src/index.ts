@@ -38,6 +38,7 @@ import integrationsRoutes from './routes/integrations';
 import workroomOnboardRoutes from './routes/workroomOnboard';
 import issuesRoutes        from './routes/issues';
 import aiAutomationRoutes  from './routes/aiAutomation';
+import focusListRoutes     from './routes/focusList';
 import { startSheetSyncJob } from './jobs/sheetSyncJob';
 import credentialsRoutes  from './routes/credentials';
 import leavesRoutes       from './routes/leaves';
@@ -484,6 +485,7 @@ app.use('/api/integrations',    integrationsRoutes);
 app.use('/api/workroom-onboard', workroomOnboardRoutes); // admin OR canManageWorkroom-flagged users
 app.use('/api/issues',          issuesRoutes);            // bug reports + Ask Robin AI helper
 app.use('/api/ai-automation',   aiAutomationRoutes);      // lead scoring, workflow summary, morning brief
+app.use('/api/focus-list',      focusListRoutes);          // sales "Focus This Week" priority lists + assignments
 
 // ── 404 + Error handler ───────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));

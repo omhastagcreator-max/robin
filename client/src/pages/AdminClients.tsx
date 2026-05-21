@@ -4,6 +4,7 @@ import {
   Loader2, Plus, X, Eye, EyeOff, Copy, RefreshCw,
   Trophy, ArrowRight, IndianRupee, UserPlus, CheckCircle2,
   Building2, Wand2, Phone, Mail, Briefcase, Info,
+  LayoutGrid, List as ListIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -213,6 +214,15 @@ export default function AdminClients() {
   const [loading, setLoading]       = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [convertLead, setConvertLead] = useState<any | null>(null);
+  // View toggle — persisted per page. Grid fits ~3× the clients per fold.
+  const [view, setView] = useState<'grid' | 'list'>(() => {
+    try { return (localStorage.getItem('people.clients.layout') as any) === 'list' ? 'list' : 'grid'; }
+    catch { return 'grid'; }
+  });
+  const setViewPersist = (v: 'grid' | 'list') => {
+    setView(v);
+    try { localStorage.setItem('people.clients.layout', v); } catch { /* private mode */ }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -238,6 +248,22 @@ export default function AdminClients() {
             <p className="text-[12px] text-muted-foreground">{clients.length} active account{clients.length === 1 ? '' : 's'}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <div className="inline-flex items-center rounded-md border border-border bg-card overflow-hidden text-[11.5px]">
+              <button
+                onClick={() => setViewPersist('grid')}
+                className={`flex items-center gap-1 px-2 py-1.5 transition-colors ${view === 'grid' ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                title="Grid view"
+              >
+                <LayoutGrid className="h-3 w-3" /> Grid
+              </button>
+              <button
+                onClick={() => setViewPersist('list')}
+                className={`flex items-center gap-1 px-2 py-1.5 transition-colors ${view === 'list' ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                title="List view"
+              >
+                <ListIcon className="h-3 w-3" /> List
+              </button>
+            </div>
             <UtilityButton
               label="Seed 3 demo clients"
               busyLabel="Seeding…"
@@ -313,30 +339,72 @@ export default function AdminClients() {
         {loading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         ) : clients.length > 0 ? (
-          <div className="border border-border rounded-xl bg-card overflow-hidden">
-            {clients.map(c => (
-              <Row key={c._id} density="comfy">
-                <Row.Leading>
-                  <Avatar name={c.name} email={c.email} size="sm" tone="primary" />
-                </Row.Leading>
-                <Row.Main>
-                  <Row.Title>{c.name || 'Unnamed'}</Row.Title>
-                  <Row.Meta>
-                    {c.company && <><span className="font-medium text-foreground/70">{c.company}</span> · </>}
-                    <span className="inline-flex items-center gap-1"><Mail className="h-2.5 w-2.5" />{c.email}</span>
-                    {c.phone && <> · <span className="inline-flex items-center gap-1"><Phone className="h-2.5 w-2.5" />{c.phone}</span></>}
-                  </Row.Meta>
-                </Row.Main>
-                <Row.Trail>
-                  <span className="inline-flex items-center gap-1 text-[11.5px] text-muted-foreground">
-                    <Briefcase className="h-3 w-3" />
-                    {c.projectCount || 0}
-                  </span>
-                  <StatusPill state={c.isActive !== false ? 'working' : 'off_clock'} size="xs" label={c.isActive !== false ? 'Active' : 'Inactive'} icon="none" />
-                </Row.Trail>
-              </Row>
-            ))}
-          </div>
+          view === 'grid' ? (
+            // Grid view: dense cards. 4-up on desktop. Each card surfaces
+            // the same data as the list row but vertically stacked, so
+            // ~24 clients fit per fold instead of ~12.
+            <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {clients.map(c => (
+                <div
+                  key={c._id}
+                  className="rounded-lg border border-border bg-card px-3 py-2.5 flex flex-col gap-1.5 hover:border-primary/30 transition-colors"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Avatar name={c.name} email={c.email} size="sm" tone="primary" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12.5px] font-semibold truncate">{c.name || 'Unnamed'}</p>
+                      {c.company && (
+                        <p className="text-[10.5px] text-muted-foreground truncate">{c.company}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-[10.5px] text-muted-foreground">
+                    <span className="inline-flex items-center gap-1 truncate">
+                      <Mail className="h-2.5 w-2.5 shrink-0" />
+                      <span className="truncate">{c.email}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1 shrink-0">
+                      <Briefcase className="h-2.5 w-2.5" />
+                      {c.projectCount || 0}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    {c.phone ? (
+                      <span className="text-[10.5px] text-muted-foreground truncate inline-flex items-center gap-1">
+                        <Phone className="h-2.5 w-2.5 shrink-0" /> {c.phone}
+                      </span>
+                    ) : <span />}
+                    <StatusPill state={c.isActive !== false ? 'working' : 'off_clock'} size="xs" label={c.isActive !== false ? 'Active' : 'Inactive'} icon="none" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="border border-border rounded-xl bg-card overflow-hidden">
+              {clients.map(c => (
+                <Row key={c._id} density="comfy">
+                  <Row.Leading>
+                    <Avatar name={c.name} email={c.email} size="sm" tone="primary" />
+                  </Row.Leading>
+                  <Row.Main>
+                    <Row.Title>{c.name || 'Unnamed'}</Row.Title>
+                    <Row.Meta>
+                      {c.company && <><span className="font-medium text-foreground/70">{c.company}</span> · </>}
+                      <span className="inline-flex items-center gap-1"><Mail className="h-2.5 w-2.5" />{c.email}</span>
+                      {c.phone && <> · <span className="inline-flex items-center gap-1"><Phone className="h-2.5 w-2.5" />{c.phone}</span></>}
+                    </Row.Meta>
+                  </Row.Main>
+                  <Row.Trail>
+                    <span className="inline-flex items-center gap-1 text-[11.5px] text-muted-foreground">
+                      <Briefcase className="h-3 w-3" />
+                      {c.projectCount || 0}
+                    </span>
+                    <StatusPill state={c.isActive !== false ? 'working' : 'off_clock'} size="xs" label={c.isActive !== false ? 'Active' : 'Inactive'} icon="none" />
+                  </Row.Trail>
+                </Row>
+              ))}
+            </div>
+          )
         ) : null}
 
         {/* Discovery hint — keep it small once there ARE clients but no won leads,

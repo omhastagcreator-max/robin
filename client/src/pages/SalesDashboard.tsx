@@ -19,6 +19,8 @@ import { LiveSheetSection } from '@/components/dashboard/LiveSheetSection';
 import { TodayClientsCard } from '@/components/dashboard/TodayClientsCard';
 import { LeadListView } from '@/components/dashboard/LeadListView';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
+import { FocusThisWeek } from '@/components/dashboard/FocusThisWeek';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ── Stage Config ──────────────────────────────────────────────────────────────
 const PIPELINE_STAGES = [
@@ -42,7 +44,30 @@ const OUTCOME_STAGES = [
 ] as const;
 
 const ALL_STAGES = [...PIPELINE_STAGES, ...SALES_STAGES, ...OUTCOME_STAGES];
-const EMPTY_FORM = { name: '', contact: '', email: '', company: '', source: 'other', estimatedValue: '' };
+// Default source is 'inbound' — most pasted-in leads come from form-fills or
+// reply-to-our-cold-mail flows. Rep can switch with one tap on the segmented
+// outbound/inbound/organic picker.
+const EMPTY_FORM = { name: '', contact: '', email: '', company: '', source: 'inbound', estimatedValue: '' };
+
+// ── Lead source UX ─────────────────────────────────────────────────────────────
+// The three categories the sales team thinks in. Everything else maps into
+// these three buckets for reporting. The Lead model still accepts legacy
+// values (referral/cold_call/website/social/other), but new leads created
+// from this UI always pick one of these.
+const SOURCE_OPTIONS = [
+  { key: 'outbound', label: 'Outbound', sub: 'We reached out',  bg: 'bg-violet-500/12',   text: 'text-violet-700',   ring: 'ring-violet-400' },
+  { key: 'inbound',  label: 'Inbound',  sub: 'Form / paid ad',  bg: 'bg-sky-500/12',      text: 'text-sky-700',      ring: 'ring-sky-400'    },
+  { key: 'organic',  label: 'Organic',  sub: 'SEO / referral',  bg: 'bg-emerald-500/12',  text: 'text-emerald-700',  ring: 'ring-emerald-400'},
+] as const;
+
+/** Normalise legacy source values into one of the 3 primary categories. */
+function bucketSource(s?: string): 'outbound' | 'inbound' | 'organic' | null {
+  if (!s) return null;
+  if (s === 'outbound' || s === 'cold_call') return 'outbound';
+  if (s === 'inbound')                       return 'inbound';
+  if (s === 'organic' || s === 'referral' || s === 'social' || s === 'website') return 'organic';
+  return null;
+}
 
 /**
  * parseContactBlob — extracts {name, phone, email} from a single freeform
@@ -66,9 +91,10 @@ function parseContactBlob(blob: string): { name: string; phone?: string; email?:
   };
 }
 
-type Tab = 'pipeline' | 'list' | 'clients' | 'won';
+type Tab = 'pipeline' | 'focus' | 'list' | 'clients' | 'won';
 
 export default function SalesDashboard() {
+  const { user } = useAuth();
   const drawer = useDrawer();
   const openLeadAI = (lead: any) => {
     drawer.open({
@@ -248,7 +274,7 @@ export default function SalesDashboard() {
         name:    parsed.name || trimmed,
         contact: parsed.phone || '',
         email:   parsed.email || '',
-        source:  'other',  // 'manual' isn't in the Lead.source enum — use 'other' so save doesn't 400
+        source:  'inbound', // quick-adds default to 'inbound'; rep can recategorise later
         stage:   stageKey,
         estimatedValue: 0,
       });
@@ -413,11 +439,26 @@ export default function SalesDashboard() {
             📞 {lead.contact}
           </a>
         )}
-        {(lead.company || lead.source) && (
-          <p className="text-[10px] text-muted-foreground truncate">
-            {[lead.company, lead.source ? `via ${lead.source.replace('_', ' ')}` : null].filter(Boolean).join(' · ')}
-          </p>
-        )}
+        {/* Source chip — three-bucket colour coding so reps can scan the
+            kanban and immediately tell which leads came from outreach vs.
+            inbound vs. organic. Falls back to a muted text label for any
+            legacy fine-grained value that doesn't bucket cleanly. */}
+        {(lead.company || lead.source) && (() => {
+          const bucket = bucketSource(lead.source);
+          const opt = bucket ? SOURCE_OPTIONS.find(o => o.key === bucket) : null;
+          return (
+            <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-muted-foreground">
+              {opt ? (
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full font-semibold ${opt.bg} ${opt.text}`}>
+                  {opt.label}
+                </span>
+              ) : lead.source ? (
+                <span className="opacity-80">via {lead.source.replace(/_/g, ' ')}</span>
+              ) : null}
+              {lead.company && <span className="truncate">{lead.company}</span>}
+            </div>
+          );
+        })()}
 
         {/* ONE-CLICK ACTIONS — primary "next stage", secondary "lost" */}
         {!isTerminal && (
@@ -680,6 +721,7 @@ export default function SalesDashboard() {
         <div className="flex gap-1 bg-muted p-1 rounded-xl w-fit">
           {([
             ['pipeline', 'Pipeline', LayoutDashboard],
+            ['focus',    'Focus This Week', Flame],
             ['list',     'All leads · list', List],
             ['clients',  'Clients',  Building2],
             ['won',      'Won Deals', Trophy],
@@ -717,15 +759,38 @@ export default function SalesDashboard() {
                     placeholder={f.placeholder}
                     className="px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
                 ))}
-                <select value={form.source} onChange={e => setForm(p => ({ ...p, source: e.target.value }))}
-                  className="px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm">
-                  {['inbound','outbound','referral','cold_call','website','social','other'].map(s => (
-                    <option key={s} value={s}>{s.replace('_',' ')}</option>
-                  ))}
-                </select>
                 <input type="number" value={form.estimatedValue} placeholder="Est. value (₹)"
                   onChange={e => setForm(p => ({ ...p, estimatedValue: e.target.value }))}
                   className="px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+              {/* Lead source — three primary buckets the sales team thinks in.
+                  One tap, no dropdown. The Lead model still accepts more
+                  fine-grained legacy values but those are deprecated for new
+                  leads. */}
+              <div className="mt-3">
+                <p className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground mb-1.5">
+                  Where did this lead come from?
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {SOURCE_OPTIONS.map(s => {
+                    const active = form.source === s.key;
+                    return (
+                      <button
+                        key={s.key}
+                        type="button"
+                        onClick={() => setForm(p => ({ ...p, source: s.key }))}
+                        className={`flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2 text-left transition-all ${
+                          active
+                            ? `${s.bg} ${s.text} border-transparent ring-2 ${s.ring}`
+                            : 'bg-muted/20 border-border text-foreground/70 hover:bg-muted/40'
+                        }`}
+                      >
+                        <span className="text-xs font-bold">{s.label}</span>
+                        <span className="text-[10px] opacity-80">{s.sub}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <button type="submit" disabled={saving || !form.name}
                 className="mt-3 flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
@@ -770,6 +835,17 @@ export default function SalesDashboard() {
                   </div>
                 </div>
               </div>
+            )}
+
+            {/* ── FOCUS THIS WEEK ── rep's priority list + assignments.
+                Notifies any teammate added as an assignee. See
+                client/src/components/dashboard/FocusThisWeek.tsx. */}
+            {tab === 'focus' && (
+              <FocusThisWeek
+                leads={leads}
+                clients={clients}
+                currentUserId={user?.id || ''}
+              />
             )}
 
             {/* ── LIST VIEW ── one row per lead, stage clearly visible.

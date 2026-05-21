@@ -25,10 +25,21 @@ const LeadSchema = new Schema({
   contact:        { type: String },
   email:          { type: String },
   company:        String,
+  // Source — three categories drive the sales UI: 'outbound', 'inbound',
+  // 'organic'. Legacy values ('referral', 'cold_call', 'website', 'social',
+  // 'other') are kept so older docs continue to validate, but the New-Lead
+  // form now shows just the three primary buttons. Mapping (for reporting):
+  //   referral / social / website   → organic
+  //   cold_call                      → outbound
+  //   other / ''                     → (unbucketed)
   source: {
     type: String,
-    enum: ['referral', 'cold_call', 'website', 'social', 'inbound', 'outbound', 'other', ''],
-    default: 'other',
+    enum: [
+      'outbound', 'inbound', 'organic',
+      // legacy / fine-grained labels — still accepted for backwards compat
+      'referral', 'cold_call', 'website', 'social', 'other', '',
+    ],
+    default: 'inbound',
   },
   stage: {
     type: String,

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { LayoutGrid, List as ListIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import {
   Loader2, Plus, UserCheck, ChevronDown, X, Users, BarChart2,
@@ -12,6 +13,7 @@ import { StatusPill }  from '@/components/ui/StatusPill';
 import { EmptyState }  from '@/components/ui/EmptyState';
 import { useDrawer }   from '@/components/ui/RightDrawer';
 import { Avatar }      from '@/components/shared/Avatar';
+import { PeopleGrid, type PeopleGridItem } from '@/components/ui/PeopleGrid';
 import { TeammateAdminPanel } from '@/components/panels/TeammateAdminPanel';
 import { EmployeeReportModal } from '@/components/admin/EmployeeReportModal';
 import { useUnifiedPresence, type UnifiedPresence } from '@/hooks/useUnifiedPresence';
@@ -57,6 +59,17 @@ export default function AdminEmployees() {
   const [assigningRoles, setAssigningRoles] = useState(false);
 
   const [reportFor, setReportFor] = useState<any | null>(null);
+
+  // Persist view preference across reloads — admins land here repeatedly
+  // through the day so resetting to grid each time would be annoying.
+  const [view, setView] = useState<'grid' | 'list'>(() => {
+    try { return (localStorage.getItem('people.employees.layout') as any) === 'list' ? 'list' : 'grid'; }
+    catch { return 'grid'; }
+  });
+  const setViewPersist = (v: 'grid' | 'list') => {
+    setView(v);
+    try { localStorage.setItem('people.employees.layout', v); } catch { /* private mode */ }
+  };
 
   const load = async () => {
     try {
@@ -136,6 +149,25 @@ export default function AdminEmployees() {
             <p className="text-[12px] text-muted-foreground">{employees.length} {employees.length === 1 ? 'member' : 'members'}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Grid / list toggle — grid fits ~20 people per fold on a
+                13" MacBook (the current row view fits ~12), so admins
+                scanning for a teammate by face/name don't have to scroll. */}
+            <div className="inline-flex items-center rounded-md border border-border bg-card overflow-hidden text-[11.5px]">
+              <button
+                onClick={() => setViewPersist('grid')}
+                className={`flex items-center gap-1 px-2 py-1.5 transition-colors ${view === 'grid' ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                title="Grid view"
+              >
+                <LayoutGrid className="h-3 w-3" /> Grid
+              </button>
+              <button
+                onClick={() => setViewPersist('list')}
+                className={`flex items-center gap-1 px-2 py-1.5 transition-colors ${view === 'list' ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                title="List view — denser, inline role select"
+              >
+                <ListIcon className="h-3 w-3" /> List
+              </button>
+            </div>
             <Button
               size="sm"
               intent="secondary"
@@ -218,6 +250,39 @@ export default function AdminEmployees() {
             icon={<Users className="h-7 w-7" />}
             title="No team members yet"
             hint="Add your first member with the button above."
+          />
+        ) : view === 'grid' ? (
+          // Grid view: compact tile per member, full controls in drawer
+          // (click) — keep the report shortcut as a tile trailing icon.
+          <PeopleGrid
+            layout="grid"
+            hideToggle
+            items={employees.map<PeopleGridItem>(emp => {
+              const live: UnifiedPresence | null = presence.get(emp._id);
+              const teamCount = (Array.isArray(emp.teams) ? emp.teams : []).filter((t: string) => t !== emp.team).length;
+              const tasksToday = emp.tasksDoneToday || 0;
+              return {
+                id:    emp._id,
+                name:  emp.name,
+                email: emp.email,
+                role:  emp.role,
+                team:  emp.team || undefined,
+                state: live ? (live.displayState as any) : 'off_clock',
+                hint:  tasksToday > 0
+                  ? `${tasksToday} done today${teamCount > 0 ? ` · +${teamCount} teams` : ''}`
+                  : (teamCount > 0 ? `+${teamCount} teams` : undefined),
+                onClick: () => openEmployeeDrawer(emp),
+                trailing: (
+                  <button
+                    onClick={e => { e.stopPropagation(); setReportFor(emp); }}
+                    title="Productivity report"
+                    className="h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-primary transition-colors"
+                  >
+                    <BarChart2 className="h-3.5 w-3.5" />
+                  </button>
+                ),
+              };
+            })}
           />
         ) : (
           <div className="border border-border rounded-xl bg-card overflow-hidden">

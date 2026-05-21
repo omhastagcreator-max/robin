@@ -91,6 +91,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    // Reset the 401-strike counter (see axios.ts) — otherwise a strike
+    // earned by the previous user can fire a false-bounce on user B's
+    // very first request after logging in. Audit finding MED-6.
+    try { delete (window as any).__robin401Strike; } catch { /* ignore */ }
     // Tear down the shared socket so the next login doesn't inherit the
     // previous user's identity in chat/presence.
     try { disconnectSharedSocket(); } catch { /* ignore */ }

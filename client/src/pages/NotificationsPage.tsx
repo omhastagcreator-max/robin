@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bell, CheckCheck, Trash2, Info, AlertTriangle, CheckCircle2, AlertOctagon,
+  AlignJustify, Rows3,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -34,6 +35,17 @@ export default function NotificationsPage() {
   const [notifs, setNotifs]   = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const { resetNotifications } = useUnreadCounts();
+  // Notifications often arrive in bursts (deploy errors, batch mention
+  // spam). Compact mode squashes each to a 32px single-line row so the
+  // user can scan 30+ items per fold before deciding which to expand.
+  const [density, setDensity] = useState<'compact' | 'comfy'>(() => {
+    try { return (localStorage.getItem('notifications.density') as any) === 'compact' ? 'compact' : 'comfy'; }
+    catch { return 'comfy'; }
+  });
+  const setDensityPersist = (d: 'compact' | 'comfy') => {
+    setDensity(d);
+    try { localStorage.setItem('notifications.density', d); } catch { /* private mode */ }
+  };
 
   const load = async () => {
     try {
@@ -88,11 +100,29 @@ export default function NotificationsPage() {
               {unread > 0 ? `${unread} unread of ${notifs.length}` : `${notifs.length} total`}
             </p>
           </div>
-          {unread > 0 && (
-            <Button size="sm" intent="secondary" iconLeft={<CheckCheck className="h-3.5 w-3.5" />} onClick={readAll}>
-              Mark all read
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            <div className="inline-flex items-center rounded-md border border-border bg-card overflow-hidden">
+              <button
+                onClick={() => setDensityPersist('comfy')}
+                className={`h-7 px-2 flex items-center text-[11px] transition-colors ${density === 'comfy' ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                title="Comfortable"
+              >
+                <Rows3 className="h-3 w-3" />
+              </button>
+              <button
+                onClick={() => setDensityPersist('compact')}
+                className={`h-7 px-2 flex items-center text-[11px] transition-colors ${density === 'compact' ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                title="Compact"
+              >
+                <AlignJustify className="h-3 w-3" />
+              </button>
+            </div>
+            {unread > 0 && (
+              <Button size="sm" intent="secondary" iconLeft={<CheckCheck className="h-3.5 w-3.5" />} onClick={readAll}>
+                Mark all read
+              </Button>
+            )}
+          </div>
         </div>
 
         {loading ? (
@@ -110,6 +140,42 @@ export default function NotificationsPage() {
               {notifs.map((n, i) => {
                 const cfg  = typeConfig[n.type] || typeConfig.info;
                 const Icon = cfg.icon;
+                if (density === 'compact') {
+                  // Single-line compact row — title + relative time + actions
+                  // on hover. Three lines → one, so ~30/fold instead of ~10.
+                  return (
+                    <motion.div
+                      key={n._id}
+                      layout
+                      initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                      className={`flex items-center gap-2 px-3 h-8 group transition-colors ${i > 0 ? 'border-t border-border' : ''} ${!n.isRead ? 'bg-primary/[0.03]' : ''}`}
+                    >
+                      <div className={`h-5 w-5 rounded flex items-center justify-center shrink-0 ${cfg.bg}`}>
+                        <Icon className={`h-2.5 w-2.5 ${cfg.color}`} />
+                      </div>
+                      <p className={`text-[12.5px] font-medium flex-1 min-w-0 truncate ${!n.isRead ? 'text-foreground' : 'text-muted-foreground'}`}>
+                        {n.title}
+                        {(n.body || n.message) && (
+                          <span className="text-muted-foreground/70 font-normal ml-2">{n.body || n.message}</span>
+                        )}
+                      </p>
+                      <p className="text-[10.5px] text-muted-foreground shrink-0 tabular-nums">
+                        {format(new Date(n.createdAt), 'MMM d')}
+                      </p>
+                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {!n.isRead && (
+                          <button onClick={() => readOne(n._id)} title="Mark read" className="h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10">
+                            <CheckCheck className="h-3 w-3" />
+                          </button>
+                        )}
+                        <button onClick={() => deleteOne(n._id)} title="Delete" className="h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                      {!n.isRead && <div className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                    </motion.div>
+                  );
+                }
                 return (
                   <motion.div
                     key={n._id}

@@ -24,7 +24,17 @@ import * as api from '@/api';
 
 type Tab = 'report' | 'ask';
 
-interface ChatMsg { role: 'user' | 'assistant'; text: string }
+interface ChatMsg {
+  role: 'user' | 'assistant';
+  text: string;
+  /** Optional pending action — when set, renders a confirmation card
+   *  with Execute/Cancel buttons under the message. */
+  pendingAction?: {
+    action: string;
+    params: Record<string, any>;
+    confirm: string;
+  };
+}
 
 // Tiny shared buffer for recent console errors / failed network calls.
 // Installed once when the bubble mounts so we always have context to ship
@@ -293,7 +303,7 @@ function ReportTab({ onClose }: { onClose: () => void }) {
 // ─────────────────────────────────────────────────────────────────────────
 function AskTab() {
   const [messages, setMessages] = useState<ChatMsg[]>([
-    { role: 'assistant', text: "Hi! Ask me how to use any part of Robin — features, where things live, what a role can do. I won't fix bugs, but the Report Issue tab will." },
+    { role: 'assistant', text: "Hi! Ask me how to use Robin — or tell me what to do.\n\nTry: \"Create a task: review Velloer Shopify by Friday\" or \"Mark Darpan project done\"." },
   ]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -303,6 +313,13 @@ function AskTab() {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages.length, sending]);
 
+  /**
+   * Send pipeline:
+   *  1. Add user msg
+   *  2. Hit /parse-command — Gemini decides ACTION vs QUESTION.
+   *  3a. ACTION → render confirmation card; user clicks Execute.
+   *  3b. QUESTION → fall back to the existing /ask endpoint for an answer.
+   */
   const send = async () => {
     const q = draft.trim();
     if (!q || sending) return;
@@ -310,16 +327,96 @@ function AskTab() {
     setMessages(m => [...m, { role: 'user', text: q }]);
     setSending(true);
     try {
-      const res = await api.askRobin({
-        question: q,
-        context: { url: typeof window !== 'undefined' ? window.location.pathname : '' },
-      });
-      setMessages(m => [...m, { role: 'assistant', text: res.answer }]);
+      const parsed = await api.aiParseCommand(q);
+      if (parsed.isAction && parsed.action !== 'question' && parsed.action !== 'unsupported') {
+        setMessages(m => [...m, {
+          role: 'assistant',
+          text: parsed.confirm || `I'll do this for you. Confirm?`,
+          pendingAction: { action: parsed.action, params: parsed.params || {}, confirm: parsed.confirm || '' },
+        }]);
+      } else if (parsed.action === 'unsupported') {
+        setMessages(m => [...m, { role: 'assistant', text: parsed.userReply || "I can't do that one yet — let me know if you'd like it added." }]);
+      } else {
+        // Fall through to the regular Ask Robin answer.
+        const res = await api.askRobin({
+          question: q,
+          context: { url: typeof window !== 'undefined' ? window.location.pathname : '' },
+        });
+        setMessages(m => [...m, { role: 'assistant', text: res.answer }]);
+      }
     } catch {
       setMessages(m => [...m, { role: 'assistant', text: "Hmm, I couldn't reach the AI service. Please try again in a moment." }]);
     } finally {
       setSending(false);
     }
+  };
+
+  /**
+   * Execute a pending action by calling the right backend API. Only the
+   * actions in the switch below are wired today; everything else gives a
+   * polite "not yet supported" reply.
+   */
+  const executePending = async (msgIndex: number, action: string, params: Record<string, any>) => {
+    setSending(true);
+    try {
+      let resultText = '';
+      switch (action) {
+        case 'create_task': {
+          const body: any = {
+            title: params.title || '(untitled)',
+            priority: params.priority || 'medium',
+            status: 'pending',
+            dueDate: params.dueDate || new Date().toISOString().slice(0, 10),
+          };
+          await api.createTask(body);
+          resultText = `Done. Created task "${body.title}" (priority: ${body.priority}, due ${body.dueDate}). See it in My Tasks.`;
+          break;
+        }
+        case 'mark_workflow_done': {
+          const name = String(params.clientName || '').trim();
+          if (!name) { resultText = "I need the client name. Try: \"mark Darpan project done\"."; break; }
+          // Look the workflow up by name.
+          const list: any[] = await api.cwListWorkflows({ q: name });
+          const wf = list.find(w => (w.clientName || '').toLowerCase() === name.toLowerCase()) || list[0];
+          if (!wf) { resultText = `No project found matching "${name}". Try the Project Pipeline search.`; break; }
+          // Mark every non-done service done with an AI-attributed audit note.
+          const notDone = (wf.services || []).filter((s: any) => s.status !== 'done');
+          if (notDone.length === 0) { resultText = `"${wf.clientName}" is already fully done.`; break; }
+          for (const s of notDone) {
+            try {
+              await api.cwCompleteService(wf._id, s._id, { comment: `Marked done via Robin AI command: "${params._originalMessage || 'mark project done'}"` });
+            } catch { /* one stuck service shouldn't block the rest */ }
+          }
+          resultText = `Marked "${wf.clientName}" done — ${notDone.length} service${notDone.length === 1 ? '' : 's'} completed. Audit log credits Robin AI.`;
+          break;
+        }
+        case 'mark_service_done':
+        case 'schedule_meeting':
+          resultText = "I parsed that as an action, but I haven't been wired to execute this one yet. Track it manually for now and I'll add execution in the next batch.";
+          break;
+        default:
+          resultText = "I'm not sure how to execute that.";
+      }
+      // Replace the pending-action confirmation with a final result message.
+      setMessages(m => {
+        const next = [...m];
+        next[msgIndex] = { role: 'assistant', text: resultText };
+        return next;
+      });
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || "Couldn't execute that action.";
+      setMessages(m => [...m, { role: 'assistant', text: msg }]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const cancelPending = (msgIndex: number) => {
+    setMessages(m => {
+      const next = [...m];
+      next[msgIndex] = { role: 'assistant', text: 'OK, cancelled. Tell me if you want something else.' };
+      return next;
+    });
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -331,10 +428,42 @@ function AskTab() {
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] px-3 py-2 rounded-xl text-[13px] leading-relaxed ${
-              m.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted/40 text-foreground'
-            }`}>
-              {m.text}
+            <div className={`max-w-[88%] space-y-2`}>
+              <div className={`px-3 py-2 rounded-xl text-[13px] leading-relaxed whitespace-pre-wrap ${
+                m.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted/40 text-foreground'
+              }`}>
+                {m.text}
+              </div>
+              {/* Pending action — render a confirmation card with
+                  Execute / Cancel. Robin won't do anything until the user
+                  clicks. */}
+              {m.pendingAction && (
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-2.5 space-y-2">
+                  <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-primary">
+                    <Sparkles className="h-3 w-3" /> AI action
+                  </div>
+                  <pre className="text-[11px] font-mono bg-background border border-border rounded-lg px-2 py-1 overflow-x-auto leading-snug">
+{m.pendingAction.action}({Object.entries(m.pendingAction.params).map(([k,v]) => `${k}: ${JSON.stringify(v)}`).join(', ')})
+                  </pre>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => executePending(i, m.pendingAction!.action, m.pendingAction!.params)}
+                      disabled={sending}
+                      className="px-3 h-7 rounded-lg bg-primary text-primary-foreground text-[11px] font-semibold hover:bg-primary/90 disabled:opacity-50 inline-flex items-center gap-1"
+                    >
+                      {sending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                      Execute
+                    </button>
+                    <button
+                      onClick={() => cancelPending(i)}
+                      disabled={sending}
+                      className="px-3 h-7 rounded-lg border border-border bg-card text-[11px] font-semibold text-muted-foreground hover:bg-muted disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}

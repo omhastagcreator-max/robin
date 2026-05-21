@@ -113,6 +113,27 @@ export const createLead  = (d: Record<string, unknown>)       => api.post('/lead
 // parsed from CSV or a Google Sheets paste. Server dedupes by phone+email.
 export const importLeads = (rows: Array<Record<string, any>>)  => api.post('/leads/import', { rows }).then(r => r.data);
 
+// ── Focus This Week — sales priority list + assignments ────────────────
+// Each rep owns one FocusList per week. Items reference a Lead or a
+// Client User; assignees get a notification when added.
+export const listFocusLists       = (params?: { weekStart?: string; mine?: '1'; ownerId?: string }) =>
+  api.get('/focus-list', { params }).then(r => r.data);
+export const getOrCreateFocusList = (weekStart?: string) =>
+  api.post('/focus-list', { weekStart }).then(r => r.data);
+export const addFocusItem         = (id: string, body: {
+  leadId?: string; clientUserId?: string;
+  label: string; subLabel?: string;
+  urgency?: 'watch' | 'high' | 'critical';
+  note?: string;
+  assignedTo?: string[];
+}) => api.post(`/focus-list/${id}/items`, body).then(r => r.data);
+export const updateFocusItem      = (id: string, itemId: string, body: Record<string, unknown>) =>
+  api.put(`/focus-list/${id}/items/${itemId}`, body).then(r => r.data);
+export const assignFocusItem      = (id: string, itemId: string, assignedTo: string[]) =>
+  api.post(`/focus-list/${id}/items/${itemId}/assign`, { assignedTo }).then(r => r.data);
+export const removeFocusItem      = (id: string, itemId: string) =>
+  api.delete(`/focus-list/${id}/items/${itemId}`).then(r => r.data);
+
 // ── Lead source integrations (Google Sheets live sync) ──────────────────
 export const sheetGetStatus    = () => api.get('/integrations/sheet').then(r => r.data);
 export const sheetConnect      = (body: { spreadsheetId: string; sheetName?: string }) =>
