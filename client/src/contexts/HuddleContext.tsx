@@ -9,6 +9,8 @@ import { useHuddleTranscription } from '@/hooks/useHuddleTranscription';
 import { HuddlePiPContent } from '@/components/shared/HuddlePiPContent';
 import { RemoteAudio } from '@/components/shared/RemoteAudio';
 import type { IceSource } from '@/lib/iceServers';
+import { screenShareManager } from '@/lib/screenShareManager';
+import { logShareEvent } from '@/lib/screenShareDebug';
 
 type HuddleMode = 'idle' | 'joining' | 'expanded' | 'collapsed';
 
@@ -368,6 +370,50 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
   const collapse = useCallback(() => setMode(m => (m === 'expanded' ? 'collapsed' : m)), []);
   const expand   = useCallback(() => setMode(m => (m === 'collapsed' || m === 'joining' ? 'expanded' : m)), []);
 
+  // ── Auto-join on login ────────────────────────────────────────────────
+  // The agency rule is "you're at work when you're in the huddle." Asking
+  // each rep to remember to click Join every morning was costing us idle
+  // time. So once a user lands in Robin, fire join() automatically.
+  //
+  // Strict guards:
+  //   - Internal-staff only — employee / sales / workroom. NOT admin
+  //     (observers by default — see auto-share comment too) and NOT
+  //     client (external).
+  //   - One attempt per HuddleProvider mount. Reload = fresh mount = one
+  //     fresh attempt. Single-page navigation = same mount = no re-attempt.
+  //     Combined with the join() function's own single-shot pattern, this
+  //     CANNOT 429 LiveKit Cloud no matter how the user navigates.
+  //   - Escape hatch: localStorage 'robin.huddle.autoJoinDisabled' = '1'
+  //     opts the user out. Set from the dock's "Don't auto-join" toggle.
+  //   - Bail if `meetingError` is set — we already attempted and failed
+  //     this session; let the user retry manually.
+  //
+  // PiP doesn't get auto-popped here — that requires a transient user
+  // gesture which we don't have for an auto-fire. The existing PiP
+  // auto-reopen effect catches the very next click and pops it then.
+  const autoJoinedRef = useRef(false);
+  useEffect(() => {
+    if (autoJoinedRef.current) return;
+    if (!user) return;
+    if (mode !== 'idle') return;
+    if (meeting.joining || meeting.joined) return;
+    if (meeting.error) return;
+
+    // Roles that should NOT auto-join.
+    if (role === 'admin' || role === 'client') return;
+
+    // User-level escape hatch.
+    try {
+      if (localStorage.getItem('robin.huddle.autoJoinDisabled') === '1') return;
+    } catch { /* private mode — proceed with auto-join */ }
+
+    autoJoinedRef.current = true;
+    // Tiny defer so any in-flight auth / token refresh settles before we
+    // hit /huddle-token. Pure UX nicety; not load-bearing.
+    const t = setTimeout(() => { join(); }, 400);
+    return () => clearTimeout(t);
+  }, [user, role, mode, meeting.joining, meeting.joined, meeting.error, join]);
+
   // ── Single-shot join (no auto-retry loop) ──────────────────────────────
   //
   // Earlier this useEffect re-fired joinMeeting() every time `meeting.joining`
@@ -499,6 +545,22 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
   // Auto-share screen on join — only for employees and sales (the people
   // expected to be "on the floor"). Admins/managers join to oversee, not
   // to share their own screen by default; they can still toggle manually.
+  //
+  // ── Auto-stop fix (May 2026) ────────────────────────────────────────
+  // The previous version read `alreadyBroadcasting` (React state from
+  // useScreenShare) at fire time, but React state lags the singleton
+  // screenShareManager by one render. So a manager.start() that resolved
+  // 50ms before this timeout fired would still let LiveKit's
+  // setScreenShareEnabled run → Chrome would then kill the older
+  // (manager) track to give the new (LiveKit) one screen access. End
+  // result: user's screen share "auto-stopped" seconds after they
+  // started it.
+  //
+  // Fix: read screenShareManager.isSharing() LIVE at fire time (truth
+  // source, no React lag), AND subscribe to the manager during the
+  // wait window so a late-arriving manager.start() cancels the timer
+  // entirely. Delay also bumped 600ms → 1500ms to give manager state
+  // strictly more time to settle on slow Macs.
   const autoSharedThisJoinRef = useRef(false);
   useEffect(() => {
     if (!meeting.joined) {
@@ -507,31 +569,67 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     }
     if (autoSharedThisJoinRef.current) return;
     if (meeting.screenOn) { autoSharedThisJoinRef.current = true; return; }
-    // Admins are NOT auto-prompted — they're observers by default.
     if (role === 'admin') { autoSharedThisJoinRef.current = true; return; }
-    // CRITICAL: don't auto-grab a second getDisplayMedia track if the user
-    // is already broadcasting via Robin's screen-share button. Chrome would
-    // kill the first track to give us the new one — which is exactly the
-    // "screen sharing stopped automatically" bug. Mark as handled so we
-    // don't keep retrying every render.
-    if (alreadyBroadcasting) {
+    if (alreadyBroadcasting || screenShareManager.isSharing()) {
+      logShareEvent('coord', 'auto-share-on-join skipped — manager already broadcasting');
       autoSharedThisJoinRef.current = true;
       return;
     }
     autoSharedThisJoinRef.current = true;
+
+    let cancelled = false;
     const t = setTimeout(() => {
-      // RE-CHECK at fire time: between scheduling (now) and 600ms later,
-      // LiveKit's screenOn could have flipped to true (user manually toggled
-      // share), or the user could have left the huddle, or the OTHER share
-      // system could have started broadcasting. If we toggle now we'd
-      // either turn off a share they JUST started, or start a phantom one.
+      if (cancelled) return;
+      // RE-CHECK at fire time. The manager is the source of truth — the
+      // React closure copy of `alreadyBroadcasting` may be one render
+      // stale, which is exactly the race that caused the auto-stop bug.
       if (!meeting.joined) return;
       if (meeting.screenOn) return;
-      if (alreadyBroadcasting) return;
+      if (screenShareManager.isSharing()) {
+        logShareEvent('coord', 'auto-share-on-join cancelled — manager started during wait');
+        return;
+      }
+      const snap = screenShareManager.getSnapshot();
+      if (snap.state === 'starting' || snap.state === 'recovering') {
+        logShareEvent('coord', `auto-share-on-join skipped — manager state=${snap.state}`);
+        return;
+      }
       try { meeting.toggleScreen(); } catch { /* user can still trigger manually */ }
-    }, 600);
-    return () => clearTimeout(t);
+    }, 1500);
+
+    // If the manager flips to sharing / starting during the wait, bail
+    // before LiveKit ever fires its own getDisplayMedia. This is the
+    // critical addition over the previous fix attempt.
+    const unsub = screenShareManager.subscribe(() => {
+      const snap = screenShareManager.getSnapshot();
+      if (snap.state === 'sharing' || snap.state === 'starting') {
+        cancelled = true;
+        clearTimeout(t);
+      }
+    });
+
+    return () => { cancelled = true; clearTimeout(t); unsub(); };
   }, [meeting.joined, meeting.screenOn, meeting.toggleScreen, role, alreadyBroadcasting]);
+
+  // ── Cross-system coordination — manager wins ───────────────────────
+  // If the user STARTS sharing through the screenShareManager (broadcast
+  // button) while LiveKit also has an active screen publication, Chrome
+  // will silently end one of the two tracks. Beat Chrome to it: the
+  // moment the manager flips to 'sharing', drop the LiveKit screen pub
+  // so the manager's track is the single live capture. The manager
+  // already handles its own resilience (watchdog, BroadcastChannel,
+  // wake-lock); LiveKit's redundant pub is what causes the auto-stop.
+  useEffect(() => {
+    if (!meeting.joined) return;
+    const unsub = screenShareManager.subscribe(() => {
+      const snap = screenShareManager.getSnapshot();
+      if (snap.isSharing && meeting.screenOn) {
+        logShareEvent('coord', 'manager sharing — dropping LiveKit screen pub to avoid double-capture');
+        try { meeting.toggleScreen(); } catch { /* swallow */ }
+      }
+    });
+    return unsub;
+  }, [meeting.joined, meeting.screenOn, meeting.toggleScreen]);
 
   const participantCount = meeting.peers.length + (meeting.joined ? 1 : 0);
 

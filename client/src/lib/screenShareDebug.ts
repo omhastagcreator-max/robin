@@ -38,6 +38,7 @@ export type ShareEventKind =
   | 'state-change'
   | 'stop-requested'
   | 'stopped'
+  | 'coord'                 // cross-system coordination (LiveKit ↔ manager handoff)
   | 'error'
   | 'note';
 
