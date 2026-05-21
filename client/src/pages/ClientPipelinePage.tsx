@@ -20,6 +20,10 @@ import { useShortcut } from '@/hooks/useShortcut';
 import { StatusPill, type Status } from '@/components/ui/StatusPill';
 import { Avatar } from '@/components/shared/Avatar';
 import { AIInsight } from '@/components/ai/AIInsight';
+import {
+  PipelineToolbar, PipelineFocusView, PipelineTableView,
+  usePipelineState, applyFilters,
+} from '@/components/pipeline/PipelineRevamp';
 
 /**
  * ClientPipelinePage — universal "where is X at?" view.
@@ -97,6 +101,14 @@ export default function ClientPipelinePage() {
   const [list, setList]         = useState<Workflow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+
+  // Pipeline revamp — view toggle (kanban / focus / table), filter chips,
+  // saved-views, and bulk selection state. All persisted via usePipelineState().
+  const { view, setView, filters, setFilters, savedViews, setSavedViews } = usePipelineState();
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const toggleSelect = (id: string) =>
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const clearSelected = () => setSelectedIds([]);
 
   // Page-level users lookup — every card needs the owner's name+avatar but
   // listWorkflows ships userIds, not populated documents. Loading the team
@@ -176,6 +188,27 @@ export default function ClientPipelinePage() {
   // hasn't actually changed, so the user never sees a flicker.
   useVisiblePoll(() => load({ background: true }), 300_000, [query, mineOnly]);
 
+  // Apply client-side filters (server already handled q + mineOnly).
+  const filteredList = useMemo(() => applyFilters(list, filters), [list, filters]);
+
+  // Bulk action handler — fans out to the server bulk endpoint, surfaces
+  // a "12 updated, 1 skipped" toast, refreshes the list, clears selection.
+  const handleBulk = async (action: 'priority'|'note'|'mark-on-track', payload?: any) => {
+    if (selectedIds.length === 0) return;
+    try {
+      const res = await api.cwBulk({ ids: selectedIds, action, payload });
+      if (res.errors.length > 0) {
+        toast.warning(`${res.updated} updated, ${res.skipped} skipped. First error: ${res.errors[0]}`);
+      } else {
+        toast.success(`${res.updated} project${res.updated === 1 ? '' : 's'} updated.`);
+      }
+      clearSelected();
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Bulk action failed.');
+    }
+  };
+
   return (
     <AppLayout>
       <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-4">
@@ -202,51 +235,76 @@ export default function ClientPipelinePage() {
           </div>
         </div>
 
-        {/* Search — no card chrome, lives in the page flow. The "Only mine"
-            toggle moves alongside it for sales/employee, hidden for admin. */}
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1">
-            <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search by phone, name or email…"
-              className="w-full pl-10 pr-9 py-2.5 bg-card border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-            {query && (
-              <button onClick={() => setQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-muted-foreground hover:bg-muted flex items-center justify-center">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer shrink-0">
-            <input type="checkbox" checked={mineOnly} onChange={e => setMineOnly(e.target.checked)}
-              className="h-3.5 w-3.5 accent-primary" />
-            Only mine
-          </label>
+        {/* Search — kept full-width as the primary affordance. The mine-only
+            toggle is now in the toolbar below alongside the view switcher. */}
+        <div className="relative">
+          <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search by phone, name or email…"
+            className="w-full pl-10 pr-9 py-2.5 bg-card border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          {query && (
+            <button onClick={() => setQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-muted-foreground hover:bg-muted flex items-center justify-center">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
 
+        {/* Pipeline toolbar — view toggle, filters, saved views, bulk-action bar. */}
+        <PipelineToolbar
+          view={view} onView={setView}
+          filters={filters} onFilters={setFilters}
+          savedViews={savedViews} onSavedViews={setSavedViews}
+          mineOnly={mineOnly} onMineOnly={setMineOnly}
+          selectedIds={selectedIds} onClearSelected={clearSelected}
+          onBulk={handleBulk}
+          totalCount={list.length} filteredCount={filteredList.length}
+          role={role}
+        />
+
         {/* Overview report — always upfront. Quick scan of where things
-            stand BEFORE diving into individual cards. */}
+            stand BEFORE diving into individual cards. Note: stats are
+            computed over the UNFILTERED list so the user sees the agency
+            shape, not a slice of it. */}
         {!loading && list.length > 0 && <OverviewReport list={list} />}
 
-        {/* Kanban board — one column per service stage with pipe-style
-            connectors between them so you can FEEL the flow:
-            Website → Meta → Influencer → Done.  Each card shows the clients
-            currently at that stage and (on click) what's left to do. */}
+        {/* View body — kanban (stage flow), focus (health-grouped), or table. */}
         {loading && list.length === 0 ? (
           <div className="py-16 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : list.length === 0 ? (
           <EmptyState query={query} isAdminOrSales={isAdminOrSales} onCreate={() => setShowCreate(true)} />
-        ) : (
+        ) : view === 'kanban' ? (
           <PipelineKanban
-            list={list}
+            list={filteredList}
             users={users}
             isAdminOrSales={isAdminOrSales}
             onAdd={() => setShowCreate(true)}
             onMutated={load}
             onOpenDrawer={openProject}
+          />
+        ) : view === 'focus' ? (
+          <PipelineFocusView
+            list={filteredList}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            renderCard={(wf) => (
+              <ClientCard
+                wf={wf}
+                users={users}
+                onMutated={load}
+                onOpenDrawer={openProject}
+              />
+            )}
+          />
+        ) : (
+          <PipelineTableView
+            list={filteredList}
+            onOpen={openProject}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
           />
         )}
       </div>

@@ -821,3 +821,118 @@ export async function listWorkflowActivity(req: AuthRequest, res: Response): Pro
     res.json({ rows: slice, nextCursor });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
+
+// ── Bulk actions ────────────────────────────────────────────────────────
+/**
+ * POST /api/client-workflows/bulk
+ * Body: { ids: string[], action: 'priority' | 'note' | 'mark-on-track', payload: {...} }
+ *
+ * Powers the multi-select toolbar on the redesigned Project Pipeline page.
+ * One round-trip instead of N. Org-scoped on every find; admin/sales only
+ * for destructive actions (priority), all internal roles for notes.
+ *
+ *  - 'priority'      : payload = { value: 'low'|'medium'|'high'|'urgent' }
+ *  - 'note'          : payload = { detail: string }   — fans out activity + notify
+ *  - 'mark-on-track' : clears blockerType/blockerReason on each workflow
+ *
+ * Returns { updated: number, skipped: number, errors: string[] } so the UI
+ * can render a "12 updated, 1 skipped" toast. We never throw early — we
+ * collect per-item failures and report them so a single bad ID doesn't
+ * kill the whole batch.
+ */
+export async function bulkWorkflowAction(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const { ids, action, payload } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ error: 'ids must be a non-empty array' }); return;
+    }
+    if (ids.length > 100) {
+      res.status(400).json({ error: 'Max 100 workflows per bulk action' }); return;
+    }
+
+    const role = req.user!.role;
+    // 'priority' and 'mark-on-track' are admin/sales only — they overwrite
+    // operational state across many clients at once. 'note' is open to all
+    // internal staff because it's additive (no destructive overwrite).
+    if ((action === 'priority' || action === 'mark-on-track') && role !== 'admin' && role !== 'sales') {
+      res.status(403).json({ error: 'Admin or sales only for this bulk action' }); return;
+    }
+
+    const wfs = await ClientWorkflow.find({ _id: { $in: ids }, organizationId: orgId });
+    const errors: string[] = [];
+    let updated = 0, skipped = 0;
+    const notifyTargets = new Set<string>();
+
+    for (const wf of wfs) {
+      if (!canSeeWorkflow(wf, req.user!.id, req.user!.role)) {
+        skipped++;
+        continue;
+      }
+      try {
+        if (action === 'priority') {
+          const value = String(payload?.value || '');
+          if (!['low','medium','high','urgent'].includes(value)) {
+            errors.push(`${wf.clientName || wf._id}: invalid priority`); skipped++; continue;
+          }
+          const before = wf.priority;
+          (wf as any).priority = value;
+          wf.activity.push({
+            actorId: req.user!.id, action: 'priority_changed',
+            detail: `from ${before || 'medium'} to ${value} (bulk)`,
+          } as any);
+        } else if (action === 'note') {
+          const detail = String(payload?.detail || '').trim();
+          if (detail.length < 3) {
+            errors.push(`${wf.clientName || wf._id}: note too short`); skipped++; continue;
+          }
+          wf.activity.push({
+            actorId: req.user!.id, action: 'note',
+            detail: detail.slice(0, 1000),
+          } as any);
+          // Fan-out targets — assignees on this workflow get a notification.
+          for (const s of (wf.services || [])) {
+            if (s.assignedTo) notifyTargets.add(String(s.assignedTo));
+          }
+          if (wf.createdBy) notifyTargets.add(String(wf.createdBy));
+        } else if (action === 'mark-on-track') {
+          (wf as any).blockerType   = '';
+          (wf as any).blockerReason = '';
+          (wf as any).blockedSince  = null;
+          (wf as any).health        = 'on_track';
+          wf.activity.push({
+            actorId: req.user!.id, action: 'unblocked',
+            detail: 'Marked on-track (bulk)',
+          } as any);
+        } else {
+          res.status(400).json({ error: `Unknown action: ${action}` }); return;
+        }
+        await wf.save();
+        updated++;
+      } catch (saveErr) {
+        errors.push(`${wf.clientName || wf._id}: ${(saveErr as Error).message}`);
+        skipped++;
+      }
+    }
+
+    // Notify assignees for 'note' fan-outs — one consolidated message per
+    // user rather than N (we batch by user already because notifyTargets
+    // is a Set).
+    if (action === 'note' && notifyTargets.size > 0) {
+      const io = req.app.get('io');
+      await notify({
+        io, organizationId: orgId, actorId: req.user!.id,
+        userIds: Array.from(notifyTargets),
+        type: 'workflow.note',
+        title: `Note posted to ${updated} project${updated === 1 ? '' : 's'}`,
+        body:  String(payload?.detail || '').slice(0, 160),
+        entityType: 'workflow',
+      });
+    }
+
+    res.json({ updated, skipped, errors, total: ids.length });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+}

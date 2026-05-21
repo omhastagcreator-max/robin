@@ -21,6 +21,7 @@ import { AIInsight } from '@/components/ai/AIInsight';
 import { Send } from 'lucide-react';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { WorkflowKeyFacts } from '@/components/pipeline/WorkflowKeyFacts';
 
 /**
  * InlineNoteInput — single-line input replacing the old "Add a note" button
@@ -126,6 +127,10 @@ interface Workflow {
   delayCause?:             string;
   nextBestAction?:        string;
   predictedCompletionAt?: string | null;
+  // Pipeline 2.1 — surfaced in the new WorkflowKeyFacts strip + filters.
+  priority?:              'low'|'medium'|'high'|'urgent';
+  currentOwnerTeam?:      '' | 'sales' | 'development' | 'meta' | 'influencer' | 'qa';
+  eta?:                   string | null;
 }
 interface ActivityRow {
   _id: string;
@@ -546,6 +551,30 @@ export default function ClientWorkflowDetailPage() {
     }
   };
 
+  // ── Pipeline 2.1 — single-project priority change via the bulk endpoint
+  //    (no dedicated single-priority endpoint; the bulk shape already
+  //    handles 1-item arrays just fine and routes through the same auth).
+  const handlePriority = async (p: 'low'|'medium'|'high'|'urgent') => {
+    if (!wf) return;
+    await api.cwBulk({ ids: [wf._id], action: 'priority', payload: { value: p } });
+    setWf({ ...wf, priority: p });
+    bumpActivity();
+  };
+
+  // Inline note from the KeyFacts toolbar — same shape as the activity
+  // log inline input, but doesn't depend on which service is "active".
+  const handleQuickNote = async (text: string) => {
+    if (!wf) return;
+    try {
+      const updated = await api.cwAddNote(wf._id, { detail: text });
+      setWf(updated as Workflow);
+      bumpActivity();
+      toast.success('Note added.');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Could not add note.');
+    }
+  };
+
   const handleUnblock = async (comment: string) => {
     try {
       const updated = await api.cwUnblock(wf!._id, { comment });
@@ -626,6 +655,16 @@ export default function ClientWorkflowDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* ── Pipeline 2.1 — Key facts strip + quick-action toolbar ─────
+            Priority chip, risk score, ETA, AI-predicted completion, owner
+            team, blocker. Quick actions: change priority, post inline
+            note, open Robin Copilot with this workflow's context. */}
+        <WorkflowKeyFacts
+          wf={wf}
+          onPriority={handlePriority}
+          onPostNote={handleQuickNote}
+        />
 
         {/* ── AI operational insight strip ─ inline, no model call ──────
             Always-fresh from the healthInference cron (no Gemini bill).
