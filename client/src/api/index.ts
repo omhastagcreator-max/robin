@@ -186,6 +186,17 @@ export const cwUnblock          = (wid: string, body: { comment: string }) =>
 
 // Cursor-paginated activity feed for the right-drawer timeline.
 // Pass cursor = last _id you've seen; backend returns { rows, nextCursor }.
+// Pipeline 2.1 — bulk action across many workflows in one request. Powers
+// the multi-select toolbar (priority bump, post-note-to-many, mark-on-track).
+// Returns counters so the UI can render "12 updated, 1 skipped" toast.
+export const cwBulk             = (body: {
+  ids: string[];
+  action: 'priority' | 'note' | 'mark-on-track';
+  payload?: { value?: 'low'|'medium'|'high'|'urgent'; detail?: string };
+}) => api.post('/client-workflows/bulk', body).then(r => r.data as {
+  updated: number; skipped: number; errors: string[]; total: number;
+});
+
 export const cwListActivity     = (wid: string, params: { cursor?: string; limit?: number } = {}) =>
   api.get(`/client-workflows/${wid}/activity`, { params }).then(r => r.data as {
     rows: Array<{
@@ -303,7 +314,31 @@ export const aiCopilot              = (body: {
   route:       string;
   workflowId?: string;
   leadId?:     string;
-}) => api.post('/ai-automation/copilot', body).then(r => r.data as { answer: string; aiUsed: boolean });
+}) => api.post('/ai-automation/copilot', body).then(r => r.data as {
+  answer:    string;
+  aiUsed:    boolean;
+  threadId:  string;
+  turnCount: number;
+});
+
+// Robin Copilot — persistent thread per user (memory + Robin-aware + role-tuned).
+// Drawer loads the thread on open so the conversation picks up where it left off.
+export interface CopilotTurn {
+  _id:    string;
+  role:   'user' | 'assistant' | 'system';
+  text:   string;
+  route?: string;
+  aiUsed: boolean;
+  at:     string;
+}
+export const aiCopilotThread        = () =>
+  api.get('/ai-automation/copilot/thread').then(r => r.data as {
+    _id: string; pinnedNote: string; turns: CopilotTurn[];
+  });
+export const aiCopilotReset         = () =>
+  api.delete('/ai-automation/copilot/thread').then(r => r.data as { ok: boolean });
+export const aiCopilotPin           = (note: string) =>
+  api.patch('/ai-automation/copilot/thread/pin', { note }).then(r => r.data as { ok: boolean; pinnedNote: string });
 
 // Sales lead AI — heuristic insights (no LLM call) + drafted follow-up (Gemini).
 export const aiLeadInsights         = (id: string) =>

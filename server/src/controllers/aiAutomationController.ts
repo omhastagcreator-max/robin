@@ -1,7 +1,8 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
-import { scoreLead, summarizeWorkflow, summarizeAllProjects, generateMorningBrief, aiHealth, parseCommand, askRobin, draftLeadFollowup } from '../services/aiTriage';
+import { scoreLead, summarizeWorkflow, summarizeAllProjects, generateMorningBrief, aiHealth, parseCommand, askRobin, askRobinThread, draftLeadFollowup } from '../services/aiTriage';
 import { withAICache, withRateLimit, computeLeadInsights, computeTaskFocus } from '../services/aiInsights';
+import { buildUserContext, rolePersona, getOrCreateThread, appendTurn, resetThread, recentTurnsForPrompt } from '../services/robinAI';
 import User from '../models/User';
 import Lead from '../models/Lead';
 import ClientWorkflow from '../models/ClientWorkflow';
@@ -266,107 +267,181 @@ export async function copilotEndpoint(req: AuthRequest, res: Response): Promise<
     const leadId   = req.body?.leadId     ? String(req.body.leadId)     : null;
 
     if (!question)           { res.status(400).json({ error: 'Please type a question.' }); return; }
-    if (question.length > 800) { res.status(400).json({ error: 'Question too long (max 800 chars).' }); return; }
+    if (question.length > 1200) { res.status(400).json({ error: 'Message too long (max 1200 chars).' }); return; }
 
     const orgId = await getOrgId(userId);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
 
-    // Build context based on route + IDs the caller surfaced.
-    const context: any = { url: route, userRole: role };
+    // ── 1. The "Robin-aware + per-employee" core ────────────────────
+    // Pull what Robin knows about this specific user: their open
+    // projects, tasks, leads, focus items, weekly priorities. Cached
+    // 30s in robinAI so a fast back-and-forth doesn't hammer Mongo.
+    const me = await User.findById(userId).select('name role teams').lean() as any;
+    const userContext = await buildUserContext(userId, orgId);
 
+    // ── 2. Route-local enrichment ───────────────────────────────────
+    // When the user is staring at a specific workflow / lead, splice
+    // that into the context too so the AI can answer "what's blocking
+    // THIS project" naturally without us re-asking.
     if (wfId) {
       const wf = await ClientWorkflow.findOne({ _id: wfId, organizationId: orgId })
         .select('clientName clientPhone services health healthReason blockerType blockerReason eta riskScore delayCause nextBestAction predictedCompletionAt lastActivityAt lastActivitySummary priority')
         .lean() as any;
       if (wf) {
-        context.workflow = {
-          name:           wf.clientName,
-          health:         wf.health,
-          healthReason:   wf.healthReason,
-          blockerType:    wf.blockerType,
-          blockerReason:  wf.blockerReason,
-          eta:            wf.eta,
-          predictedEnd:   wf.predictedCompletionAt,
-          riskScore:      wf.riskScore,
-          delayCause:     wf.delayCause,
+        (userContext as any).currentlyViewing = {
+          kind: 'workflow',
+          name: wf.clientName,
+          health: wf.health,
+          blockerType: wf.blockerType,
+          blockerReason: wf.blockerReason,
+          eta: wf.eta,
+          riskScore: wf.riskScore,
+          delayCause: wf.delayCause,
           nextBestAction: wf.nextBestAction,
-          priority:       wf.priority,
-          lastActivity:   wf.lastActivitySummary,
+          priority: wf.priority,
+          lastActivity: wf.lastActivitySummary,
           services: (wf.services || []).map((s: any) => ({
-            type:     s.serviceType,
-            label:    s.label,
-            status:   s.status,
+            type: s.serviceType,
+            label: s.label,
+            status: s.status,
             progress: `${(s.checklist || []).filter((c: any) => c.done).length}/${(s.checklist || []).length}`,
           })),
         };
       }
     }
-
     if (leadId) {
       const lead = await Lead.findOne({ _id: leadId, organizationId: orgId })
         .select('name company contact email stage estimatedValue aiScore aiReason aiNextAction')
         .lean() as any;
       if (lead) {
-        context.lead = {
-          name:           lead.name,
-          company:        lead.company,
-          stage:          lead.stage,
+        (userContext as any).currentlyViewing = {
+          kind: 'lead',
+          name: lead.name,
+          company: lead.company,
+          stage: lead.stage,
           estimatedValue: lead.estimatedValue,
-          aiScore:        lead.aiScore,
-          aiNextAction:   lead.aiNextAction,
+          aiScore: lead.aiScore,
+          aiNextAction: lead.aiNextAction,
         };
       }
     }
 
-    // Generic context when on a "list" route — pull a tiny operational
-    // snapshot scoped to the role. Cheap; Mongo indexes cover it.
-    if (route.startsWith('/clients/pipeline') && !wfId) {
-      const wfs = await ClientWorkflow.find({
-        organizationId: orgId,
-        'services.status': { $ne: 'done' },
-      })
-        .select('clientName health riskScore delayCause nextBestAction')
-        .sort({ riskScore: -1, lastActivityAt: -1 })
-        .limit(15).lean();
-      context.atRiskProjects = (wfs as any[]).filter(w => (w.riskScore || 0) >= 40).map(w => ({
-        name: w.clientName, risk: w.riskScore, reason: w.delayCause, next: w.nextBestAction,
-      }));
-    }
+    // ── 3. Thread persistence ───────────────────────────────────────
+    // Load (or create) THIS user's persistent conversation. Append
+    // their question now so concurrent reads see the latest message;
+    // append the assistant reply after Gemini returns.
+    const thread = await getOrCreateThread(orgId, userId);
 
-    if (route.startsWith('/tasks')) {
-      const tasks = await ProjectTask.find({
-        assignedTo: userId,
-        status: { $in: ['pending', 'ongoing'] },
-      }).select('title priority dueDate status').sort({ dueDate: 1, priority: -1 }).limit(10).lean();
-      context.myOpenTasks = (tasks as any[]).map(t => ({
-        title: t.title, priority: t.priority, due: t.dueDate, status: t.status,
-      }));
-    }
-
-    if (route.startsWith('/sales')) {
-      const leads = await Lead.find({
-        organizationId: orgId,
-        stage: { $nin: ['won', 'lost'] },
-      }).select('name company stage aiScore aiNextAction').sort({ aiScore: 1 }).limit(15).lean();
-      context.openLeads = (leads as any[]).map(l => ({
-        name: l.name, company: l.company, stage: l.stage, score: l.aiScore, next: l.aiNextAction,
-      }));
-    }
-
-    // Cache key = question + route + ID context. 60s TTL.
+    // Cache key now includes a short hash of the last assistant turn
+    // so we DON'T cache across different conversation states (which
+    // would make the AI "forget" the latest user message).
+    const lastAssistant = [...thread.turns].reverse().find((t: any) => t.role === 'assistant');
+    const lastKey = lastAssistant ? String(lastAssistant.text).slice(-40) : 'empty';
     const ctxKey  = wfId ? `wf:${wfId}` : leadId ? `lead:${leadId}` : route;
-    const cacheKey = `copilot:${userId}:${ctxKey}:${question.toLowerCase().slice(0, 120)}`;
+    const cacheKey = `copilot:${userId}:${ctxKey}:${lastKey}:${question.toLowerCase().slice(0, 120)}`;
+
+    const history = recentTurnsForPrompt(thread);
+    const persona = rolePersona(me?.role || role, me?.teams || []);
 
     const result = await withRateLimit(userId, () =>
-      withAICache(cacheKey, 60_000, () => askRobin(question, context))
+      withAICache(cacheKey, 60_000, () => askRobinThread({
+        persona,
+        userContext,
+        history,
+        pinnedNote: thread.pinnedNote,
+        question,
+        route,
+      }))
     );
 
-    res.json({ answer: result.answer, aiUsed: result.aiUsed });
+    // Persist user + assistant turns. Best-effort — if save fails we
+    // still return the answer so the UX doesn't break on a transient
+    // Mongo blip.
+    try {
+      await appendTurn(orgId, userId, { role: 'user', text: question, route, aiUsed: false });
+      await appendTurn(orgId, userId, { role: 'assistant', text: result.answer, route, aiUsed: result.aiUsed });
+    } catch (saveErr) {
+      console.warn('[copilot] thread save failed:', (saveErr as Error).message);
+    }
+
+    res.json({
+      answer:    result.answer,
+      aiUsed:    result.aiUsed,
+      threadId:  String(thread._id),
+      // Lightweight stats for the drawer header.
+      turnCount: thread.turns.length + 2,
+    });
   } catch (err: any) {
     if (err?.status === 429) {
       res.status(429).json({ error: err.message });
       return;
     }
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
+
+/**
+ * GET /api/ai-automation/copilot/thread
+ * Returns this user's persistent conversation. Used by the drawer on open
+ * so they pick up where they left off.
+ */
+export async function getCopilotThread(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.id;
+    const orgId  = await getOrgId(userId);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const t = await getOrCreateThread(orgId, userId);
+    res.json({
+      _id:        String(t._id),
+      pinnedNote: t.pinnedNote,
+      turns: (t.turns || []).map((tr: any) => ({
+        _id:    String(tr._id),
+        role:   tr.role,
+        text:   tr.text,
+        route:  tr.route,
+        aiUsed: tr.aiUsed,
+        at:     tr.at,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
+
+/**
+ * DELETE /api/ai-automation/copilot/thread
+ * Wipes the conversation history (keeps the thread doc + pinnedNote).
+ * Used by the "Start fresh" button in the drawer.
+ */
+export async function deleteCopilotThread(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.id;
+    const orgId  = await getOrgId(userId);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const t = await resetThread(orgId, userId);
+    res.json({ ok: true, threadId: String(t._id) });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
+
+/**
+ * PATCH /api/ai-automation/copilot/thread/pin
+ * Body: { note: string }
+ * Updates the "always remember this" note the user has pinned to their
+ * thread. Injected into every system prompt thereafter.
+ */
+export async function updateCopilotPin(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.id;
+    const orgId  = await getOrgId(userId);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const note = String(req.body?.note || '').slice(0, 1000);
+    const t = await getOrCreateThread(orgId, userId);
+    t.pinnedNote = note;
+    await t.save();
+    res.json({ ok: true, pinnedNote: t.pinnedNote });
+  } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
 }

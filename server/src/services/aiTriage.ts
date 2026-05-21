@@ -684,3 +684,65 @@ export async function askRobin(question: string, context: any): Promise<{ answer
     };
   }
 }
+
+/**
+ * askRobinThread — multi-turn variant used by the persistent Copilot drawer.
+ *
+ * Takes:
+ *   - persona: the role-tuned framing returned by rolePersona() (server/services/robinAI.ts)
+ *   - userContext: the compact "what Robin knows about me" snapshot from buildUserContext()
+ *   - history: prior turns in this conversation [{role, text}, ...] (already trimmed to N)
+ *   - pinnedNote: the user's "always remember this" note, if any
+ *   - question: the new user message
+ *
+ * Returns { answer, aiUsed }. We package the history into the userPayload
+ * JSON instead of using Gemini's native multi-turn contents API — keeps
+ * tryGeminiOnce() unchanged + works identically across all model versions.
+ */
+export async function askRobinThread(args: {
+  persona:     string;
+  userContext: any;
+  history:     Array<{ role: string; text: string }>;
+  pinnedNote?: string;
+  question:    string;
+  route?:      string;
+}): Promise<{ answer: string; aiUsed: boolean }> {
+  if (!apiKey) {
+    return {
+      answer: "The AI assistant isn't configured yet. Ask your admin to set GEMINI_API_KEY on the server. Free key at https://aistudio.google.com/app/apikey.",
+      aiUsed: false,
+    };
+  }
+  try {
+    const system = `You are Robin AI, the persistent in-app assistant at robin.hastagcreator.com. You ARE the user's dedicated AI — remember their prior turns in this conversation, refer back to them naturally, and never start over.
+
+${ROBIN_DOCS}
+
+${args.persona}
+
+The user's profile and live Robin context are included in the next message under "me", "myProjects", "myTasks", "myLeads", "myFocus". Treat that data as ground truth — never invent project names, lead names, or task titles that aren't in it. When the user asks about "my projects", "my leads", "my tasks", use ONLY items from those arrays.
+
+Answer in 1-3 short paragraphs. No markdown headers, no code blocks unless required, no emojis. Address the user as "you". When you reference a project / lead / task, use its exact name from context. If the user's data shows nothing relevant, say so — don't fabricate.
+
+If asked about a Robin feature that doesn't exist, say so honestly and suggest the closest real feature. If the message reads as a bug report, tell them to use the Report Issue tab.`;
+
+    // Pack history + context + new question into a single user payload.
+    // Tag the new question with [NEW] so the model knows which turn it's
+    // actually responding to (vs. echoes of prior context).
+    const payload = JSON.stringify({
+      pinnedNote: args.pinnedNote || '',
+      currentRoute: args.route || '',
+      robinContext: args.userContext,
+      conversation: args.history.map(h => ({ from: h.role, text: h.text.slice(0, 1200) })),
+      newMessage: args.question,
+    });
+    const answer = await callGemini(system, payload, 900);
+    return { answer: answer.trim(), aiUsed: true };
+  } catch (err) {
+    console.error('[askRobinThread] failed:', (err as Error).message);
+    return {
+      answer: "I couldn't reach the AI service just now. Try again in a moment.",
+      aiUsed: false,
+    };
+  }
+}

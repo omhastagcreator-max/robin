@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
-import { Sparkles, Send, Loader2, MessageSquare, X, RotateCcw } from 'lucide-react';
+import { Sparkles, Send, Loader2, MessageSquare, X, RotateCcw, Pin, PinOff, Check } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useDrawer } from '@/components/ui/RightDrawer';
@@ -8,66 +8,64 @@ import { AIInsight } from '@/components/ai/AIInsight';
 import * as api from '@/api';
 
 /**
- * RobinCopilot — context-aware AI drawer.
+ * RobinCopilot — persistent, Robin-aware, per-employee AI drawer.
  *
- * Mounted via `useDrawer().open({ content: <RobinCopilotPanel /> })`. The
- * panel reads `useLocation()` to know which page the user is on and pulls
- * the matching contextual IDs from `useParams()`:
+ * The drawer now does THREE things the older version didn't:
  *
- *   /clients/pipeline/:id  → ship workflowId so the model sees the full
- *                            project + recent activity + risk score
- *   /sales (lead detail)   → ship leadId (when surfaced by the page)
- *   /tasks                 → server pulls user's open tasks
- *   /clients/pipeline      → server pulls at-risk projects
- *   default                → only route + role
+ *   1. GENERALISED — works on every route. The model always sees the
+ *      caller's projects/tasks/leads/focus from buildUserContext() on
+ *      the server, regardless of where they opened the drawer.
  *
- * QUICK PROMPTS — short opinionated prompts the user can fire with one
- * click. They vary per route so the drawer feels like it understands the
- * user's current workflow.
+ *   2. ROBIN-AWARE — the system prompt is fed a compact JSON snapshot
+ *      of the user's live state (open projects, tasks, leads, focus,
+ *      what they're currently viewing), so it never has to ask "which
+ *      project?" and never makes up names.
  *
- * UX RULES:
- *   • No streaming — single shot reply, rendered in AIInsight.Summary.
- *   • Latest reply is at the top; prior threads shown below for re-read.
- *   • In-memory only — no server thread storage (yet). Drawer close =
- *     conversation gone. Keeps the surface lightweight.
- *   • Esc closes the drawer.
+ *   3. PER-EMPLOYEE DEDICATED — every conversation persists server-side
+ *      under (organizationId, ownerId). Re-opening the drawer loads the
+ *      thread. "Start fresh" wipes history (keeps the pinned note).
+ *      A "pinned note" lets the user write "always remember X" — that
+ *      string is injected into every system prompt.
  *
- * NEVER opens a modal. AI is embedded in the workflow, not the workflow
- * embedded in AI.
+ * Chat layout: oldest at TOP, newest at BOTTOM (standard chat). Input
+ * docked at the bottom. Pinned note + reset buttons live in the header.
  */
 
-interface Turn {
+interface PendingTurn {
   question: string;
-  answer:   string;
-  aiUsed:   boolean;
   at:       number;
 }
 
-/**
- * Suggested prompts by route. Each prompt is a single click → fires the
- * same backend call with `question = label`. Tuned per route so the AI
- * sees a question matched to what the user is looking at.
- */
+interface Turn {
+  _id?:   string;
+  role:   'user' | 'assistant' | 'system';
+  text:   string;
+  aiUsed: boolean;
+  at:     string | number;
+}
+
+/** Route-tuned quick prompts. Still useful even with thread memory — they're
+ *  one-tap "kick the conversation off in this direction" buttons. */
 function suggestionsFor(pathname: string): string[] {
   if (pathname.startsWith('/clients/pipeline/')) {
     return [
       'Summarize where this project is right now',
-      'What\'s the most likely cause of any delay?',
+      "What's the most likely cause of any delay?",
       'Draft a one-paragraph client update I can paste',
       'Who should I ping next, and about what?',
     ];
   }
   if (pathname.startsWith('/clients/pipeline')) {
     return [
-      'Which projects are at the highest risk?',
+      'Which of my projects are at the highest risk?',
       'Which projects are stalled and why?',
-      'What should the team prioritise this week?',
+      'What should I prioritise this week?',
       'Which clients deserve a proactive update today?',
     ];
   }
   if (pathname.startsWith('/tasks')) {
     return [
-      'What\'s the single most important task I should do next?',
+      "What's the single most important task I should do next?",
       'What should I drop or delegate?',
       'Are any of my deadlines unrealistic?',
     ];
@@ -82,13 +80,14 @@ function suggestionsFor(pathname: string): string[] {
   if (pathname.startsWith('/admin')) {
     return [
       'Where is the team overloaded?',
-      'What\'s the single biggest operational risk today?',
+      "What's the single biggest operational risk today?",
       'Which clients should I worry about this week?',
     ];
   }
   return [
-    'What\'s the state of the agency today?',
+    "What's the state of the agency today?",
     'What should I focus on next?',
+    'What did we last discuss?',
   ];
 }
 
@@ -102,20 +101,62 @@ export function RobinCopilotPanel() {
   const workflowId = route.startsWith('/clients/pipeline/') ? params.id : undefined;
   const leadId     = undefined; // surface later when sales lead drawer ships
 
-  const [input, setInput]     = useState('');
-  const [busy, setBusy]       = useState(false);
-  const [history, setHistory] = useState<Turn[]>([]);
-  const inputRef              = useRef<HTMLTextAreaElement | null>(null);
-
-  // Autofocus on mount so the user can just start typing.
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  const [input, setInput]         = useState('');
+  const [busy, setBusy]           = useState(false);
+  const [loading, setLoading]     = useState(true);
+  const [turns, setTurns]         = useState<Turn[]>([]);
+  const [pending, setPending]     = useState<PendingTurn | null>(null);
+  const [pinnedNote, setPinnedNote] = useState('');
+  const [pinEditing, setPinEditing] = useState(false);
+  const [pinDraft, setPinDraft]   = useState('');
+  const inputRef                  = useRef<HTMLTextAreaElement | null>(null);
+  const scrollRef                 = useRef<HTMLDivElement | null>(null);
 
   const suggestions = useMemo(() => suggestionsFor(route), [route]);
 
+  // ── Load thread on mount ─────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.aiCopilotThread();
+        if (cancelled) return;
+        setTurns((data.turns || []).map(t => ({
+          _id: t._id, role: t.role, text: t.text, aiUsed: t.aiUsed, at: t.at,
+        })));
+        setPinnedNote(data.pinnedNote || '');
+        setPinDraft(data.pinnedNote || '');
+      } catch (e: any) {
+        const status = e?.response?.status;
+        if (status === 404) {
+          toast.error('Robin Copilot thread endpoint not deployed yet. Try again in a minute.', { duration: 6000 });
+        } else if (status && status !== 401) {
+          toast.error('Could not load Robin conversation history.');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          // Autofocus after the thread paints so cursor doesn't jump mid-render
+          setTimeout(() => inputRef.current?.focus(), 50);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Auto-scroll to bottom on new turn / pending change.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [turns.length, pending, loading]);
+
+  // ── Ask ───────────────────────────────────────────────────────────
   const ask = async (question: string) => {
     const q = question.trim();
     if (!q || busy) return;
     setBusy(true);
+    setPending({ question: q, at: Date.now() });
+    setInput('');
     try {
       const result = await api.aiCopilot({
         question:    q,
@@ -123,32 +164,31 @@ export function RobinCopilotPanel() {
         workflowId,
         leadId,
       });
-      setHistory(prev => [{ question: q, answer: result.answer, aiUsed: result.aiUsed, at: Date.now() }, ...prev]);
-      setInput('');
+      // Append both the user turn and the new assistant turn. The server
+      // also persisted them — re-opening the drawer rehydrates the same.
+      setTurns(prev => [
+        ...prev,
+        { role: 'user',      text: q,             aiUsed: false,           at: new Date().toISOString() },
+        { role: 'assistant', text: result.answer, aiUsed: result.aiUsed,   at: new Date().toISOString() },
+      ]);
+      setPending(null);
     } catch (e: any) {
+      setPending(null);
       const status = e?.response?.status;
       const serverError = e?.response?.data?.error;
       const url = e?.config?.url || '(unknown URL)';
       if (status === 429) {
         toast.error('AI rate limit — try again in a moment.');
       } else if (status === 404) {
-        // The server's catch-all 404 returns "Route not found". When the
-        // user sees this generic message, surface enough detail to debug:
-        // which URL was hit + the HTTP status. Usually means the server
-        // hasn't redeployed the /copilot route yet (Render free tier rebuilds
-        // can take 2-5 min after a push).
         toast.error(
-          `Copilot endpoint not reachable yet: ${url} → 404. ` +
-          'The server may be redeploying — try again in a minute.',
+          `Copilot endpoint not reachable: ${url} → 404. The server may be redeploying — try again in ~2 minutes.`,
           { duration: 8000 },
         );
-        // Add a one-time fallback turn so the drawer doesn't just look empty.
-        setHistory(prev => [{
-          question: q,
-          answer:   `I couldn't reach the Copilot endpoint (\`${url}\` returned 404). The server may still be redeploying after the latest push — try again in ~2 minutes, or hard-refresh the page (⌘⇧R) to drop any cached JS.`,
-          aiUsed:   false,
-          at:       Date.now(),
-        }, ...prev]);
+        setTurns(prev => [
+          ...prev,
+          { role: 'user',      text: q, aiUsed: false, at: new Date().toISOString() },
+          { role: 'assistant', text: `I couldn't reach the Copilot endpoint (\`${url}\` returned 404). The server may still be redeploying after the latest push — try again in ~2 minutes.`, aiUsed: false, at: new Date().toISOString() },
+        ]);
       } else if (status >= 500) {
         toast.error(`Copilot server error (${status}) — ${serverError || 'try again in a moment.'}`);
       } else {
@@ -159,16 +199,39 @@ export function RobinCopilotPanel() {
     }
   };
 
+  // ── Reset thread ──────────────────────────────────────────────────
+  const resetThread = async () => {
+    if (!confirm('Start a fresh conversation? Pinned note is kept; history will be erased.')) return;
+    try {
+      await api.aiCopilotReset();
+      setTurns([]);
+      toast.success('Conversation reset.');
+    } catch (e: any) {
+      toast.error('Could not reset conversation.');
+    }
+  };
+
+  // ── Pinned note ───────────────────────────────────────────────────
+  const savePin = async () => {
+    try {
+      const res = await api.aiCopilotPin(pinDraft.trim());
+      setPinnedNote(res.pinnedNote);
+      setPinEditing(false);
+      toast.success(res.pinnedNote ? 'Pinned note updated.' : 'Pinned note cleared.');
+    } catch {
+      toast.error('Could not save pinned note.');
+    }
+  };
+
   const onSubmit = (e: React.FormEvent) => { e.preventDefault(); ask(input); };
   const onKey    = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Cmd-Enter / Ctrl-Enter to submit. Plain Enter inserts newline.
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       ask(input);
     }
   };
 
-  // Lightweight route label for the header.
+  // Header context label — what the AI is "looking at" right now.
   const routeLabel = (() => {
     if (workflowId)                             return 'this project';
     if (route.startsWith('/clients/pipeline'))  return 'the pipeline';
@@ -178,95 +241,194 @@ export function RobinCopilotPanel() {
     return 'Robin';
   })();
 
+  const emptyHistory = !loading && turns.length === 0 && !pending;
+
   return (
     <div className="flex flex-col h-full">
-      {/* Header — context badge so the user knows the model has it. */}
-      <header className="border-b border-border px-4 py-3 space-y-1.5">
+      {/* ── Header ───────────────────────────────────────────────── */}
+      <header className="border-b border-border px-4 py-3 space-y-2">
         <div className="flex items-center gap-1.5">
           <Sparkles className="h-3.5 w-3.5 text-primary" />
-          <p className="text-[10.5px] uppercase tracking-[0.16em] font-bold text-primary">Robin Copilot</p>
+          <p className="text-[10.5px] uppercase tracking-[0.16em] font-bold text-primary">
+            Robin Copilot
+          </p>
+          {turns.length > 0 && (
+            <span className="text-[10.5px] text-muted-foreground/70 tabular-nums ml-1">
+              · {turns.length} turn{turns.length === 1 ? '' : 's'}
+            </span>
+          )}
           <span className="ml-auto text-[10.5px] text-muted-foreground">⌘⏎ to send</span>
         </div>
         <p className="text-[12px] text-muted-foreground leading-snug">
-          Asking about <span className="font-semibold text-foreground">{routeLabel}</span>. The model sees your role, the current route, and the operational state of what you're looking at.
+          Your dedicated AI. Looking at <span className="font-semibold text-foreground">{routeLabel}</span>.
+          Remembers prior turns. Knows your projects, tasks, leads, and focus list.
         </p>
+
+        {/* Pinned note — "always remember this" */}
+        <div className="rounded-md border border-dashed border-border bg-muted/30 px-2.5 py-2">
+          {!pinEditing && (
+            <button
+              type="button"
+              onClick={() => { setPinDraft(pinnedNote); setPinEditing(true); }}
+              className="w-full flex items-start gap-1.5 text-left text-[11.5px] leading-snug"
+            >
+              {pinnedNote ? (
+                <Pin className="h-3 w-3 text-amber-600 mt-[2px] shrink-0" />
+              ) : (
+                <PinOff className="h-3 w-3 text-muted-foreground mt-[2px] shrink-0" />
+              )}
+              <span className={pinnedNote ? 'text-foreground' : 'text-muted-foreground'}>
+                {pinnedNote || 'Pin a note Robin should always remember about you (e.g. "I focus on Velloer client").'}
+              </span>
+            </button>
+          )}
+          {pinEditing && (
+            <div className="space-y-1.5">
+              <textarea
+                value={pinDraft}
+                onChange={e => setPinDraft(e.target.value)}
+                rows={2}
+                maxLength={1000}
+                placeholder="Always remember this when you talk to me…"
+                className="w-full px-2 py-1.5 bg-background border border-input rounded-md text-[11.5px] focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+              />
+              <div className="flex items-center justify-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => { setPinEditing(false); setPinDraft(pinnedNote); }}
+                  className="px-2 h-6 rounded-md text-[11px] text-muted-foreground hover:bg-muted"
+                >Cancel</button>
+                <button
+                  type="button"
+                  onClick={savePin}
+                  className="inline-flex items-center gap-1 px-2 h-6 rounded-md bg-primary text-primary-foreground text-[11px] font-semibold hover:bg-primary/90"
+                >
+                  <Check className="h-3 w-3" /> Save
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </header>
 
-      {/* Input */}
-      <form onSubmit={onSubmit} className="border-b border-border p-3 space-y-2">
+      {/* ── Conversation ─────────────────────────────────────────── */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+        {loading && (
+          <div className="space-y-3">
+            <AIInsight.Skeleton lines={3} />
+            <AIInsight.Skeleton lines={2} />
+          </div>
+        )}
+
+        {emptyHistory && (
+          <section className="space-y-2">
+            <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground">
+              Try one of these
+            </p>
+            <div className="space-y-1.5">
+              {suggestions.map(s => (
+                <button
+                  key={s}
+                  onClick={() => ask(s)}
+                  disabled={busy}
+                  className="w-full text-left px-3 py-2 rounded-lg border border-border bg-card hover:border-primary/30 hover:bg-primary/[0.04] text-[12.5px] leading-snug transition-colors disabled:opacity-50"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            <p className="pt-2 text-[11px] text-muted-foreground italic">
+              Tip: I keep our conversation across sessions. Reset with the↻ button when you want a fresh start.
+            </p>
+          </section>
+        )}
+
+        {turns.map((t, idx) => (
+          <article key={t._id || `${t.at}-${idx}`} className="space-y-2">
+            {t.role === 'user' ? (
+              <div className="flex items-start gap-2 justify-end">
+                <p className="max-w-[85%] rounded-2xl rounded-tr-md bg-primary/10 text-foreground px-3 py-2 text-[12.5px] leading-snug whitespace-pre-wrap">
+                  {t.text}
+                </p>
+                <div className="h-5 w-5 rounded-md bg-primary/15 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                  <MessageSquare className="h-3 w-3" />
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2">
+                <div className="h-5 w-5 rounded-md bg-muted text-muted-foreground flex items-center justify-center shrink-0 mt-0.5">
+                  <Sparkles className="h-3 w-3" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <AIInsight.Summary
+                    text={t.text}
+                    aiUsed={t.aiUsed}
+                    label="Robin"
+                  />
+                </div>
+              </div>
+            )}
+          </article>
+        ))}
+
+        {pending && (
+          <article className="space-y-2">
+            <div className="flex items-start gap-2 justify-end">
+              <p className="max-w-[85%] rounded-2xl rounded-tr-md bg-primary/10 text-foreground px-3 py-2 text-[12.5px] leading-snug whitespace-pre-wrap">
+                {pending.question}
+              </p>
+              <div className="h-5 w-5 rounded-md bg-primary/15 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                <MessageSquare className="h-3 w-3" />
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <div className="h-5 w-5 rounded-md bg-muted text-muted-foreground flex items-center justify-center shrink-0 mt-0.5">
+                <Sparkles className="h-3 w-3" />
+              </div>
+              <div className="flex-1">
+                <AIInsight.Skeleton lines={3} />
+              </div>
+            </div>
+          </article>
+        )}
+      </div>
+
+      {/* ── Input (docked bottom) ─────────────────────────────────── */}
+      <form onSubmit={onSubmit} className="border-t border-border p-3 space-y-2 bg-background/50">
         <textarea
           ref={inputRef}
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={onKey}
-          placeholder="Ask anything operational — “Which projects need a nudge today?”"
-          rows={3}
-          maxLength={800}
+          placeholder="Ask anything. I remember our last conversation."
+          rows={2}
+          maxLength={1200}
           className="w-full px-3 py-2 bg-background border border-input rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-ring resize-none"
         />
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[10.5px] text-muted-foreground tabular-nums">{input.length} / 800</span>
+          <span className="text-[10.5px] text-muted-foreground tabular-nums">{input.length} / 1200</span>
           <div className="flex items-center gap-1.5">
-            {history.length > 0 && (
+            {turns.length > 0 && (
               <button
                 type="button"
-                onClick={() => setHistory([])}
+                onClick={resetThread}
                 className="inline-flex items-center gap-1 px-2 h-7 rounded-md text-[11.5px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                title="Clear conversation"
+                title="Start a fresh conversation (pinned note is kept)"
               >
-                <RotateCcw className="h-3 w-3" /> Clear
+                <RotateCcw className="h-3 w-3" /> Reset
               </button>
             )}
             <button
               type="submit"
-              disabled={busy || input.trim().length < 3}
+              disabled={busy || input.trim().length < 2}
               className="inline-flex items-center gap-1.5 px-3 h-7 rounded-md bg-primary text-primary-foreground text-[11.5px] font-semibold hover:bg-primary/90 disabled:opacity-50"
             >
               {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-              {busy ? 'Asking…' : 'Ask'}
+              {busy ? 'Thinking…' : 'Send'}
             </button>
           </div>
         </div>
       </form>
-
-      {/* Suggested prompts (only when no history yet) */}
-      {history.length === 0 && (
-        <section className="px-3 py-3 space-y-2 border-b border-border">
-          <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground">Quick prompts</p>
-          <div className="space-y-1.5">
-            {suggestions.map(s => (
-              <button
-                key={s}
-                onClick={() => ask(s)}
-                disabled={busy}
-                className="w-full text-left px-3 py-2 rounded-lg border border-border bg-card hover:border-primary/30 hover:bg-primary/[0.04] text-[12.5px] leading-snug transition-colors disabled:opacity-50"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Conversation — latest at top */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-        {busy && history.length === 0 && <AIInsight.Skeleton lines={3} />}
-        {history.map((t, idx) => (
-          <article key={t.at} className="space-y-2">
-            <div className="flex items-start gap-2">
-              <div className="h-5 w-5 rounded-md bg-muted text-muted-foreground flex items-center justify-center shrink-0 mt-0.5">
-                <MessageSquare className="h-3 w-3" />
-              </div>
-              <p className="flex-1 text-[12.5px] font-semibold leading-snug">{t.question}</p>
-            </div>
-            <AIInsight.Summary
-              text={t.answer}
-              aiUsed={t.aiUsed}
-              label={idx === 0 ? 'Answer' : 'Previous answer'}
-            />
-          </article>
-        ))}
-      </div>
     </div>
   );
 }

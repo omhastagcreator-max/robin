@@ -5,7 +5,8 @@ import {
   rescoreLead, summarizeWorkflowEndpoint, briefAllProjects,
   getOrgMorningBrief, regenerateOrgMorningBrief,
   getAiHealth, getAiHealthPublic, parseCommandEndpoint,
-  copilotEndpoint, leadInsightsEndpoint, leadFollowupEndpoint,
+  copilotEndpoint, getCopilotThread, deleteCopilotThread, updateCopilotPin,
+  leadInsightsEndpoint, leadFollowupEndpoint,
   focusEndpoint,
 } from '../controllers/aiAutomationController';
 
@@ -39,10 +40,16 @@ router.post('/morning-brief',          requireRole('admin'),                    
 // but live behind auth for the UI panel that polls it from inside Robin.
 router.get('/health-authed',           requireRole('admin'),                                   getAiHealth);
 
-// Robin Copilot — context-aware free-form Q&A for any internal staff.
-// Body: { question, route, workflowId?, leadId? }. Caches identical
-// questions per (user, route, context) for 60 s; 30 req/min per user.
-router.post('/copilot',                requireRole('admin', 'employee', 'sales'),             copilotEndpoint);
+// Robin Copilot — persistent, Robin-aware, per-employee AI thread.
+// POST /copilot           — send a message (body: { question, route, workflowId?, leadId? })
+// GET  /copilot/thread    — load the user's full conversation history on drawer open
+// DELETE /copilot/thread  — "Start fresh" — wipes history, keeps pinned note
+// PATCH /copilot/thread/pin — update the user's "always remember this" note
+// Caches identical (user, ctx, lastReply, question) for 60s; 30 req/min/user.
+router.post  ('/copilot',                requireRole('admin', 'employee', 'sales'), copilotEndpoint);
+router.get   ('/copilot/thread',         requireRole('admin', 'employee', 'sales'), getCopilotThread);
+router.delete('/copilot/thread',         requireRole('admin', 'employee', 'sales'), deleteCopilotThread);
+router.patch ('/copilot/thread/pin',     requireRole('admin', 'employee', 'sales'), updateCopilotPin);
 
 // Lead AI — heuristic insights + drafted follow-up message. Insights are
 // free (no LLM); follow-up is one Gemini call cached per (user, lead, channel)
