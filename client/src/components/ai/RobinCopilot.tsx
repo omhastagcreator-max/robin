@@ -159,11 +159,24 @@ export function RobinCopilotPanel() {
   // Global hotkey ⌘M (Mac) / Ctrl+M (Win) opens the drawer and dispatches
   // this event so we start listening the moment the drawer mounts.
   // See GlobalShortcuts.
+  //
+  // Toggle behaviour (May 2026 fix): pressing ⌘M while ALREADY listening
+  // stops the recognition (and the silence-watchdog auto-sends the buffer
+  // through onFinal → ask). So ⌘M is a real toggle — open + listen / stop
+  // / press again to start a new utterance. The owner reported "⌘M only
+  // works the first time" — root cause was useShortcut's default "don't
+  // fire inside typing targets" (fixed in GlobalShortcuts), plus the
+  // event handler unconditionally calling start() even when listening
+  // was already true (a no-op in useVoiceInput.start). Now it toggles.
   useEffect(() => {
-    const onStart = () => { if (voice.supported && !voice.listening) voice.start(); };
+    const onStart = () => {
+      if (!voice.supported) return;
+      if (voice.listening) voice.stop();
+      else                 voice.start();
+    };
     window.addEventListener('robin:voice-start', onStart);
     return () => window.removeEventListener('robin:voice-start', onStart);
-  }, [voice.supported, voice.listening, voice.start]);
+  }, [voice.supported, voice.listening, voice.start, voice.stop]);
 
   const suggestions = useMemo(() => suggestionsFor(route), [route]);
 

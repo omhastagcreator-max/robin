@@ -59,10 +59,17 @@ export function GlobalShortcuts() {
   // drawer and immediately starts the voice recogniser. Internal-staff
   // only; clients don't have access to the Copilot. The drawer listens
   // for 'robin:voice-start' and kicks off voice.start() once mounted.
+  //
+  // inInputs: true is essential. The first ⌘M opens the drawer and
+  // focus lands on the textarea inside it. Without inInputs, the
+  // SECOND ⌘M press would be swallowed by useShortcut's default
+  // "don't fire inside typing targets" rule — which is exactly the bug
+  // the owner reported. With inInputs: true we get consistent
+  // behaviour: ⌘M works the same regardless of where focus is.
+  //
   // useShortcut calls e.preventDefault() on match, which suppresses the
   // browser's default Cmd+M = minimise window. Works in Chrome / Edge
-  // / Safari. (If a user has a browser extension that captures Cmd+M
-  // earlier, the shortcut won't fire — they can still click the mic.)
+  // / Safari.
   useShortcut('mod+m', () => {
     if (role === 'client') return;
     openCopilot();
@@ -72,7 +79,7 @@ export function GlobalShortcuts() {
       try { window.dispatchEvent(new CustomEvent('robin:voice-start')); }
       catch { /* swallow — old browser */ }
     }, 250);
-  });
+  }, { inInputs: true });
 
   return null;
 }
