@@ -359,48 +359,13 @@ function AskTab() {
   const executePending = async (msgIndex: number, action: string, params: Record<string, any>) => {
     setSending(true);
     try {
-      let resultText = '';
-      switch (action) {
-        case 'create_task': {
-          const body: any = {
-            title: params.title || '(untitled)',
-            priority: params.priority || 'medium',
-            status: 'pending',
-            dueDate: params.dueDate || new Date().toISOString().slice(0, 10),
-          };
-          await api.createTask(body);
-          resultText = `Done. Created task "${body.title}" (priority: ${body.priority}, due ${body.dueDate}). See it in My Tasks.`;
-          break;
-        }
-        case 'mark_workflow_done': {
-          const name = String(params.clientName || '').trim();
-          if (!name) { resultText = "I need the client name. Try: \"mark Darpan project done\"."; break; }
-          // Look the workflow up by name.
-          const list: any[] = await api.cwListWorkflows({ q: name });
-          const wf = list.find(w => (w.clientName || '').toLowerCase() === name.toLowerCase()) || list[0];
-          if (!wf) { resultText = `No project found matching "${name}". Try the Project Pipeline search.`; break; }
-          // Mark every non-done service done with an AI-attributed audit note.
-          const notDone = (wf.services || []).filter((s: any) => s.status !== 'done');
-          if (notDone.length === 0) { resultText = `"${wf.clientName}" is already fully done.`; break; }
-          for (const s of notDone) {
-            try {
-              await api.cwCompleteService(wf._id, s._id, { comment: `Marked done via Robin AI command: "${params._originalMessage || 'mark project done'}"` });
-            } catch { /* one stuck service shouldn't block the rest */ }
-          }
-          resultText = `Marked "${wf.clientName}" done — ${notDone.length} service${notDone.length === 1 ? '' : 's'} completed. Audit log credits Robin AI.`;
-          break;
-        }
-        case 'mark_service_done':
-        case 'schedule_meeting':
-          resultText = "I parsed that as an action, but I haven't been wired to execute this one yet. Track it manually for now and I'll add execution in the next batch.";
-          break;
-        default:
-          resultText = "I'm not sure how to execute that.";
-      }
-      // Replace the pending-action confirmation with a final result message.
+      // Shared action executor — same logic now runs in the persistent
+      // Copilot drawer too, see client/src/lib/robinActions.ts.
+      const { executeRobinCommand } = await import('@/lib/robinActions');
+      const r = await executeRobinCommand(action as any, params, String(params._originalMessage || ''));
       setMessages(m => {
         const next = [...m];
-        next[msgIndex] = { role: 'assistant', text: resultText };
+        next[msgIndex] = { role: 'assistant', text: r.text };
         return next;
       });
     } catch (err: any) {

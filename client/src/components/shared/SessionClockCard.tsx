@@ -107,33 +107,43 @@ export function SessionClockCard({ dayLocked = false, dayLockReason, onLockedAtt
         </div>
       )}
 
+      {/* Two-button model: Log In / Log Out are the primary actions, big
+          and clearly labelled. Break / Resume sit next to them but are
+          visibly secondary. The timer ticks the moment Log In is clicked
+          and freezes the moment Log Out is clicked. */}
       <div className="flex gap-2 flex-wrap">
         {!session && (
           <button
             onClick={handleStart}
             disabled={dayLocked || loading}
-            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-medium hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500 text-white rounded-xl text-sm font-bold hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
           >
-            <Play className="h-3.5 w-3.5" /> Log in
+            <Play className="h-4 w-4" /> Log in
           </button>
         )}
         {isActive && (
           <>
             <button onClick={startBreak}
-              className="flex items-center gap-1.5 px-3 py-2 bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded-xl text-xs font-medium hover:bg-amber-500/25">
-              <Pause className="h-3.5 w-3.5" /> Take Break
+              className="flex items-center gap-1.5 px-3 py-2 bg-amber-500/15 text-amber-700 border border-amber-500/30 rounded-xl text-xs font-semibold hover:bg-amber-500/25">
+              <Pause className="h-3.5 w-3.5" /> Take break
             </button>
             <button onClick={endSession}
-              className="flex items-center gap-1.5 px-3 py-2 bg-red-500/15 text-red-400 border border-red-500/30 rounded-xl text-xs font-medium hover:bg-red-500/25">
-              <StopCircle className="h-3.5 w-3.5" /> Log out
+              className="flex items-center gap-2 px-5 py-2.5 bg-rose-500 text-white rounded-xl text-sm font-bold hover:bg-rose-600 shadow-sm">
+              <StopCircle className="h-4 w-4" /> Log out
             </button>
           </>
         )}
         {isOnBreak && (
-          <button onClick={endBreak}
-            className="flex items-center gap-1.5 px-3 py-2 bg-green-500/15 text-green-400 border border-green-500/30 rounded-xl text-xs font-medium hover:bg-green-500/25">
-            <Play className="h-3.5 w-3.5" /> Resume
-          </button>
+          <>
+            <button onClick={endBreak}
+              className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500 text-white rounded-xl text-sm font-bold hover:bg-emerald-600 shadow-sm">
+              <Play className="h-4 w-4" /> Resume work
+            </button>
+            <button onClick={endSession}
+              className="flex items-center gap-1.5 px-3 py-2 bg-rose-500/15 text-rose-700 border border-rose-500/30 rounded-xl text-xs font-semibold hover:bg-rose-500/25">
+              <StopCircle className="h-3.5 w-3.5" /> Log out
+            </button>
+          </>
         )}
       </div>
     </div>

@@ -326,7 +326,12 @@ function PeerTile({ peer, presenceStatus, onCall, deafened, hasMutedYou, inMeeti
                        'border-border'
     }`}>
       <PresenceTopRight status={presenceStatus} />
-      <RemoteAudio stream={peer.stream} muted={deafened} />
+      {/* RemoteAudio was here — removed (audio audit, May 2026). The
+          provider-level mount in HuddleContext.tsx is now the single
+          source of audio playback for every peer. Mounting one here
+          ALSO gave us two <audio> elements per peer playing the same
+          track; deafen only ever muted one of them, so some users
+          reported "I can still hear them after I muted." */}
       <AvatarWithRing initial={initial} active={peer.audioOn && level > 0.05} />
       <div className="flex-1 min-w-0">
         <p className="text-xs font-semibold truncate flex items-center gap-1.5 flex-wrap">

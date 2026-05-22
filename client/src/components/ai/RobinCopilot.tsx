@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
-import { Sparkles, Send, Loader2, MessageSquare, X, RotateCcw, Pin, PinOff, Check } from 'lucide-react';
+import { Sparkles, Send, Loader2, MessageSquare, X, RotateCcw, Pin, PinOff, Check, Play } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useDrawer } from '@/components/ui/RightDrawer';
 import { AIInsight } from '@/components/ai/AIInsight';
 import * as api from '@/api';
+import { executeRobinCommand, type RobinAction } from '@/lib/robinActions';
 
 /**
  * RobinCopilot — persistent, Robin-aware, per-employee AI drawer.
@@ -42,6 +43,14 @@ interface Turn {
   text:   string;
   aiUsed: boolean;
   at:     string | number;
+  /** When the AI parsed the user's message as an action, this card sits
+   *  inside the assistant turn waiting for Execute / Cancel. Cleared
+   *  when the user picks one (the result text replaces it). */
+  pendingAction?: {
+    action:  RobinAction;
+    params:  Record<string, any>;
+    confirm: string;
+  };
 }
 
 /** Route-tuned quick prompts. Still useful even with thread memory — they're
@@ -151,12 +160,63 @@ export function RobinCopilotPanel() {
   }, [turns.length, pending, loading]);
 
   // ── Ask ───────────────────────────────────────────────────────────
+  // Two-stage flow so Robin can DO things, not just talk:
+  //   1. parse-command — Gemini decides ACTION vs QUESTION.
+  //      - ACTION  → render an Execute / Cancel card inline. The action
+  //        only persists to the thread once the user picks one.
+  //      - QUESTION → normal /copilot call, both turns persist server-side.
+  // Lightweight heuristic skip — if the message obviously isn't an
+  // action (very long, ends in '?', begins with question words), we
+  // bypass parse-command entirely to save a Gemini hop.
+  const looksLikeQuestion = (q: string) => {
+    if (q.length > 240) return true;
+    if (/[?]\s*$/.test(q)) return true;
+    return /^(what|why|how|when|where|who|which|can|could|should|tell|show|explain|summari[sz]e|list|brief|status|help)\b/i.test(q);
+  };
+
   const ask = async (question: string) => {
     const q = question.trim();
     if (!q || busy) return;
     setBusy(true);
     setPending({ question: q, at: Date.now() });
     setInput('');
+
+    // Try parse-command first — unless the message clearly reads as a question.
+    if (!looksLikeQuestion(q)) {
+      try {
+        const parsed = await api.aiParseCommand(q);
+        if (parsed.isAction && parsed.action !== 'question' && parsed.action !== 'unsupported') {
+          // Action — render confirm card inline. We DO push the user
+          // turn into the visible history (so the conversation flows),
+          // but we DON'T persist server-side until execute/cancel runs.
+          // That keeps the thread free of "I almost did X" noise.
+          setTurns(prev => [
+            ...prev,
+            { role: 'user',      text: q,                              aiUsed: false,         at: new Date().toISOString() },
+            { role: 'assistant', text: parsed.confirm || 'Confirm?',    aiUsed: parsed.aiUsed, at: new Date().toISOString(),
+              pendingAction: { action: parsed.action as RobinAction, params: parsed.params || {}, confirm: parsed.confirm || '' } },
+          ]);
+          setPending(null);
+          setBusy(false);
+          return;
+        }
+        if (parsed.action === 'unsupported') {
+          // Surface the model's polite refusal directly — no /copilot hop.
+          setTurns(prev => [
+            ...prev,
+            { role: 'user',      text: q,                                                                          aiUsed: false,         at: new Date().toISOString() },
+            { role: 'assistant', text: parsed.userReply || "I can't do that one yet — let me know if you'd like it added.", aiUsed: parsed.aiUsed, at: new Date().toISOString() },
+          ]);
+          setPending(null);
+          setBusy(false);
+          return;
+        }
+        // Otherwise fall through to the normal /copilot answer path.
+      } catch {
+        // parse-command unreachable — treat as a question and proceed.
+      }
+    }
+
     try {
       const result = await api.aiCopilot({
         question:    q,
@@ -197,6 +257,38 @@ export function RobinCopilotPanel() {
     } finally {
       setBusy(false);
     }
+  };
+
+  // Run a pending action. Replaces the confirm card in-place with the
+  // result text. Best-effort — if the API rejects we surface the error
+  // in the same chat bubble.
+  const executePending = async (turnIdx: number) => {
+    const t = turns[turnIdx];
+    if (!t?.pendingAction || busy) return;
+    setBusy(true);
+    try {
+      // Stitch the user's original message into params so the API audit
+      // line can quote it ("via Robin AI: '<message>'"). The user turn
+      // sits one before the assistant turn that holds the action card.
+      const original = turns[turnIdx - 1]?.text || '';
+      const r = await executeRobinCommand(t.pendingAction.action, t.pendingAction.params, original);
+      setTurns(prev => {
+        const next = [...prev];
+        next[turnIdx] = { ...next[turnIdx], text: r.text, pendingAction: undefined };
+        return next;
+      });
+      if (r.ok) toast.success('Done.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancelPending = (turnIdx: number) => {
+    setTurns(prev => {
+      const next = [...prev];
+      next[turnIdx] = { ...next[turnIdx], text: 'Cancelled. Tell me what you want instead.', pendingAction: undefined };
+      return next;
+    });
   };
 
   // ── Reset thread ──────────────────────────────────────────────────
@@ -261,7 +353,7 @@ export function RobinCopilotPanel() {
         </div>
         <p className="text-[12px] text-muted-foreground leading-snug">
           Your own AI helper. Looking at <span className="font-semibold text-foreground">{routeLabel}</span>.
-          Remembers what you've talked about. Knows your projects, tasks, leads, and weekly focus.
+          Remembers what you've talked about. Can update your tasks too — try <em>"push Velloer Shopify review to Monday"</em> or <em>"mark Oudfy payment task done"</em>.
         </p>
 
         {/* Pinned note — "always remember this" */}
@@ -359,12 +451,44 @@ export function RobinCopilotPanel() {
                 <div className="h-5 w-5 rounded-md bg-muted text-muted-foreground flex items-center justify-center shrink-0 mt-0.5">
                   <Sparkles className="h-3 w-3" />
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 space-y-2">
                   <AIInsight.Summary
                     text={t.text}
                     aiUsed={t.aiUsed}
                     label="Robin"
                   />
+                  {/* Action confirm card — only present when AI parsed
+                      the user's message as a command. Execute fires the
+                      shared executeRobinCommand. */}
+                  {t.pendingAction && (
+                    <div className="rounded-xl border border-primary/30 bg-primary/[0.05] px-3 py-2.5">
+                      <div className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-wider font-bold text-primary mb-1.5">
+                        <Play className="h-3 w-3" /> Robin can do this
+                      </div>
+                      <code className="block text-[11px] font-mono text-foreground/80 mb-2 break-all">
+                        {t.pendingAction.action}({Object.entries(t.pendingAction.params)
+                          .filter(([k]) => !k.startsWith('_'))
+                          .map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')})
+                      </code>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => executePending(idx)}
+                          disabled={busy}
+                          className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-primary text-primary-foreground text-[11.5px] font-semibold hover:bg-primary/90 disabled:opacity-50"
+                        >
+                          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                          Execute
+                        </button>
+                        <button
+                          onClick={() => cancelPending(idx)}
+                          disabled={busy}
+                          className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11.5px] text-muted-foreground hover:bg-muted"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -400,7 +524,7 @@ export function RobinCopilotPanel() {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={onKey}
-          placeholder="Ask anything. I remember our last conversation."
+          placeholder='Ask anything — or give a command. "Mark Oudfy payment task done"'
           rows={2}
           maxLength={1200}
           className="w-full px-3 py-2 bg-background border border-input rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-ring resize-none"

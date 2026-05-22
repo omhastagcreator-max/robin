@@ -154,6 +154,12 @@ function ensureBroadcast() {
       if (m.type === 'ping' && currentTrack) {
         bc?.postMessage({ type: 'active' });
       }
+      // Audit fix (May 2026): when another tab posts 'stopped' (on
+      // pagehide), nothing to do here for THIS tab — but the receiver
+      // logs it so a probe a moment later sees no live sharer.
+      if (m.type === 'stopped') {
+        logShareEvent('note', 'peer tab broadcast stopped');
+      }
     };
   } catch (e: any) {
     logShareEvent('error', 'BroadcastChannel init failed', { message: e?.message });
@@ -268,14 +274,33 @@ function stopWatchdog() {
 }
 
 // ── Classification — figure out WHY the track ended ────────────────────────
+//
+// Audit fix (screen-share, May 2026): the old check —
+//   if (document.hidden) return 'system-sleep'
+// — fired on EVERY tab switch, because document.hidden is true the
+// instant the user moves focus to another tab. Most "shares stopping
+// for no reason" reports turned out to be users switching tabs (e.g.
+// to check a calendar) and Chrome briefly pausing capture; we'd
+// misclassify it as a system-sleep and tear down. The new rule only
+// calls it system-sleep when the tab has been continuously hidden for
+// MORE than 5 seconds OR the wake-lock has been released by the OS —
+// both of which are real sleep signals, not tab focus signals.
+let hiddenSinceMs = 0;
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    hiddenSinceMs = document.hidden ? Date.now() : 0;
+  });
+}
 function classify(): EndReason {
   if (manualStop) return 'user';
-  // Heuristic: if document.hidden when the end fired AND wake-lock was
-  // not released by us, it's most often display-sleep.
-  if (typeof document !== 'undefined' && document.hidden) return 'system-sleep';
-  // We can't perfectly distinguish pill vs source-closed in-browser. Default
-  // to 'browser-stop-pill' because it's the most common cause we've seen in
-  // production — clicking Chrome's "Stop sharing" toolbar.
+  if (typeof document !== 'undefined' && document.hidden) {
+    const hiddenForMs = hiddenSinceMs ? Date.now() - hiddenSinceMs : 0;
+    if (hiddenForMs > 5_000) return 'system-sleep';
+    // tab-switched briefly — most likely Chrome paused; treat as browser
+    // pill so we don't kick off an over-eager recovery cycle.
+  }
+  // Default: 'browser-stop-pill' — most common cause we've seen in prod
+  // (user clicking Chrome's "Stop sharing" toolbar).
   return 'browser-stop-pill';
 }
 
@@ -427,7 +452,26 @@ async function internalStart(opts: StartOptions = {}): Promise<void> {
   } catch (err: any) {
     const name = err?.name as string;
     logShareEvent('getDisplayMedia-fail', `name=${name}`, { message: err?.message });
-    if (name === 'NotAllowedError' || name === 'NotFoundError' || name === 'AbortError') {
+    // Safari fallback (audit fix, May 2026). Safari silently rejects the
+    // frameRate constraint with OverconstrainedError; retry with the bare
+    // `{ video: true }` shape that every implementation supports.
+    if (name === 'OverconstrainedError' || name === 'TypeError') {
+      try {
+        stream = await (navigator.mediaDevices as any).getDisplayMedia({ video: true, audio: false });
+        logShareEvent('note', 'Safari fallback succeeded with bare video:true');
+      } catch (err2: any) {
+        const name2 = err2?.name as string;
+        logShareEvent('getDisplayMedia-fail', `safari-fallback failed name=${name2}`, { message: err2?.message });
+        if (name2 === 'NotAllowedError' || name2 === 'NotFoundError' || name2 === 'AbortError') {
+          setState('idle', { lastError: name2 === 'NotAllowedError' ? 'Permission denied' : null });
+          if (name2 === 'NotAllowedError') updateSnapshot({ blockReason: 'permission-denied' });
+          return;
+        }
+        setState('recovering', { lastError: name2 || 'getDisplayMedia failed' });
+        if (snapshot.intent) scheduleRecovery();
+        return;
+      }
+    } else if (name === 'NotAllowedError' || name === 'NotFoundError' || name === 'AbortError') {
       // User cancelled / denied. Don't trigger another recovery loop.
       setState('idle', { lastError: name === 'NotAllowedError' ? 'Permission denied' : null });
       // If denied by the system (Mac System Settings), set blockReason.
@@ -435,11 +479,12 @@ async function internalStart(opts: StartOptions = {}): Promise<void> {
         updateSnapshot({ blockReason: 'permission-denied' });
       }
       return;
+    } else {
+      // Other errors (NotReadable, etc.) — back off and retry if intent is on.
+      setState('recovering', { lastError: name || 'getDisplayMedia failed' });
+      if (snapshot.intent) scheduleRecovery();
+      return;
     }
-    // Other errors (NotReadable, etc.) — back off and retry if intent is on.
-    setState('recovering', { lastError: name || 'getDisplayMedia failed' });
-    if (snapshot.intent) scheduleRecovery();
-    return;
   }
 
   currentStream = stream;
@@ -550,6 +595,18 @@ function subscribeTrack(fn: (track: MediaStreamTrack | null) => void): () => voi
   // Each activation while in recovering state triggers an attempt.
   document.addEventListener('pointerdown', onActivationForRecovery, { capture: true });
   document.addEventListener('keydown',     onActivationForRecovery, { capture: true });
+  // Best-effort BroadcastChannel cleanup on tab close (audit fix, May
+  // 2026). Without this, a tab that crashes mid-share leaves its
+  // "started" claim broadcast in the channel, and other tabs refuse
+  // subsequent shares with "Another tab is already sharing" — even
+  // though no tab is actually sharing anymore. We post an explicit
+  // 'stopped' message before unload so peers can clear their guards.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', () => {
+      try { bc?.postMessage({ type: 'stopped' }); } catch { /* ignore */ }
+      try { bc?.close(); } catch { /* ignore */ }
+    });
+  }
 })();
 
 export const screenShareManager = {

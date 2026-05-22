@@ -43,7 +43,7 @@ const fmtMS = (ms: number) => {
 export function SessionTopBar() {
   const { role } = useAuth();
   const {
-    session, startSession, startBreak, endBreak, endSession,
+    session, loading, startSession, startBreak, endBreak, endSession,
     workedMs, currentBreakMs, totalBreakMs,
   } = useSession();
   const { isOnCall, toggle: toggleOnCall } = useOnCall();
@@ -58,6 +58,16 @@ export function SessionTopBar() {
   // freshly-onboarded employee's role hasn't synced from server yet.
   if (role === 'client') return null;
   if (role && !['admin', 'employee', 'sales', 'workroom'].includes(role)) return null;
+
+  // Loading guard (timer audit, May 2026). While fetchActiveSession is in
+  // flight, `session` is null — without this guard the bar flashed
+  // "Logged out / Log in" for a beat, even for users who already had an
+  // active session on the server. Some reported "the timer's broken" on
+  // slow networks where the flash lasted a full second. Now we render an
+  // invisible-but-spaced placeholder strip until the first fetch lands.
+  if (loading) {
+    return <div className="sticky top-0 z-30 border-b border-border/30 h-[44px]" aria-hidden="true" />;
+  }
 
   const isActive  = session?.status === 'active';
   const isOnBreak = session?.status === 'on_break';
@@ -172,21 +182,21 @@ export function SessionTopBar() {
           )}
         </div>
 
-        {/* Action buttons (right-aligned) */}
+        {/* Action buttons (right-aligned) — two-button model, owner ask:
+            explicit Log In / Log Out labels (not icon-only). Break and
+            On-call stay as icons since they're auxiliary controls. */}
         <div className="ml-auto flex items-center gap-1.5 shrink-0">
           {!session && (
             <button
               onClick={handleStart}
-              className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 shadow-sm transition-colors"
+              className="h-8 px-3.5 flex items-center gap-1.5 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 shadow-sm transition-colors"
+              title="Start your work session"
             >
               <Sparkles className="h-3.5 w-3.5" />
               Log in
             </button>
           )}
 
-          {/* Calmer action row — icon-only buttons, no border outline,
-              the tone (amber/red/green) is conveyed by a subtle bg tint
-              that only appears on hover. Was pretty noisy before. */}
           {isActive && (
             <>
               <IconBtn onClick={handleOnCall} active={isOnCall}
@@ -196,9 +206,17 @@ export function SessionTopBar() {
               <IconBtn onClick={handleBreak} hoverTone="amber" title="Take a break">
                 <Pause className="h-3.5 w-3.5" />
               </IconBtn>
-              <IconBtn onClick={handleEnd} hoverTone="red" title="Log out for the day">
+              {/* Explicit labelled Log out button — the previous icon-only
+                  version was too easy to miss; team members reported
+                  ending the day without clocking out. */}
+              <button
+                onClick={handleEnd}
+                className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-rose-500/15 text-rose-700 border border-rose-500/30 text-xs font-bold hover:bg-rose-500 hover:text-white shadow-sm transition-colors"
+                title="End your work session"
+              >
                 <StopCircle className="h-3.5 w-3.5" />
-              </IconBtn>
+                Log out
+              </button>
             </>
           )}
 
@@ -207,9 +225,14 @@ export function SessionTopBar() {
               <IconBtn onClick={handleResume} hoverTone="green" title="Resume work">
                 <Play className="h-3.5 w-3.5" />
               </IconBtn>
-              <IconBtn onClick={handleEnd} hoverTone="red" title="Log out for the day">
+              <button
+                onClick={handleEnd}
+                className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-rose-500/15 text-rose-700 border border-rose-500/30 text-xs font-bold hover:bg-rose-500 hover:text-white shadow-sm transition-colors"
+                title="End your work session"
+              >
                 <StopCircle className="h-3.5 w-3.5" />
-              </IconBtn>
+                Log out
+              </button>
             </>
           )}
         </div>

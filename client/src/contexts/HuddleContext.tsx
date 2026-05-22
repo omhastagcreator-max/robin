@@ -213,14 +213,11 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     // the placeholder with the real window on success, or null on failure.
     pipWindowRef.current = 'pending' as any;
     try {
-      // Default size — bumped from 360×560 to 420×680. The smaller
-      // default left no room for screens AND chat after the user resized
-      // horizontally; the result was the squashed strip in the May-2026
-      // owner screenshot. 420×680 gives the screens row enough vertical
-      // room to render a real preview, and the chat below stays usable.
+      // Default size restored to the original 360×560 (owner preferred
+      // the prior look — the wider default felt heavy on small monitors).
       const w = await (window as any).documentPictureInPicture.requestWindow({
-        width: 420,
-        height: 680,
+        width: 360,
+        height: 560,
       });
 
       // ── Loading splash so the window is never visually empty ──────────
@@ -715,13 +712,20 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
           provider level so it survives every route change. Without this, the
           audio elements lived inside HuddleStage / HuddleDock and unmounted
           the moment you navigated away from /workroom — you'd stay connected
-          to the LiveKit room but couldn't hear anyone. */}
+          to the LiveKit room but couldn't hear anyone.
+          ─────────────────────────────────────────────────────────────────
+          FIX (audio audit, May 2026): mount for EVERY peer with a stream,
+          not only when peer.audioOn is true. The previous gate meant that
+          if peer.audioOn was stale-false at mount time and the peer later
+          unmuted, no audio element ever attached → user heard nothing.
+          We now toggle mute via the `muted` prop instead, which React
+          updates without unmount/remount. */}
       {meeting.peers.map(peer =>
-        peer.stream && peer.audioOn ? (
+        peer.stream ? (
           <RemoteAudio
             key={`global-audio-${peer.userId}`}
             stream={peer.stream}
-            muted={deafened}
+            muted={deafened || !peer.audioOn}
           />
         ) : null,
       )}
