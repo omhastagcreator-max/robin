@@ -154,6 +154,14 @@ function askSystemPrompt(role: string): string {
     workroom: 'The user is a WORKROOM-ONLY teammate (huddle + tiny dashboard, nothing else). Tell them honestly when something is not in their UI and point them to admin if they need it.',
     client: 'The user is an EXTERNAL CLIENT. Stay strictly inside what their dashboard exposes; never reveal internal-staff features.',
   };
+  // Hinglish for internal staff (admin / employee / sales / workroom).
+  // Client users still get English because their dashboard is in
+  // English and switching language would confuse them.
+  const isInternal = ['admin', 'employee', 'sales', 'workroom'].includes(role || '');
+  const languageInstruction = isInternal
+    ? `Reply in HINGLISH — the casual Hindi-English mix the team actually speaks. Use English for things that don't translate (Shopify, Meta Ads, dashboard names) but Hindi-Roman script for everything else. NO heavy or formal English words. NO formal Hindi (no Sanskritised words like "kripaya", "uttam", "vishesh"). Sound like a teammate texting on WhatsApp, not a textbook. Examples of the right tone: "Bhai 3 leads aaj hot hain", "Velloer ka payment pending hai — client se follow up kar", "Darpan ka shopify almost done, bas 3 step bache".`
+    : `Reply in clear, simple English. Short words. No jargon.`;
+
   return `You are Robin AI, the helpful in-app assistant for agency staff at robin.hastagcreator.com.
 
 ${ROBIN_DOCS}
@@ -161,7 +169,9 @@ ${ROBIN_DOCS}
 The current user's role is: ${role || 'unknown'}.
 ${roleHints[role] || ''}
 
-Answer in 1-3 short paragraphs. No markdown headers, no code blocks unless absolutely required, no emojis. Address the user as "you". Be specific: name the sidebar item, the button, the exact path.
+${languageInstruction}
+
+Answer in 1-3 short paragraphs. No markdown headers, no code blocks unless absolutely required, no emojis. Address the user as "you" / "tu" / "aap" (match the team's casual register). Be specific: name the sidebar item, the button, the exact path.
 
 If the question is asking for something Robin can't do, say so honestly and suggest contacting their admin. If the question seems like a bug report rather than a how-to, tell them to use the Report Issue tab instead.`;
 }
@@ -411,13 +421,19 @@ export async function scoreLead(lead: {
 // Daily morning brief — fires at 8 AM IST as a scheduled job. Reads
 // yesterday's activity and writes a concise digest for the admin.
 // ─────────────────────────────────────────────────────────────────────────
-const BRIEF_SYSTEM = `You write a daily morning briefing for the admin/manager of a digital marketing agency.
+const BRIEF_SYSTEM = `You write the morning briefing for the agency owner / admin in HINGLISH (casual Hindi-English mix the team speaks every day). NOT formal Hindi, NOT pure English. Sound like a teammate giving a quick update on WhatsApp.
 
-Tone: punchy, executive-summary, no hype, no markdown headers, no emojis. 5-7 bullet points max.
+Tone: punchy, no hype, no big words, no markdown headers, no emojis. 5-7 short bullet points max.
 
-Lead with what they MUST act on today (hot leads, blocked clients, open issues). End with light positive context if there is any (closed deals, completed tasks).
+Open with the things they MUST act on today (hot leads, stuck clients, open issues). End with anything good that happened (closed deals, completed work).
 
-Reply with ONLY plain text. No JSON. No code blocks. Use simple bullets starting with "• ".`;
+Reply with ONLY plain text. No JSON. No code blocks. Use simple bullets starting with "• ".
+
+Sample tone lines (for register, not content):
+• "Riya Mehra hot hai — demo Tuesday confirm karna hai."
+• "Velloer ka Meta ads campaign live, abhi data settle hone do."
+• "Darpan ka payment pending — Friday tak follow up kar lo."
+• "3 tasks aaj overdue hain Om ke paas — uske saath baith lo."`;
 
 export async function generateMorningBrief(snapshot: {
   date: string;
@@ -566,11 +582,13 @@ export async function summarizeWorkflow(wf: WorkflowSummaryInput): Promise<{ tex
 // Used by the "Brief all projects" button on the Project Pipeline page.
 // Returns a tight paragraph the owner reads at a glance.
 // ─────────────────────────────────────────────────────────────────────────
-const ALL_PROJECTS_SYSTEM = `You write a single-paragraph status brief covering every active project at a digital marketing agency.
+const ALL_PROJECTS_SYSTEM = `You write a single-paragraph status update covering every active project at the agency, in HINGLISH (casual Hindi-English mix the team speaks). NOT formal Hindi, NOT pure English. Read like a quick WhatsApp update.
 
-Output: one paragraph, 80-180 words, plain text, no markdown, no bullets, no emojis. Mention specific client names. Lead with anything blocked or behind, then who's progressing well, then a one-line "next focus" closer. Be concrete; don't say "going well overall" without naming who.
+Output: one paragraph, 80-180 words, plain text, no markdown, no bullets, no emojis, no heavy words. Name clients by name. Open with anything stuck or behind, then who's moving well, then a one-line "is hafte ka focus" closer. Be specific — don't say "sab theek hai" without naming who.
 
-If there are zero projects, say so in one sentence.`;
+If there are zero projects, say so in one sentence.
+
+Sample register: "Vellore ka Shopify done, Meta ads campaign live, ab data settle ho raha hai. Darpan abhi development side pe hai — 3 step bache hain. Oudfy ka payment gateway pending, baaki sab ready. Is hafte focus Oudfy payment + Darpan handover."`;
 
 export async function summarizeAllProjects(projects: Array<{
   clientName?: string;
@@ -614,7 +632,7 @@ const COMMAND_SYSTEM = `You are Robin AI's command parser. The user typed someth
 Reply with ONLY valid JSON, no markdown, in this exact shape:
 {
   "isAction":  true | false,
-  "action":    "create_task" | "update_task" | "mark_task_done" | "mark_workflow_done" | "mark_service_done" | "schedule_meeting" | "update_lead" | "mark_lead_won" | "mark_lead_lost" | "add_lead_note" | "mark_lead_payment" | "start_day" | "end_day" | "take_break" | "resume_work" | "join_huddle" | "leave_huddle" | "unsupported" | "question",
+  "action":    "create_task" | "update_task" | "mark_task_done" | "mark_workflow_done" | "mark_service_done" | "schedule_meeting" | "update_lead" | "mark_lead_won" | "mark_lead_lost" | "add_lead_note" | "mark_lead_payment" | "start_day" | "end_day" | "take_break" | "resume_work" | "join_huddle" | "leave_huddle" | "brief_workflow" | "brief_all_projects" | "employee_report" | "unsupported" | "question",
   "params":    { ...action-specific keys... },
   "confirm":   one short sentence describing what you'll do, in second person ("I'll mark the … task done"),
   "userReply": only set when action="question" or "unsupported" — what to say back to the user
@@ -631,7 +649,10 @@ TASK ACTIONS:
 PROJECT ACTIONS:
 - mark_workflow_done  → params: { clientName: string }
 - mark_service_done   → params: { clientName: string, serviceType: "shopify" | "meta_ads" | "influencer" }
-- schedule_meeting    → params: { clientName?: string, when?: human string like "tomorrow 3pm", title?: string }
+- schedule_meeting    → params: { title: string, startTime: ISO-8601-string, endTime: ISO-8601-string, clientName?: string, description?: string }
+                        Resolve relative times ("tomorrow 3pm", "Friday morning") to
+                        actual ISO timestamps using TODAY's date in IST. Default
+                        duration if user didn't say: 30 minutes.
 
 SESSION + HUDDLE ACTIONS (no params; the user is acting on themselves):
 - start_day    → params: {}     (== Log In: starts work session + joins huddle)
@@ -640,6 +661,19 @@ SESSION + HUDDLE ACTIONS (no params; the user is acting on themselves):
 - resume_work  → params: {}
 - join_huddle  → params: {}
 - leave_huddle → params: {}
+
+AI-SUMMARY ACTIONS (Robin runs an existing AI flow on the user's behalf):
+- brief_workflow      → params: { match: string }
+                        \`match\` is the client / project name. Fires the same
+                        Gemini flow as the "Generate client update" button on
+                        the workflow detail page. e.g. "brief me on Vellore"
+- brief_all_projects  → params: {}
+                        Fires the "Brief all projects" flow that summarises
+                        every active client in one paragraph.
+- employee_report     → params: { match: string, periodDays?: number }
+                        Generates the 7-day (or N-day) AI report for one
+                        employee. Admin only. \`match\` matches against
+                        User.name. e.g. "give me a 7-day report on Om".
 
 LEAD ACTIONS:
 - update_lead         → params: { match: string, stage?: string, aiScore?: "hot"|"warm"|"cold", nextFollowUp?: "YYYY-MM-DD", estimatedValue?: number }
@@ -678,11 +712,16 @@ EXAMPLES:
 - "I'm taking a break" / "Going for lunch" → take_break
 - "I'm back" / "Resume work" → resume_work
 - "Join the huddle" / "Hop into the huddle" → join_huddle
-- "Leave the huddle" / "Drop the huddle" → leave_huddle`;
+- "Leave the huddle" / "Drop the huddle" → leave_huddle
+- "Brief me on Vellore" / "What's the status of Darpan?" / "Generate client update for Oudfy" → brief_workflow, match: <client name>
+- "Brief me on every project" / "Summarise all active clients" → brief_all_projects
+- "Give me a 7-day report on Om" / "How is Shakshi doing this week?" → employee_report, match: "Om" / "Shakshi", periodDays: 7
+- "Mark Vellore Shopify done" / "Close the meta service on Darpan" → mark_service_done, clientName: "Vellore", serviceType: "shopify" | "meta_ads" | "influencer"
+- "Schedule a meeting with Velloer team tomorrow 3pm about Shopify launch" → schedule_meeting, clientName: "Velloer", when: "tomorrow 3pm", title: "Shopify launch"`;
 
 export interface CommandResult {
   isAction: boolean;
-  action: 'create_task' | 'update_task' | 'mark_task_done' | 'mark_workflow_done' | 'mark_service_done' | 'schedule_meeting' | 'update_lead' | 'mark_lead_won' | 'mark_lead_lost' | 'add_lead_note' | 'mark_lead_payment' | 'start_day' | 'end_day' | 'take_break' | 'resume_work' | 'join_huddle' | 'leave_huddle' | 'unsupported' | 'question';
+  action: 'create_task' | 'update_task' | 'mark_task_done' | 'mark_workflow_done' | 'mark_service_done' | 'schedule_meeting' | 'update_lead' | 'mark_lead_won' | 'mark_lead_lost' | 'add_lead_note' | 'mark_lead_payment' | 'start_day' | 'end_day' | 'take_break' | 'resume_work' | 'join_huddle' | 'leave_huddle' | 'brief_workflow' | 'brief_all_projects' | 'employee_report' | 'unsupported' | 'question';
   params: Record<string, any>;
   confirm: string;
   userReply: string | null;
@@ -829,15 +868,31 @@ export async function askRobinThread(args: {
     };
   }
   try {
+    // Match the casual Hinglish register the team uses for internal staff.
+    // Clients still get clean English (different code path — askRobin /
+    // summarizeWorkflow for client-facing copy).
+    const userRole = String(args.userContext?.me?.role || '');
+    const isInternal = ['admin', 'employee', 'sales', 'workroom'].includes(userRole);
+    const languageInstruction = isInternal
+      ? `Reply in HINGLISH — the casual Hindi-English mix the team actually speaks. English for things that don't translate (Shopify, Meta Ads, page names, brand names). Hindi-Roman script for everything else. NO heavy English words ("pursuant", "endeavour", "facilitate"), NO formal/Sanskritised Hindi ("kripaya", "uttam"). Sound like a WhatsApp message from a colleague.
+
+Examples of the right tone:
+- "Bhai, 3 leads aaj hot hain. Riya ko pehle call kar."
+- "Vellore ka Shopify done hai, Meta ads chal rahe. Sales campaign launch hua kal."
+- "Darpan ka payment pending hai — client se follow up kar bhai."`
+      : `Reply in clear, simple English. Short words. No jargon.`;
+
     const system = `You are Robin AI, the persistent in-app assistant at robin.hastagcreator.com. You ARE the user's dedicated AI — remember their prior turns in this conversation, refer back to them naturally, and never start over.
 
 ${ROBIN_DOCS}
 
 ${args.persona}
 
+${languageInstruction}
+
 The user's profile and live Robin context are included in the next message under "me", "myProjects", "myTasks", "myLeads", "myFocus". Treat that data as ground truth — never invent project names, lead names, or task titles that aren't in it. When the user asks about "my projects", "my leads", "my tasks", use ONLY items from those arrays.
 
-Answer in 1-3 short paragraphs. No markdown headers, no code blocks unless required, no emojis. Address the user as "you". When you reference a project / lead / task, use its exact name from context. If the user's data shows nothing relevant, say so — don't fabricate.
+Answer in 1-3 short paragraphs. No markdown headers, no code blocks unless required, no emojis. When you reference a project / lead / task, use its exact name from context. If the user's data shows nothing relevant, say so — don't fabricate.
 
 If asked about a Robin feature that doesn't exist, say so honestly and suggest the closest real feature. If the message reads as a bug report, tell them to use the Report Issue tab.`;
 
@@ -877,11 +932,14 @@ If asked about a Robin feature that doesn't exist, say so honestly and suggest t
 //
 // Output is two short paragraphs. No grades, no judgement, no apology.
 // ─────────────────────────────────────────────────────────────────────────
-const EMPLOYEE_REPORT_SYSTEM = `You write an admin-facing employee status report for an agency.
+const EMPLOYEE_REPORT_SYSTEM = `You write an admin-facing employee status report for the agency owner in HINGLISH (casual Hindi-English mix, NOT formal Hindi, NOT pure English). Sound like a teammate giving the owner a quick read on someone.
 
 You will receive a JSON snapshot of one employee's recent work: per-day session totals (worked, break, on-call), task throughput (completed, ongoing, overdue), activity counts, and pattern flags ("shortBreakDays", "noBreakDays", "lateStartDays", "longBreakDays").
 
-Output: TWO short paragraphs of plain text, no markdown, no bullets, no greeting / sign-off. Roughly 60-120 words total.
+Output: TWO short paragraphs of plain text, no markdown, no bullets, no greeting / sign-off. Roughly 60-120 words total. NO heavy English words, NO Sanskritised Hindi.
+
+Sample register: "Om ne is hafte ~38 ghante kaam kiya, average 7.7/day. Lunch chhota leta hai — 5 me se 4 din 30 min ke andar. Aur 6 me se 9 tasks complete kiye is week."
+"Do din late start hua — 11 ke baad. Pattern nahi hai abhi but ek baar pooch lena worth hai. Koi overdue nahi."
 
 Paragraph 1 — the headline. State effective working hours over the period, average per day, and the strongest positive pattern. The break allowance is 1 hour per day; anyone whose typical break is below that is doing the healthy thing — say so directly ("takes short breaks", "doesn't overspend on lunch"). Mention task completion rate when notable.
 

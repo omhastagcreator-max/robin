@@ -29,6 +29,9 @@ export type RobinAction =
   | 'resume_work'
   | 'join_huddle'
   | 'leave_huddle'
+  | 'brief_workflow'
+  | 'brief_all_projects'
+  | 'employee_report'
   | 'unsupported'
   | 'question';
 
@@ -184,9 +187,75 @@ export async function executeRobinCommand(
         return { ok: true, text: `Marked "${wf.clientName}" done — ${notDone.length} step${notDone.length === 1 ? '' : 's'} completed. Audit log credits Robin AI.` };
       }
 
-      case 'mark_service_done':
-      case 'schedule_meeting':
-        return { ok: false, text: "I parsed that action, but execution for it isn't wired yet. Open the project / calendar manually and I'll add execution next." };
+      case 'mark_service_done': {
+        const name = String(params.clientName || '').trim();
+        const svcType = String(params.serviceType || '').trim();
+        if (!name)    return { ok: false, text: 'Client ka naam chahiye. Try: "mark Vellore Shopify done".' };
+        if (!svcType) return { ok: false, text: 'Konsa service? shopify / meta_ads / influencer me se chuno.' };
+        const list: any[] = await api.cwListWorkflows({ q: name });
+        const wf = list.find(w => (w.clientName || '').toLowerCase() === name.toLowerCase()) || list[0];
+        if (!wf) return { ok: false, text: `Koi project "${name}" naam ka nahi mila. Projects page pe search kar lo.` };
+        const svc = (wf.services || []).find((s: any) => s.serviceType === svcType);
+        if (!svc)        return { ok: false, text: `"${wf.clientName}" pe ${svcType.replace(/_/g, ' ')} service exist nahi karti.` };
+        if (svc.status === 'done') return { ok: true, text: `"${wf.clientName}" ka ${svcType.replace(/_/g, ' ')} already done hai.` };
+        await api.cwCompleteService(wf._id, svc._id, { comment: `Marked done via Robin AI: "${originalMessage || 'mark service done'}"` });
+        return { ok: true, text: `Done — "${wf.clientName}" ka ${svcType.replace(/_/g, ' ')} mark ho gaya.` };
+      }
+
+      case 'schedule_meeting': {
+        const title     = String(params.title || params.clientName || 'Meeting').trim();
+        const startTime = String(params.startTime || '').trim();
+        const endTime   = String(params.endTime   || '').trim();
+        if (!startTime || !endTime) {
+          return { ok: false, text: 'Meeting ka time chahiye. Try: "schedule meeting with Vellore tomorrow 3pm about Shopify launch".' };
+        }
+        const sMs = new Date(startTime).getTime();
+        const eMs = new Date(endTime).getTime();
+        if (!Number.isFinite(sMs) || !Number.isFinite(eMs) || eMs <= sMs) {
+          return { ok: false, text: 'Time samajh nahi aaya. Format: ISO 8601 jaise 2026-05-25T15:00:00+05:30.' };
+        }
+        await api.meetingsCreate({
+          title,
+          description: params.description ? String(params.description) : undefined,
+          startTime,
+          endTime,
+        });
+        const localStart = new Date(sMs).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+        return { ok: true, text: `Meeting "${title}" schedule kar di — ${localStart}.` };
+      }
+
+      // ── AI-summary actions ───────────────────────────────────────
+      case 'brief_workflow': {
+        const m = String(params.match || params.clientName || '').trim();
+        if (!m) return { ok: false, text: 'Client ka naam batao — "brief me on Vellore" jaisa.' };
+        const list: any[] = await api.cwListWorkflows({ q: m });
+        const wf = list.find(w => (w.clientName || '').toLowerCase() === m.toLowerCase()) || list[0];
+        if (!wf) return { ok: false, text: `Koi project "${m}" naam ka nahi mila.` };
+        const res = await api.aiSummarizeWorkflow(wf._id);
+        return { ok: true, text: `${wf.clientName} — yeh raha update:\n\n${res?.text || '(no summary)'}` };
+      }
+
+      case 'brief_all_projects': {
+        const res = await api.aiBriefAllProjects();
+        return { ok: true, text: `Sare active projects ka quick update:\n\n${res?.text || '(no summary)'}` };
+      }
+
+      case 'employee_report': {
+        const m = String(params.match || '').trim();
+        if (!m) return { ok: false, text: 'Kis employee ka? "Give me a 7-day report on Om" jaisa try kar.' };
+        // Find the user by name. listUsers returns the full team (admin
+        // sees all). Case-insensitive prefix + substring match.
+        const users: any = await api.listUsers();
+        const arr: any[] = Array.isArray(users) ? users : (users?.users || []);
+        const lower = m.toLowerCase();
+        let u = arr.find((x: any) => (x.name || '').toLowerCase() === lower);
+        if (!u) u = arr.find((x: any) => (x.name || '').toLowerCase().startsWith(lower));
+        if (!u) u = arr.find((x: any) => (x.name || '').toLowerCase().includes(lower));
+        if (!u) return { ok: false, text: `"${m}" naam ka koi employee nahi mila. Admin → Employees pe check kar lo.` };
+        const periodDays = Number(params.periodDays) > 0 ? Number(params.periodDays) : 7;
+        const res = await api.aiEmployeeReport(u._id, periodDays);
+        return { ok: true, text: `${u.name} ka ${periodDays}-day report:\n\n${res?.text || '(no report)'}` };
+      }
 
       // ── Session + huddle control ──────────────────────────────────
       // The agent commands the user can issue by voice / text.
