@@ -3,6 +3,7 @@ import { Video, ArrowRight, Headphones } from 'lucide-react';
 import { AppLayout }  from '@/components/AppLayout';
 import { useAuth }    from '@/contexts/AuthContext';
 import { useHuddle }  from '@/contexts/HuddleContext';
+import { SessionClockCard } from '@/components/shared/SessionClockCard';
 
 /**
  * WorkroomHome v2 — landing page for the 'workroom' role.
@@ -43,6 +44,13 @@ export default function WorkroomHome() {
             </p>
           </div>
         </div>
+
+        {/* Work clock — big, primary action on this page. The previous
+            version only had the small topbar timer which the workroom
+            role missed, leading to "my timer doesn't work" reports. The
+            card here is the same one the other dashboards use, so the
+            workroom user gets the full clock-in / break / clock-out flow. */}
+        <SessionClockCard />
 
         {/* Two action tiles */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

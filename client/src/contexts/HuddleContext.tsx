@@ -396,6 +396,15 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
   // PiP doesn't get auto-popped here — that requires a transient user
   // gesture which we don't have for an auto-fire. The existing PiP
   // auto-reopen effect catches the very next click and pops it then.
+  //
+  // IMPORTANT: do NOT call join() from here — join() chains into
+  // openPiP(), and documentPictureInPicture.requestWindow() hard-requires
+  // a fresh user activation. Calling it from setTimeout (no activation)
+  // produced "NotAllowedError: Document PiP requires user activation" in
+  // the console and broke the manual click path's first PiP open. We
+  // instead flip mode to 'joining' directly — the single-shot effect
+  // downstream still fires meeting.joinMeeting(), and PiP comes up the
+  // moment the user clicks anywhere afterwards.
   const autoJoinedRef = useRef(false);
   useEffect(() => {
     if (autoJoinedRef.current) return;
@@ -415,9 +424,17 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     autoJoinedRef.current = true;
     // Tiny defer so any in-flight auth / token refresh settles before we
     // hit /huddle-token. Pure UX nicety; not load-bearing.
-    const t = setTimeout(() => { join(); }, 400);
+    //
+    // Flip mode to 'joining' DIRECTLY — not via join() — because join()
+    // chains into openPiP() which requires a transient user activation
+    // we don't have here. The single-shot effect downstream fires the
+    // real meeting.joinMeeting() either way, and the PiP auto-reopen
+    // listener catches the user's very next click.
+    const t = setTimeout(() => {
+      setMode(m => (m === 'idle' ? 'joining' : m));
+    }, 400);
     return () => clearTimeout(t);
-  }, [user, role, mode, meeting.joining, meeting.joined, meeting.error, join]);
+  }, [user, role, mode, meeting.joining, meeting.joined, meeting.error]);
 
   // ── Single-shot join (no auto-retry loop) ──────────────────────────────
   //
