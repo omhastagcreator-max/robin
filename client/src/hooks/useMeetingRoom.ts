@@ -10,6 +10,7 @@ import {
 } from 'livekit-client';
 import * as api from '@/api';
 import { logShareEvent } from '@/lib/screenShareDebug';
+import { toast } from 'sonner';
 
 // Dev-only debug logger. In production these are no-ops — the ~10 calls
 // per huddle session were filling clients' DevTools consoles with chatter
@@ -353,7 +354,38 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
     try {
       await room.localParticipant.setMicrophoneEnabled(next);
       setAudioOn(next);
-    } catch (e) { log('toggleAudio failed', e); }
+    } catch (e: any) {
+      // Surface mic failures to the user instead of swallowing them — the
+      // previous catch only logged, so when permission was denied OR no
+      // device was connected, the button stayed red and the user thought
+      // Robin was broken (e.g. Bhawana, May 2026). Now each known browser
+      // error gets a concrete next step the user can act on.
+      log('toggleAudio failed', e);
+      const name = e?.name || '';
+      const msg  = e?.message || '';
+      if (name === 'NotAllowedError' || /permission/i.test(msg)) {
+        toast.error(
+          'Mic permission blocked. Click the lock icon in the address bar → Site settings → Microphone → Allow, then reload.',
+          { duration: 8000 }
+        );
+      } else if (name === 'NotFoundError' || /no devices? found|requested device not found/i.test(msg)) {
+        toast.error(
+          'No microphone detected. Plug in / select a mic in your OS sound settings, then click the mic button again.',
+          { duration: 8000 }
+        );
+      } else if (name === 'NotReadableError' || /could not start|track start failed/i.test(msg)) {
+        toast.error(
+          'Your mic is busy in another app (Zoom / Meet / phone). Close it, then click the mic button again.',
+          { duration: 8000 }
+        );
+      } else if (name === 'OverconstrainedError') {
+        toast.error('Selected mic doesn\'t support our settings. Pick another mic in your OS sound settings and retry.', { duration: 8000 });
+      } else if (name === 'AbortError') {
+        // User dismissed the prompt — no toast, they cancelled deliberately.
+      } else {
+        toast.error(`Couldn't ${next ? 'unmute' : 'mute'} mic${msg ? `: ${msg}` : ''}`, { duration: 6000 });
+      }
+    }
   }, [audioOn]);
 
   const toggleScreen = useCallback(async () => {
