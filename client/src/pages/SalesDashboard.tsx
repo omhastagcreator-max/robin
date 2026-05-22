@@ -48,7 +48,17 @@ const ALL_STAGES = [...PIPELINE_STAGES, ...SALES_STAGES, ...OUTCOME_STAGES];
 // Default source is 'inbound' — most pasted-in leads come from form-fills or
 // reply-to-our-cold-mail flows. Rep can switch with one tap on the segmented
 // outbound/inbound/organic picker.
-const EMPTY_FORM = { name: '', contact: '', email: '', company: '', source: 'inbound', estimatedValue: '' };
+// Form state includes optional part-payment fields so a rep can record
+// "client paid 15k upfront, balance 30k after Shopify launch" in the same
+// step as creating the lead. paymentPaid + paymentReason are saved via
+// a follow-up call to markLeadPayment once the lead exists. estimatedValue
+// is reused as the full deal total so we don't have to ask twice.
+const EMPTY_FORM = {
+  name: '', contact: '', email: '', company: '', source: 'inbound',
+  estimatedValue: '',
+  paymentPaid:   '',   // amount the client has paid already
+  paymentReason: '',   // "balance after Shopify launch" / "rest on delivery"
+};
 
 // ── Lead source UX ─────────────────────────────────────────────────────────────
 // The three categories the sales team thinks in. Everything else maps into
@@ -251,15 +261,45 @@ export default function SalesDashboard() {
     try {
       // Smart paste: if "name" looks like it has phone/email mixed in, parse them out.
       const parsed = parseContactBlob(form.name);
+      const totalValue = Number(form.estimatedValue) || 0;
+      const paidNow    = Number(form.paymentPaid)    || 0;
+      const reason     = form.paymentReason.trim();
+
+      // Strip the payment-only fields before sending — server doesn't
+      // accept them inline on POST /leads (they live on a separate
+      // /:id/payment endpoint).
+      const { paymentPaid: _pp, paymentReason: _pr, ...leadFields } = form;
       const payload = {
-        ...form,
+        ...leadFields,
         name:    parsed.name    || form.name,
         contact: form.contact   || parsed.phone || '',
         email:   form.email     || parsed.email || '',
         stage: 'new_lead',
-        estimatedValue: Number(form.estimatedValue) || 0,
+        estimatedValue: totalValue,
       };
-      await api.createLead(payload);
+      const created = await api.createLead(payload);
+
+      // If the rep entered a part payment OR just a reason note, record
+      // it as a payment event on the freshly-created lead. The reason
+      // becomes the "what triggers the next payment" sentence that
+      // shows above the history on every lead card / drawer.
+      if (paidNow > 0 || reason) {
+        const status: 'part_paid' | 'full_paid' =
+          (totalValue > 0 && paidNow >= totalValue) ? 'full_paid' : 'part_paid';
+        try {
+          await api.markLeadPayment(String((created as any)._id), {
+            status,
+            amount: paidNow,
+            note:   reason || undefined,
+            total:  totalValue > 0 ? totalValue : undefined,
+          });
+        } catch {
+          // Lead is already created; only the payment record failed. Tell
+          // the rep so they can retry from the lead drawer.
+          toast.warning('Lead created — but the part-payment record failed. Add it from the lead drawer.');
+        }
+      }
+
       toast.success('Lead created!');
       setForm({ ...EMPTY_FORM }); setShowAdd(false); load();
     } catch { toast.error('Failed to create lead'); }
@@ -811,6 +851,69 @@ export default function SalesDashboard() {
                   })}
                 </div>
               </div>
+              {/* ── Part payment ─ optional, but recorded inline so a
+                  rep can capture "client paid 15k upfront, balance after
+                  Shopify launch" in the same step as creating the lead.
+                  Calculates the remaining live from the deal value
+                  above so the rep doesn't have to do the math. */}
+              <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/[0.05] p-3 space-y-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <p className="text-[11px] uppercase tracking-wider font-bold text-amber-800">
+                    Part payment received? (optional)
+                  </p>
+                  {Number(form.estimatedValue) > 0 && Number(form.paymentPaid) >= 0 && (() => {
+                    const total = Number(form.estimatedValue) || 0;
+                    const paid  = Number(form.paymentPaid)    || 0;
+                    const rem   = Math.max(0, total - paid);
+                    const pct   = total > 0 ? Math.round((paid / total) * 100) : 0;
+                    if (paid <= 0 && rem <= 0) return null;
+                    return (
+                      <span className="text-[10.5px] text-amber-900 tabular-nums">
+                        <b>₹{paid.toLocaleString('en-IN')}</b> paid · <b>₹{rem.toLocaleString('en-IN')}</b> remaining · {pct}%
+                      </span>
+                    );
+                  })()}
+                </div>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  <label className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground font-semibold">Amount paid now (₹)</span>
+                    <input
+                      type="number"
+                      value={form.paymentPaid}
+                      onChange={e => setForm(p => ({ ...p, paymentPaid: e.target.value }))}
+                      placeholder="e.g. 15000"
+                      className="w-full px-3 py-2 bg-background border border-input rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring tabular-nums"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground font-semibold">Remaining (auto from deal value above)</span>
+                    <div className="w-full px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm tabular-nums text-foreground/80">
+                      {(() => {
+                        const total = Number(form.estimatedValue) || 0;
+                        const paid  = Number(form.paymentPaid)    || 0;
+                        const rem   = Math.max(0, total - paid);
+                        return total > 0
+                          ? `₹${rem.toLocaleString('en-IN')}`
+                          : <span className="italic text-muted-foreground/70">enter deal value above</span>;
+                      })()}
+                    </div>
+                  </label>
+                </div>
+                <label className="block space-y-1">
+                  <span className="text-[10px] text-muted-foreground font-semibold">
+                    What triggers the remaining payment? <span className="font-normal text-muted-foreground/70">(reason / condition)</span>
+                  </span>
+                  <textarea
+                    value={form.paymentReason}
+                    onChange={e => setForm(p => ({ ...p, paymentReason: e.target.value }))}
+                    rows={2}
+                    maxLength={500}
+                    placeholder="e.g. Client will pay balance 50% after Shopify store goes live"
+                    className="w-full px-3 py-2 bg-background border border-input rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none leading-snug"
+                  />
+                </label>
+              </div>
+
               <button type="submit" disabled={saving || !form.name}
                 className="mt-3 flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
                 {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />} Create Lead
