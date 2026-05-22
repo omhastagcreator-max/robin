@@ -95,6 +95,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // earned by the previous user can fire a false-bounce on user B's
     // very first request after logging in. Audit finding MED-6.
     try { delete (window as any).__robin401Strike; } catch { /* ignore */ }
+    // Clear the auto-start latch so the NEXT user who logs in (or the
+    // same user logging back in) gets a fresh auto-clock-in. Without
+    // this, the sessionStorage flag set by the previous user's auto-
+    // start would suppress the next user's.
+    try { sessionStorage.removeItem('robin.session.autoStartedThisTab'); } catch { /* ignore */ }
     // Tear down the shared socket so the next login doesn't inherit the
     // previous user's identity in chat/presence.
     try { disconnectSharedSocket(); } catch { /* ignore */ }
