@@ -163,9 +163,21 @@ export function HuddlePiPContent() {
         </div>
       </header>
 
-      {/* Live screen strip — shows what each broadcasting peer is sharing */}
-      <section className="border-b border-border">
-        <div className="px-3 py-1.5 flex items-center gap-2 bg-muted/30">
+      {/* Live screen strip — shows what each broadcasting peer is sharing.
+          Layout is adaptive so the PiP doesn't crush content when the
+          user resizes it:
+            · When at least one peer is sharing → this section takes the
+              full vertical space (flex-1, internal scroll). Chat shrinks
+              to a fixed 140px footer so it stays usable but doesn't hog
+              the area.
+            · When nobody is sharing → this section collapses to its
+              header line and chat gets all remaining space.
+          Removes the old max-h-44 hard cap that crushed the strip every
+          time the owner widened the PiP horizontally. */}
+      <section className={`border-b border-border flex flex-col min-h-0 ${
+        screenSharers.length > 0 ? 'flex-1' : ''
+      }`}>
+        <div className="px-3 py-1.5 flex items-center gap-2 bg-muted/30 shrink-0">
           <Monitor className="h-3 w-3 text-primary" />
           <p className="text-[10px] font-semibold uppercase tracking-wide">
             Live screens · {screenSharers.length}
@@ -176,7 +188,12 @@ export function HuddlePiPContent() {
             Nobody is sharing yet. Click the screen icon above to share.
           </p>
         ) : (
-          <div className="grid grid-cols-1 gap-1.5 p-2 max-h-44 overflow-y-auto">
+          // grid-rows-1 + auto-rows so 1 sharer fills, 2+ split the room.
+          <div className={`grid gap-1.5 p-2 flex-1 min-h-0 overflow-y-auto ${
+            screenSharers.length === 1 ? 'grid-cols-1 grid-rows-1'
+            : screenSharers.length === 2 ? 'grid-cols-1 sm:grid-cols-2 auto-rows-fr'
+            :                              'grid-cols-1 sm:grid-cols-2 auto-rows-[minmax(140px,1fr)]'
+          }`}>
             {screenSharers.map(p => (
               <PiPScreenTile key={p.userId} peer={p} />
             ))}
@@ -184,8 +201,11 @@ export function HuddlePiPContent() {
         )}
       </section>
 
-      {/* Chat — same component, same backend */}
-      <section className="flex-1 overflow-hidden p-2">
+      {/* Chat — fixed-ish height when screens are taking the room, fills
+          everything when they aren't. */}
+      <section className={`overflow-hidden p-2 ${
+        screenSharers.length > 0 ? 'h-[140px] shrink-0' : 'flex-1'
+      }`}>
         <HuddlePingChat />
       </section>
 
@@ -206,7 +226,9 @@ function PiPScreenTile({ peer }: { peer: PeerView }) {
     }
   }, [peer.stream]);
   return (
-    <div className="relative bg-black rounded-md overflow-hidden aspect-video">
+    // Drop the fixed aspect-video so the tile fills the grid cell vertically.
+    // Object-contain on the video keeps the source's real aspect ratio inside.
+    <div className="relative bg-black rounded-md overflow-hidden w-full h-full min-h-[120px]">
       <video ref={ref} autoPlay playsInline muted className="w-full h-full object-contain" />
       <div className="absolute bottom-1 left-1 right-1 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-sm">
         <span className="h-1 w-1 rounded-full bg-green-400 animate-pulse" />

@@ -24,10 +24,15 @@ export function SessionMiniWidget() {
     workedMs, currentBreakMs, totalBreakMs,
   } = useSession();
 
-  // Only employees & sales clock in/out
-  const visibleRoles = ['employee', 'sales'];
-  const visible = visibleRoles.includes(role);
-  if (!visible) return null;
+  // Anyone working in the agency needs the clock — including workroom
+  // (newly-onboarded / freelance teammates) and admin. The previous
+  // ['employee','sales'] list silently hid the timer for workroom users,
+  // which is why some employees reported "my timer doesn't work" — it
+  // wasn't broken, it was never rendered. Admin gets it too: owners
+  // wanted to track their own hours alongside the team. The only role
+  // truly excluded is `client` (external) and unknown / empty roles.
+  const visibleRoles = ['admin', 'employee', 'sales', 'workroom'];
+  if (role && !visibleRoles.includes(role)) return null;
 
   const fmtHMS = (ms: number) => {
     const s = Math.max(0, Math.floor(ms / 1000));

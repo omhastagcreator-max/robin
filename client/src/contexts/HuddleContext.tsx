@@ -213,9 +213,14 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     // the placeholder with the real window on success, or null on failure.
     pipWindowRef.current = 'pending' as any;
     try {
+      // Default size — bumped from 360×560 to 420×680. The smaller
+      // default left no room for screens AND chat after the user resized
+      // horizontally; the result was the squashed strip in the May-2026
+      // owner screenshot. 420×680 gives the screens row enough vertical
+      // room to render a real preview, and the chat below stays usable.
       const w = await (window as any).documentPictureInPicture.requestWindow({
-        width: 360,
-        height: 560,
+        width: 420,
+        height: 680,
       });
 
       // ── Loading splash so the window is never visually empty ──────────

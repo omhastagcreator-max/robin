@@ -51,7 +51,13 @@ export function SessionTopBar() {
   // Internal staff (admin/employee/sales/workroom) all clock in + can take
   // breaks. Clients don't. Workroom users get the same break controls as
   // a regular employee — owner ask: "let Janvi take a break like normal."
-  if (!['admin', 'employee', 'sales', 'workroom'].includes(role)) return null;
+  //
+  // Defensive: an empty/missing role would have hidden the topbar entirely
+  // and looked like a broken timer. Anyone with a non-client role gets the
+  // bar; the only explicit exclusion is `client`. Catches the case where a
+  // freshly-onboarded employee's role hasn't synced from server yet.
+  if (role === 'client') return null;
+  if (role && !['admin', 'employee', 'sales', 'workroom'].includes(role)) return null;
 
   const isActive  = session?.status === 'active';
   const isOnBreak = session?.status === 'on_break';
