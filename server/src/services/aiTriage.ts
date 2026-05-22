@@ -614,7 +614,7 @@ const COMMAND_SYSTEM = `You are Robin AI's command parser. The user typed someth
 Reply with ONLY valid JSON, no markdown, in this exact shape:
 {
   "isAction":  true | false,
-  "action":    "create_task" | "update_task" | "mark_task_done" | "mark_workflow_done" | "mark_service_done" | "schedule_meeting" | "update_lead" | "mark_lead_won" | "mark_lead_lost" | "add_lead_note" | "mark_lead_payment" | "unsupported" | "question",
+  "action":    "create_task" | "update_task" | "mark_task_done" | "mark_workflow_done" | "mark_service_done" | "schedule_meeting" | "update_lead" | "mark_lead_won" | "mark_lead_lost" | "add_lead_note" | "mark_lead_payment" | "start_day" | "end_day" | "take_break" | "resume_work" | "join_huddle" | "leave_huddle" | "unsupported" | "question",
   "params":    { ...action-specific keys... },
   "confirm":   one short sentence describing what you'll do, in second person ("I'll mark the … task done"),
   "userReply": only set when action="question" or "unsupported" — what to say back to the user
@@ -632,6 +632,14 @@ PROJECT ACTIONS:
 - mark_workflow_done  → params: { clientName: string }
 - mark_service_done   → params: { clientName: string, serviceType: "shopify" | "meta_ads" | "influencer" }
 - schedule_meeting    → params: { clientName?: string, when?: human string like "tomorrow 3pm", title?: string }
+
+SESSION + HUDDLE ACTIONS (no params; the user is acting on themselves):
+- start_day    → params: {}     (== Log In: starts work session + joins huddle)
+- end_day      → params: {}     (== Log Out: leaves huddle + ends work session)
+- take_break   → params: {}
+- resume_work  → params: {}
+- join_huddle  → params: {}
+- leave_huddle → params: {}
 
 LEAD ACTIONS:
 - update_lead         → params: { match: string, stage?: string, aiScore?: "hot"|"warm"|"cold", nextFollowUp?: "YYYY-MM-DD", estimatedValue?: number }
@@ -664,11 +672,17 @@ EXAMPLES:
 - "Remind me to follow up Aanya on Friday" → update_lead, match: "Aanya", nextFollowUp: <next Friday>
 - "Vellore part payment done 15k, balance 50% after Shopify launch" → mark_lead_payment, match: "Vellore", paymentStatus: "part_paid", amount: 15000, note: "balance 50% after Shopify launch"
 - "Karan Crafts paid full 30000" → mark_lead_payment, match: "Karan Crafts", paymentStatus: "full_paid", amount: 30000, total: 30000
-- "Riya took the deposit — 10k, full deal is 40k" → mark_lead_payment, match: "Riya", paymentStatus: "part_paid", amount: 10000, total: 40000`;
+- "Riya took the deposit — 10k, full deal is 40k" → mark_lead_payment, match: "Riya", paymentStatus: "part_paid", amount: 10000, total: 40000
+- "Log me in for the day" / "Start the day" / "Clock me in" → start_day
+- "Log me out" / "End the day" / "I'm done for today" → end_day
+- "I'm taking a break" / "Going for lunch" → take_break
+- "I'm back" / "Resume work" → resume_work
+- "Join the huddle" / "Hop into the huddle" → join_huddle
+- "Leave the huddle" / "Drop the huddle" → leave_huddle`;
 
 export interface CommandResult {
   isAction: boolean;
-  action: 'create_task' | 'update_task' | 'mark_task_done' | 'mark_workflow_done' | 'mark_service_done' | 'schedule_meeting' | 'update_lead' | 'mark_lead_won' | 'mark_lead_lost' | 'add_lead_note' | 'mark_lead_payment' | 'unsupported' | 'question';
+  action: 'create_task' | 'update_task' | 'mark_task_done' | 'mark_workflow_done' | 'mark_service_done' | 'schedule_meeting' | 'update_lead' | 'mark_lead_won' | 'mark_lead_lost' | 'add_lead_note' | 'mark_lead_payment' | 'start_day' | 'end_day' | 'take_break' | 'resume_work' | 'join_huddle' | 'leave_huddle' | 'unsupported' | 'question';
   params: Record<string, any>;
   confirm: string;
   userReply: string | null;

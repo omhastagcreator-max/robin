@@ -1,5 +1,6 @@
 import { Clock, Coffee, Play, Pause, StopCircle, AlertTriangle } from 'lucide-react';
 import { useSession } from '@/hooks/useSession';
+import { useHuddle } from '@/contexts/HuddleContext';
 import { toast } from 'sonner';
 
 interface Props {
@@ -26,6 +27,7 @@ export function SessionClockCard({ dayLocked = false, dayLockReason, onLockedAtt
     session, loading, startSession, startBreak, endBreak, endSession,
     workedMs, currentBreakMs, totalBreakMs,
   } = useSession();
+  const huddle = useHuddle();
 
   const fmtHMS = (ms: number) => {
     const s = Math.max(0, Math.floor(ms / 1000));
@@ -44,8 +46,20 @@ export function SessionClockCard({ dayLocked = false, dayLockReason, onLockedAtt
       toast.error(dayLockReason || 'Add at least 3 tasks for today before starting your day');
       return;
     }
+    // Unified Log In (May 2026): same click both starts the work session
+    // AND joins the agency huddle. We fire huddle.join() FIRST so it
+    // inherits the click's user activation and PiP can open without
+    // NotAllowedError. The session call runs after.
+    try { huddle.join(); } catch { /* dock has a manual Join button */ }
     try { await startSession(); }
     catch { toast.error('Failed to start session'); }
+  };
+
+  const handleEnd = async () => {
+    // Unified Log Out: leave huddle first, then end session.
+    try { huddle.leave(); } catch { /* dock has a manual Leave button */ }
+    try { await endSession(); }
+    catch { /* hook surfaces its own error */ }
   };
 
   const isActive  = session?.status === 'active';
@@ -127,7 +141,7 @@ export function SessionClockCard({ dayLocked = false, dayLockReason, onLockedAtt
               className="flex items-center gap-1.5 px-3 py-2 bg-amber-500/15 text-amber-700 border border-amber-500/30 rounded-xl text-xs font-semibold hover:bg-amber-500/25">
               <Pause className="h-3.5 w-3.5" /> Take break
             </button>
-            <button onClick={endSession}
+            <button onClick={handleEnd}
               className="flex items-center gap-2 px-5 py-2.5 bg-rose-500 text-white rounded-xl text-sm font-bold hover:bg-rose-600 shadow-sm">
               <StopCircle className="h-4 w-4" /> Log out
             </button>
@@ -139,7 +153,7 @@ export function SessionClockCard({ dayLocked = false, dayLockReason, onLockedAtt
               className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500 text-white rounded-xl text-sm font-bold hover:bg-emerald-600 shadow-sm">
               <Play className="h-4 w-4" /> Resume work
             </button>
-            <button onClick={endSession}
+            <button onClick={handleEnd}
               className="flex items-center gap-1.5 px-3 py-2 bg-rose-500/15 text-rose-700 border border-rose-500/30 rounded-xl text-xs font-semibold hover:bg-rose-500/25">
               <StopCircle className="h-3.5 w-3.5" /> Log out
             </button>

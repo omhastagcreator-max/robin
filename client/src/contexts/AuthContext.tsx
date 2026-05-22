@@ -100,6 +100,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // this, the sessionStorage flag set by the previous user's auto-
     // start would suppress the next user's.
     try { sessionStorage.removeItem('robin.session.autoStartedThisTab'); } catch { /* ignore */ }
+    // Same for the huddle-absence auto-break flag — if user A left it
+    // set (e.g. crashed while on auto-break), user B logging in shouldn't
+    // be treated as resuming someone else's break.
+    try { localStorage.removeItem('robin.session.autoBrokenByHuddle'); } catch { /* ignore */ }
     // Tear down the shared socket so the next login doesn't inherit the
     // previous user's identity in chat/presence.
     try { disconnectSharedSocket(); } catch { /* ignore */ }

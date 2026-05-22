@@ -3,6 +3,7 @@ import { useShortcut } from '@/hooks/useShortcut';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDrawer } from '@/components/ui/RightDrawer';
 import { dashboardForRole } from '@/components/ProtectedRoute';
+import { useRobinCopilot } from '@/components/ai/RobinCopilot';
 
 /**
  * Robin v2 — global app shortcuts. Mounted once inside AppLayout so every
@@ -27,6 +28,7 @@ export function GlobalShortcuts() {
   const navigate = useNavigate();
   const { role } = useAuth();
   const drawer = useDrawer();
+  const openCopilot = useRobinCopilot();
 
   // Universal navigation.
   useShortcut('g d', () => navigate(dashboardForRole(role)));
@@ -52,6 +54,21 @@ export function GlobalShortcuts() {
   // Esc backstop — RightDrawer handles its own Esc, but if a child
   // component swallows the event we still want to close the drawer.
   useShortcut('escape', () => { if (drawer.isOpen) drawer.close(); }, { inInputs: true });
+
+  // ⌘⇧V — talk to Robin. Opens the Copilot drawer and immediately
+  // starts the voice recogniser. Internal-staff only; clients don't
+  // have access to the Copilot. The drawer listens for the custom
+  // 'robin:voice-start' event and kicks off voice.start() once mounted.
+  useShortcut('mod+shift+v', () => {
+    if (role === 'client') return;
+    openCopilot();
+    // Give the drawer a tick to mount + the voice hook to subscribe,
+    // then dispatch. Robust to slow re-renders on cold mount.
+    setTimeout(() => {
+      try { window.dispatchEvent(new CustomEvent('robin:voice-start')); }
+      catch { /* swallow — old browser */ }
+    }, 250);
+  });
 
   return null;
 }

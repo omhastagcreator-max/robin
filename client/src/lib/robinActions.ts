@@ -23,6 +23,12 @@ export type RobinAction =
   | 'mark_lead_lost'
   | 'add_lead_note'
   | 'mark_lead_payment'
+  | 'start_day'
+  | 'end_day'
+  | 'take_break'
+  | 'resume_work'
+  | 'join_huddle'
+  | 'leave_huddle'
   | 'unsupported'
   | 'question';
 
@@ -181,6 +187,64 @@ export async function executeRobinCommand(
       case 'mark_service_done':
       case 'schedule_meeting':
         return { ok: false, text: "I parsed that action, but execution for it isn't wired yet. Open the project / calendar manually and I'll add execution next." };
+
+      // ── Session + huddle control ──────────────────────────────────
+      // The agent commands the user can issue by voice / text.
+      // Session APIs are called directly; huddle is controlled via the
+      // robin:huddle-join / robin:huddle-leave window events that the
+      // HuddleContext subscribes to — keeps this module React-free.
+      case 'start_day': {
+        try { window.dispatchEvent(new CustomEvent('robin:huddle-join')); } catch { /* ignore */ }
+        try {
+          await api.startSession();
+          return { ok: true, text: "Logged in for the day. Joining the huddle." };
+        } catch (err: any) {
+          // Most common case: there's already an active session.
+          const msg = err?.response?.data?.error || err?.message || '';
+          if (/already.*active|exist/i.test(msg)) return { ok: true, text: 'Already logged in — joined the huddle.' };
+          return { ok: false, text: `Couldn't start the day: ${msg || 'unknown error'}` };
+        }
+      }
+
+      case 'end_day': {
+        try { window.dispatchEvent(new CustomEvent('robin:huddle-leave')); } catch { /* ignore */ }
+        try {
+          await api.endSession();
+          return { ok: true, text: 'Logged out for the day. Left the huddle.' };
+        } catch (err: any) {
+          return { ok: false, text: `Couldn't end the day: ${err?.response?.data?.error || err?.message || 'unknown'}` };
+        }
+      }
+
+      case 'take_break': {
+        try {
+          await api.startBreak();
+          return { ok: true, text: "Break started — timer paused." };
+        } catch (err: any) {
+          return { ok: false, text: `Couldn't start a break: ${err?.response?.data?.error || err?.message || 'unknown'}` };
+        }
+      }
+
+      case 'resume_work': {
+        try {
+          await api.endBreak();
+          return { ok: true, text: "Back to work — timer resumed." };
+        } catch (err: any) {
+          return { ok: false, text: `Couldn't resume: ${err?.response?.data?.error || err?.message || 'unknown'}` };
+        }
+      }
+
+      case 'join_huddle': {
+        try { window.dispatchEvent(new CustomEvent('robin:huddle-join')); }
+        catch { return { ok: false, text: "Couldn't dispatch the join — try clicking Join huddle in the dock." }; }
+        return { ok: true, text: 'Joining the huddle.' };
+      }
+
+      case 'leave_huddle': {
+        try { window.dispatchEvent(new CustomEvent('robin:huddle-leave')); }
+        catch { return { ok: false, text: "Couldn't dispatch the leave — try clicking the leave button in the dock." }; }
+        return { ok: true, text: 'Left the huddle.' };
+      }
 
       // ── Lead actions ──────────────────────────────────────────────
       case 'update_lead': {

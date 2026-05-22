@@ -3,6 +3,7 @@ import { Clock, Coffee, Pause, Play, StopCircle, AlertTriangle, Sparkles, Phone,
 import { useSession } from '@/hooks/useSession';
 import { useOnCall } from '@/hooks/useOnCall';
 import { useAuth } from '@/contexts/AuthContext';
+import { useHuddle } from '@/contexts/HuddleContext';
 import { toast } from 'sonner';
 import * as api from '@/api';
 import { WorkingDespiteLeaveDialog } from '@/components/shared/WorkingDespiteLeaveDialog';
@@ -52,6 +53,7 @@ export function SessionTopBar() {
     workedMs, currentBreakMs, totalBreakMs,
   } = useSession();
   const { isOnCall, toggle: toggleOnCall } = useOnCall();
+  const huddle = useHuddle();
   const [pendingLeave, setPendingLeave] = useState<{ reason?: string } | null>(null);
 
   // Internal staff (admin/employee/sales/workroom) all clock in + can take
@@ -81,6 +83,15 @@ export function SessionTopBar() {
 
   // Toast wrappers so users get instant confirmation when the network
   // lag would otherwise leave them wondering if their click registered.
+  //
+  // Owner ask (May 2026): "one button for log in that does two things —
+  // immediately joins the huddle and starts the day." So Log In now:
+  //   1. starts the work session (clock + heartbeat)
+  //   2. joins the huddle synchronously in the same click handler so
+  //      the user-activation token is still fresh for PiP requestWindow
+  // We DO step 2 even if step 1 failed — the user clearly wants to be
+  // in the huddle either way, and the existing single-shot join() will
+  // bail safely if huddle is already connected.
   const handleStart = async () => {
     // Before starting the session, check if the user has an approved leave
     // for today. If yes, show the "Are you working?" dialog and let them
@@ -88,11 +99,17 @@ export function SessionTopBar() {
     try {
       const { leave } = await api.myLeaveToday();
       if (leave) {
+        // Still kick off the huddle join — same activation context.
+        try { huddle.join(); } catch { /* user can join manually from the dock */ }
         setPendingLeave({ reason: leave.reason });
         return;
       }
     } catch { /* non-fatal — fall through to normal start */ }
-    try { await startSession(); toast.success("You're on the clock — have a great day!"); }
+    // Fire huddle.join() FIRST so it inherits the click's user activation
+    // and the PiP requestWindow doesn't fail with NotAllowedError. The
+    // session API call follows; both run in parallel from the user's POV.
+    try { huddle.join(); } catch { /* swallow — manual Join still works */ }
+    try { await startSession(); toast.success("You're on the clock — joining the huddle…"); }
     catch (e: any) { toast.error(e?.response?.data?.error || "Couldn't start session"); }
   };
   const handleBreak = async () => {
@@ -105,6 +122,10 @@ export function SessionTopBar() {
   };
   const handleEnd = async () => {
     if (!confirm('Log out for the day? You can log back in tomorrow.')) return;
+    // Mirror of handleStart: leave the huddle AND end the session in one
+    // click. We leave the huddle first so the user's seat clears for the
+    // team while we wait for the session POST to settle.
+    try { huddle.leave(); } catch { /* dock has a manual Leave button */ }
     try { await endSession(); toast.success("Logged out. See you tomorrow."); }
     catch (e: any) { toast.error(e?.response?.data?.error || "Couldn't log out"); }
   };

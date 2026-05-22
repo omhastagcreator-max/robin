@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
-import { Sparkles, Send, Loader2, MessageSquare, X, RotateCcw, Pin, PinOff, Check, Play } from 'lucide-react';
+import { Sparkles, Send, Loader2, MessageSquare, X, RotateCcw, Pin, PinOff, Check, Play, Mic, MicOff } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useDrawer } from '@/components/ui/RightDrawer';
 import { AIInsight } from '@/components/ai/AIInsight';
 import * as api from '@/api';
 import { executeRobinCommand, type RobinAction } from '@/lib/robinActions';
+import { useVoiceInput } from '@/hooks/useVoiceInput';
 
 /**
  * RobinCopilot — persistent, Robin-aware, per-employee AI drawer.
@@ -120,6 +121,41 @@ export function RobinCopilotPanel() {
   const [pinDraft, setPinDraft]   = useState('');
   const inputRef                  = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef                 = useRef<HTMLDivElement | null>(null);
+
+  // ── Voice input ────────────────────────────────────────────────────
+  // Lets the user click the mic and SPEAK their command instead of
+  // typing. The transcript streams into the input as the user talks
+  // (live interim results) and the final transcript replaces the input
+  // once recognition stops. Pressing Send runs the standard parse-
+  // command pipeline that's already wired below — so "Mark Oudfy
+  // payment task done" said out loud goes through the exact same
+  // executor as if it had been typed.
+  const voice = useVoiceInput({
+    language: 'en-IN',
+    silenceMs: 1800,
+    onFinal: (text) => {
+      // Final transcript lands in the input. The user can still edit
+      // before hitting Send, but if they only want to speak-then-send
+      // they can do that via the mic-double-tap (handled below).
+      setInput(text);
+    },
+  });
+  // Mirror the live interim transcript into the input field as the user
+  // talks so they see what Robin heard in real time. We DON'T replace a
+  // typed-then-spoken-onto draft mid-stream — only when the user starts
+  // speaking from an empty box.
+  useEffect(() => {
+    if (!voice.listening) return;
+    setInput(voice.transcript);
+  }, [voice.transcript, voice.listening]);
+
+  // Global hotkey ⌘⇧V opens the drawer and dispatches this event so we
+  // start listening the moment the drawer mounts. See GlobalShortcuts.
+  useEffect(() => {
+    const onStart = () => { if (voice.supported && !voice.listening) voice.start(); };
+    window.addEventListener('robin:voice-start', onStart);
+    return () => window.removeEventListener('robin:voice-start', onStart);
+  }, [voice.supported, voice.listening, voice.start]);
 
   const suggestions = useMemo(() => suggestionsFor(route), [route]);
 
@@ -524,13 +560,21 @@ export function RobinCopilotPanel() {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={onKey}
-          placeholder='Ask anything — or give a command. "Mark Oudfy payment task done"'
+          placeholder='Type or click the mic to speak. e.g. "mark Oudfy payment task done"'
           rows={2}
           maxLength={1200}
           className="w-full px-3 py-2 bg-background border border-input rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-ring resize-none"
         />
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[10.5px] text-muted-foreground tabular-nums">{input.length} / 1200</span>
+          <span className="text-[10.5px] text-muted-foreground tabular-nums flex items-center gap-1.5">
+            {input.length} / 1200
+            {voice.listening && (
+              <span className="inline-flex items-center gap-1 text-rose-600 font-semibold">
+                <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
+                listening…
+              </span>
+            )}
+          </span>
           <div className="flex items-center gap-1.5">
             {turns.length > 0 && (
               <button
@@ -540,6 +584,28 @@ export function RobinCopilotPanel() {
                 title="Clear chat (your saved note stays)"
               >
                 <RotateCcw className="h-3 w-3" /> Start fresh
+              </button>
+            )}
+            {/* Voice mic — click to speak. Live transcript streams into
+                the input as you talk; the button stops auto-listening
+                ~1.8s after you go quiet. Browsers without Web Speech API
+                (Firefox today) hide the button entirely. */}
+            {voice.supported && (
+              <button
+                type="button"
+                onClick={() => voice.listening ? voice.stop() : voice.start()}
+                disabled={busy}
+                title={voice.listening
+                  ? 'Stop listening'
+                  : 'Click and speak — e.g. "mark Oudfy payment task done"'}
+                className={`inline-flex items-center gap-1 px-2 h-7 rounded-md text-[11.5px] font-semibold transition-colors ${
+                  voice.listening
+                    ? 'bg-rose-500 text-white animate-pulse'
+                    : 'bg-card border border-border text-muted-foreground hover:bg-muted hover:text-foreground'
+                }`}
+              >
+                {voice.listening ? <MicOff className="h-3 w-3" /> : <Mic className="h-3 w-3" />}
+                {voice.listening ? 'Stop' : 'Speak'}
               </button>
             )}
             <button

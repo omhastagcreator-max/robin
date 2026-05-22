@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { CommandPalette } from '@/components/shared/CommandPalette';
 import { PresenceStrip } from '@/components/shared/PresenceStrip';
 import { SessionTopBar } from '@/components/shared/SessionTopBar';
+import { HuddleAutoBreak } from '@/components/shared/HuddleAutoBreak';
 import { ScreenShareReminder } from '@/components/shared/ScreenShareReminder';
 import { ScreenShareResumeBanner } from '@/components/shared/ScreenShareResumeBanner';
 import { ClientMeetingDock } from '@/components/shared/ClientMeetingDock';
@@ -148,6 +149,11 @@ function AppLayoutInner({ children }: Props) {
 
         {/* Sticky session controls — timer + start/break/end on every page */}
         <SessionTopBar />
+
+        {/* Watchdog: auto-pauses the timer when the user has been out of the
+            huddle for 10+ min, auto-resumes when they come back. Renders
+            nothing — pure side-effect component. */}
+        <HuddleAutoBreak />
 
         {/* Persistent break / leave strip */}
         <PresenceStrip />

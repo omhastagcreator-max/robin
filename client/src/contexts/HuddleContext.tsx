@@ -372,6 +372,21 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
   const collapse = useCallback(() => setMode(m => (m === 'expanded' ? 'collapsed' : m)), []);
   const expand   = useCallback(() => setMode(m => (m === 'collapsed' || m === 'joining' ? 'expanded' : m)), []);
 
+  // Voice / text command bridge — robinActions.ts dispatches these
+  // window events when the user says "join the huddle" / "leave the
+  // huddle" / "log me in" / "log me out". The handlers run inside the
+  // HuddleContext so the React state stays consistent.
+  useEffect(() => {
+    const onJoin  = () => { try { join();  } catch { /* swallow */ } };
+    const onLeave = () => { try { leave(); } catch { /* swallow */ } };
+    window.addEventListener('robin:huddle-join',  onJoin);
+    window.addEventListener('robin:huddle-leave', onLeave);
+    return () => {
+      window.removeEventListener('robin:huddle-join',  onJoin);
+      window.removeEventListener('robin:huddle-leave', onLeave);
+    };
+  }, [join, leave]);
+
   // ── Auto-join on login ────────────────────────────────────────────────
   // The agency rule is "you're at work when you're in the huddle." Asking
   // each rep to remember to click Join every morning was costing us idle
