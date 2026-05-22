@@ -149,8 +149,9 @@ export function RobinCopilotPanel() {
     setInput(voice.transcript);
   }, [voice.transcript, voice.listening]);
 
-  // Global hotkey ⌘⇧V opens the drawer and dispatches this event so we
-  // start listening the moment the drawer mounts. See GlobalShortcuts.
+  // Global hotkey ⌘M (Mac) / Ctrl+M (Win) opens the drawer and dispatches
+  // this event so we start listening the moment the drawer mounts.
+  // See GlobalShortcuts.
   useEffect(() => {
     const onStart = () => { if (voice.supported && !voice.listening) voice.start(); };
     window.addEventListener('robin:voice-start', onStart);

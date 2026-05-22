@@ -55,11 +55,15 @@ export function GlobalShortcuts() {
   // component swallows the event we still want to close the drawer.
   useShortcut('escape', () => { if (drawer.isOpen) drawer.close(); }, { inInputs: true });
 
-  // ⌘⇧V — talk to Robin. Opens the Copilot drawer and immediately
-  // starts the voice recogniser. Internal-staff only; clients don't
-  // have access to the Copilot. The drawer listens for the custom
-  // 'robin:voice-start' event and kicks off voice.start() once mounted.
-  useShortcut('mod+shift+v', () => {
+  // ⌘M (Mac) / Ctrl+M (Win/Linux) — talk to Robin. Opens the Copilot
+  // drawer and immediately starts the voice recogniser. Internal-staff
+  // only; clients don't have access to the Copilot. The drawer listens
+  // for 'robin:voice-start' and kicks off voice.start() once mounted.
+  // useShortcut calls e.preventDefault() on match, which suppresses the
+  // browser's default Cmd+M = minimise window. Works in Chrome / Edge
+  // / Safari. (If a user has a browser extension that captures Cmd+M
+  // earlier, the shortcut won't fire — they can still click the mic.)
+  useShortcut('mod+m', () => {
     if (role === 'client') return;
     openCopilot();
     // Give the drawer a tick to mount + the voice hook to subscribe,
