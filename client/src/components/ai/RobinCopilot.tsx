@@ -123,25 +123,30 @@ export function RobinCopilotPanel() {
   const scrollRef                 = useRef<HTMLDivElement | null>(null);
 
   // ── Voice input ────────────────────────────────────────────────────
-  // Click the mic → live transcript streams into the input → on silence
-  // (1.8s) recognition auto-stops AND the message auto-sends through the
-  // normal ask pipeline (same as Gemini Live). No Send-click needed.
+  // Click the mic → live transcript streams into the input → on 1.8s
+  // silence, recognition auto-stops AND we INSTANTLY fire ask() with
+  // the final transcript. No Send-click, no useEffect dance — direct
+  // callback into ask() via a ref so we don't fight React render order.
+  //
   // Typed input still requires Send manually — only voice auto-sends.
   //
-  // We use a ref to mark "this turn came from voice" because the ask
-  // function is declared LATER in the file; calling it from inside the
-  // useVoiceInput onFinal callback would need a forward reference that
-  // useCallback can't cleanly give us. The autoSendPending ref is set
-  // in onFinal and a small useEffect picks it up on the next render.
-  const autoSendPendingRef = useRef<string | null>(null);
+  // askRef holds the latest ask() function. We can't reference ask
+  // directly from onFinal because ask is defined LATER (function
+  // hoisting only applies to function declarations, not consts). The
+  // ref pattern bridges the lexical gap cleanly.
+  const askRef = useRef<((q: string) => Promise<void>) | null>(null);
   const voice = useVoiceInput({
     language: 'en-IN',
     silenceMs: 1800,
     onFinal: (text) => {
-      // Place the final transcript in the input — for visibility — and
-      // arm auto-send. The effect below picks it up next render.
+      // Show the transcript in the input for the half-second before the
+      // user bubble renders + clears it, then fire ask().
       setInput(text);
-      autoSendPendingRef.current = text;
+      const fn = askRef.current;
+      if (!fn) return;
+      // Defer one microtask so React commits the setInput before ask()
+      // takes its setInput('') path.
+      Promise.resolve().then(() => { void fn(text); });
     },
   });
   // Mirror the live interim transcript into the input field as the user
@@ -150,21 +155,6 @@ export function RobinCopilotPanel() {
     if (!voice.listening) return;
     setInput(voice.transcript);
   }, [voice.transcript, voice.listening]);
-
-  // Auto-send: when listening flips off and a final transcript is armed,
-  // fire ask() exactly once. Cleared so a second voice burst gets its
-  // own fresh auto-send and a manual edit doesn't surprise-resend.
-  useEffect(() => {
-    if (voice.listening) return;
-    const pending = autoSendPendingRef.current;
-    if (!pending) return;
-    autoSendPendingRef.current = null;
-    // Defer one tick so React commits the setInput from onFinal before
-    // we read input state via ask(). ask() takes its argument anyway,
-    // so we just pass the captured transcript directly.
-    setTimeout(() => { void ask(pending); }, 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voice.listening]);
 
   // Global hotkey ⌘M (Mac) / Ctrl+M (Win) opens the drawer and dispatches
   // this event so we start listening the moment the drawer mounts.
@@ -312,6 +302,11 @@ export function RobinCopilotPanel() {
       setBusy(false);
     }
   };
+  // Keep the askRef synced to the latest ask() closure so voice.onFinal
+  // can call it directly without a forward reference. Updates every render
+  // — cheap (one ref assignment), and guarantees we always call the
+  // freshest ask (with the latest route / workflowId / leadId closure).
+  askRef.current = ask;
 
   // Run a pending action. Replaces the confirm card in-place with the
   // result text. Best-effort — if the API rejects we surface the error
