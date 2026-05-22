@@ -153,3 +153,62 @@ export async function convertLead(req: AuthRequest, res: Response): Promise<void
     res.json({ lead, deal });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
+
+// ── Lead payment ──────────────────────────────────────────────────────
+/**
+ * POST /api/leads/:id/payment
+ *
+ * Body: { status: 'part_paid'|'full_paid'|'refunded', amount?: number, note?: string, total?: number }
+ *
+ * Records ONE payment event on a lead. Appends to paymentEvents[],
+ * refreshes the denormalised paymentPaid / paymentStatus / paymentNote
+ * so list views render the latest at-a-glance state without joining the
+ * subarray. The `note` is the "what triggers the next payment" sentence
+ * the sales rep writes ("client will pay balance 50% after store goes
+ * live") — surfaces above the event history.
+ */
+export async function markLeadPayment(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const lead = await Lead.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!lead) { res.status(404).json({ error: 'Lead not found' }); return; }
+
+    const status = String(req.body?.status || '');
+    if (!['part_paid', 'full_paid', 'refunded'].includes(status)) {
+      res.status(400).json({ error: 'status must be one of part_paid / full_paid / refunded' });
+      return;
+    }
+    const amount = Number(req.body?.amount || 0);
+    if (!Number.isFinite(amount) || amount < 0) {
+      res.status(400).json({ error: 'amount must be a non-negative number' });
+      return;
+    }
+    const note  = String(req.body?.note  || '').slice(0, 500);
+    const total = req.body?.total !== undefined ? Number(req.body.total) : null;
+
+    (lead as any).paymentEvents.push({
+      status, amount, note,
+      by: req.user!.id,
+      at: new Date(),
+    });
+
+    // Denormalised aggregates so list views can render at-a-glance state
+    // without joining the subarray.
+    if (status === 'refunded') {
+      (lead as any).paymentPaid = Math.max(0, ((lead as any).paymentPaid || 0) - amount);
+    } else {
+      (lead as any).paymentPaid = ((lead as any).paymentPaid || 0) + amount;
+    }
+    if (total !== null && total > 0) (lead as any).paymentTotal = total;
+    (lead as any).paymentStatus = status === 'refunded'
+      ? 'refunded'
+      : ((lead as any).paymentTotal > 0 && (lead as any).paymentPaid >= (lead as any).paymentTotal)
+        ? 'full_paid'
+        : status;
+    if (note) (lead as any).paymentNote = note;
+
+    await lead.save();
+    res.json(lead);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}

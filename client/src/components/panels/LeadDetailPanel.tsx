@@ -11,6 +11,7 @@ import { Input, Textarea } from '@/components/ui/Input';
 import { StatusPill, type Status } from '@/components/ui/StatusPill';
 import { Stat }     from '@/components/ui/Stat';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { LeadPaymentSection } from '@/components/panels/LeadPaymentSection';
 import * as api from '@/api';
 
 /**
@@ -43,6 +44,18 @@ interface Lead {
   notes?: Array<{ content: string; createdAt: string; authorId?: string }>;
   stageHistory?: any[];
   createdAt?: string;
+  // Payment ledger — see server/models/Lead.ts.
+  paymentStatus?: 'none' | 'part_paid' | 'full_paid' | 'refunded';
+  paymentPaid?:   number;
+  paymentTotal?:  number;
+  paymentNote?:   string;
+  paymentEvents?: Array<{
+    status: 'part_paid' | 'full_paid' | 'refunded';
+    amount: number;
+    note?:  string;
+    by?:    string;
+    at?:    string;
+  }>;
 }
 
 export function LeadDetailPanel({ leadId }: { leadId: string }) {
@@ -168,6 +181,9 @@ export function LeadDetailPanel({ leadId }: { leadId: string }) {
       <section className="p-4 flex items-center gap-2">
         <StatusPill state={stagePill} size="sm" label={lead.stage?.replace(/_/g, ' ') || 'new'} />
       </section>
+
+      {/* Payment — status chip + ledger + inline "record payment" form */}
+      <LeadPaymentSection lead={lead} onUpdated={setLead} />
 
       {/* Notes / comments */}
       <section className="p-4 space-y-3">

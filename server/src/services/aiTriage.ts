@@ -614,7 +614,7 @@ const COMMAND_SYSTEM = `You are Robin AI's command parser. The user typed someth
 Reply with ONLY valid JSON, no markdown, in this exact shape:
 {
   "isAction":  true | false,
-  "action":    "create_task" | "update_task" | "mark_task_done" | "mark_workflow_done" | "mark_service_done" | "schedule_meeting" | "update_lead" | "mark_lead_won" | "mark_lead_lost" | "add_lead_note" | "unsupported" | "question",
+  "action":    "create_task" | "update_task" | "mark_task_done" | "mark_workflow_done" | "mark_service_done" | "schedule_meeting" | "update_lead" | "mark_lead_won" | "mark_lead_lost" | "add_lead_note" | "mark_lead_payment" | "unsupported" | "question",
   "params":    { ...action-specific keys... },
   "confirm":   one short sentence describing what you'll do, in second person ("I'll mark the … task done"),
   "userReply": only set when action="question" or "unsupported" — what to say back to the user
@@ -641,6 +641,11 @@ LEAD ACTIONS:
 - mark_lead_won       → params: { match: string, wonAmount?: number }
 - mark_lead_lost      → params: { match: string, reason?: string }
 - add_lead_note       → params: { match: string, text: string }
+- mark_lead_payment   → params: { match: string, paymentStatus: "part_paid"|"full_paid"|"refunded", amount?: number, total?: number, note?: string }
+                        \`note\` is the WHAT-TRIGGERS-THE-NEXT-PAYMENT sentence the rep
+                        wants stored ("balance 50% after Shopify goes live"). If the user
+                        just says "fully paid" without an amount, set paymentStatus="full_paid"
+                        and leave amount unset.
 
 If the user is asking a HOW-TO or status question, set isAction=false, action="question", userReply=null (handled elsewhere).
 If the user wants something we don't support (delete a user, generate a report, edit a price, etc.), set action="unsupported" and userReply tells them politely.
@@ -656,11 +661,14 @@ EXAMPLES:
 - "We won the Karan Crafts deal at 30000" → mark_lead_won, match: "Karan Crafts", wonAmount: 30000
 - "Karan lost — chose a competitor" → mark_lead_lost, match: "Karan", reason: "chose a competitor"
 - "Add a note to Vellore lead: called back, demo Thursday" → add_lead_note, match: "Vellore", text: "called back, demo Thursday"
-- "Remind me to follow up Aanya on Friday" → update_lead, match: "Aanya", nextFollowUp: <next Friday>`;
+- "Remind me to follow up Aanya on Friday" → update_lead, match: "Aanya", nextFollowUp: <next Friday>
+- "Vellore part payment done 15k, balance 50% after Shopify launch" → mark_lead_payment, match: "Vellore", paymentStatus: "part_paid", amount: 15000, note: "balance 50% after Shopify launch"
+- "Karan Crafts paid full 30000" → mark_lead_payment, match: "Karan Crafts", paymentStatus: "full_paid", amount: 30000, total: 30000
+- "Riya took the deposit — 10k, full deal is 40k" → mark_lead_payment, match: "Riya", paymentStatus: "part_paid", amount: 10000, total: 40000`;
 
 export interface CommandResult {
   isAction: boolean;
-  action: 'create_task' | 'update_task' | 'mark_task_done' | 'mark_workflow_done' | 'mark_service_done' | 'schedule_meeting' | 'update_lead' | 'mark_lead_won' | 'mark_lead_lost' | 'add_lead_note' | 'unsupported' | 'question';
+  action: 'create_task' | 'update_task' | 'mark_task_done' | 'mark_workflow_done' | 'mark_service_done' | 'schedule_meeting' | 'update_lead' | 'mark_lead_won' | 'mark_lead_lost' | 'add_lead_note' | 'mark_lead_payment' | 'unsupported' | 'question';
   params: Record<string, any>;
   confirm: string;
   userReply: string | null;

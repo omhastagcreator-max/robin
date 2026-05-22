@@ -87,6 +87,34 @@ const LeadSchema = new Schema({
   aiReason:     { type: String, default: '' },
   aiNextAction: { type: String, default: '' },
   aiScoredAt:   { type: Date, default: null },
+
+  // ── Payment tracking ─────────────────────────────────────────────────
+  // Leads in India don't usually pay 100% upfront — typical flow is "20%
+  // to start, 30% after the store goes live, balance after handover."
+  // The team asked for a place to record where each lead sits in that
+  // flow so a glance at the board answers "who still owes us how much,
+  // and what triggers the next payment?"
+  //
+  //   paymentStatus    chip on every list view (none / part_paid / full_paid / refunded)
+  //   paymentPaid      total already collected, in paise-free rupees
+  //   paymentTotal     full deal value the rep negotiated
+  //   paymentNote      the "what triggers the NEXT payment" sentence in
+  //                    plain English ("client will pay 50% after Shopify
+  //                    goes live"). Always visible above the history.
+  //   paymentEvents[]  mini ledger — every time someone marks payment,
+  //                    one entry appends here. Lets us reconstruct the
+  //                    timeline without a separate collection.
+  paymentStatus: { type: String, enum: ['none', 'part_paid', 'full_paid', 'refunded'], default: 'none' },
+  paymentPaid:   { type: Number, default: 0 },
+  paymentTotal:  { type: Number, default: 0 },
+  paymentNote:   { type: String, default: '' },
+  paymentEvents: [{
+    status: { type: String, enum: ['part_paid', 'full_paid', 'refunded'] },
+    amount: { type: Number, default: 0 },
+    note:   { type: String, default: '' },     // condition / reason — "after store goes live"
+    by:     { type: String, default: '' },     // userId of whoever marked it
+    at:     { type: Date,   default: Date.now },
+  }],
 }, { timestamps: true });
 
 // Keep status in sync with stage

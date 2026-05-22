@@ -234,6 +234,18 @@ export const updateLead  = (id: string, d: Record<string, unknown>) => api.put(`
 export const deleteLead  = (id: string)                        => api.delete(`/leads/${id}`).then(r => r.data);
 export const addLeadNote = (id: string, d: Record<string, unknown>) => api.post(`/leads/${id}/notes`, d).then(r => r.data);
 export const convertLead = (id: string, d: Record<string, unknown>) => api.post(`/leads/${id}/convert`, d).then(r => r.data);
+// Lead payment ledger — appends one event, updates the denormalised
+// status/paid/note fields on the parent doc. See server markLeadPayment.
+//   status — part_paid / full_paid / refunded
+//   amount — what was just paid (or refunded)
+//   note   — what triggers the NEXT payment (rep's own words)
+//   total  — optional, set the full deal value once and keep updating amount
+export const markLeadPayment = (id: string, body: {
+  status: 'part_paid' | 'full_paid' | 'refunded';
+  amount: number;
+  note?:  string;
+  total?: number;
+}) => api.post(`/leads/${id}/payment`, body).then(r => r.data);
 
 // ── Deals ─────────────────────────────────────────────────────────────────────
 export const listDeals  = ()                                        => api.get('/deals').then(r => r.data);

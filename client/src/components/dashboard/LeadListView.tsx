@@ -53,6 +53,32 @@ function aiScoreClass(score?: string): string {
   return 'bg-muted text-muted-foreground';
 }
 
+/** Tiny payment chip — shows on Cards / Phone-first / Compact views so
+ *  the rep can see "₹15k of 30k paid" without opening the drawer. */
+function PaymentChip({ lead }: { lead: any }) {
+  const status: string = lead.paymentStatus || 'none';
+  if (status === 'none') return null;
+  const paid  = lead.paymentPaid  || 0;
+  const total = lead.paymentTotal || lead.estimatedValue || 0;
+  const cfg: Record<string, string> =
+    status === 'full_paid' ? 'bg-emerald-500/15 text-emerald-700'    as any
+    : status === 'refunded' ? 'bg-rose-500/15 text-rose-700'         as any
+    :                         'bg-amber-500/15 text-amber-700'       as any;
+  const cls = typeof cfg === 'string' ? cfg : 'bg-muted text-muted-foreground';
+  const fmt = (n: number) =>
+    n >= 100_000 ? `₹${(n / 100_000).toFixed(1)}L`
+    : n >= 1000   ? `₹${(n / 1000).toFixed(0)}k`
+    :               `₹${n}`;
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${cls}`}>
+      {status === 'full_paid' ? 'paid'
+        : status === 'refunded' ? 'refunded'
+        : total > 0 ? `${fmt(paid)} of ${fmt(total)}`
+        :             `${fmt(paid)} part`}
+    </span>
+  );
+}
+
 export function LeadListView({ leads, onView, onMove, stageMeta }: Props) {
   const [q, setQ]             = useState('');
   const [stageFilter, setSF]  = useState<string>('all');
@@ -211,6 +237,7 @@ export function LeadListView({ leads, onView, onMove, stageMeta }: Props) {
                   {lead.aiScore && (
                     <span className={`text-[9.5px] font-bold uppercase px-1 rounded ${aiScoreClass(lead.aiScore)}`}>{lead.aiScore}</span>
                   )}
+                  <PaymentChip lead={lead} />
                 </button>
                 {lead.contact && (
                   <a href={`tel:${lead.contact}`} className="text-[10.5px] text-primary tabular-nums hover:underline shrink-0">{lead.contact}</a>
@@ -260,11 +287,20 @@ export function LeadListView({ leads, onView, onMove, stageMeta }: Props) {
                   {lead.aiScore && (
                     <span className={`px-1.5 py-0.5 rounded font-bold uppercase ${aiScoreClass(lead.aiScore)}`}>{lead.aiScore}</span>
                   )}
+                  <PaymentChip lead={lead} />
                   {lead.estimatedValue ? (
                     <span className="font-semibold text-foreground">₹{lead.estimatedValue.toLocaleString('en-IN')}</span>
                   ) : null}
                   {lead.createdAt && <span>· {format(new Date(lead.createdAt), 'dd MMM')}</span>}
                 </div>
+                {/* Payment-condition note — surfaces the "next condition"
+                    sentence so the rep knows what triggers the next part
+                    payment without opening the drawer. */}
+                {lead.paymentNote && lead.paymentStatus !== 'full_paid' && (
+                  <p className="text-[10.5px] text-amber-800/90 leading-snug line-clamp-2 rounded-md bg-amber-500/[0.08] border border-amber-500/25 px-2 py-1">
+                    <span className="font-bold">Next payment after: </span>{lead.paymentNote}
+                  </p>
+                )}
 
                 <div className="flex items-center gap-2 pt-1 border-t border-border/60">
                   {lead.contact ? (
@@ -303,6 +339,7 @@ export function LeadListView({ leads, onView, onMove, stageMeta }: Props) {
                     <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded ${stage?.bg || 'bg-muted'} ${stage?.text || 'text-foreground'}`}>
                       {stage?.label || currentStage}
                     </span>
+                    <PaymentChip lead={lead} />
                   </div>
                   {lead.company && <p className="text-[11px] text-muted-foreground truncate">{lead.company}</p>}
                   {lead.aiNextAction && (

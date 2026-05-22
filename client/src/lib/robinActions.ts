@@ -22,6 +22,7 @@ export type RobinAction =
   | 'mark_lead_won'
   | 'mark_lead_lost'
   | 'add_lead_note'
+  | 'mark_lead_payment'
   | 'unsupported'
   | 'question';
 
@@ -226,6 +227,33 @@ export async function executeRobinCommand(
         if (!lead) return { ok: false, text: `I couldn't find an open lead matching "${m}".` };
         await api.addLeadNote(lead._id, { content: text });
         return { ok: true, text: `Note added to "${lead.name || lead.company}": ${text}` };
+      }
+
+      case 'mark_lead_payment': {
+        const m = String(params.match || '').trim();
+        const ps = String(params.paymentStatus || '');
+        if (!m) return { ok: false, text: "Need the lead name / company. Try: \"Vellore part payment done 15k after Shopify launch\"." };
+        if (!['part_paid', 'full_paid', 'refunded'].includes(ps)) {
+          return { ok: false, text: "Payment status must be one of part_paid / full_paid / refunded." };
+        }
+        const lead = await findLeadByMatch(m);
+        if (!lead) return { ok: false, text: `I couldn't find a lead matching "${m}".` };
+        const amount = Number(params.amount || 0);
+        const note   = String(params.note || '').trim();
+        const total  = params.total !== undefined ? Number(params.total) : undefined;
+        await api.markLeadPayment(lead._id, {
+          status: ps as 'part_paid' | 'full_paid' | 'refunded',
+          amount,
+          note:   note || undefined,
+          total:  total && total > 0 ? total : undefined,
+        });
+        const summaryBits: string[] = [];
+        if (amount)            summaryBits.push(`₹${amount.toLocaleString('en-IN')}`);
+        if (total)             summaryBits.push(`of ₹${total.toLocaleString('en-IN')}`);
+        if (note)              summaryBits.push(`— next: ${note}`);
+        const tail = summaryBits.length ? ` ${summaryBits.join(' ')}` : '';
+        const verb = ps === 'full_paid' ? 'fully paid' : ps === 'refunded' ? 'refund recorded' : 'part payment recorded';
+        return { ok: true, text: `"${lead.name || lead.company}" — ${verb}${tail}.` };
       }
 
       default:
