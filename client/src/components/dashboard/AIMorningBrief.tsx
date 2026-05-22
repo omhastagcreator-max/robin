@@ -32,10 +32,20 @@ export function AIMorningBrief() {
     try {
       const data = await api.aiMorningBrief(refresh);
       setContent(data.content);
+      // Success → clear any prior "503 — needs setup" cache so the
+      // next failure can re-trigger the needsSetup banner.
+      try { sessionStorage.removeItem('robin.morningBrief.needsSetup'); } catch { /* ignore */ }
     } catch (e: any) {
+      const status = e?.response?.status;
       const msg = e?.response?.data?.error || e?.message || 'Could not load briefing';
-      if (msg.includes('ANTHROPIC_API_KEY')) {
+      if (status === 503 || msg.includes('ANTHROPIC_API_KEY')) {
         setNeedsSetup(true);
+        // Cache the "server can't serve this" verdict for the rest of
+        // the tab session. The brief component mounts on every dashboard
+        // page swap; without this cache, each navigation hammered the
+        // 503-returning endpoint, which is what the screenshot showed
+        // (N× /ai/morning-brief 503 in the console).
+        try { sessionStorage.setItem('robin.morningBrief.needsSetup', '1'); } catch { /* ignore */ }
       } else {
         setError(msg);
       }
@@ -46,6 +56,17 @@ export function AIMorningBrief() {
   };
 
   useEffect(() => {
+    // Skip the network call entirely if we've already seen a 503 in this
+    // tab session — the server isn't going to magically grow an Anthropic
+    // key between page swaps. Manual refresh still works (it calls
+    // load(true) directly).
+    try {
+      if (sessionStorage.getItem('robin.morningBrief.needsSetup') === '1') {
+        setNeedsSetup(true);
+        setLoading(false);
+        return;
+      }
+    } catch { /* private mode — fall through and try the network */ }
     load(false);
     // We intentionally don't put `load` in deps — useEffect only fires once
     // per mount. If we ever want auto-refresh on the hour, that's a separate

@@ -41,12 +41,18 @@ const fmtMS = (ms: number) => {
 };
 
 export function SessionTopBar() {
+  // ─── RULES-OF-HOOKS — ALL hooks at the top, BEFORE any early return.
+  // The previous version had `useState(pendingLeave)` AFTER the role gate
+  // AND the loading guard. When loading flipped false, that useState
+  // started being called and the hook-count changed across renders →
+  // React error #310 in production. All hooks now sit above the gates.
   const { role } = useAuth();
   const {
     session, loading, startSession, startBreak, endBreak, endSession,
     workedMs, currentBreakMs, totalBreakMs,
   } = useSession();
   const { isOnCall, toggle: toggleOnCall } = useOnCall();
+  const [pendingLeave, setPendingLeave] = useState<{ reason?: string } | null>(null);
 
   // Internal staff (admin/employee/sales/workroom) all clock in + can take
   // breaks. Clients don't. Workroom users get the same break controls as
@@ -72,10 +78,6 @@ export function SessionTopBar() {
   const isActive  = session?.status === 'active';
   const isOnBreak = session?.status === 'on_break';
   const breakOverLimit = currentBreakMs > SINGLE_BREAK_WARN_MS || totalBreakMs > TOTAL_BREAK_WARN_MS;
-
-  // Today's leave (set when user clicks Log In and we detect an approved leave).
-  // Triggers the WorkingDespiteLeaveDialog so they can confirm what's actually happening.
-  const [pendingLeave, setPendingLeave] = useState<{ reason?: string } | null>(null);
 
   // Toast wrappers so users get instant confirmation when the network
   // lag would otherwise leave them wondering if their click registered.
