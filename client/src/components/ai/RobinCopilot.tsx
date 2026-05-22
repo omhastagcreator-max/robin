@@ -123,31 +123,48 @@ export function RobinCopilotPanel() {
   const scrollRef                 = useRef<HTMLDivElement | null>(null);
 
   // ── Voice input ────────────────────────────────────────────────────
-  // Lets the user click the mic and SPEAK their command instead of
-  // typing. The transcript streams into the input as the user talks
-  // (live interim results) and the final transcript replaces the input
-  // once recognition stops. Pressing Send runs the standard parse-
-  // command pipeline that's already wired below — so "Mark Oudfy
-  // payment task done" said out loud goes through the exact same
-  // executor as if it had been typed.
+  // Click the mic → live transcript streams into the input → on silence
+  // (1.8s) recognition auto-stops AND the message auto-sends through the
+  // normal ask pipeline (same as Gemini Live). No Send-click needed.
+  // Typed input still requires Send manually — only voice auto-sends.
+  //
+  // We use a ref to mark "this turn came from voice" because the ask
+  // function is declared LATER in the file; calling it from inside the
+  // useVoiceInput onFinal callback would need a forward reference that
+  // useCallback can't cleanly give us. The autoSendPending ref is set
+  // in onFinal and a small useEffect picks it up on the next render.
+  const autoSendPendingRef = useRef<string | null>(null);
   const voice = useVoiceInput({
     language: 'en-IN',
     silenceMs: 1800,
     onFinal: (text) => {
-      // Final transcript lands in the input. The user can still edit
-      // before hitting Send, but if they only want to speak-then-send
-      // they can do that via the mic-double-tap (handled below).
+      // Place the final transcript in the input — for visibility — and
+      // arm auto-send. The effect below picks it up next render.
       setInput(text);
+      autoSendPendingRef.current = text;
     },
   });
   // Mirror the live interim transcript into the input field as the user
-  // talks so they see what Robin heard in real time. We DON'T replace a
-  // typed-then-spoken-onto draft mid-stream — only when the user starts
-  // speaking from an empty box.
+  // talks so they see what Robin heard in real time.
   useEffect(() => {
     if (!voice.listening) return;
     setInput(voice.transcript);
   }, [voice.transcript, voice.listening]);
+
+  // Auto-send: when listening flips off and a final transcript is armed,
+  // fire ask() exactly once. Cleared so a second voice burst gets its
+  // own fresh auto-send and a manual edit doesn't surprise-resend.
+  useEffect(() => {
+    if (voice.listening) return;
+    const pending = autoSendPendingRef.current;
+    if (!pending) return;
+    autoSendPendingRef.current = null;
+    // Defer one tick so React commits the setInput from onFinal before
+    // we read input state via ask(). ask() takes its argument anyway,
+    // so we just pass the captured transcript directly.
+    setTimeout(() => { void ask(pending); }, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice.listening]);
 
   // Global hotkey ⌘M (Mac) / Ctrl+M (Win) opens the drawer and dispatches
   // this event so we start listening the moment the drawer mounts.
@@ -390,7 +407,9 @@ export function RobinCopilotPanel() {
         </div>
         <p className="text-[12px] text-muted-foreground leading-snug">
           Your own AI helper. Looking at <span className="font-semibold text-foreground">{routeLabel}</span>.
-          Remembers what you've talked about. Can update your tasks too — try <em>"push Velloer Shopify review to Monday"</em> or <em>"mark Oudfy payment task done"</em>.
+          Operational stuff (your projects, leads, tasks) or anything else (general questions, writing, code) — it answers both.
+          Try <em>"brief me on Vellore"</em>, <em>"mark Oudfy payment task done"</em>, or just ask anything.
+          Hit <span className="kbd inline-block px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">⌘M</span> anywhere to talk.
         </p>
 
         {/* Pinned note — "always remember this" */}
@@ -561,7 +580,7 @@ export function RobinCopilotPanel() {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={onKey}
-          placeholder='Type or click the mic to speak. e.g. "mark Oudfy payment task done"'
+          placeholder='Type or hit the mic — Robin auto-sends when you pause. Operational or any question.'
           rows={2}
           maxLength={1200}
           className="w-full px-3 py-2 bg-background border border-input rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-ring resize-none"
