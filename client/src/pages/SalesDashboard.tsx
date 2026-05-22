@@ -20,6 +20,7 @@ import { TodayClientsCard } from '@/components/dashboard/TodayClientsCard';
 import { LeadListView } from '@/components/dashboard/LeadListView';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 import { FocusThisWeek } from '@/components/dashboard/FocusThisWeek';
+import { SalesInsightsStrip, type SalesInsightsFilter } from '@/components/dashboard/SalesInsightsStrip';
 import { useAuth } from '@/contexts/AuthContext';
 
 // ── Stage Config ──────────────────────────────────────────────────────────────
@@ -106,6 +107,10 @@ export default function SalesDashboard() {
   };
   const [tab, setTab]         = useState<Tab>('pipeline');
   const [leads, setLeads]     = useState<any[]>([]);
+  // Optional insights-strip filter — when set, the All-leads table is
+  // scoped to that bucket (hot / ghosting / etc). Cleared when the user
+  // clicks the active chip again or switches tabs.
+  const [insightFilter, setInsightFilter] = useState<SalesInsightsFilter>({ kind: 'all' });
   const [clients, setClients] = useState<any[]>([]);
   const [deals, setDeals]     = useState<any[]>([]);
   // Two flags so subsequent refreshes never blank the page:
@@ -717,6 +722,20 @@ export default function SalesDashboard() {
           ))}
         </div>
 
+        {/* Sales insights strip — heuristic, no LLM call. Always visible so
+            the rep sees the "what needs me now" view the moment they
+            land on /sales. Clicking a chip jumps to the All-leads list
+            with the matching filter applied. */}
+        {leads.length > 0 && (
+          <SalesInsightsStrip
+            leads={leads}
+            onPick={(f) => {
+              setInsightFilter(prev => prev.kind === f.kind ? { kind: 'all' } : f);
+              if (f.kind !== 'all') setTab('list');
+            }}
+          />
+        )}
+
         {/* Tabs */}
         <div className="flex gap-1 bg-muted p-1 rounded-xl w-fit">
           {([
@@ -849,14 +868,71 @@ export default function SalesDashboard() {
             )}
 
             {/* ── LIST VIEW ── one row per lead, stage clearly visible.
-                Designed for "where is X right now?" scanning. Searchable. */}
+                Designed for "where is X right now?" scanning. Searchable.
+                The Sales Insights strip sits above and lets the rep one-
+                click filter the list to the bucket that needs them now
+                (hot / ghosting / follow-up-today / late-stage / new). */}
             {tab === 'list' && (
-              <LeadListView
-                leads={leads}
-                onView={(l) => setViewLead(l)}
-                onMove={(id, stage) => moveLeadStage(id, stage)}
-                stageMeta={ALL_STAGES}
-              />
+              <div className="space-y-3">
+                {insightFilter.kind !== 'all' && (
+                  <div className="flex items-center gap-2 text-[11.5px]">
+                    <span className="px-2 py-0.5 rounded-full bg-primary/15 text-primary font-semibold">
+                      Focus: {(() => {
+                        switch (insightFilter.kind) {
+                          case 'hot':              return 'Hot leads';
+                          case 'ghosting':         return 'Going quiet';
+                          case 'this-week':        return 'New this week';
+                          case 'late-stage':       return 'Close to closing';
+                          case 'follow-up-today':  return 'Follow-up due today';
+                          default:                 return '';
+                        }
+                      })()}
+                    </span>
+                    <button
+                      onClick={() => setInsightFilter({ kind: 'all' })}
+                      className="text-muted-foreground hover:text-foreground underline"
+                    >
+                      show all
+                    </button>
+                  </div>
+                )}
+                <LeadListView
+                  leads={(() => {
+                    if (insightFilter.kind === 'all') return leads;
+                    const now = Date.now();
+                    const DAY = 24 * 3600 * 1000;
+                    const isOpen = (l: any) => !['won', 'lost'].includes(l.stage || l.status || '');
+                    const lastTouchMs = (l: any) => {
+                      const dates = (l.notes || []).map((n: any) => n.createdAt ? new Date(n.createdAt).getTime() : 0).filter(Boolean);
+                      if (dates.length) return Math.max(...dates);
+                      return l.createdAt ? new Date(l.createdAt).getTime() : 0;
+                    };
+                    const sameDay = (a: number, b: number) => {
+                      const da = new Date(a), db = new Date(b);
+                      return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
+                    };
+                    if (insightFilter.kind === 'hot') {
+                      return leads.filter(l => isOpen(l) && (l.aiScore === 'hot' || ['hot_follow_up', 'demo_done', 'demo2_conversion', 'cooking'].includes(l.stage || '')));
+                    }
+                    if (insightFilter.kind === 'ghosting') {
+                      return leads.filter(l => isOpen(l) && l.aiScore !== 'cold' && lastTouchMs(l) > 0 && (now - lastTouchMs(l)) > 5 * DAY);
+                    }
+                    if (insightFilter.kind === 'this-week') {
+                      return leads.filter(l => l.createdAt && (now - new Date(l.createdAt).getTime()) < 7 * DAY);
+                    }
+                    if (insightFilter.kind === 'late-stage') {
+                      return leads.filter(l => isOpen(l) && ['demo_done', 'hot_follow_up', 'cooking'].includes(l.stage || ''));
+                    }
+                    if (insightFilter.kind === 'follow-up-today') {
+                      return leads.filter(l => isOpen(l) && l.nextFollowUp && sameDay(new Date(l.nextFollowUp).getTime(), now));
+                    }
+                    return leads;
+                  })()}
+                  onView={(l) => setViewLead(l)}
+                  onMove={(id, stage) => moveLeadStage(id, stage)}
+                  stageMeta={ALL_STAGES}
+                />
+              </div>
             )}
 
             {/* ── CLIENTS TAB ── */}

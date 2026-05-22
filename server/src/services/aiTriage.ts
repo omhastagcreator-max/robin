@@ -614,26 +614,53 @@ const COMMAND_SYSTEM = `You are Robin AI's command parser. The user typed someth
 Reply with ONLY valid JSON, no markdown, in this exact shape:
 {
   "isAction":  true | false,
-  "action":    "create_task" | "mark_workflow_done" | "mark_service_done" | "schedule_meeting" | "unsupported" | "question",
+  "action":    "create_task" | "update_task" | "mark_task_done" | "mark_workflow_done" | "mark_service_done" | "schedule_meeting" | "update_lead" | "mark_lead_won" | "mark_lead_lost" | "add_lead_note" | "unsupported" | "question",
   "params":    { ...action-specific keys... },
-  "confirm":   one short sentence describing what you'll do, in second person ("I'll create a task to..."),
+  "confirm":   one short sentence describing what you'll do, in second person ("I'll mark the … task done"),
   "userReply": only set when action="question" or "unsupported" — what to say back to the user
 }
 
-ACTIONS the user can request (use EXACTLY these action strings):
-- create_task         → params: { title: string, priority?: "low"|"medium"|"high", dueDate?: "YYYY-MM-DD" }
+TASK ACTIONS:
+- create_task         → params: { title: string, priority?: "low"|"medium"|"high"|"urgent", dueDate?: "YYYY-MM-DD" }
+- update_task         → params: { match: string, priority?: "low"|"medium"|"high"|"urgent", dueDate?: "YYYY-MM-DD", status?: "pending"|"ongoing"|"done", title?: string }
+                        \`match\` = a short text snippet from the existing task's title or its
+                        project name that lets the server find it. Only set the params the
+                        user actually wants changed.
+- mark_task_done      → params: { match: string }   (alias for update_task with status="done")
+
+PROJECT ACTIONS:
 - mark_workflow_done  → params: { clientName: string }
 - mark_service_done   → params: { clientName: string, serviceType: "shopify" | "meta_ads" | "influencer" }
 - schedule_meeting    → params: { clientName?: string, when?: human string like "tomorrow 3pm", title?: string }
 
+LEAD ACTIONS:
+- update_lead         → params: { match: string, stage?: string, aiScore?: "hot"|"warm"|"cold", nextFollowUp?: "YYYY-MM-DD", estimatedValue?: number }
+                        \`match\` matches against lead name / company / phone / email.
+                        Valid stage values: new_lead, dialed, connected, demo_booked,
+                        demo_done, demo2_conversion, follow_up, hot_follow_up, cooking.
+- mark_lead_won       → params: { match: string, wonAmount?: number }
+- mark_lead_lost      → params: { match: string, reason?: string }
+- add_lead_note       → params: { match: string, text: string }
+
 If the user is asking a HOW-TO or status question, set isAction=false, action="question", userReply=null (handled elsewhere).
 If the user wants something we don't support (delete a user, generate a report, edit a price, etc.), set action="unsupported" and userReply tells them politely.
 
-NEVER invent params. If the user said "mark project done" without a client name, set isAction=true, action="mark_workflow_done", params={} (empty), and confirm asks "which client?"`;
+NEVER invent params. If the user said "mark project done" without a client name, set isAction=true, action="mark_workflow_done", params={} (empty), and confirm asks "which client?"
+
+EXAMPLES:
+- "Push the Velloer Shopify review to next Monday" → update_task, match: "Velloer Shopify review", dueDate: <next Monday>
+- "Bump Darpan pixel install to high priority" → update_task, match: "Darpan pixel install", priority: "high"
+- "Mark the Oudfy payment task done" → mark_task_done, match: "Oudfy payment"
+- "Move Riya Mehra to demo done" → update_lead, match: "Riya Mehra", stage: "demo_done"
+- "Mark Aanya Aesthetics hot" → update_lead, match: "Aanya Aesthetics", aiScore: "hot"
+- "We won the Karan Crafts deal at 30000" → mark_lead_won, match: "Karan Crafts", wonAmount: 30000
+- "Karan lost — chose a competitor" → mark_lead_lost, match: "Karan", reason: "chose a competitor"
+- "Add a note to Vellore lead: called back, demo Thursday" → add_lead_note, match: "Vellore", text: "called back, demo Thursday"
+- "Remind me to follow up Aanya on Friday" → update_lead, match: "Aanya", nextFollowUp: <next Friday>`;
 
 export interface CommandResult {
   isAction: boolean;
-  action: 'create_task' | 'mark_workflow_done' | 'mark_service_done' | 'schedule_meeting' | 'unsupported' | 'question';
+  action: 'create_task' | 'update_task' | 'mark_task_done' | 'mark_workflow_done' | 'mark_service_done' | 'schedule_meeting' | 'update_lead' | 'mark_lead_won' | 'mark_lead_lost' | 'add_lead_note' | 'unsupported' | 'question';
   params: Record<string, any>;
   confirm: string;
   userReply: string | null;
