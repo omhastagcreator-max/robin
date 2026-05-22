@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -34,7 +34,7 @@ export interface SessionData {
  * tick correctly without waiting on a refetch round-trip.
  */
 export function useSession() {
-  const { user, role } = useAuth();
+  const { user } = useAuth();
   const [session, setSession] = useState<SessionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
@@ -53,59 +53,9 @@ export function useSession() {
 
   useEffect(() => { fetchActiveSession(); }, [fetchActiveSession]);
 
-  // ── Auto-start on login ─────────────────────────────────────────────
-  // The owner's ask: "whenever someone logs in, the timer should start
-  // automatically." Previously every employee had to find the Start
-  // button and click it; some never did, so their hours were under-
-  // reported and the topbar sat at 00:00:00 forever.
-  //
-  // Rules:
-  //   - Internal staff only — admin / employee / sales / workroom.
-  //     Clients never get clocked in.
-  //   - One attempt per BROWSER TAB. We store a sessionStorage flag so
-  //     a reload doesn't keep re-clocking-in after the user explicitly
-  //     clocked out. Closing the tab and opening a new one is a fresh
-  //     auto-start (next morning).
-  //   - Escape hatch: localStorage 'robin.session.autoStartDisabled' = '1'
-  //     opts the user out (we surface the toggle later if anyone asks).
-  //   - Skip while `loading` is true — wait for fetchActiveSession to
-  //     return so we don't double-create a session that the server
-  //     already has open from the previous reload.
-  //   - Skip if a session already exists (whether active or on_break).
-  //
-  // Toast intentionally muted on auto-start so it doesn't feel pushy;
-  // the topbar timer ticking is signal enough.
-  const autoStartedRef = useRef(false);
-  useEffect(() => {
-    if (autoStartedRef.current) return;
-    if (loading) return;                    // wait for the initial fetch
-    if (!user) return;
-    if (session) return;                    // already clocked in
-    if (!role || role === 'client') return; // external user — no clock
-    if (!['admin', 'employee', 'sales', 'workroom'].includes(role)) return;
-
-    try {
-      if (sessionStorage.getItem('robin.session.autoStartedThisTab') === '1') return;
-    } catch { /* private mode — proceed; sessionStorage fail = treat as fresh */ }
-    try {
-      if (localStorage.getItem('robin.session.autoStartDisabled') === '1') return;
-    } catch { /* private mode — proceed */ }
-
-    autoStartedRef.current = true;
-    (async () => {
-      try {
-        const data = await api.startSession();
-        setSession(data);
-        try { sessionStorage.setItem('robin.session.autoStartedThisTab', '1'); }
-        catch { /* private mode — accept the cost of a re-attempt on reload */ }
-      } catch {
-        // Server refused (probably an active session race or a leave
-        // confirmation prompt that needs a click). Release the latch so
-        // the user can click Start manually without us blocking them.
-        autoStartedRef.current = false;
-      }
-    })();
-  }, [loading, user, role, session]);
+  // Auto-start was reverted (owner request, May 2026): the team prefers
+  // explicit Log In / Log Out buttons over a magic auto-clock-in. See
+  // SessionTopBar / SessionClockCard for the buttons.
 
   // Per-second tick while we have a live session — drives all timer UIs.
   useEffect(() => {
