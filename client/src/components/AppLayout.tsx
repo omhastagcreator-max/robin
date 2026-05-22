@@ -10,6 +10,7 @@ import { CommandPalette } from '@/components/shared/CommandPalette';
 import { PresenceStrip } from '@/components/shared/PresenceStrip';
 import { SessionTopBar } from '@/components/shared/SessionTopBar';
 import { HuddleAutoBreak } from '@/components/shared/HuddleAutoBreak';
+import { RobinOrb } from '@/components/shared/RobinOrb';
 import { ScreenShareReminder } from '@/components/shared/ScreenShareReminder';
 import { ScreenShareResumeBanner } from '@/components/shared/ScreenShareResumeBanner';
 import { ClientMeetingDock } from '@/components/shared/ClientMeetingDock';
@@ -154,6 +155,11 @@ function AppLayoutInner({ children }: Props) {
             huddle for 10+ min, auto-resumes when they come back. Renders
             nothing — pure side-effect component. */}
         <HuddleAutoBreak />
+
+        {/* Hands-free assistant orb. Click once to enable continuous
+            listening; say "Hey Robin <command>" to run any action,
+            "Hey Robin <question>" to get a spoken answer. */}
+        <RobinOrb />
 
         {/* Persistent break / leave strip */}
         <PresenceStrip />
