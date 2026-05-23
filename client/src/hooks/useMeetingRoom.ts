@@ -314,14 +314,55 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
       const raw = e?.message || '';
       let msg = e?.message || 'Could not join the huddle';
       const status = e?.response?.status;
-      if (status === 429 || /Too Many Requests|429/i.test(raw)) {
-        msg = 'LiveKit Cloud rate limited too many connect attempts. Wait ~1 minute and try again.';
+
+      // ── LiveKit 429 detection (May 2026 fix) ────────────────────────
+      // LiveKit-client masks an HTTP 429 from LiveKit Cloud as a generic
+      // "could not establish signal connection: websocket error during
+      // connection establishment" message. The 429 itself appears in the
+      // browser's Network panel + DevTools console but NEVER as the
+      // thrown error. We scan our share-event ring buffer for the 429
+      // marker so we can identify this case from the captured chain.
+      let saw429 = false;
+      try {
+        // Look through console for recent 429s — LiveKit logs them as
+        // failed-resource entries before bubbling the websocket error.
+        // performance.getEntriesByType('resource') is the most reliable
+        // hook we have without instrumenting fetch.
+        const entries = (performance.getEntriesByType?.('resource') || []) as any[];
+        const nowMs = performance.now();
+        saw429 = entries.some(e => {
+          if (!e?.name?.includes('livekit.cloud')) return false;
+          if (nowMs - (e.startTime || 0) > 30_000) return false; // last 30s only
+          // PerformanceResourceTiming doesn't expose status, but
+          // responseEnd === 0 + transferSize === 0 + duration <100ms
+          // is a strong proxy for an HTTP error like 429.
+          return e.transferSize === 0 && e.responseEnd > 0 && e.duration < 200;
+        });
+      } catch { /* private mode / unsupported */ }
+
+      if (status === 429 || /Too Many Requests|429/i.test(raw) || saw429) {
+        // Project-level rate limit. Almost always one of:
+        //   (a) LiveKit Cloud FREE TIER exhausted (50 concurrent users
+        //       OR monthly minutes used up). Check the LiveKit Cloud
+        //       dashboard → Usage tab.
+        //   (b) Burst limit — too many connection attempts in a short
+        //       window (e.g. everyone refreshing at once).
+        //   (c) Project paused / suspended.
+        msg = 'LiveKit rate-limited (429). Likely the LiveKit Cloud free-tier monthly cap is hit OR too many connect attempts in a burst. Admin: open https://cloud.livekit.io → your project → Usage, and check the monthly limits. Wait 5-10 min and try again, or upgrade the LiveKit plan.';
       } else if (status === 401 || status === 403) {
         msg = 'Your session may have expired — sign out and back in, then try the huddle again.';
       } else if (e?.code === 'ECONNABORTED' || /timeout/i.test(raw)) {
         msg = 'The Robin API didn\'t respond — server may be redeploying. Wait ~30 seconds and retry.';
       } else if (/Failed to fetch|Network Error|ERR_NETWORK/i.test(raw)) {
         msg = 'No connection to the Robin API. Check your internet, then retry.';
+      } else if (/InvalidServerResponseError|server returned/i.test(raw)) {
+        msg = 'LiveKit rejected the token — usually LIVEKIT_API_KEY / SECRET mismatch the URL\'s project. Admin: verify all three env vars in Render belong to the same LiveKit Cloud project.';
+      } else if (/could not establish signal connection|websocket error during connection establishment/i.test(raw)) {
+        // The token was minted but the WebSocket handshake to LiveKit
+        // Cloud failed (and our 429-probe above didn't trip). Common
+        // causes in priority order: LiveKit project paused, env mismatch,
+        // firewall blocking outbound wss.
+        msg = 'Couldn\'t reach LiveKit. Most likely the project is paused OR LIVEKIT_URL doesn\'t match the API key/secret. Admin: Render → robin-api → Environment, verify LIVEKIT_URL + LIVEKIT_API_KEY + LIVEKIT_API_SECRET all belong to the same active LiveKit Cloud project.';
       }
       log('joinMeeting failed:', msg, { rawMessage: raw, status });
       setError(msg);
