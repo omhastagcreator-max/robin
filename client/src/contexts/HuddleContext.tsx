@@ -150,8 +150,21 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
 
     const ours = new WeakSet<HTMLMediaElement>();
 
+    // Skip any audio element that lives inside a region tagged as a
+    // client-meeting audio sink. Critical fix: previously the team-mute
+    // sweep walked the entire document and muted EVERY <audio> in it,
+    // which silenced the live client call too. The client-meeting
+    // portal now sets data-meeting-audio="client" on its wrapper; we
+    // exclude descendants of any such wrapper, plus any element that
+    // itself carries the same attribute (defensive in case the tag
+    // moves directly onto the audio node later).
+    const shouldSkip = (el: HTMLMediaElement) =>
+      !!el.closest('[data-meeting-audio="client"]') ||
+      el.dataset?.meetingAudio === 'client';
+
     const muteAll = () => {
       document.querySelectorAll<HTMLMediaElement>('audio, video').forEach((el) => {
+        if (shouldSkip(el)) return;
         if (!el.muted) {
           el.muted = true;
           ours.add(el);

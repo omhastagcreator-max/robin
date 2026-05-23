@@ -91,14 +91,21 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
   // call it from the "Share again" toast action, but toggleScreen is
   // declared LATER in the file. The ref bridges the gap.
   const toggleScreenRef = useRef<(() => Promise<void>) | null>(null);
-  // Auto-retry guard. When the screen track ends unexpectedly we fire a
-  // ONE-SHOT silent retry ~10s later. If the retry also fails (e.g.
-  // permission denied, source picker cancelled), we DO NOT loop — the
-  // banner + toast handle the user-facing nudge from there. This ref
-  // resets on every successful user toggle and on leaveMeeting, so the
-  // next session gets a fresh single retry budget.
-  const autoRetriedThisSessionRef = useRef(false);
+  // Auto-retry state. When the screen track ends unexpectedly we run a
+  // SMALL backoff sequence (3 attempts at 5s, 20s, 60s). Each successful
+  // user start resets the attempt counter so the next session gets a
+  // fresh budget. After the cap we stop and let the banner nag.
+  //
+  // Was a single one-shot retry. Owner reports the share still auto-stops
+  // "very frequently" — most likely cause is display sleep + Chrome
+  // unpublishing the track. With a wake-lock plus 3 attempts we cover
+  // the realistic recovery window without ever looping forever.
+  const autoRetryAttemptRef = useRef(0);
   const autoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const AUTO_RETRY_BACKOFF_MS = [5_000, 20_000, 60_000];
+  // Wake-lock handle while sharing — keeps macOS / Windows from sleeping
+  // the display, which is the #1 cause of an unexpected track end.
+  const wakeLockRef = useRef<any>(null);
   const [peers, setPeers]         = useState<Record<string, PeerView>>({});
   const [error, setError]         = useState<string | null>(null);
   const [networkBlocked, setNetworkBlocked] = useState(false);
@@ -308,21 +315,20 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
             { duration: 9000, action: { label: 'Share again', onClick: () => { void toggleScreenRef.current?.(); } } },
           );
 
-          // ── One-shot auto-retry (May 2026) ───────────────────────────
-          // The owner ask: screen sharing is mandatory and dropping it
-          // mid-work is the #1 cause of "looks like Sakshi stopped
-          // sharing again" Slack pings. So we attempt ONE silent retry
-          // ~10s later. 10s is a deliberate cushion — if the cause was
-          // "Mac display slept" the user is usually back at the desk by
-          // then; if it was "Chrome stop-pill", Chrome's permission
-          // grant is still warm and they don't have to re-click the
-          // picker (the same source is offered as default).
+          // ── Backoff auto-retry (May 2026, v2) ────────────────────────
+          // Owner reports the share auto-stops "very frequently". One
+          // shot wasn't enough — display sleep + Chrome quietly killing
+          // capture can fail twice in a row before the user actually
+          // sits back down. We now run a small backoff sequence (5s,
+          // 20s, 60s) before giving up; the persistent ScreenShareRequired
+          // banner takes over after that.
           //
-          // If the retry itself fails (user cancels picker, permission
-          // denied), we stop — the ScreenShareRequiredBanner takes over
-          // as the persistent nudge. We never loop.
-          if (!autoRetriedThisSessionRef.current) {
-            autoRetriedThisSessionRef.current = true;
+          // We schedule the NEXT attempt by reading the attempt counter,
+          // bumping it, and bailing out once we exhaust the array.
+          const attempt = autoRetryAttemptRef.current;
+          if (attempt < AUTO_RETRY_BACKOFF_MS.length) {
+            autoRetryAttemptRef.current = attempt + 1;
+            const delay = AUTO_RETRY_BACKOFF_MS[attempt];
             if (autoRetryTimerRef.current) clearTimeout(autoRetryTimerRef.current);
             autoRetryTimerRef.current = setTimeout(() => {
               autoRetryTimerRef.current = null;
@@ -334,9 +340,11 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
               const stillHasNoScreen = !Array.from(lp.videoTrackPublications.values())
                 .some(p => p.source === Track.Source.ScreenShare);
               if (!stillHasNoScreen) return;
-              logShareEvent('note', 'auto-retry: re-attempting screen share 10s after unexpected stop');
+              logShareEvent('note', `auto-retry attempt #${attempt + 1} ${delay}ms after unexpected stop`);
               void toggleScreenRef.current?.();
-            }, 10_000);
+            }, delay);
+          } else {
+            logShareEvent('note', 'auto-retry budget exhausted — banner will take over');
           }
         }
         userToggledScreenRef.current = false;  // arm for the next event
@@ -457,13 +465,18 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
       try { room.disconnect(true); } catch { /* ignore */ }
     }
     // Cancel any pending auto-retry — if the user leaves the huddle
-    // BEFORE the 10s timer fires, we definitely don't want to pop a
-    // share picker on them after they've moved on.
+    // BEFORE the timer fires, we definitely don't want to pop a share
+    // picker on them after they've moved on.
     if (autoRetryTimerRef.current) {
       clearTimeout(autoRetryTimerRef.current);
       autoRetryTimerRef.current = null;
     }
-    autoRetriedThisSessionRef.current = false;
+    autoRetryAttemptRef.current = 0;
+    // Release any held wake-lock — we're no longer sharing anything.
+    if (wakeLockRef.current) {
+      try { wakeLockRef.current.release(); } catch { /* ignore */ }
+      wakeLockRef.current = null;
+    }
     setPeers({});
     setAudioOn(false);
     setScreenOn(false);
@@ -525,11 +538,40 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
       await room.localParticipant.setScreenShareEnabled(next);
       setScreenOn(next);
       logShareEvent('note', `livekit screen share=${next}`);
-      // Successful start → re-arm the auto-retry budget so the NEXT
-      // unexpected drop in this session can also get one silent retry.
-      // (We only want to suppress retries when one already failed and
-      // we're waiting on the user, not for the entire session.)
-      if (next) autoRetriedThisSessionRef.current = false;
+      if (next) {
+        // Successful start → reset the auto-retry budget so the NEXT
+        // unexpected drop also gets a fresh 3-attempt sequence.
+        autoRetryAttemptRef.current = 0;
+        // Acquire a screen wake-lock. macOS / Windows aggressively put
+        // the display to sleep on idle laptops; that kills the
+        // getDisplayMedia track and is the #1 cause of "screen sharing
+        // turned off without me clicking anything" tickets. Wake-lock
+        // is gracefully unsupported on Safari < 16.4 and Firefox; the
+        // try/catch + capability check below makes it a no-op there.
+        try {
+          const nav: any = navigator;
+          if (nav?.wakeLock?.request) {
+            // Release any previous lock first — defensive.
+            if (wakeLockRef.current) { try { await wakeLockRef.current.release(); } catch { /* ignore */ } }
+            wakeLockRef.current = await nav.wakeLock.request('screen');
+            logShareEvent('note', 'wake-lock acquired while sharing');
+            wakeLockRef.current.addEventListener?.('release', () => {
+              // OS released it (e.g. tab backgrounded). We'll re-acquire
+              // on visibility flip below.
+              logShareEvent('note', 'wake-lock released by OS');
+              wakeLockRef.current = null;
+            });
+          }
+        } catch (e: any) {
+          logShareEvent('error', 'wake-lock request failed', { message: e?.message });
+        }
+      } else {
+        // Stopped sharing → release the wake-lock; nothing to keep awake.
+        if (wakeLockRef.current) {
+          try { await wakeLockRef.current.release(); } catch { /* ignore */ }
+          wakeLockRef.current = null;
+        }
+      }
     } catch (e: any) {
       // User cancelled the screen picker — silent in console, recorded in
       // the share-event ring so support can see why.
@@ -546,6 +588,26 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
 
   // Cleanup on unmount.
   useEffect(() => () => { leaveMeeting(); }, []); // eslint-disable-line
+
+  // ── Re-acquire wake-lock on tab-visible (while sharing) ───────────────────
+  // The OS auto-releases screen wake-locks when the tab goes to background.
+  // When the user comes back, re-acquire so the next idle period doesn't
+  // sleep the display and kill the share again.
+  useEffect(() => {
+    const onVis = async () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!screenOnRef.current) return;
+      if (wakeLockRef.current) return;
+      try {
+        const nav: any = navigator;
+        if (!nav?.wakeLock?.request) return;
+        wakeLockRef.current = await nav.wakeLock.request('screen');
+        logShareEvent('note', 'wake-lock re-acquired on tab visible');
+      } catch { /* ignore */ }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
 
   return {
     joined,

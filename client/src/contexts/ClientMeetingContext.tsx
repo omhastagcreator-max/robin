@@ -235,8 +235,17 @@ export function ClientMeetingProvider({ children }: { children: ReactNode }) {
   // Anchoring outside the React route subtree means they never unmount
   // on navigation. Without this, switching tabs killed the audio elements
   // and the user heard silence even though the room was technically alive.
+  //
+  // data-meeting-audio="client" tags every element so the huddle's
+  // "Mute team audio" (deafen) sweep can SKIP these — deafening the
+  // workroom huddle must NOT silence the live client call. See
+  // HuddleContext's muteAll effect for the matching exclusion.
   const audioPortal = typeof document !== 'undefined' ? createPortal(
-    <div aria-hidden style={{ position: 'fixed', width: 1, height: 1, left: -9999, top: -9999, pointerEvents: 'none' }}>
+    <div
+      aria-hidden
+      data-meeting-audio="client"
+      style={{ position: 'fixed', width: 1, height: 1, left: -9999, top: -9999, pointerEvents: 'none' }}
+    >
       {Object.values(peers).map(p => p.audioStream ? (
         <PersistentAudio key={`a-${p.identity}`} stream={p.audioStream} />
       ) : null)}
