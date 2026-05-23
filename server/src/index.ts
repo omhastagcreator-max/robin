@@ -523,6 +523,30 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', app: 'Robin', timestamp: new Date().toISOString() });
 });
 
+// ── Version probe — drives the client's auto-update toast ────────────────────
+// The client polls /api/version every minute; when the returned `version`
+// differs from the one stamped into the running bundle, the user gets a
+// "New version available — reload" toast (auto-reloads if idle).
+//
+// On Render, RENDER_GIT_COMMIT is injected automatically per deploy. We
+// fall back to a process-start timestamp for local dev so each `npm run
+// dev` restart counts as a "new version" without needing git plumbing.
+// API_VERSION_OVERRIDE lets us pin a value manually if we ever need to
+// force every connected client to refresh.
+const SERVER_VERSION =
+  process.env.API_VERSION_OVERRIDE ||
+  process.env.RENDER_GIT_COMMIT ||
+  process.env.COMMIT_SHA ||
+  `dev-${Date.now()}`;
+const SERVER_STARTED_AT = new Date().toISOString();
+app.get('/api/version', (_req, res) => {
+  // Cache-bust headers so a CDN / proxy never serves a stale version
+  // and traps every client on the previous build.
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.set('Pragma', 'no-cache');
+  res.json({ version: SERVER_VERSION, startedAt: SERVER_STARTED_AT });
+});
+
 // ── API Routes ────────────────────────────────────────────────────────────────
 // PUBLIC ROUTERS FIRST. Any router mounted at the bare '/api' prefix that has
 // global auth middleware would otherwise gate every /api/* request. Mounting

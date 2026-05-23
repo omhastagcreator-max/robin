@@ -2,8 +2,26 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import path from 'path';
 
+// Bake the deploy commit SHA into the bundle so the running client can
+// compare against /api/version and self-update.
+//
+// Vercel auto-injects VERCEL_GIT_COMMIT_SHA on every deploy. For local
+// dev we fall back to a wall-clock string so the version string just
+// reflects "whenever you last hit save"; the version check is silently
+// no-op'd at runtime when this equals 'dev'.
+const BUILD_VERSION =
+  process.env.VITE_BUILD_VERSION ||
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  process.env.COMMIT_SHA ||
+  'dev';
+
 export default defineConfig({
   plugins: [react()],
+  define: {
+    // Inline as a string literal — Vite replaces this at build time so
+    // there's zero runtime cost and no risk of an undefined global.
+    __APP_VERSION__: JSON.stringify(BUILD_VERSION),
+  },
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },

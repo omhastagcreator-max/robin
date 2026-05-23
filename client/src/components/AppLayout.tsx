@@ -21,6 +21,7 @@ import { SlimSidebar }     from '@/components/v2/SlimSidebar';
 import { TopBar }          from '@/components/v2/TopBar';
 import { GlobalShortcuts } from '@/components/v2/GlobalShortcuts';
 import { useKnock }        from '@/hooks/useKnock';
+import { useAppUpdater }   from '@/hooks/useAppUpdater';
 
 /**
  * AppLayout — the persistent application shell.
@@ -79,6 +80,11 @@ function AppLayoutInner({ children }: Props) {
   // toast fire wherever the user is in Robin — even on a page that
   // never instantiated a huddle / chat component.
   useKnock();
+  // Poll /api/version every minute. If the server is on a newer build
+  // than this tab, toast a "new version — reload" prompt (auto-reloads
+  // if the user has been idle for 5+ min). Stops "I had to refresh
+  // for it to show up" forever.
+  useAppUpdater();
 
   // (Notification poll lives in UnreadCountsProvider now — that's where the
   // sidebar + topbar badges get their counts. The toast-on-new logic below

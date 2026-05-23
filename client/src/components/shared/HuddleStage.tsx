@@ -215,35 +215,44 @@ export function HuddleStage() {
             </div>
           </div>
 
-          {/* Inline ping chat — quick async messages without interrupting the talker */}
-          <div className="px-3 py-3 border-t border-border bg-muted/10">
-            <HuddlePingChat />
-          </div>
+          {/* Chat + controls — two-column on md+. Was stacked (chat full
+              row, controls full row below) which wasted screen height
+              and forced people to scroll past their own controls to
+              read chat. Now chat occupies ~2/3 width, controls sit in
+              a right-side rail at ~1/3 with mic / deafen / screen
+              stacked vertically. Below md (mobile) it stacks like
+              before so the controls don't crunch. */}
+          <div className="grid grid-cols-1 md:grid-cols-3 border-t border-border">
+            {/* Chat column */}
+            <div className="md:col-span-2 px-3 py-3 bg-muted/10 md:border-r md:border-border min-w-0">
+              <HuddlePingChat />
+            </div>
 
-          {/* Controls */}
-          <div className="flex items-center justify-center gap-2 px-3 py-3 border-t border-border bg-card/50">
-            {/* Mic — two-click confirm to prevent accidental flips during a call */}
-            <MicConfirmButton audioOn={meeting.audioOn} onToggle={meeting.toggleAudio} variant="label" />
-            {/* Deafen — mute everyone else's audio without leaving the room */}
-            <ControlButton
-              on={!meeting.deafened}
-              onIcon={Volume2}
-              offIcon={VolumeX}
-              onClick={meeting.toggleDeafen}
-              tone={meeting.deafened ? 'danger' : 'neutral'}
-              label={meeting.deafened ? 'Hear team' : 'Mute team audio'}
-            />
-            <ControlButton
-              on={meeting.screenOn}
-              onIcon={MonitorOff}
-              offIcon={Monitor}
-              onClick={meeting.toggleScreen}
-              tone={meeting.screenOn ? 'primary' : 'neutral'}
-              label={meeting.screenOn ? 'Stop sharing' : 'Share screen'}
-            />
-            {/* Leave-huddle removed (May 2026). Exit only via Log Out
-                on the topbar. That click calls huddle.leave() before
-                ending the session — same lifecycle, single doorway. */}
+            {/* Controls column — vertical rail on md+, horizontal on mobile */}
+            <div className="md:col-span-1 px-3 py-3 bg-card/50 flex flex-row md:flex-col items-stretch justify-center gap-2">
+              {/* Mic — two-click confirm to prevent accidental flips during a call */}
+              <MicConfirmButton audioOn={meeting.audioOn} onToggle={meeting.toggleAudio} variant="label" />
+              {/* Deafen — mute everyone else's audio without leaving the room */}
+              <ControlButton
+                on={!meeting.deafened}
+                onIcon={Volume2}
+                offIcon={VolumeX}
+                onClick={meeting.toggleDeafen}
+                tone={meeting.deafened ? 'danger' : 'neutral'}
+                label={meeting.deafened ? 'Hear team' : 'Mute team audio'}
+              />
+              <ControlButton
+                on={meeting.screenOn}
+                onIcon={MonitorOff}
+                offIcon={Monitor}
+                onClick={meeting.toggleScreen}
+                tone={meeting.screenOn ? 'primary' : 'neutral'}
+                label={meeting.screenOn ? 'Stop sharing' : 'Share screen'}
+              />
+              {/* Leave-huddle removed (May 2026). Exit only via Log Out
+                  on the topbar. That click calls huddle.leave() before
+                  ending the session — same lifecycle, single doorway. */}
+            </div>
           </div>
         </>
       )}
