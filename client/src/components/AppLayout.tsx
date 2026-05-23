@@ -20,6 +20,7 @@ import { HelpBubble } from '@/components/shared/HelpBubble';
 import { SlimSidebar }     from '@/components/v2/SlimSidebar';
 import { TopBar }          from '@/components/v2/TopBar';
 import { GlobalShortcuts } from '@/components/v2/GlobalShortcuts';
+import { useKnock }        from '@/hooks/useKnock';
 
 /**
  * AppLayout — the persistent application shell.
@@ -74,6 +75,10 @@ function AppLayoutInner({ children }: Props) {
   const location = useLocation();
   const socket = useSocket();
   const { isSharing, stopSharing } = useScreenShare();
+  // Mount the knock receiver once at the shell level so the chime +
+  // toast fire wherever the user is in Robin — even on a page that
+  // never instantiated a huddle / chat component.
+  useKnock();
 
   // (Notification poll lives in UnreadCountsProvider now — that's where the
   // sidebar + topbar badges get their counts. The toast-on-new logic below

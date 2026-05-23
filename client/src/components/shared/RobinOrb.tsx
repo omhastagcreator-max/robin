@@ -1,4 +1,5 @@
-import { Mic, MicOff, Sparkles, Loader2, Volume2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Mic, MicOff, Sparkles, Loader2, Volume2, Hand } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useJarvisMode } from '@/hooks/useJarvisMode';
 
@@ -22,19 +23,42 @@ export function RobinOrb() {
   const { role } = useAuth();
   const j = useJarvisMode();
 
+  // ── Knock-received amber pulse ─────────────────────────────────────
+  // useKnock dispatches a `robin:knock-received` window CustomEvent
+  // whenever a teammate knocks us. The orb flashes amber for ~3s on
+  // top of its normal state so the user has a persistent visual cue
+  // even if they dismissed the toast immediately. Hooks must come
+  // before any conditional return.
+  const [knocked, setKnocked] = useState<{ name: string; at: number } | null>(null);
+  useEffect(() => {
+    const onKnock = (e: Event) => {
+      const data = (e as CustomEvent).detail as { fromName?: string };
+      setKnocked({ name: data?.fromName || 'Teammate', at: Date.now() });
+      window.setTimeout(() => setKnocked(prev => (prev && Date.now() - prev.at >= 3000 ? null : prev)), 3200);
+    };
+    window.addEventListener('robin:knock-received', onKnock);
+    return () => window.removeEventListener('robin:knock-received', onKnock);
+  }, []);
+
   // Hidden for external clients.
   if (role === 'client') return null;
 
   // ── Visual config per state ───────────────────────────────────────
-  const cfg = !j.enabled
-    ? { icon: MicOff,   bg: 'bg-card border-2 border-border', ring: '', label: 'Off — click to enable hands-free' }
-    : j.state === 'thinking'
-      ? { icon: Loader2,  bg: 'bg-primary text-primary-foreground', ring: 'ring-4 ring-primary/20', label: 'Sochna ho raha hai…' }
-      : j.state === 'speaking'
-        ? { icon: Volume2, bg: 'bg-primary text-primary-foreground', ring: 'ring-4 ring-primary/30 animate-pulse', label: 'Robin bol raha hai…' }
-        : j.state === 'armed'
-          ? { icon: Sparkles, bg: 'bg-rose-500 text-white', ring: 'ring-4 ring-rose-500/40 animate-pulse', label: 'Sun raha hoon — bol!' }
-          : { icon: Mic,    bg: 'bg-emerald-500/15 text-emerald-700 border border-emerald-500/40', ring: '', label: 'Ready — say "Hey Robin"' };
+  // Knock overrides everything else for 3s — it's a "look at me NOW"
+  // signal; jarvis state can wait. After 3s we fall back to the normal
+  // jarvis cfg.
+  const isKnocking = !!knocked && Date.now() - knocked.at < 3000;
+  const cfg = isKnocking
+    ? { icon: Hand, bg: 'bg-amber-500 text-white', ring: 'ring-4 ring-amber-500/40 animate-pulse', label: `${knocked!.name} knocked` }
+    : !j.enabled
+      ? { icon: MicOff,   bg: 'bg-card border-2 border-border', ring: '', label: 'Off — click to enable hands-free' }
+      : j.state === 'thinking'
+        ? { icon: Loader2,  bg: 'bg-primary text-primary-foreground', ring: 'ring-4 ring-primary/20', label: 'Sochna ho raha hai…' }
+        : j.state === 'speaking'
+          ? { icon: Volume2, bg: 'bg-primary text-primary-foreground', ring: 'ring-4 ring-primary/30 animate-pulse', label: 'Robin bol raha hai…' }
+          : j.state === 'armed'
+            ? { icon: Sparkles, bg: 'bg-rose-500 text-white', ring: 'ring-4 ring-rose-500/40 animate-pulse', label: 'Sun raha hoon — bol!' }
+            : { icon: Mic,    bg: 'bg-emerald-500/15 text-emerald-700 border border-emerald-500/40', ring: '', label: 'Ready — say "Hey Robin"' };
   const Icon = cfg.icon;
 
   return (

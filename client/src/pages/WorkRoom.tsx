@@ -8,6 +8,7 @@ import { Stat }        from '@/components/ui/Stat';
 import { EmptyState }  from '@/components/ui/EmptyState';
 import { PeopleGrid, type PeopleGridItem } from '@/components/ui/PeopleGrid';
 import { HuddleStage } from '@/components/shared/HuddleStage';
+import { KnockButton } from '@/components/shared/KnockButton';
 import { useAuth }     from '@/contexts/AuthContext';
 import { useUnifiedPresence } from '@/hooks/useUnifiedPresence';
 
@@ -21,7 +22,7 @@ import { useUnifiedPresence } from '@/hooks/useUnifiedPresence';
  *     useTeamPresence cross-referenced manually.
  */
 export default function WorkRoom() {
-  const { role } = useAuth();
+  const { user, role } = useAuth();
   const isInternal = role === 'admin' || role === 'employee' || role === 'sales' || role === 'workroom';
   const presence = useUnifiedPresence();
 
@@ -103,14 +104,31 @@ export default function WorkRoom() {
             ) : (
               <PeopleGrid
                 storageKey="people.workroom.layout"
-                items={presence.list.map((m) => ({
-                  id:    m.userId,
-                  name:  m.name,
-                  email: m.email,
-                  role:  m.role || 'employee',
-                  team:  m.team,
-                  state: m.displayState as PeopleGridItem['state'],
-                }))}
+                items={presence.list.map((m) => {
+                  // Knock is offered for any teammate who is at least
+                  // signed in to Robin. We skip:
+                  //   - self (no self-knocks)
+                  //   - off_clock (server rejects with 'offline' anyway, but
+                  //     showing it would be confusing)
+                  //   - on_break / on_leave (sanctioned downtime; bug them
+                  //     via Slack if it's truly urgent — Robin courtesy).
+                  const canKnock =
+                    m.userId !== user?.id &&
+                    m.displayState !== 'off_clock' &&
+                    m.displayState !== 'on_break' &&
+                    m.displayState !== 'on_leave';
+                  return {
+                    id:    m.userId,
+                    name:  m.name,
+                    email: m.email,
+                    role:  m.role || 'employee',
+                    team:  m.team,
+                    state: m.displayState as PeopleGridItem['state'],
+                    trailing: canKnock
+                      ? <KnockButton userId={m.userId} name={m.name} />
+                      : undefined,
+                  };
+                })}
                 empty={
                   <EmptyState
                     size="md"

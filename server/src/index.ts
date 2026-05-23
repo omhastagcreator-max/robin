@@ -190,6 +190,21 @@ function emitPresenceForAllOrgs() {
 // We dedupe by userId so a user opening multiple tabs doesn't double-count.
 const meetingRooms = new Map<string, Map<string, { name: string; role: string }>>();
 
+// ── Knock rate-limit state ────────────────────────────────────────────────
+// Two layers so neither side gets spammed:
+//   (a) per (sender, recipient) — 1 knock per 30s  → stops one teammate
+//       jackhammering another's chime.
+//   (b) per recipient — 5 knocks per 5min total    → caps incoming volume
+//       even when many different teammates knock at once.
+// Both maps are tiny (one entry per active pair / per recipient) and live
+// in-process; we don't persist these because crossing process restarts is
+// fine — a fresh server happily lets the next knock through.
+const knockPairLast = new Map<string, number>();           // `${senderId}->${recipientId}` -> ts
+const knockRecipientWindow = new Map<string, number[]>();  // recipientId -> [ts, ts, …]
+const KNOCK_PAIR_COOLDOWN_MS = 30_000;
+const KNOCK_RECIPIENT_WINDOW_MS = 5 * 60_000;
+const KNOCK_RECIPIENT_MAX = 5;
+
 function broadcastRoomParticipants(io: SocketServer, roomId: string) {
   const members = Array.from(meetingRooms.get(roomId)?.entries() || []).map(
     ([uid, info]) => ({ userId: uid, ...info })
@@ -377,6 +392,81 @@ io.on('connection', (socket) => {
       message: taskTitle,
       type: 'info',
     });
+  });
+
+  // ── Knock — pierce a teammate's deafen with a chime + toast ─────────────
+  // The owner ask: when someone has muted team audio but I need them, I
+  // should still be able to get their attention. The recipient hears a
+  // distinct Web-Audio chime regardless of deafen state, plus a toast
+  // saying who knocked. Scope is "anyone with an active session in this
+  // org" — off-clock users skip silently so we don't spam people on
+  // leave / weekends.
+  //
+  // Server's role:
+  //   - org-scope the relay (no cross-tenant knocks)
+  //   - enforce per-pair + per-recipient rate limits
+  //   - confirm/reject back to the sender (UI shows a brief toast either way)
+  // The client decides whether the recipient is "in app" (the recipient
+  // socket being connected at all proves they have Robin open right now).
+  socket.on('robin:knock', ({ recipientId, note }: { recipientId?: string; note?: string }) => {
+    if (!userId || !socketOrgId || !recipientId) return;
+    if (recipientId === userId) return;  // no self-knocks
+
+    const now = Date.now();
+    const pairKey = `${userId}->${recipientId}`;
+
+    // (a) Per-pair cooldown — same sender→recipient capped at 1/30s.
+    const lastFromPair = knockPairLast.get(pairKey) || 0;
+    if (now - lastFromPair < KNOCK_PAIR_COOLDOWN_MS) {
+      const waitMs = KNOCK_PAIR_COOLDOWN_MS - (now - lastFromPair);
+      socket.emit('robin:knock-rejected', {
+        recipientId,
+        reason: 'cooldown',
+        retryInMs: waitMs,
+      });
+      return;
+    }
+
+    // (b) Per-recipient sliding window — overall cap of 5/5min IN to one user.
+    const window = (knockRecipientWindow.get(recipientId) || [])
+      .filter(ts => now - ts < KNOCK_RECIPIENT_WINDOW_MS);
+    if (window.length >= KNOCK_RECIPIENT_MAX) {
+      socket.emit('robin:knock-rejected', {
+        recipientId,
+        reason: 'recipient_flooded',
+        retryInMs: KNOCK_RECIPIENT_WINDOW_MS - (now - window[0]),
+      });
+      return;
+    }
+
+    // Recipient must be online (any tab) AND in the same org. We check
+    // org by inspecting connected sockets for the recipient — if none
+    // of them share our org, abort (cross-tenant attempt).
+    let recipientInOrg = false;
+    for (const info of onlineUsers.values()) {
+      if (info.userId === recipientId && info.orgId === socketOrgId) {
+        recipientInOrg = true;
+        break;
+      }
+    }
+    if (!recipientInOrg) {
+      socket.emit('robin:knock-rejected', { recipientId, reason: 'offline' });
+      return;
+    }
+
+    // Stamp + deliver.
+    knockPairLast.set(pairKey, now);
+    window.push(now);
+    knockRecipientWindow.set(recipientId, window);
+
+    io.to(`user:${recipientId}`).emit('robin:knock', {
+      from: userId,
+      fromName: userName || 'Teammate',
+      fromRole: userRole || 'employee',
+      note: typeof note === 'string' ? note.slice(0, 120) : undefined,
+      at: now,
+    });
+    socket.emit('robin:knock-sent', { recipientId, at: now });
   });
 
   // ── Deafen broadcast — let the team know who's muted everyone ───────────

@@ -11,6 +11,7 @@ import { useTeamPresence, type PresenceStatus } from '@/hooks/useTeamPresence';
 import { RemoteAudio, useAudioLevel } from '@/components/shared/RemoteAudio';
 import { HuddlePingChat } from '@/components/shared/HuddlePingChat';
 import { MicConfirmButton } from '@/components/shared/MicConfirmButton';
+import { KnockButton } from '@/components/shared/KnockButton';
 
 /**
  * Full-page Google-Meet-like huddle stage. Used INSIDE the WorkRoom page
@@ -366,6 +367,10 @@ function PeerTile({ peer, presenceStatus, onCall, deafened, hasMutedYou, inMeeti
             <Monitor className="h-2.5 w-2.5" />
           </span>
         )}
+        {/* Knock — single shared button. Bypasses deafen, fires chime
+            + toast on the recipient wherever they are in Robin. */}
+        <KnockButton userId={peer.userId} name={peer.name} hasMutedYou={hasMutedYou} />
+
       </div>
     </div>
   );

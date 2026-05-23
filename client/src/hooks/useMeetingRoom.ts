@@ -81,6 +81,24 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
   // capture the value-at-join, which is always false.
   const screenOnRef = useRef(false);
   useEffect(() => { screenOnRef.current = screenOn; }, [screenOn]);
+  // Set TRUE when toggleScreen is invoked by the user (start OR stop).
+  // syncLocal checks + resets it to distinguish a user-initiated change
+  // from an UNEXPECTED screen-track unpublish (Chrome stop-pill, source
+  // window closed, display sleep, etc) — only the unexpected case fires
+  // the "Screen sharing stopped" toast.
+  const userToggledScreenRef = useRef(false);
+  // Forward ref to the latest toggleScreen function. syncLocal needs to
+  // call it from the "Share again" toast action, but toggleScreen is
+  // declared LATER in the file. The ref bridges the gap.
+  const toggleScreenRef = useRef<(() => Promise<void>) | null>(null);
+  // Auto-retry guard. When the screen track ends unexpectedly we fire a
+  // ONE-SHOT silent retry ~10s later. If the retry also fails (e.g.
+  // permission denied, source picker cancelled), we DO NOT loop — the
+  // banner + toast handle the user-facing nudge from there. This ref
+  // resets on every successful user toggle and on leaveMeeting, so the
+  // next session gets a fresh single retry budget.
+  const autoRetriedThisSessionRef = useRef(false);
+  const autoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [peers, setPeers]         = useState<Record<string, PeerView>>({});
   const [error, setError]         = useState<string | null>(null);
   const [networkBlocked, setNetworkBlocked] = useState(false);
@@ -266,7 +284,64 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
         const audioPub  = Array.from(lp.audioTrackPublications.values()).find(p => p.source === Track.Source.Microphone);
         const screenPub = Array.from(lp.videoTrackPublications.values()).find(p => p.source === Track.Source.ScreenShare);
         setAudioOn(!!(audioPub && !audioPub.isMuted));
-        setScreenOn(!!screenPub);
+
+        // ── Unexpected screen-share end detection (May 2026) ───────────
+        // The owner reported "screen sharing auto turns off." Cause:
+        // LiveKit's screen track can end without the user clicking Stop
+        // — Chrome's screen-share pill, source window closing, OS
+        // screen-recording permission revoked, macOS display sleep
+        // killing the capture, or a network hiccup that unpublishes the
+        // track. syncLocal flipped setScreenOn(false) silently with no
+        // user-visible explanation.
+        //
+        // Now: if the screen pub disappears while we DIDN'T just call
+        // toggleScreen ourselves, surface a toast with the most likely
+        // cause and offer a one-click re-share.
+        const previouslyOn = screenOnRef.current;
+        const nowOn        = !!screenPub;
+        if (previouslyOn && !nowOn && !userToggledScreenRef.current) {
+          logShareEvent('error', 'livekit screen pub disappeared unexpectedly', {
+            reason: 'no toggleScreen call; probably Chrome stop-pill / source closed / display sleep',
+          });
+          toast.error(
+            'Screen sharing stopped. Most likely: you clicked Chrome\'s "Stop sharing" pill, the source window closed, or your Mac display slept. Click the screen icon to share again.',
+            { duration: 9000, action: { label: 'Share again', onClick: () => { void toggleScreenRef.current?.(); } } },
+          );
+
+          // ── One-shot auto-retry (May 2026) ───────────────────────────
+          // The owner ask: screen sharing is mandatory and dropping it
+          // mid-work is the #1 cause of "looks like Sakshi stopped
+          // sharing again" Slack pings. So we attempt ONE silent retry
+          // ~10s later. 10s is a deliberate cushion — if the cause was
+          // "Mac display slept" the user is usually back at the desk by
+          // then; if it was "Chrome stop-pill", Chrome's permission
+          // grant is still warm and they don't have to re-click the
+          // picker (the same source is offered as default).
+          //
+          // If the retry itself fails (user cancels picker, permission
+          // denied), we stop — the ScreenShareRequiredBanner takes over
+          // as the persistent nudge. We never loop.
+          if (!autoRetriedThisSessionRef.current) {
+            autoRetriedThisSessionRef.current = true;
+            if (autoRetryTimerRef.current) clearTimeout(autoRetryTimerRef.current);
+            autoRetryTimerRef.current = setTimeout(() => {
+              autoRetryTimerRef.current = null;
+              // Only retry if we're still joined AND still not sharing.
+              // Don't fight the user if they manually re-started in the
+              // meantime, and don't try after they left the huddle.
+              const lp = roomRef.current?.localParticipant;
+              if (!lp) return;
+              const stillHasNoScreen = !Array.from(lp.videoTrackPublications.values())
+                .some(p => p.source === Track.Source.ScreenShare);
+              if (!stillHasNoScreen) return;
+              logShareEvent('note', 'auto-retry: re-attempting screen share 10s after unexpected stop');
+              void toggleScreenRef.current?.();
+            }, 10_000);
+          }
+        }
+        userToggledScreenRef.current = false;  // arm for the next event
+
+        setScreenOn(nowOn);
         // Build a self-stream containing the screen track (when sharing) so
         // HuddleStage's self-preview tile has something to render.
         if (screenPub?.track) {
@@ -381,6 +456,14 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
     if (room) {
       try { room.disconnect(true); } catch { /* ignore */ }
     }
+    // Cancel any pending auto-retry — if the user leaves the huddle
+    // BEFORE the 10s timer fires, we definitely don't want to pop a
+    // share picker on them after they've moved on.
+    if (autoRetryTimerRef.current) {
+      clearTimeout(autoRetryTimerRef.current);
+      autoRetryTimerRef.current = null;
+    }
+    autoRetriedThisSessionRef.current = false;
     setPeers({});
     setAudioOn(false);
     setScreenOn(false);
@@ -434,17 +517,32 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
     if (!room) return;
     const next = !screenOn;
     logShareEvent('note', `livekit toggleScreen → ${next}`);
+    // Mark this so syncLocal knows the upcoming Unpublished event was
+    // user-initiated (no "screen sharing stopped" toast for clicks we
+    // dispatched ourselves).
+    userToggledScreenRef.current = true;
     try {
       await room.localParticipant.setScreenShareEnabled(next);
       setScreenOn(next);
       logShareEvent('note', `livekit screen share=${next}`);
+      // Successful start → re-arm the auto-retry budget so the NEXT
+      // unexpected drop in this session can also get one silent retry.
+      // (We only want to suppress retries when one already failed and
+      // we're waiting on the user, not for the entire session.)
+      if (next) autoRetriedThisSessionRef.current = false;
     } catch (e: any) {
       // User cancelled the screen picker — silent in console, recorded in
       // the share-event ring so support can see why.
       log('toggleScreen failed/cancelled', e);
       logShareEvent('error', `livekit toggleScreen failed`, { message: e?.message });
+      // We armed userToggledScreenRef but the call failed; clear it so a
+      // later unexpected unpublish still surfaces.
+      userToggledScreenRef.current = false;
     }
   }, [screenOn]);
+  // Keep the forward ref synced so syncLocal's "Share again" toast
+  // action can invoke the latest toggleScreen.
+  toggleScreenRef.current = toggleScreen;
 
   // Cleanup on unmount.
   useEffect(() => () => { leaveMeeting(); }, []); // eslint-disable-line
