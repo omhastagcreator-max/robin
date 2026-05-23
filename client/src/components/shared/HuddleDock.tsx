@@ -111,13 +111,8 @@ export function HuddleDock() {
           >
             <ChevronUp className="h-4 w-4" />
           </button>
-          <button
-            onClick={handleLeave}
-            title="Leave huddle"
-            className="h-7 w-7 rounded-full flex items-center justify-center bg-rose-500/15 hover:bg-rose-500/30 text-rose-600"
-          >
-            <PhoneOff className="h-3.5 w-3.5" />
-          </button>
+          {/* Leave-huddle button removed (May 2026). See SessionTopBar
+              Log Out for the only authorised exit path. */}
         </div>
       )}
 
@@ -152,13 +147,7 @@ export function HuddleDock() {
             >
               <ChevronDown className="h-4 w-4" />
             </button>
-            <button
-              onClick={handleLeave}
-              className="h-7 px-2 rounded-full flex items-center gap-1 bg-rose-500 text-white text-xs font-medium hover:bg-rose-600 shrink-0"
-              title="Leave huddle"
-            >
-              <PhoneOff className="h-3 w-3" /> Leave
-            </button>
+            {/* Leave-huddle removed (May 2026). Exit only via Log Out. */}
           </div>
 
           {/* Body */}
@@ -237,13 +226,7 @@ export function HuddleDock() {
                 tone={huddle.screenOn ? 'primary' : 'neutral'}
                 label={huddle.screenOn ? 'Stop sharing' : 'Share screen'}
               />
-              <button
-                onClick={handleLeave}
-                className="ml-2 flex items-center gap-1.5 px-3 py-2 rounded-full bg-rose-500 text-white text-xs font-medium hover:bg-rose-600 shadow"
-                title="Leave huddle"
-              >
-                <PhoneOff className="h-3.5 w-3.5" /> Leave
-              </button>
+              {/* Leave-huddle removed (May 2026). Exit only via Log Out. */}
             </div>
           )}
         </div>

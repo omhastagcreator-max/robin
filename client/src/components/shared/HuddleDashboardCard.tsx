@@ -60,16 +60,10 @@ export function HuddleDashboardCard() {
             Join
           </button>
         )}
-        {huddle.joined && (
-          <button
-            onClick={huddle.leave}
-            className="h-8 px-2.5 flex items-center gap-1 rounded-lg bg-red-500 text-white text-xs font-semibold hover:bg-red-600 shrink-0"
-            title="Leave the huddle"
-          >
-            <PhoneOff className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Leave</span>
-          </button>
-        )}
+        {/* Leave-huddle button removed (May 2026). Owner rule: you only
+            leave the huddle by clocking out for the day via Log Out.
+            That click still calls huddle.leave() internally — see
+            SessionTopBar.handleEnd. */}
       </div>
 
       {/* SECOND ROW — only when joined: full-width action grid that scales

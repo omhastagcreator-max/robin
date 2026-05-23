@@ -153,13 +153,9 @@ export function HuddlePiPContent() {
           >
             <ExternalLink className="h-3 w-3" /> Workroom
           </button>
-          <button
-            onClick={huddle.leave}
-            className="h-8 w-8 rounded-md flex items-center justify-center bg-red-500 text-white hover:bg-red-600 transition-colors"
-            title="Leave the huddle"
-          >
-            <PhoneOff className="h-3.5 w-3.5" />
-          </button>
+          {/* Leave-huddle button removed (May 2026). Owner rule: you only
+              leave the huddle by clocking out via Log Out on the topbar.
+              That click calls huddle.leave() internally. */}
         </div>
       </header>
 
