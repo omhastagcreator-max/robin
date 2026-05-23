@@ -4,6 +4,34 @@ import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
 
 const router = Router();
+
+/**
+ * GET /api/huddle/health  (PUBLIC — intentionally)
+ *
+ * Diagnostic endpoint the owner can hit in any browser without juggling
+ * JWTs to verify the LiveKit env config the server is ACTUALLY using.
+ * Returns the URL (so the project subdomain is visible) + whether the
+ * key and secret are non-empty. NEVER returns the secret value itself.
+ *
+ * Common debugging pattern: you updated LIVEKIT_API_KEY + SECRET to a
+ * new project on Render but forgot to update LIVEKIT_URL — then every
+ * huddle attempt still 429s because we're talking to the OLD project
+ * with the NEW credentials (which it rejects). This endpoint shows
+ * the URL the server is currently using so the mismatch is obvious.
+ */
+router.get('/health', (_req, res) => {
+  const url = process.env.LIVEKIT_URL || '';
+  res.json({
+    livekitUrl: url || null,
+    livekitUrlSubdomain: url ? (url.match(/^wss?:\/\/([^./]+)/i)?.[1] || null) : null,
+    apiKeySet:    !!process.env.LIVEKIT_API_KEY,
+    apiSecretSet: !!process.env.LIVEKIT_API_SECRET,
+    // Hint to the admin: if the subdomain here doesn't match the project
+    // they meant to use on cloud.livekit.io, the URL env var is stale.
+    instruction: 'If livekitUrlSubdomain does not match the project you opened on cloud.livekit.io, update LIVEKIT_URL on Render → robin-api → Environment to wss://<your-project>.livekit.cloud.',
+  });
+});
+
 router.use(authMiddleware);
 
 /**
