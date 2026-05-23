@@ -11,6 +11,7 @@ import { PresenceStrip } from '@/components/shared/PresenceStrip';
 import { SessionTopBar } from '@/components/shared/SessionTopBar';
 import { HuddleAutoBreak } from '@/components/shared/HuddleAutoBreak';
 import { RobinOrb } from '@/components/shared/RobinOrb';
+import { ScreenShareRequiredBanner } from '@/components/shared/ScreenShareRequiredBanner';
 import { ScreenShareReminder } from '@/components/shared/ScreenShareReminder';
 import { ScreenShareResumeBanner } from '@/components/shared/ScreenShareResumeBanner';
 import { ClientMeetingDock } from '@/components/shared/ClientMeetingDock';
@@ -150,6 +151,12 @@ function AppLayoutInner({ children }: Props) {
 
         {/* Sticky session controls — timer + start/break/end on every page */}
         <SessionTopBar />
+
+        {/* Sticky "screen share required" banner. Visible only when an
+            internal teammate is clocked-in active AND not currently sharing
+            their screen. Owner rule: screen sharing is mandatory during
+            work. Click → starts the share picker. Cannot be dismissed. */}
+        <ScreenShareRequiredBanner />
 
         {/* Watchdog: auto-pauses the timer when the user has been out of the
             huddle for 10+ min, auto-resumes when they come back. Renders

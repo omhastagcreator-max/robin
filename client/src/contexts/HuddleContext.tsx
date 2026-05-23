@@ -529,6 +529,33 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('pagehide', onUnload);
   }, [meeting.joined]);
 
+  // ── Open PiP the moment meeting.joined transitions to true ────────
+  // The join() function opens PiP inside the click handler (when the
+  // user pressed "Log In" / "Join huddle"). But the actual LiveKit
+  // connection completes a beat later — meeting.joined goes from false
+  // → true. At that moment a fresh PiP attempt is more likely to
+  // succeed because:
+  //   (a) the user-activation token from the original click is still
+  //       fresh (~5s window)
+  //   (b) the huddle is now actually connected so the PiP shows real
+  //       content instead of the "connecting…" splash
+  // The activation listener below handles the case where the original
+  // activation expired — but firing here too means most users see PiP
+  // pop the instant they're in, like Google Meet's "Open PiP" UX.
+  const lastJoinedRef = useRef(false);
+  useEffect(() => {
+    if (!pipSupported || !pipAutoEnabled) return;
+    if (meeting.joined && !lastJoinedRef.current) {
+      lastJoinedRef.current = true;
+      // Tiny defer so the rest of the join effects settle first.
+      const t = setTimeout(() => {
+        if (!pipWindowRef.current) openPiP().catch(() => { /* needs another click */ });
+      }, 200);
+      return () => clearTimeout(t);
+    }
+    if (!meeting.joined) lastJoinedRef.current = false;
+  }, [meeting.joined, pipSupported, pipAutoEnabled, openPiP]);
+
   // ── Aggressive PiP auto-reopen ────────────────────────────────────────
   // Browser security rule: documentPictureInPicture.requestWindow() only
   // works inside *transient user activation* — typically a click within the

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Headphones, ChevronDown, ChevronUp, PhoneCall, PhoneOff,
-  Mic, MicOff, Monitor, MonitorOff, AlertTriangle, Users,
+  Mic, MicOff, Monitor, MonitorOff, AlertTriangle, Users, PictureInPicture2,
 } from 'lucide-react';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -104,6 +104,19 @@ export function HuddleDock() {
           >
             {huddle.screenOn ? <MonitorOff className="h-3.5 w-3.5" /> : <Monitor className="h-3.5 w-3.5" />}
           </button>
+          {/* Pop out — like Google Meet's PiP button. Click → opens the
+              floating PiP window that stays visible across tabs / apps /
+              monitors. Manual trigger as a fallback to the auto-open
+              that fires on huddle.joined. */}
+          {huddle.pip.supported && !huddle.pip.isOpen && (
+            <button
+              onClick={() => { void huddle.pip.open(); }}
+              title="Pop out huddle (floating window, visible across tabs)"
+              className="h-7 w-7 rounded-full flex items-center justify-center hover:bg-muted text-muted-foreground"
+            >
+              <PictureInPicture2 className="h-3.5 w-3.5" />
+            </button>
+          )}
           <button
             onClick={expand}
             title="Show huddle"
