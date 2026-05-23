@@ -54,7 +54,11 @@ export async function getMorningBrief(req: AuthRequest, res: Response): Promise<
     const msg = (err as Error).message || 'AI generation failed';
     // Detect missing-key explicitly so the UI can show a clear message
     // instead of "AI generation failed" with no clue what to do.
-    if (msg.includes('ANTHROPIC_API_KEY')) {
+    // The brief switched from Anthropic to Gemini in May 2026 — we
+    // still match the old ANTHROPIC_API_KEY string so any cached
+    // client-side sessionStorage state from before the switch still
+    // resolves cleanly.
+    if (msg.includes('GEMINI_API_KEY') || msg.includes('ANTHROPIC_API_KEY')) {
       res.status(503).json({ error: msg });
       return;
     }

@@ -1,31 +1,27 @@
-import Anthropic from '@anthropic-ai/sdk';
 import User from '../models/User';
 import Session from '../models/Session';
 import ProjectTask from '../models/ProjectTask';
+import { callGemini } from './aiTriage';
 
 /**
- * aiService — single place that talks to Claude.
+ * aiService — single place that talks to the AI provider for per-user
+ * features like the morning brief.
  *
- * Two reasons every codebase ends up with a wrapper like this:
- *  1. The API key only needs to live in ONE module. If we instantiate the
- *     SDK in every controller, we leak knowledge of "we use Anthropic"
- *     everywhere. With a service, controllers just call generateMorningBrief
- *     and don't care which provider answered.
- *  2. Prompt templates are content. They live next to the data-shaping logic
- *     that feeds them, not next to HTTP routing. When a prompt needs tweaking
- *     (and prompts ALWAYS need tweaking), you edit one file.
+ * Switched from Anthropic (Claude) to Gemini (May 2026) so the entire
+ * app uses ONE provider key (GEMINI_API_KEY) instead of two. The owner
+ * reported "ANTHROPIC_API_KEY not configured" on the morning-brief widget
+ * — rather than ask them to add a second key, we re-pointed the brief
+ * at the Gemini caller everything else already uses.
  *
- * Model selection note:
- *   We use claude-haiku-4-5 — the small, fast, cheap model. A morning brief
- *   doesn't need PhD-level reasoning, so paying for Sonnet/Opus is wasted
- *   money. Rule of thumb: start on Haiku, only upgrade if quality is bad.
+ * Two reasons the service wrapper still exists:
+ *  1. The API key only needs to live in ONE module. callGemini in
+ *     aiTriage.ts is the single chokepoint.
+ *  2. Prompt templates are content. They live next to the data-shaping
+ *     logic that feeds them — when a prompt needs tweaking (and prompts
+ *     ALWAYS need tweaking), you edit one file.
  */
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || '',
-});
-
-const MODEL = 'claude-haiku-4-5-20251001';
+const MODEL = 'gemini-2.5-flash';   // descriptive only — aiTriage picks the model
 
 // Date-key in IST (Indian Standard Time). Two users opening the dashboard at
 // 11:30pm IST and 12:30am IST should see different "today" briefs.
@@ -139,50 +135,48 @@ export async function generateMorningBrief(userId: string): Promise<{
   inputTokens: number;
   outputTokens: number;
 }> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY missing on server. Add it on Render → Environment.');
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY missing on server. Add it on Render → robin-api → Environment, then save.');
   }
 
   const ctx = await buildUserContext(userId);
 
   const system = [
-    'You are Robin, a warm, concise productivity coach inside an agency app.',
-    'You write short morning briefings for an individual teammate.',
-    'Tone: friendly, specific, second-person ("you"), India-context-aware.',
+    'You are Robin, a warm productivity coach inside an agency app.',
+    'You write short morning briefings for one teammate.',
+    'Tone: HINGLISH — the casual Hindi-English mix the team actually speaks on WhatsApp.',
+    'NOT formal Hindi (no "kripaya", "uttam", "namaskar"). NOT pure English.',
+    'Use English for things that don\'t translate (Shopify, Meta Ads, task titles).',
+    'Hindi-Roman script for the connective tissue.',
+    'Address the teammate as "tu" / "tum" / "aap" — pick the most natural register.',
     'Never invent tasks or facts. Only use what the data shows.',
-    'No bullet lists, no headings, no markdown. Plain sentences only.',
-    'Keep it to 3-4 sentences total — under 80 words.',
-  ].join(' ');
+    'No bullet lists, no headings, no markdown. Plain sentences.',
+    'Keep it to 3-4 sentences, under 80 words total.',
+    '',
+    'Sample register (for tone, not content):',
+    '"Subah ki dua, Om bhai! Kal 4 tasks complete kiye — solid. Aaj sabse zaroori cheez Velloer Shopify review hai, woh nikaal le pehle. Ek task overdue hai (Darpan pixel install) — usse lunch se pehle clear kar do. Baaki sab manage hai. Chai pee, kaam karo. 💪" — but no emojis, no markdown.',
+  ].join('\n');
 
-  const userPrompt = [
-    `Write today's morning briefing for ${ctx.name}.`,
-    'Open with a one-line greeting that acknowledges yesterday.',
+  const payload = [
+    `Write today's morning briefing for ${ctx.name} in Hinglish.`,
+    'Open with a warm one-line greeting that acknowledges yesterday.',
     'Mention the most important thing they should focus on today (pick from openTasks).',
     'If overdueCount > 0, gently flag it. End with one motivating line.',
     '',
     'DATA:',
-    '```json',
     JSON.stringify(ctx, null, 2),
-    '```',
   ].join('\n');
 
-  const resp = await client.messages.create({
-    model: MODEL,
-    max_tokens: 300,
-    system,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
+  const content = await callGemini(system, payload, 400);
 
-  // The response shape: resp.content is an array of "blocks." For text
-  // responses we just want the first text block. (When you use tools,
-  // tool-call blocks live here too.)
-  const textBlock = resp.content.find((b) => b.type === 'text');
-  const content = textBlock && 'text' in textBlock ? textBlock.text : '';
-
+  // Gemini's REST response doesn't expose token counts the same way as
+  // Anthropic's SDK did. The schema still requires the fields (UI shows
+  // a "tokens" debug line for admins) so we return 0 placeholders — UI
+  // already tolerates 0 gracefully.
   return {
     content: content.trim(),
-    inputTokens: resp.usage.input_tokens,
-    outputTokens: resp.usage.output_tokens,
+    inputTokens:  0,
+    outputTokens: 0,
   };
 }
 

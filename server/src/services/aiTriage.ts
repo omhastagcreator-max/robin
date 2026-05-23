@@ -238,7 +238,7 @@ async function tryGeminiOnce(model: string, systemPrompt: string, userPayload: s
   return text;
 }
 
-async function callGemini(systemPrompt: string, userPayload: string, maxOutputTokens: number): Promise<string> {
+export async function callGemini(systemPrompt: string, userPayload: string, maxOutputTokens: number): Promise<string> {
   if (!apiKey) throw new Error('no_api_key');
 
   // Try the sticky model first — if it worked last time, it'll probably

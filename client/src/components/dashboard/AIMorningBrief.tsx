@@ -38,7 +38,7 @@ export function AIMorningBrief() {
     } catch (e: any) {
       const status = e?.response?.status;
       const msg = e?.response?.data?.error || e?.message || 'Could not load briefing';
-      if (status === 503 || msg.includes('ANTHROPIC_API_KEY')) {
+      if (status === 503 || msg.includes('GEMINI_API_KEY') || msg.includes('ANTHROPIC_API_KEY')) {
         setNeedsSetup(true);
         // Cache the "server can't serve this" verdict for the rest of
         // the tab session. The brief component mounts on every dashboard
@@ -121,7 +121,7 @@ export function AIMorningBrief() {
           <div>
             <p className="font-semibold">AI not yet configured</p>
             <p className="text-xs mt-0.5 text-muted-foreground">
-              Add <code className="bg-muted px-1 rounded">ANTHROPIC_API_KEY</code> on Render → robin-api → Environment, then redeploy.
+              Add <code className="bg-muted px-1 rounded">GEMINI_API_KEY</code> on Render → robin-api → Environment, then redeploy.
             </p>
           </div>
         </div>
