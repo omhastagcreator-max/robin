@@ -413,18 +413,85 @@ function ScreenCard({
 
 function PeerScreenView({ peer, fullscreen = false }: { peer: PeerView; fullscreen?: boolean }) {
   const ref = useRef<HTMLVideoElement | null>(null);
+  // "stalled" = no frames arriving for a few seconds (display sleep,
+  // source window hidden, etc.). The video element still renders the
+  // last frame (often black) and the user can't tell the share is
+  // broken. We sample readyState + track.muted + videoWidth on a
+  // 2s interval and surface a clear overlay when any of those say
+  // the feed is dead.
+  const [stalled, setStalled] = useState<{ reason: string } | null>(null);
+
   useEffect(() => {
-    if (ref.current && peer.stream) ref.current.srcObject = peer.stream;
+    if (!ref.current) return;
+    if (peer.stream) ref.current.srcObject = peer.stream;
+
+    let lastTimeUpdate = Date.now();
+    const onTimeUpdate = () => { lastTimeUpdate = Date.now(); };
+    ref.current.addEventListener('timeupdate', onTimeUpdate);
+
+    const videoTrack = peer.stream?.getVideoTracks?.()[0];
+    const onMute   = () => setStalled({ reason: 'Source is paused (window hidden or display sleeping).' });
+    const onUnmute = () => setStalled(null);
+    videoTrack?.addEventListener('mute',   onMute);
+    videoTrack?.addEventListener('unmute', onUnmute);
+    // Initial state — track may already be muted by the time we attach.
+    if (videoTrack?.muted) setStalled({ reason: 'Source is paused (window hidden or display sleeping).' });
+
+    const probe = setInterval(() => {
+      const v = ref.current;
+      if (!v) return;
+      const t = peer.stream?.getVideoTracks?.()[0];
+      // No video frames being decoded for >4s → stalled. timeupdate
+      // fires roughly every frame; if it hasn't fired in 4s while the
+      // element is in the DOM, the stream is dead.
+      const idleMs = Date.now() - lastTimeUpdate;
+      const dimZero = (v.videoWidth === 0 || v.videoHeight === 0);
+      if (t?.readyState === 'ended') {
+        setStalled({ reason: 'Stopped sharing.' });
+      } else if (t?.muted) {
+        setStalled({ reason: 'Source is paused (window hidden or display sleeping).' });
+      } else if (dimZero) {
+        setStalled({ reason: 'Waiting for the first frame…' });
+      } else if (idleMs > 4000) {
+        setStalled({ reason: 'Frames stopped. Source may be sleeping or the network is choppy.' });
+      } else {
+        setStalled(null);
+      }
+    }, 2000);
+
+    return () => {
+      clearInterval(probe);
+      ref.current?.removeEventListener('timeupdate', onTimeUpdate);
+      videoTrack?.removeEventListener('mute',   onMute);
+      videoTrack?.removeEventListener('unmute', onUnmute);
+    };
   }, [peer.stream]);
+
   return (
-    <video
-      ref={ref}
-      autoPlay
-      playsInline
-      className={fullscreen
-        ? 'w-full h-full max-w-full max-h-full object-contain bg-black'
-        : 'w-full h-full object-cover bg-black'}
-    />
+    <div className={fullscreen ? 'w-full h-full max-w-full max-h-full relative bg-black' : 'w-full h-full relative bg-black'}>
+      <video
+        ref={ref}
+        autoPlay
+        playsInline
+        className={fullscreen
+          ? 'w-full h-full max-w-full max-h-full object-contain bg-black'
+          : 'w-full h-full object-cover bg-black'}
+      />
+      {stalled && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/85 text-white px-4 text-center">
+          <div className="h-8 w-8 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center">
+            <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+          </div>
+          <p className="text-[12.5px] font-semibold">
+            {peer.name || 'Teammate'}'s screen is paused
+          </p>
+          <p className="text-[11px] text-white/80 max-w-xs leading-snug">{stalled.reason}</p>
+          <p className="text-[10.5px] text-white/50 italic">
+            Not a Robin bug — frames will resume when their source wakes up.
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 
