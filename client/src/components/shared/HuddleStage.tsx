@@ -240,12 +240,9 @@ export function HuddleStage() {
               tone={meeting.screenOn ? 'primary' : 'neutral'}
               label={meeting.screenOn ? 'Stop sharing' : 'Share screen'}
             />
-            <button
-              onClick={handleLeave}
-              className="ml-3 flex items-center gap-1.5 px-4 py-2 rounded-full bg-rose-500 text-white text-sm font-medium hover:bg-rose-600 shadow"
-            >
-              <PhoneOff className="h-3.5 w-3.5" /> Leave
-            </button>
+            {/* Leave-huddle removed (May 2026). Exit only via Log Out
+                on the topbar. That click calls huddle.leave() before
+                ending the session — same lifecycle, single doorway. */}
           </div>
         </>
       )}
