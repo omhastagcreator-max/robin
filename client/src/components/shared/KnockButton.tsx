@@ -36,7 +36,7 @@ export function KnockButton({ userId, name, hasMutedYou, size = 'sm' }: Props) {
       disabled={disabled}
       title={
         disabled
-          ? 'You knocked them recently — wait 30s'
+          ? 'You knocked them recently — wait 10s'
           : hasMutedYou
             ? `${name || 'They'} muted team audio — knock them so they hear a chime`
             : `Knock ${name || 'them'} (chime + toast)`

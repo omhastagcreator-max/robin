@@ -192,7 +192,7 @@ const meetingRooms = new Map<string, Map<string, { name: string; role: string }>
 
 // ── Knock rate-limit state ────────────────────────────────────────────────
 // Two layers so neither side gets spammed:
-//   (a) per (sender, recipient) — 1 knock per 30s  → stops one teammate
+//   (a) per (sender, recipient) — 1 knock per 10s  → stops one teammate
 //       jackhammering another's chime.
 //   (b) per recipient — 5 knocks per 5min total    → caps incoming volume
 //       even when many different teammates knock at once.
@@ -201,7 +201,7 @@ const meetingRooms = new Map<string, Map<string, { name: string; role: string }>
 // fine — a fresh server happily lets the next knock through.
 const knockPairLast = new Map<string, number>();           // `${senderId}->${recipientId}` -> ts
 const knockRecipientWindow = new Map<string, number[]>();  // recipientId -> [ts, ts, …]
-const KNOCK_PAIR_COOLDOWN_MS = 30_000;
+const KNOCK_PAIR_COOLDOWN_MS = 10_000;
 const KNOCK_RECIPIENT_WINDOW_MS = 5 * 60_000;
 const KNOCK_RECIPIENT_MAX = 5;
 
@@ -415,7 +415,7 @@ io.on('connection', (socket) => {
     const now = Date.now();
     const pairKey = `${userId}->${recipientId}`;
 
-    // (a) Per-pair cooldown — same sender→recipient capped at 1/30s.
+    // (a) Per-pair cooldown — same sender→recipient capped at 1/10s.
     const lastFromPair = knockPairLast.get(pairKey) || 0;
     if (now - lastFromPair < KNOCK_PAIR_COOLDOWN_MS) {
       const waitMs = KNOCK_PAIR_COOLDOWN_MS - (now - lastFromPair);

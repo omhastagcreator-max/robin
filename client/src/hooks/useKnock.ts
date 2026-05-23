@@ -15,7 +15,7 @@ import { useSocket } from '@/hooks/useSocket';
  * Scope: anyone with an active session in this org. Off-clock users
  * skip server-side (the server rejects with reason='offline' if the
  * recipient has no live socket). One-shot per click; ratelimited
- * server-side (1/30s per pair, 5/5min per recipient).
+ * server-side (1/10s per pair, 5/5min per recipient).
  *
  * Auditory design:
  *   - Two-tone Web Audio chime (880 → 1175 Hz, ~300ms total). Programmatic
@@ -165,7 +165,7 @@ export function useKnock() {
   const hasPendingTo = useCallback((recipientId: string) => {
     const last = lastSentRef.current.get(recipientId);
     if (!last) return false;
-    return Date.now() - last < 30_000;  // matches server's pair cooldown
+    return Date.now() - last < 10_000;  // matches server's pair cooldown
   }, []);
 
   return { knock, hasPendingTo, playChime };
