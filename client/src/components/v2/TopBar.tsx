@@ -22,7 +22,7 @@ import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 // Map URL segments → human breadcrumb labels.
 const SEG_LABELS: Record<string, string> = {
   admin: 'Admin', dashboard: 'Dashboard', tasks: 'Tasks', clients: 'Clients',
-  pipeline: 'Pipeline', sales: 'Sales', workroom: 'Workroom', 'workroom-home': 'Workroom',
+  pipeline: 'Client CRM', sales: 'Sales', workroom: 'Workroom', 'workroom-home': 'Workroom',
   'workroom-onboard': 'Onboard', chat: 'Chat', vault: 'Vault', leaves: 'Leaves',
   team: 'Team', calendar: 'Calendar', 'client-schedule': 'Schedule',
   ads: 'Ads', meta: 'Meta', influencers: 'Influencers',
@@ -79,7 +79,7 @@ export function TopBar() {
   }
   if (['admin', 'employee', 'sales'].includes(role)) {
     createItems.push({ label: 'New task', to: '/tasks', hint: 'Add / assign' });
-    createItems.push({ label: 'New project', to: '/admin/projects', hint: 'Pipeline' });
+    createItems.push({ label: 'New project', to: '/admin/projects', hint: 'Client CRM' });
     createItems.push({ label: 'Add credential', to: '/vault', hint: 'Vault' });
   }
   const hasCreate = createItems.length > 0;

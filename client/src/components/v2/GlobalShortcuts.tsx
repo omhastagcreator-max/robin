@@ -12,7 +12,7 @@ import { useRobinCopilot } from '@/components/ai/RobinCopilot';
  * Conventions: Gmail / Linear style.
  *   ⌘K          Command palette (handled by the existing CommandPalette)
  *   g d         Go → Dashboard (role-aware destination)
- *   g p         Go → Project Pipeline
+ *   g p         Go → Client CRM
  *   g t         Go → Tasks
  *   g w         Go → Workroom
  *   g s         Go → Sales

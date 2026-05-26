@@ -1210,9 +1210,9 @@ function EmptyState({ query, isAdminOrSales, onCreate }: { query: string; isAdmi
   return (
     <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center">
       <Sparkles className="h-8 w-8 mx-auto text-muted-foreground/40 mb-3" />
-      <p className="font-semibold">{query ? 'No clients match that search' : 'No client pipelines yet'}</p>
+      <p className="font-semibold">{query ? 'No clients match that search' : 'No Client CRM entries yet'}</p>
       <p className="text-xs text-muted-foreground mt-1">
-        {query ? 'Try the phone number, full name, or email.' : 'When sales onboards a client and picks their services, the pipeline shows up here.'}
+        {query ? 'Try the phone number, full name, or email.' : 'When sales onboards a client and picks their services, the entry shows up here.'}
       </p>
       {!query && (
         <div className="mt-4 flex items-center justify-center gap-2 flex-wrap">
@@ -1261,7 +1261,7 @@ function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCr
     setSaving(true);
     try {
       await api.cwCreateWorkflow({ clientId, services: Array.from(chosen) });
-      toast.success('Pipeline created — teammates have been auto-assigned');
+      toast.success('Client CRM entry created — teammates have been auto-assigned');
       onCreated();
     } catch { /* interceptor toasts */ }
     finally { setSaving(false); }
@@ -1327,7 +1327,7 @@ function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCr
             <button onClick={save} disabled={saving || !clientId || chosen.size === 0}
               className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1.5">
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-              Create pipeline
+              Add to Client CRM
             </button>
           </div>
         </div>

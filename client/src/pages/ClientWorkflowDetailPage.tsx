@@ -458,7 +458,7 @@ export default function ClientWorkflowDetailPage() {
     return <AppLayout><div className="py-16 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div></AppLayout>;
   }
   if (!wf) {
-    return <AppLayout><div className="py-16 text-center text-sm text-muted-foreground">Pipeline not found.</div></AppLayout>;
+    return <AppLayout><div className="py-16 text-center text-sm text-muted-foreground">Client CRM entry not found.</div></AppLayout>;
   }
 
   // ── Derived ─────────────────────────────────────────────────────────────

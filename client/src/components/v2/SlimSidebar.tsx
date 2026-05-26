@@ -63,7 +63,7 @@ const NAV: NavItem[] = [
 
   // ── WORK ────────────────────────────────────────────────────────
   { to: '/tasks',             label: 'Tasks',         icon: ListTodo,        section: 'work',      roles: ['employee', 'admin', 'sales'] },
-  { to: '/clients/pipeline',  label: 'Pipeline',      icon: Workflow,        section: 'work',      roles: ['admin', 'employee', 'sales'] },
+  { to: '/clients/pipeline',  label: 'Client CRM',    icon: Workflow,        section: 'work',      roles: ['admin', 'employee', 'sales'] },
   { to: '/admin/clients',     label: 'Clients',       icon: Building2,       section: 'work',      roles: ['admin'] },
   { to: '/admin/projects',    label: 'Projects',      icon: Briefcase,       section: 'work',      roles: ['admin'] },
   { to: '/team/calendar',     label: 'Calendar',      icon: Calendar,        section: 'work',      roles: ['admin', 'employee', 'sales'] },
