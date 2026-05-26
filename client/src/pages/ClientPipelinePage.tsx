@@ -449,14 +449,16 @@ interface ColumnDef {
 }
 
 // Flow-view stage definitions. Mirrors PIPELINE_COLUMNS one-for-one and
-// reuses the SAME tone tokens (shopify / meta / influencer / done) so the
-// Flow view inherits the Kanban's exact color + font palette — no second
-// theme to drift out of sync.
+// reuses the same tone tokens (shopify / meta / influencer / done) so the
+// Flow view inherits Robin's existing accent ramps — just lightened to
+// the -100 stop for the shape fills. The `shape` field varies geometry
+// across the row (rounded-rect → circle → square → circle) so the
+// pipeline reads as a deliberate flow diagram, not a uniform grid.
 const FLOW_STAGES: FlowStage[] = [
-  { key: 'shopify',    label: 'Website Work',    tone: 'shopify',    exitLabel: 'Website done' },
-  { key: 'meta',       label: 'Meta Work',       tone: 'meta',       exitLabel: 'Meta done' },
-  { key: 'influencer', label: 'Influencer Work', tone: 'influencer', exitLabel: 'Influencer done' },
-  { key: 'done',       label: 'All Done',        tone: 'done' },
+  { key: 'shopify',    label: 'Website Work',    tone: 'shopify',    shape: 'rounded-rect', exitLabel: 'Website done' },
+  { key: 'meta',       label: 'Meta Work',       tone: 'meta',       shape: 'circle',       exitLabel: 'Meta done' },
+  { key: 'influencer', label: 'Influencer Work', tone: 'influencer', shape: 'square',       exitLabel: 'Influencer done' },
+  { key: 'done',       label: 'All Done',        tone: 'done',       shape: 'circle' },
 ];
 
 const PIPELINE_COLUMNS: ColumnDef[] = [

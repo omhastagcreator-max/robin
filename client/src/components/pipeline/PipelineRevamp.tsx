@@ -777,42 +777,68 @@ export interface FlowStage {
   label: string;
   /** Pill label on the arrow leaving this stage (e.g. "Website done"). */
   exitLabel?: string;
-  /** Tone token. The four values map exactly to the column keys the
-   *  existing Kanban Column component already understands (shopify /
-   *  meta / influencer / done). Using the same vocabulary keeps the
-   *  two views visually identical — no second palette to maintain. */
-  tone: 'shopify' | 'meta' | 'influencer' | 'done';
+  /** Tone token. Maps to the same four column keys the existing Kanban
+   *  Column uses, then lightens each accent for the flow shapes — same
+   *  brand palette (emerald / blue / amber / slate), softer fill. */
+  tone:  'shopify' | 'meta' | 'influencer' | 'done';
+  /** Geometric shape for this stage's flow node. The reference design
+   *  varies shapes across the row so the eye moves naturally from one
+   *  stage to the next instead of scanning a uniform grid. */
+  shape: 'rounded-rect' | 'circle' | 'square';
 }
 
-// Tone → Tailwind classes. Values mirror the `accentBar` + `accentChip`
-// maps inside the existing Column component (ClientPipelinePage.tsx:
-// 590-601) and the `accent` field on PIPELINE_COLUMNS (line 422-453) so
-// switching between the Board and Flow views feels like the same
-// product, not two different teams' designs.
+// Resolve a tone to:
+//   - fill        — Tailwind class for the pastel shape fill (Robin's
+//                   accent at the 100 stop)
+//   - fillHex     — same color but as a hex, for the SVG <path>/<rect>
+//                   fill attribute (Tailwind classes don't reach into
+//                   raw SVG fills the way they do for HTML backgrounds)
+//   - textHex     — darker stop from the same ramp for legible label
+//                   text on the pastel fill (-800 / -700)
+//   - dotClass    — Tailwind class for the small swatch dot we render
+//                   alongside non-flow elements (legend, drilldown)
 function flowTone(tone: FlowStage['tone']) {
   switch (tone) {
-    case 'shopify':    return {
-      stripe: 'bg-emerald-500',
-      chip:   'bg-emerald-500/15 text-emerald-700',
-      label:  'text-emerald-700',
-    };
-    case 'meta':       return {
-      stripe: 'bg-blue-500',
-      chip:   'bg-blue-500/15 text-blue-700',
-      label:  'text-blue-700',
-    };
-    case 'influencer': return {
-      stripe: 'bg-amber-500',
-      chip:   'bg-amber-500/15 text-amber-700',
-      label:  'text-amber-700',
-    };
+    case 'shopify':    return { fillHex: '#d1fae5', textHex: '#065f46', dotClass: 'bg-emerald-500' };  // emerald-100 / emerald-800
+    case 'meta':       return { fillHex: '#dbeafe', textHex: '#1e40af', dotClass: 'bg-blue-500'    };  // blue-100 / blue-800
+    case 'influencer': return { fillHex: '#fef3c7', textHex: '#92400e', dotClass: 'bg-amber-500'   };  // amber-100 / amber-800
     case 'done':
-    default:           return {
-      stripe: 'bg-foreground/30',
-      chip:   'bg-muted text-muted-foreground',
-      label:  'text-foreground',
-    };
+    default:           return { fillHex: '#f1f5f9', textHex: '#334155', dotClass: 'bg-slate-500'   };  // slate-100 / slate-700
   }
+}
+
+// ── Geometry constants for the SVG flow diagram ─────────────────────
+// Drawn on a 1100×320 viewBox so it scales fluidly inside whatever
+// container width the consumer gives us. Shapes sit on the y=160
+// horizontal axis. X positions are evenly spaced for four stages; if
+// future stages are added the same maths still applies because we
+// derive each centre from its index.
+const FLOW_VB_W = 1100;
+const FLOW_VB_H = 320;
+const FLOW_AXIS_Y = 160;
+
+function shapeGeometry(shape: FlowStage['shape'], cx: number) {
+  // Each shape is sized to feel visually equivalent — circles have an
+  // r of 72, rounded rects are 160×120, squares are 140×140 — so no
+  // one stage dominates by accident.
+  switch (shape) {
+    case 'circle':       return { kind: 'circle' as const, cx, cy: FLOW_AXIS_Y, r: 72 };
+    case 'square':       return { kind: 'rect'   as const, x: cx - 70,  y: FLOW_AXIS_Y - 70,  w: 140, h: 140, rx: 16 };
+    case 'rounded-rect':
+    default:             return { kind: 'rect'   as const, x: cx - 80,  y: FLOW_AXIS_Y - 60,  w: 160, h: 120, rx: 24 };
+  }
+}
+
+// Find the left/right anchor points of a shape so connector arrows
+// land cleanly on the edge rather than crossing into the fill.
+function shapeAnchors(g: ReturnType<typeof shapeGeometry>) {
+  if (g.kind === 'circle') {
+    return { left: { x: g.cx - g.r, y: g.cy }, right: { x: g.cx + g.r, y: g.cy } };
+  }
+  return {
+    left:  { x: g.x,         y: g.y + g.h / 2 },
+    right: { x: g.x + g.w,   y: g.y + g.h / 2 },
+  };
 }
 
 export function PipelineFlowView<T extends { _id: string }>({
@@ -823,232 +849,218 @@ export function PipelineFlowView<T extends { _id: string }>({
   totalCount:  number;
   renderCard:  (item: T) => React.ReactNode;
 }) {
-  // Share-of-pipeline figures for the distribution strip. Same shape as
-  // the metrics OverviewReport on this page already shows — just split
-  // by stage instead of by health.
-  const totals = stages.map(s => byStage[s.key]?.length || 0);
-  const grandTotal = totals.reduce((a, b) => a + b, 0) || totalCount || 0;
+  // The drilldown strip shows cards for whichever stage is currently
+  // selected. We default to the first stage that has items (so a fresh
+  // load doesn't open with an empty card grid) and fall back to the
+  // first stage when everything is empty.
+  const [selectedKey, setSelectedKey] = useState<string>(() => {
+    const firstNonEmpty = stages.find(s => (byStage[s.key]?.length || 0) > 0);
+    return (firstNonEmpty || stages[0])?.key || '';
+  });
+  // If the selection is invalidated by a filter change, fall back
+  // automatically — otherwise the drilldown could "vanish" from the
+  // user's POV when the only stage that had items just emptied out.
+  useEffect(() => {
+    if (!stages.find(s => s.key === selectedKey)) {
+      const fallback = stages.find(s => (byStage[s.key]?.length || 0) > 0) || stages[0];
+      if (fallback) setSelectedKey(fallback.key);
+    }
+  }, [stages, byStage, selectedKey]);
+
+  const selectedStage = stages.find(s => s.key === selectedKey) || stages[0];
+  const selectedItems = selectedStage ? (byStage[selectedStage.key] || []) : [];
+
+  // Compute x-centres for each stage shape. Equal spacing across the
+  // viewBox with a margin so the leftmost / rightmost shapes don't
+  // touch the SVG edges.
+  const PAD = 100;
+  const stride = stages.length > 1 ? (FLOW_VB_W - PAD * 2) / (stages.length - 1) : 0;
+  const centres = stages.map((_, i) => PAD + i * stride);
 
   return (
     <div className="space-y-4">
-      {/* ── Stage distribution strip ──────────────────────────────────
-          A compact horizontal bar that shows what proportion of the
-          pipeline is sitting at each stage. Helps an admin see "60% of
-          our work is still in Website" without counting cards. The
-          card chrome (rounded-2xl border border-border bg-card) matches
-          the rest of the page; the label typography
-          (text-[10px] uppercase tracking-wider font-semibold text-
-          muted-foreground) matches OverviewReport's heading. */}
-      <div className="rounded-2xl border border-border bg-card p-3">
-        <div className="flex items-center justify-between mb-2">
+      {/* ── Header ───────────────────────────────────────────────── */}
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div>
           <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
-            Pipeline distribution
+            Client CRM · Flow
           </p>
-          <p className="text-[11px] text-muted-foreground tabular-nums">
-            {grandTotal} total
+          <p className="text-[13px] text-muted-foreground mt-0.5">
+            {totalCount} {totalCount === 1 ? 'client' : 'clients'} moving through {stages.length} stages
           </p>
-        </div>
-        <div className="flex h-2 rounded-full overflow-hidden bg-muted">
-          {stages.map((s, i) => {
-            const n = totals[i];
-            const pct = grandTotal > 0 ? (n / grandTotal) * 100 : 0;
-            const tone = flowTone(s.tone);
-            if (pct <= 0) return null;
-            return (
-              <div
-                key={s.key}
-                className={`${tone.stripe} h-full`}
-                style={{ width: `${pct}%` }}
-                title={`${s.label}: ${n} (${pct.toFixed(0)}%)`}
-              />
-            );
-          })}
-        </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
-          {stages.map((s, i) => {
-            const tone = flowTone(s.tone);
-            const n = totals[i];
-            const pct = grandTotal > 0 ? (n / grandTotal) * 100 : 0;
-            return (
-              <div key={s.key} className="flex items-center gap-1.5 text-[11px]">
-                <span className={`h-2 w-2 rounded-full ${tone.stripe}`} />
-                <span className="font-medium text-foreground">{s.label}</span>
-                <span className="text-muted-foreground tabular-nums">{n} · {pct.toFixed(0)}%</span>
-              </div>
-            );
-          })}
         </div>
       </div>
 
-      {/* ── Flow board ────────────────────────────────────────────────
-          Each stage panel uses the SAME chrome as the Kanban Column
-          component (rounded-2xl border border-border bg-card min-h
-          -[320px], h-1 coloured strip, then a border-b header with a
-          tiny uppercase label + count chip). Between panels sits a
-          connector column with the SVG arrow + transition pill — the
-          only visual element that's unique to this view. */}
-      <div className="hidden lg:block overflow-x-auto pb-2">
-        <div className="flex items-stretch gap-0 min-w-fit">
-          {stages.map((stage, i) => {
-            const items = byStage[stage.key] || [];
-            const tone  = flowTone(stage.tone);
-            const isLast = i === stages.length - 1;
+      {/* ── Flow diagram ─────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-border bg-card p-4">
+        <svg
+          viewBox={`0 0 ${FLOW_VB_W} ${FLOW_VB_H}`}
+          xmlns="http://www.w3.org/2000/svg"
+          className="w-full h-auto"
+          style={{ maxHeight: 380 }}
+        >
+          <defs>
+            <marker
+              id="flow-arrowhead"
+              viewBox="0 0 10 10"
+              refX="9" refY="5"
+              markerWidth="6" markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 0 L 10 5 L 0 10 z" className="fill-muted-foreground" />
+            </marker>
+          </defs>
+
+          {/* Connectors — render BEFORE shapes so the arrowheads
+              terminate cleanly at the shape edge. */}
+          {stages.slice(0, -1).map((stage, i) => {
+            const fromG = shapeGeometry(stages[i].shape,     centres[i]);
+            const toG   = shapeGeometry(stages[i + 1].shape, centres[i + 1]);
+            const a = shapeAnchors(fromG).right;
+            const b = shapeAnchors(toG).left;
+            // Gentle cubic Bezier — control points pulled toward the
+            // axis to give a subtle "swoop" without the line dipping
+            // far below the shapes.
+            const midX = (a.x + b.x) / 2;
+            const d = `M ${a.x + 6} ${a.y} C ${midX} ${a.y - 8}, ${midX} ${b.y + 8}, ${b.x - 6} ${b.y}`;
+            // Pill sits at midpoint of the curve.
+            const pillW = (stage.exitLabel?.length || 4) * 6 + 18;
+            const pillH = 22;
             return (
-              <div key={stage.key} className="flex items-stretch">
-                {/* Stage panel — chrome identical to Kanban Column */}
-                <div className="flex flex-col w-[300px] rounded-2xl border border-border bg-card overflow-hidden min-h-[320px]">
-                  {/* Coloured accent strip — same `h-1 bg-{tone}` as
-                      the Kanban Column. */}
-                  <div className={`h-1 ${tone.stripe}`} />
-
-                  {/* Header — uppercase label + count chip, same as
-                      Kanban Column. Project-count line is omitted here
-                      because the distribution strip above already
-                      surfaces totals. */}
-                  <div className="px-3 py-3 border-b border-border">
-                    <p className={`text-[10px] uppercase tracking-[0.14em] font-bold ${tone.label}`}>
-                      {stage.label}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className={`px-1.5 h-5 inline-flex items-center rounded text-[10px] font-bold tabular-nums ${tone.chip}`}>
-                        {items.length}
-                      </span>
-                      <p className="text-[11px] text-muted-foreground">
-                        {items.length === 1 ? 'project' : 'projects'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Cards — same renderCard the consumer passes to
-                      Focus view, so visuals are identical across views.
-                      max-h caps very tall stages so the board doesn't
-                      stretch the page; cards scroll inside. */}
-                  <div className="flex-1 p-2 space-y-2 max-h-[68vh] overflow-y-auto">
-                    {items.length === 0 ? (
-                      <div className="py-8 text-center text-[11px] text-muted-foreground">
-                        Empty
-                      </div>
-                    ) : (
-                      items.map(item => (
-                        <div key={item._id}>{renderCard(item)}</div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                {/* Connector — only visible between stages */}
-                {!isLast && (
-                  <FlowConnector label={stage.exitLabel || 'Next'} />
+              <g key={`conn-${stage.key}`}>
+                <path d={d} fill="none" strokeWidth={1.6} className="stroke-muted-foreground/60" strokeLinecap="round" markerEnd="url(#flow-arrowhead)" />
+                {stage.exitLabel && (
+                  <g>
+                    <rect
+                      x={midX - pillW / 2}
+                      y={FLOW_AXIS_Y - pillH / 2}
+                      width={pillW}
+                      height={pillH}
+                      rx={pillH / 2}
+                      className="fill-card stroke-border"
+                      strokeWidth={1}
+                    />
+                    <text
+                      x={midX}
+                      y={FLOW_AXIS_Y + 3.5}
+                      textAnchor="middle"
+                      className="fill-muted-foreground"
+                      style={{ fontSize: 10, fontWeight: 500 }}
+                    >
+                      {stage.exitLabel}
+                    </text>
+                  </g>
                 )}
-              </div>
+              </g>
             );
           })}
-        </div>
+
+          {/* Shapes — varied geometry per stage, pastel fills from
+              Robin's accent ramps lightened to the -100 stop. */}
+          {stages.map((stage, i) => {
+            const g = shapeGeometry(stage.shape, centres[i]);
+            const tone = flowTone(stage.tone);
+            const count = byStage[stage.key]?.length || 0;
+            const isSelected = selectedKey === stage.key;
+            const baseStroke = isSelected ? tone.textHex : 'transparent';
+            const strokeWidth = isSelected ? 3 : 0;
+
+            return (
+              <g
+                key={stage.key}
+                onClick={() => setSelectedKey(stage.key)}
+                style={{ cursor: 'pointer' }}
+              >
+                {g.kind === 'circle' ? (
+                  <circle
+                    cx={g.cx} cy={g.cy} r={g.r}
+                    fill={tone.fillHex}
+                    stroke={baseStroke}
+                    strokeWidth={strokeWidth}
+                  />
+                ) : (
+                  <rect
+                    x={g.x} y={g.y} width={g.w} height={g.h} rx={g.rx}
+                    fill={tone.fillHex}
+                    stroke={baseStroke}
+                    strokeWidth={strokeWidth}
+                  />
+                )}
+                {/* Label */}
+                <text
+                  x={g.kind === 'circle' ? g.cx : g.x + g.w / 2}
+                  y={FLOW_AXIS_Y - 14}
+                  textAnchor="middle"
+                  fill={tone.textHex}
+                  style={{ fontSize: 13, fontWeight: 600 }}
+                >
+                  {stage.label}
+                </text>
+                {/* Big count */}
+                <text
+                  x={g.kind === 'circle' ? g.cx : g.x + g.w / 2}
+                  y={FLOW_AXIS_Y + 22}
+                  textAnchor="middle"
+                  fill={tone.textHex}
+                  style={{ fontSize: 30, fontWeight: 700 }}
+                >
+                  {count}
+                </text>
+                <text
+                  x={g.kind === 'circle' ? g.cx : g.x + g.w / 2}
+                  y={FLOW_AXIS_Y + 40}
+                  textAnchor="middle"
+                  fill={tone.textHex}
+                  style={{ fontSize: 10, fontWeight: 500, opacity: 0.75 }}
+                >
+                  {count === 1 ? 'project' : 'projects'}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+
+        {/* Hint strip under the diagram so first-time users know the
+            shapes are interactive. Mirrors the Robin convention of
+            small muted helper text under data viz. */}
+        <p className="text-[11px] text-muted-foreground mt-2 text-center">
+          Click any stage to see the clients currently in it.
+        </p>
       </div>
 
-      {/* ── Mobile / narrow — stacked vertical flow ─────────────────
-          Same chrome as desktop, just stacked with the existing chevron
-          -down connector pattern from PipelineKanban (line 567-575). */}
-      <div className="lg:hidden space-y-1">
-        {stages.map((stage, i) => {
-          const items = byStage[stage.key] || [];
-          const tone  = flowTone(stage.tone);
-          const isLast = i === stages.length - 1;
-          return (
-            <div key={stage.key}>
-              <div className="rounded-2xl border border-border bg-card overflow-hidden">
-                <div className={`h-1 ${tone.stripe}`} />
-                <div className="px-3 py-3 border-b border-border">
-                  <p className={`text-[10px] uppercase tracking-[0.14em] font-bold ${tone.label}`}>
-                    {stage.label}
-                  </p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className={`px-1.5 h-5 inline-flex items-center rounded text-[10px] font-bold tabular-nums ${tone.chip}`}>
-                      {items.length}
-                    </span>
-                    <p className="text-[11px] text-muted-foreground">
-                      {items.length === 1 ? 'project' : 'projects'}
-                    </p>
-                  </div>
-                </div>
-                <div className="p-2 space-y-2">
-                  {items.length === 0 ? (
-                    <div className="py-6 text-center text-[11px] text-muted-foreground">Empty</div>
-                  ) : (
-                    items.map(item => <div key={item._id}>{renderCard(item)}</div>)
-                  )}
-                </div>
-              </div>
-              {!isLast && (
-                <div className="flex items-center justify-center py-1.5">
-                  <div className="h-6 w-[2px] bg-border" />
-                  <div className="h-6 w-6 -ml-3 -mr-3 rounded-full border-2 border-border bg-card flex items-center justify-center">
-                    <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                  </div>
-                  <div className="h-6 w-[2px] bg-border" />
-                </div>
-              )}
+      {/* ── Drilldown — cards for the selected stage ─────────────── */}
+      {selectedStage && (
+        <div className="rounded-2xl border border-border bg-card p-3 sm:p-4">
+          <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: flowTone(selectedStage.tone).textHex }}
+              />
+              <p className="text-[10px] uppercase tracking-[0.14em] font-bold" style={{ color: flowTone(selectedStage.tone).textHex }}>
+                {selectedStage.label}
+              </p>
+              <span className="px-1.5 h-5 inline-flex items-center rounded text-[10px] font-bold tabular-nums bg-muted text-muted-foreground">
+                {selectedItems.length}
+              </span>
+              <p className="text-[11px] text-muted-foreground">
+                {selectedItems.length === 1 ? 'project' : 'projects'}
+              </p>
             </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── FlowConnector ─────────────────────────────────────────────────────
-//
-// Pure-SVG curved arrow that sits between two stage panels. The path is
-// a cubic Bezier so the line "swoops" gently instead of running flat —
-// matches the reference design while keeping the math simple. The pill
-// label rides on the line at its midpoint; we render it as an
-// absolutely-positioned div over the SVG (rather than <text>) so the
-// font matches the rest of the app and supports wrapping.
-function FlowConnector({ label }: { label: string }) {
-  // Width tuned so two stage panels + connector fit a 1280px viewport
-  // comfortably; height matches the stage card visual centre region.
-  const W = 80;
-  const H = 240;
-  // Path: start at left-middle, end at right-middle. Control points
-  // pushed in toward the centre to create the curve.
-  const path = `M 4 ${H / 2} C ${W / 2} ${H / 2 - 18}, ${W / 2} ${H / 2 + 18}, ${W - 14} ${H / 2}`;
-
-  return (
-    <div className="relative flex items-center justify-center shrink-0" style={{ width: W }}>
-      <svg
-        width={W}
-        height={H}
-        viewBox={`0 0 ${W} ${H}`}
-        className="absolute inset-0 m-auto"
-        aria-hidden
-      >
-        <defs>
-          <marker
-            id={`flow-arrow-${label.replace(/\s+/g, '-')}`}
-            viewBox="0 0 10 10"
-            refX="8" refY="5"
-            markerWidth="6" markerHeight="6"
-            orient="auto-start-reverse"
-          >
-            <path d="M 0 0 L 10 5 L 0 10 z" className="fill-current text-muted-foreground" />
-          </marker>
-        </defs>
-        <path
-          d={path}
-          fill="none"
-          strokeWidth={1.5}
-          className="stroke-border"
-          strokeLinecap="round"
-          markerEnd={`url(#flow-arrow-${label.replace(/\s+/g, '-')})`}
-        />
-      </svg>
-      {/* Transition pill — small, capsule-shaped, sits over the
-          midpoint of the curve. Background is solid card colour so it
-          punches through the line cleanly without needing a mask. */}
-      <div className="relative z-10 px-2 py-0.5 rounded-full bg-card border border-border text-[10.5px] font-semibold text-muted-foreground whitespace-nowrap shadow-sm">
-        <ArrowRight className="h-2.5 w-2.5 inline -mt-px mr-1" />
-        {label}
-      </div>
+          </div>
+          {selectedItems.length === 0 ? (
+            <div className="py-10 text-center text-[12px] text-muted-foreground">
+              No clients in this stage right now.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {selectedItems.map(item => (
+                <div key={item._id}>{renderCard(item)}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
