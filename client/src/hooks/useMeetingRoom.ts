@@ -91,18 +91,10 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
   // call it from the "Share again" toast action, but toggleScreen is
   // declared LATER in the file. The ref bridges the gap.
   const toggleScreenRef = useRef<(() => Promise<void>) | null>(null);
-  // Auto-retry state. When the screen track ends unexpectedly we run a
-  // SMALL backoff sequence (3 attempts at 5s, 20s, 60s). Each successful
-  // user start resets the attempt counter so the next session gets a
-  // fresh budget. After the cap we stop and let the banner nag.
-  //
-  // Was a single one-shot retry. Owner reports the share still auto-stops
-  // "very frequently" — most likely cause is display sleep + Chrome
-  // unpublishing the track. With a wake-lock plus 3 attempts we cover
-  // the realistic recovery window without ever looping forever.
-  const autoRetryAttemptRef = useRef(0);
-  const autoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const AUTO_RETRY_BACKOFF_MS = [5_000, 20_000, 60_000];
+  // Auto-retry state was removed in the v3 auto-stop fix — see comment
+  // inside syncLocal. We no longer programmatically re-fire toggleScreen
+  // after an unexpected stop; the user gets a toast with an explicit
+  // "Share again" button and decides themselves whether to retry.
   // Wake-lock handle while sharing — keeps macOS / Windows from sleeping
   // the display, which is the #1 cause of an unexpected track end.
   const wakeLockRef = useRef<any>(null);
@@ -306,6 +298,13 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
         // cause and offer a one-click re-share.
         const previouslyOn = screenOnRef.current;
         const nowOn        = !!screenPub;
+        // Update the ref SYNCHRONOUSLY so any second syncLocal that
+        // fires before React's effect commit sees the correct
+        // previouslyOn value. Without this, a fast back-to-back
+        // syncLocal (e.g. LiveKit firing Unpublished + ConnectionState
+        // events in the same tick) misclassified a legitimate stop as
+        // an "unexpected" one and triggered a runaway auto-retry loop.
+        screenOnRef.current = nowOn;
         if (previouslyOn && !nowOn && !userToggledScreenRef.current) {
           logShareEvent('error', 'livekit screen pub disappeared unexpectedly', {
             reason: 'no toggleScreen call; probably Chrome stop-pill / source closed / display sleep',
@@ -315,37 +314,17 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
             { duration: 9000, action: { label: 'Share again', onClick: () => { void toggleScreenRef.current?.(); } } },
           );
 
-          // ── Backoff auto-retry (May 2026, v2) ────────────────────────
-          // Owner reports the share auto-stops "very frequently". One
-          // shot wasn't enough — display sleep + Chrome quietly killing
-          // capture can fail twice in a row before the user actually
-          // sits back down. We now run a small backoff sequence (5s,
-          // 20s, 60s) before giving up; the persistent ScreenShareRequired
-          // banner takes over after that.
-          //
-          // We schedule the NEXT attempt by reading the attempt counter,
-          // bumping it, and bailing out once we exhaust the array.
-          const attempt = autoRetryAttemptRef.current;
-          if (attempt < AUTO_RETRY_BACKOFF_MS.length) {
-            autoRetryAttemptRef.current = attempt + 1;
-            const delay = AUTO_RETRY_BACKOFF_MS[attempt];
-            if (autoRetryTimerRef.current) clearTimeout(autoRetryTimerRef.current);
-            autoRetryTimerRef.current = setTimeout(() => {
-              autoRetryTimerRef.current = null;
-              // Only retry if we're still joined AND still not sharing.
-              // Don't fight the user if they manually re-started in the
-              // meantime, and don't try after they left the huddle.
-              const lp = roomRef.current?.localParticipant;
-              if (!lp) return;
-              const stillHasNoScreen = !Array.from(lp.videoTrackPublications.values())
-                .some(p => p.source === Track.Source.ScreenShare);
-              if (!stillHasNoScreen) return;
-              logShareEvent('note', `auto-retry attempt #${attempt + 1} ${delay}ms after unexpected stop`);
-              void toggleScreenRef.current?.();
-            }, delay);
-          } else {
-            logShareEvent('note', 'auto-retry budget exhausted — banner will take over');
-          }
+          // ── Auto-retry REMOVED (May 2026, v3) ───────────────────────
+          // The 5s/20s/60s backoff sequence here was the second-biggest
+          // cause of "screen sharing auto-stops for all roles." Each
+          // retry programmatically called toggleScreen(), which
+          // unconditionally pops Chrome's screen picker — even after a
+          // legitimate stop. Worse, retries racing with the
+          // screenShareManager's own getDisplayMedia caused Chrome to
+          // alternately kill each capture, producing the user-visible
+          // pattern of "share works for a few seconds, then dies, then
+          // works again, then dies." Users now have a single explicit
+          // "Share again" action in the toast above; no implicit retry.
         }
         userToggledScreenRef.current = false;  // arm for the next event
 
@@ -464,14 +443,7 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
     if (room) {
       try { room.disconnect(true); } catch { /* ignore */ }
     }
-    // Cancel any pending auto-retry — if the user leaves the huddle
-    // BEFORE the timer fires, we definitely don't want to pop a share
-    // picker on them after they've moved on.
-    if (autoRetryTimerRef.current) {
-      clearTimeout(autoRetryTimerRef.current);
-      autoRetryTimerRef.current = null;
-    }
-    autoRetryAttemptRef.current = 0;
+    // (Auto-retry cleanup removed — see v3 auto-stop fix in syncLocal.)
     // Release any held wake-lock — we're no longer sharing anything.
     if (wakeLockRef.current) {
       try { wakeLockRef.current.release(); } catch { /* ignore */ }
@@ -539,9 +511,6 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
       setScreenOn(next);
       logShareEvent('note', `livekit screen share=${next}`);
       if (next) {
-        // Successful start → reset the auto-retry budget so the NEXT
-        // unexpected drop also gets a fresh 3-attempt sequence.
-        autoRetryAttemptRef.current = 0;
         // Acquire a screen wake-lock. macOS / Windows aggressively put
         // the display to sleep on idle laptops; that kills the
         // getDisplayMedia track and is the #1 cause of "screen sharing

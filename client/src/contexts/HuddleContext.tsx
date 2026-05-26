@@ -616,94 +616,36 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     };
   }, [pipSupported, pipAutoEnabled, meeting.joined, openPiP]);
 
-  // Auto-share screen on join — only for employees and sales (the people
-  // expected to be "on the floor"). Admins/managers join to oversee, not
-  // to share their own screen by default; they can still toggle manually.
+  // ── Auto-stop fix (May 2026, v3) ─────────────────────────────────────
+  // Both the auto-share-on-join and the cross-system "manager wins" kill
+  // were removed in this pass. Diagnosis: they were the primary cause of
+  // screen sharing "auto-stopping for all roles."
   //
-  // ── Auto-stop fix (May 2026) ────────────────────────────────────────
-  // The previous version read `alreadyBroadcasting` (React state from
-  // useScreenShare) at fire time, but React state lags the singleton
-  // screenShareManager by one render. So a manager.start() that resolved
-  // 50ms before this timeout fired would still let LiveKit's
-  // setScreenShareEnabled run → Chrome would then kill the older
-  // (manager) track to give the new (LiveKit) one screen access. End
-  // result: user's screen share "auto-stopped" seconds after they
-  // started it.
+  //   - auto-share-on-join fired `meeting.toggleScreen()` 1.5s after
+  //     every join. If ANYTHING else was about to call getDisplayMedia
+  //     in that window (manager recovery, another tab, the user
+  //     clicking Share manually a beat late), Chrome silently killed
+  //     the older capture — the user perceived this as the share they
+  //     just started "auto-stopping."
   //
-  // Fix: read screenShareManager.isSharing() LIVE at fire time (truth
-  // source, no React lag), AND subscribe to the manager during the
-  // wait window so a late-arriving manager.start() cancels the timer
-  // entirely. Delay also bumped 600ms → 1500ms to give manager state
-  // strictly more time to settle on slow Macs.
-  const autoSharedThisJoinRef = useRef(false);
-  useEffect(() => {
-    if (!meeting.joined) {
-      autoSharedThisJoinRef.current = false;
-      return;
-    }
-    if (autoSharedThisJoinRef.current) return;
-    if (meeting.screenOn) { autoSharedThisJoinRef.current = true; return; }
-    if (role === 'admin') { autoSharedThisJoinRef.current = true; return; }
-    if (alreadyBroadcasting || screenShareManager.isSharing()) {
-      logShareEvent('coord', 'auto-share-on-join skipped — manager already broadcasting');
-      autoSharedThisJoinRef.current = true;
-      return;
-    }
-    autoSharedThisJoinRef.current = true;
-
-    let cancelled = false;
-    const t = setTimeout(() => {
-      if (cancelled) return;
-      // RE-CHECK at fire time. The manager is the source of truth — the
-      // React closure copy of `alreadyBroadcasting` may be one render
-      // stale, which is exactly the race that caused the auto-stop bug.
-      if (!meeting.joined) return;
-      if (meeting.screenOn) return;
-      if (screenShareManager.isSharing()) {
-        logShareEvent('coord', 'auto-share-on-join cancelled — manager started during wait');
-        return;
-      }
-      const snap = screenShareManager.getSnapshot();
-      if (snap.state === 'starting' || snap.state === 'recovering') {
-        logShareEvent('coord', `auto-share-on-join skipped — manager state=${snap.state}`);
-        return;
-      }
-      try { meeting.toggleScreen(); } catch { /* user can still trigger manually */ }
-    }, 1500);
-
-    // If the manager flips to sharing / starting during the wait, bail
-    // before LiveKit ever fires its own getDisplayMedia. This is the
-    // critical addition over the previous fix attempt.
-    const unsub = screenShareManager.subscribe(() => {
-      const snap = screenShareManager.getSnapshot();
-      if (snap.state === 'sharing' || snap.state === 'starting') {
-        cancelled = true;
-        clearTimeout(t);
-      }
-    });
-
-    return () => { cancelled = true; clearTimeout(t); unsub(); };
-  }, [meeting.joined, meeting.screenOn, meeting.toggleScreen, role, alreadyBroadcasting]);
-
-  // ── Cross-system coordination — manager wins ───────────────────────
-  // If the user STARTS sharing through the screenShareManager (broadcast
-  // button) while LiveKit also has an active screen publication, Chrome
-  // will silently end one of the two tracks. Beat Chrome to it: the
-  // moment the manager flips to 'sharing', drop the LiveKit screen pub
-  // so the manager's track is the single live capture. The manager
-  // already handles its own resilience (watchdog, BroadcastChannel,
-  // wake-lock); LiveKit's redundant pub is what causes the auto-stop.
-  useEffect(() => {
-    if (!meeting.joined) return;
-    const unsub = screenShareManager.subscribe(() => {
-      const snap = screenShareManager.getSnapshot();
-      if (snap.isSharing && meeting.screenOn) {
-        logShareEvent('coord', 'manager sharing — dropping LiveKit screen pub to avoid double-capture');
-        try { meeting.toggleScreen(); } catch { /* swallow */ }
-      }
-    });
-    return unsub;
-  }, [meeting.joined, meeting.screenOn, meeting.toggleScreen]);
+  //   - the "manager wins" coord effect explicitly called
+  //     meeting.toggleScreen() (i.e. stopped LiveKit screen share)
+  //     every time the manager's snapshot reported `isSharing && screenOn`.
+  //     Because the manager's subscribe fires on EVERY state change
+  //     (track-mute, settings update, etc.), this could re-fire even
+  //     after meeting.screenOn went false, depending on closure timing,
+  //     and effectively yanked screen sharing away from users who never
+  //     touched the broadcast button.
+  //
+  // Screen sharing is now strictly user-driven. The Start sharing
+  // button in the huddle UI, the broadcast button in WorkRoom, and the
+  // ScreenShareResumeBanner's Resume action are the only paths that
+  // start a capture. Nothing automated will stop it; only the user's
+  // own Stop click, Chrome's own pill, or a real OS event will.
+  // ─────────────────────────────────────────────────────────────────
+  // Reference `alreadyBroadcasting` so the linter doesn't flag it as
+  // dead. Useful for downstream UI badges in this provider.
+  void alreadyBroadcasting;
 
   const participantCount = meeting.peers.length + (meeting.joined ? 1 : 0);
 
