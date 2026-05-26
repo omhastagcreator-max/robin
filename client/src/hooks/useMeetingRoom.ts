@@ -10,6 +10,7 @@ import {
 } from 'livekit-client';
 import * as api from '@/api';
 import { logShareEvent } from '@/lib/screenShareDebug';
+import { acquireTabKeepAlive, releaseTabKeepAlive } from '@/lib/tabKeepAlive';
 import { toast } from 'sonner';
 
 // Dev-only debug logger. In production these are no-ops — the ~10 calls
@@ -95,6 +96,12 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
   // inside syncLocal. We no longer programmatically re-fire toggleScreen
   // after an unexpected stop; the user gets a toast with an explicit
   // "Share again" button and decides themselves whether to retry.
+  // True when this hook currently holds a tab-keep-alive reference.
+  // Acquired when LiveKit's screen share toggles ON (which is the
+  // strongest "user is actively working" signal we have inside the
+  // huddle path); released on toggle OFF, leaveMeeting, or unmount.
+  // Paired by hand so each acquire has exactly one matching release.
+  const holdsKeepAliveRef = useRef(false);
   // Wake-lock handle while sharing — keeps macOS / Windows from sleeping
   // the display, which is the #1 cause of an unexpected track end.
   const wakeLockRef = useRef<any>(null);
@@ -449,6 +456,13 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
       try { wakeLockRef.current.release(); } catch { /* ignore */ }
       wakeLockRef.current = null;
     }
+    // Release tab keep-alive if we were holding it. Covers the case
+    // where leaveMeeting fires while screenOn was still true (user hit
+    // "Leave huddle" without first toggling screen off).
+    if (holdsKeepAliveRef.current) {
+      releaseTabKeepAlive();
+      holdsKeepAliveRef.current = false;
+    }
     setPeers({});
     setAudioOn(false);
     setScreenOn(false);
@@ -511,6 +525,14 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
       setScreenOn(next);
       logShareEvent('note', `livekit screen share=${next}`);
       if (next) {
+        // Acquire tab keep-alive so Chrome doesn't background-throttle
+        // the LiveKit websocket / capture when the user switches tabs.
+        // Refcounted globally — safe to call alongside the screen-share
+        // manager's own acquire.
+        if (!holdsKeepAliveRef.current) {
+          acquireTabKeepAlive();
+          holdsKeepAliveRef.current = true;
+        }
         // Acquire a screen wake-lock. macOS / Windows aggressively put
         // the display to sleep on idle laptops; that kills the
         // getDisplayMedia track and is the #1 cause of "screen sharing
@@ -539,6 +561,13 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
         if (wakeLockRef.current) {
           try { await wakeLockRef.current.release(); } catch { /* ignore */ }
           wakeLockRef.current = null;
+        }
+        // Drop our tab keep-alive reference. If the screen-share
+        // manager (or another caller) still holds a refcount the
+        // silent audio loop keeps running.
+        if (holdsKeepAliveRef.current) {
+          releaseTabKeepAlive();
+          holdsKeepAliveRef.current = false;
         }
       }
     } catch (e: any) {

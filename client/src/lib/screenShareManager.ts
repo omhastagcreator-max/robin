@@ -32,6 +32,7 @@
  */
 
 import { logShareEvent } from './screenShareDebug';
+import { acquireTabKeepAlive, releaseTabKeepAlive } from './tabKeepAlive';
 
 export type EndReason =
   | 'user'                 // user clicked our Stop button — manualStop was set
@@ -92,6 +93,10 @@ const listeners = new Set<Listener>();
 let stopping = false;
 let manualStop = false;            // set true inside stop() so onended can classify
 let wakeLock: any = null;
+// True when THIS manager currently holds a tab-keep-alive reference.
+// We pair acquires + releases by hand (rather than wrapping in a
+// utility) so teardown's idempotent cleanup is easy to audit.
+let holdsKeepAlive = false;
 let watchdog: ReturnType<typeof setInterval> | null = null;
 let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let visibilityWired = false;
@@ -308,6 +313,13 @@ function classify(): EndReason {
 function teardown(reason: EndReason) {
   stopWatchdog();
   releaseWakeLock();
+  // Release our tab-keep-alive reference if we're holding one. Guarded
+  // by `holdsKeepAlive` so a teardown that runs without a matching
+  // start (defensive cleanup paths) doesn't underflow the refcount.
+  if (holdsKeepAlive) {
+    releaseTabKeepAlive();
+    holdsKeepAlive = false;
+  }
   // Detach handlers before stop() so we don't re-enter via onended.
   if (currentTrack) {
     try { currentTrack.onended = null; currentTrack.onmute = null; currentTrack.onunmute = null; } catch { /* ignore */ }
@@ -515,8 +527,16 @@ async function internalStart(opts: StartOptions = {}): Promise<void> {
     if (!wakeLock) await acquireWakeLock();
   };
 
-  // Cross-cutting concerns — wake-lock, watchdog, listeners.
+  // Cross-cutting concerns — wake-lock, watchdog, listeners, and the
+  // tab keep-alive so Chrome doesn't background-throttle the JS event
+  // loop the moment the user switches to another tab. We acquire only
+  // once per share (guarded by `holdsKeepAlive`) so a retry inside the
+  // same share doesn't double-count the refcount.
   await acquireWakeLock();
+  if (!holdsKeepAlive) {
+    acquireTabKeepAlive();
+    holdsKeepAlive = true;
+  }
   startWatchdog();
   ensureVisibilityListener();
   ensureDeviceListener();
