@@ -22,6 +22,8 @@ import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
 import { FocusThisWeek } from '@/components/dashboard/FocusThisWeek';
 import { SalesInsightsStrip, type SalesInsightsFilter } from '@/components/dashboard/SalesInsightsStrip';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSocket } from '@/hooks/useSocket';
+import { celebrateBroadcast } from '@/lib/celebrate';
 
 // ── Stage Config ──────────────────────────────────────────────────────────────
 const PIPELINE_STAGES = [
@@ -106,6 +108,7 @@ type Tab = 'pipeline' | 'focus' | 'list' | 'clients' | 'won';
 
 export default function SalesDashboard() {
   const { user } = useAuth();
+  const socket = useSocket();
   const drawer = useDrawer();
   const openLeadAI = (lead: any) => {
     drawer.open({
@@ -379,6 +382,16 @@ export default function SalesDashboard() {
       await api.updateLead(onboardLead._id, { stage: 'won', status: 'won', closedAt: new Date() });
       
       toast.success('Client onboarded successfully!');
+      // Org-wide celebration — closing a lead → onboarding is a real
+      // win, worth a confetti burst on every teammate's screen. The
+      // server excludes us from the broadcast; our local burst comes
+      // from celebrateBroadcast()'s synchronous call. Reason carries
+      // the client name so receivers' toast says who just signed.
+      const clientLabel = onboardLead.company || onboardLead.name || 'a client';
+      celebrateBroadcast(socket, {
+        reason:    `${clientLabel} just signed`,
+        actorName: user?.name,
+      });
       setOnboardLead(null);
       load();
     } catch(err: any) {

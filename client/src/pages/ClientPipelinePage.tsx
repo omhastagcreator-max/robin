@@ -12,7 +12,9 @@ import { formatDistanceToNowStrict } from 'date-fns';
 import { toast } from 'sonner';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSocket } from '@/hooks/useSocket';
 import { useVisiblePoll } from '@/hooks/useVisiblePoll';
+import { celebrateBroadcast } from '@/lib/celebrate';
 import { CommentRequiredModal } from '@/components/shared/CommentRequiredModal';
 import { useDrawer } from '@/components/ui/RightDrawer';
 import { ProjectDetailPanel } from '@/components/panels/ProjectDetailPanel';
@@ -130,13 +132,59 @@ export default function ClientPipelinePage() {
   // Open a workflow in the drawer (rather than navigating to a detail page).
   // Keeps the user's place in the kanban/filter context — admin can review
   // three projects in 15 seconds without losing scroll position.
-  const openProject = (wfId: string, clientName?: string) => {
+  //
+  // `autoSummary` is set when openProject is triggered from the search bar
+  // (Enter key or phone-number auto-match). The panel uses it to fire the
+  // AI brief generation on mount so the searcher lands on a fully-populated
+  // status snapshot instead of having to click "Generate" first.
+  const openProject = (wfId: string, clientName?: string, autoSummary = false) => {
     drawer.open({
       title: clientName || 'Project',
       width: 'lg',
-      content: <ProjectDetailPanel workflowId={wfId} />,
+      content: <ProjectDetailPanel workflowId={wfId} autoSummary={autoSummary} />,
     });
   };
+
+  // Refs used by the search-to-open path so we don't auto-open the same
+  // workflow twice for the same query (e.g. when filters change but the
+  // top match is still the same client). Reset whenever query changes.
+  const lastAutoOpenedRef = useRef<string>('');
+
+  // Press Enter in the search input → open the first matching client's
+  // full detail panel with AI brief auto-generated. Behaviour matches
+  // the implicit user expectation when typing a phone number: hit Enter,
+  // you see everything about that client.
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    if (!query.trim()) return;
+    const top = filteredList[0];
+    if (!top) {
+      toast.error('No clients match that search.');
+      return;
+    }
+    lastAutoOpenedRef.current = top._id;
+    openProject(top._id, top.clientName, true);
+  };
+
+  // Heuristic auto-open. If the user typed something that LOOKS like a
+  // full phone number (≥10 digits, ignoring spaces/dashes/+) AND the
+  // server has narrowed the list to exactly one match, open that client
+  // automatically. Most users type a phone number expecting "show me
+  // this client"; Enter-key works too but auto-open feels magic for the
+  // common case. Guarded by lastAutoOpenedRef so it fires at most once
+  // per unique top match.
+  useEffect(() => {
+    if (!query.trim()) { lastAutoOpenedRef.current = ''; return; }
+    const digits = query.replace(/[^0-9]/g, '');
+    const looksLikePhone = digits.length >= 10;
+    if (!looksLikePhone) return;
+    if (filteredList.length !== 1) return;
+    const top = filteredList[0];
+    if (lastAutoOpenedRef.current === top._id) return;
+    lastAutoOpenedRef.current = top._id;
+    openProject(top._id, top.clientName, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, filteredList]);
 
   // `n` — quick "new project" when admin/sales is on this page.
   useShortcut('n', () => { if (isAdminOrSales) setShowCreate(true); });
@@ -243,7 +291,8 @@ export default function ClientPipelinePage() {
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search by phone, name or email…"
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search by phone, name or email — press Enter to open the top match"
             className="w-full pl-10 pr-9 py-2.5 bg-card border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
           {query && (
@@ -1285,6 +1334,9 @@ function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCr
   const [clientId, setClientId] = useState('');
   const [chosen, setChosen]     = useState<Set<string>>(new Set());
   const [saving, setSaving]     = useState(false);
+  // Needed to fire the org-wide confetti broadcast on a successful save.
+  const socket = useSocket();
+  const { user } = useAuth();
 
   useEffect(() => {
     api.listUsers({ role: 'client' }).then(d => setClients(Array.isArray(d) ? d : [])).catch(() => {});
@@ -1304,6 +1356,14 @@ function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCr
     try {
       await api.cwCreateWorkflow({ clientId, services: Array.from(chosen) });
       toast.success('Client CRM entry created — teammates have been auto-assigned');
+      // Broadcast the celebration org-wide. Surface the client name on
+      // every receiver's toast so the team knows WHO was just brought
+      // on, not just that "something happened".
+      const clientLabel = clients.find(c => c._id === clientId)?.name || 'a new client';
+      celebrateBroadcast(socket, {
+        reason:    `${clientLabel} added to Client CRM`,
+        actorName: user?.name,
+      });
       onCreated();
     } catch { /* interceptor toasts */ }
     finally { setSaving(false); }

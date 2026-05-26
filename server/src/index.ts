@@ -385,6 +385,27 @@ io.on('connection', (socket) => {
     socket.to(`meeting:${roomId}`).emit('meeting:track-state', { userId, state });
   });
 
+  // ── Org-wide celebration relay ───────────────────────────────────────────
+  // When any teammate triggers a confetti celebration (client onboarded,
+  // project closed, etc.) we fan it out to everyone else in the same org
+  // so the whole team sees the moment. `socket.to(...)` (not `io.to`)
+  // EXCLUDES the originator — they fired the confetti locally already, so
+  // re-sending would double-burst on their screen.
+  //
+  // Org-scoping is the same pattern used by screen:start / screen:stop /
+  // chat:message: never cross tenants on a shared SaaS instance. We also
+  // include `reason` + `actorName` in the payload so the toast on the
+  // recipient side can say "Riya just closed Acme Co. 🎉" instead of an
+  // anonymous confetti burst with no context.
+  socket.on('celebrate', ({ reason, actorName }: { reason?: string; actorName?: string } = {}) => {
+    if (!socketOrgId) return;
+    socket.to(`org:${socketOrgId}`).emit('celebrate:fire', {
+      reason: typeof reason === 'string' ? reason.slice(0, 120) : undefined,
+      actorName: typeof actorName === 'string' ? actorName.slice(0, 60) : (userName || undefined),
+      at: Date.now(),
+    });
+  });
+
   // ── Real-time task notifications ─────────────────────────────────────────
   socket.on('task:assigned', ({ targetUserId, taskTitle, assignerName }) => {
     io.to(`user:${targetUserId}`).emit('notification:new', {

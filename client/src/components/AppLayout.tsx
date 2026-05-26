@@ -22,6 +22,7 @@ import { TopBar }          from '@/components/v2/TopBar';
 import { GlobalShortcuts } from '@/components/v2/GlobalShortcuts';
 import { useKnock }        from '@/hooks/useKnock';
 import { useAppUpdater }   from '@/hooks/useAppUpdater';
+import { celebrate }       from '@/lib/celebrate';
 
 /**
  * AppLayout — the persistent application shell.
@@ -143,11 +144,27 @@ function AppLayoutInner({ children }: Props) {
         toast(`${data.from} mentioned you`, { description: data.content, icon: '💬', duration: 5000 });
       }
     };
+    // Org-wide confetti. When ANY teammate fires celebrateBroadcast(),
+    // the server fans `celebrate:fire` out to everyone else in the same
+    // org. We fire the confetti locally and surface a small toast naming
+    // who triggered it (when provided) so the team gets the social cue,
+    // not just a mystery explosion.
+    const onCelebrate = (data: { reason?: string; actorName?: string }) => {
+      celebrate();
+      const title = data?.actorName ? `${data.actorName} is celebrating` : 'Celebration!';
+      toast(title, {
+        description: data?.reason,
+        icon: '🎉',
+        duration: 4500,
+      });
+    };
     socket.on('notification:new', onNotification);
     socket.on('chat:mention',     onChatMention);
+    socket.on('celebrate:fire',   onCelebrate);
     return () => {
       socket.off('notification:new', onNotification);
       socket.off('chat:mention',     onChatMention);
+      socket.off('celebrate:fire',   onCelebrate);
     };
   }, [socket, location.pathname]);
 

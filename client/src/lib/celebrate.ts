@@ -246,6 +246,56 @@ export function celebrate(opts: CelebrateOptions = {}): void {
   }
 }
 
+// ── Org-wide broadcast ──────────────────────────────────────────────
+//
+// celebrateBroadcast(socket, payload?) fires the confetti LOCALLY for the
+// person who triggered it AND emits a `celebrate` socket event so every
+// teammate in the same org sees the burst on their own screen too. This
+// is the function call sites should reach for whenever a moment is
+// meaningful to the whole team (a deal closed, a project shipped, a
+// milestone hit) — the silent local-only celebrate() is for moments
+// that only matter to the one person (e.g. clearing their own inbox).
+//
+// The server handler is in server/src/index.ts under `socket.on('celebrate', …)`.
+// It excludes the originator, so we don't double-burst on the clicker.
+//
+// `socket` is loose-typed because the consumer imports it from useSocket
+// which returns `Socket | null`. We just need `emit` — anything that
+// quacks like socket.io's Socket works.
+import type { Socket } from 'socket.io-client';
+
+export interface CelebrateBroadcastPayload {
+  /** Optional reason shown in the toast on receivers' screens
+   *  (e.g. "Acme Co. just signed"). Max 120 chars server-side. */
+  reason?:    string;
+  /** Optional override for the actor's name on receivers' screens.
+   *  When omitted, the server falls back to the socket's session
+   *  user name. Max 60 chars server-side. */
+  actorName?: string;
+  /** Pass-through confetti options for the local burst. Receivers
+   *  always get the default config; only the originator can customise. */
+  confetti?:  CelebrateOptions;
+}
+
+export function celebrateBroadcast(
+  socket: Pick<Socket, 'emit'> | null,
+  payload: CelebrateBroadcastPayload = {},
+): void {
+  // Fire on our own screen first so the clicker gets immediate feedback
+  // even if the socket is mid-reconnect. The server doesn't re-broadcast
+  // to the originator, so this won't double-burst.
+  celebrate(payload.confetti);
+  try {
+    socket?.emit('celebrate', {
+      reason:    payload.reason,
+      actorName: payload.actorName,
+    });
+  } catch {
+    // Emit failure is best-effort — local confetti already fired so the
+    // user still gets feedback. Silent on purpose; not worth a toast.
+  }
+}
+
 // Expose for DevTools / one-off demos. Type with `any` so consumers
 // don't have to import the function just to fire a celebration during
 // QA / customer demos.
