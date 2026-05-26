@@ -4,6 +4,7 @@ import {
   Filter, Flame, AlertTriangle, CheckCircle2, Sparkles, X,
   ChevronDown, ChevronUp, Save, Trash2, Bookmark, Layers, ListChecks,
   LayoutGrid, Rows3, Loader2, Send, ShieldCheck, MessagesSquare,
+  Workflow, ArrowRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/api';
@@ -33,7 +34,7 @@ import * as api from '@/api';
  * re-configure on every reload.
  */
 
-export type PipelineView = 'kanban' | 'focus' | 'table';
+export type PipelineView = 'kanban' | 'focus' | 'table' | 'flow';
 
 export interface PipelineFilters {
   health:   '' | 'on_track' | 'at_risk' | 'blocked' | 'done';
@@ -181,6 +182,7 @@ export function PipelineToolbar({
         <div className="inline-flex items-center rounded-lg border border-border bg-card overflow-hidden">
           {[
             { key: 'kanban' as const, label: 'Board',            icon: LayoutGrid },
+            { key: 'flow'   as const, label: 'Flow',             icon: Workflow },
             { key: 'focus'  as const, label: 'Needs attention',  icon: Flame },
             { key: 'table'  as const, label: 'List',             icon: Rows3 },
           ].map(o => {
@@ -744,6 +746,309 @@ export function PipelineTableView<T extends {
           Nothing matches your current filters.
         </div>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// PipelineFlowView — stage-by-stage flow diagram
+// ─────────────────────────────────────────────────────────────────────
+//
+// Same data as the Kanban (one bucket per stage), laid out as a left-to-
+// right flow chart with labelled transition arrows between stages. Built
+// from pure SVG + Tailwind so it inherits the rest of Robin's design
+// system — no React Flow, no extra deps.
+//
+// The consumer (ClientPipelinePage) supplies:
+//   - `stages`    — the column definitions (key, label, accent, tone)
+//   - `byStage`   — workflows already bucketed by stage key
+//   - `renderCard` — function the consumer uses to render each row, so
+//     ClientCard visuals stay consistent across all four views.
+//
+// We deliberately don't import ClientCard / Workflow here — this file is
+// supposed to be presentation-only for the pipeline page chrome. Keeping
+// it data-shape-agnostic also means a future "Sales pipeline" page could
+// reuse the same component with different stage labels.
+
+export interface FlowStage {
+  /** Stable key — matches the column key consumers already use. */
+  key:   string;
+  /** Human label, e.g. "Website Work". */
+  label: string;
+  /** Pill label on the arrow leaving this stage (e.g. "Website done"). */
+  exitLabel?: string;
+  /** Tone token. The four values map exactly to the column keys the
+   *  existing Kanban Column component already understands (shopify /
+   *  meta / influencer / done). Using the same vocabulary keeps the
+   *  two views visually identical — no second palette to maintain. */
+  tone: 'shopify' | 'meta' | 'influencer' | 'done';
+}
+
+// Tone → Tailwind classes. Values mirror the `accentBar` + `accentChip`
+// maps inside the existing Column component (ClientPipelinePage.tsx:
+// 590-601) and the `accent` field on PIPELINE_COLUMNS (line 422-453) so
+// switching between the Board and Flow views feels like the same
+// product, not two different teams' designs.
+function flowTone(tone: FlowStage['tone']) {
+  switch (tone) {
+    case 'shopify':    return {
+      stripe: 'bg-emerald-500',
+      chip:   'bg-emerald-500/15 text-emerald-700',
+      label:  'text-emerald-700',
+    };
+    case 'meta':       return {
+      stripe: 'bg-blue-500',
+      chip:   'bg-blue-500/15 text-blue-700',
+      label:  'text-blue-700',
+    };
+    case 'influencer': return {
+      stripe: 'bg-amber-500',
+      chip:   'bg-amber-500/15 text-amber-700',
+      label:  'text-amber-700',
+    };
+    case 'done':
+    default:           return {
+      stripe: 'bg-foreground/30',
+      chip:   'bg-muted text-muted-foreground',
+      label:  'text-foreground',
+    };
+  }
+}
+
+export function PipelineFlowView<T extends { _id: string }>({
+  stages, byStage, totalCount, renderCard,
+}: {
+  stages:      FlowStage[];
+  byStage:     Record<string, T[]>;
+  totalCount:  number;
+  renderCard:  (item: T) => React.ReactNode;
+}) {
+  // Share-of-pipeline figures for the distribution strip. Same shape as
+  // the metrics OverviewReport on this page already shows — just split
+  // by stage instead of by health.
+  const totals = stages.map(s => byStage[s.key]?.length || 0);
+  const grandTotal = totals.reduce((a, b) => a + b, 0) || totalCount || 0;
+
+  return (
+    <div className="space-y-4">
+      {/* ── Stage distribution strip ──────────────────────────────────
+          A compact horizontal bar that shows what proportion of the
+          pipeline is sitting at each stage. Helps an admin see "60% of
+          our work is still in Website" without counting cards. The
+          card chrome (rounded-2xl border border-border bg-card) matches
+          the rest of the page; the label typography
+          (text-[10px] uppercase tracking-wider font-semibold text-
+          muted-foreground) matches OverviewReport's heading. */}
+      <div className="rounded-2xl border border-border bg-card p-3">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+            Pipeline distribution
+          </p>
+          <p className="text-[11px] text-muted-foreground tabular-nums">
+            {grandTotal} total
+          </p>
+        </div>
+        <div className="flex h-2 rounded-full overflow-hidden bg-muted">
+          {stages.map((s, i) => {
+            const n = totals[i];
+            const pct = grandTotal > 0 ? (n / grandTotal) * 100 : 0;
+            const tone = flowTone(s.tone);
+            if (pct <= 0) return null;
+            return (
+              <div
+                key={s.key}
+                className={`${tone.stripe} h-full`}
+                style={{ width: `${pct}%` }}
+                title={`${s.label}: ${n} (${pct.toFixed(0)}%)`}
+              />
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+          {stages.map((s, i) => {
+            const tone = flowTone(s.tone);
+            const n = totals[i];
+            const pct = grandTotal > 0 ? (n / grandTotal) * 100 : 0;
+            return (
+              <div key={s.key} className="flex items-center gap-1.5 text-[11px]">
+                <span className={`h-2 w-2 rounded-full ${tone.stripe}`} />
+                <span className="font-medium text-foreground">{s.label}</span>
+                <span className="text-muted-foreground tabular-nums">{n} · {pct.toFixed(0)}%</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Flow board ────────────────────────────────────────────────
+          Each stage panel uses the SAME chrome as the Kanban Column
+          component (rounded-2xl border border-border bg-card min-h
+          -[320px], h-1 coloured strip, then a border-b header with a
+          tiny uppercase label + count chip). Between panels sits a
+          connector column with the SVG arrow + transition pill — the
+          only visual element that's unique to this view. */}
+      <div className="hidden lg:block overflow-x-auto pb-2">
+        <div className="flex items-stretch gap-0 min-w-fit">
+          {stages.map((stage, i) => {
+            const items = byStage[stage.key] || [];
+            const tone  = flowTone(stage.tone);
+            const isLast = i === stages.length - 1;
+            return (
+              <div key={stage.key} className="flex items-stretch">
+                {/* Stage panel — chrome identical to Kanban Column */}
+                <div className="flex flex-col w-[300px] rounded-2xl border border-border bg-card overflow-hidden min-h-[320px]">
+                  {/* Coloured accent strip — same `h-1 bg-{tone}` as
+                      the Kanban Column. */}
+                  <div className={`h-1 ${tone.stripe}`} />
+
+                  {/* Header — uppercase label + count chip, same as
+                      Kanban Column. Project-count line is omitted here
+                      because the distribution strip above already
+                      surfaces totals. */}
+                  <div className="px-3 py-3 border-b border-border">
+                    <p className={`text-[10px] uppercase tracking-[0.14em] font-bold ${tone.label}`}>
+                      {stage.label}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className={`px-1.5 h-5 inline-flex items-center rounded text-[10px] font-bold tabular-nums ${tone.chip}`}>
+                        {items.length}
+                      </span>
+                      <p className="text-[11px] text-muted-foreground">
+                        {items.length === 1 ? 'project' : 'projects'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Cards — same renderCard the consumer passes to
+                      Focus view, so visuals are identical across views.
+                      max-h caps very tall stages so the board doesn't
+                      stretch the page; cards scroll inside. */}
+                  <div className="flex-1 p-2 space-y-2 max-h-[68vh] overflow-y-auto">
+                    {items.length === 0 ? (
+                      <div className="py-8 text-center text-[11px] text-muted-foreground">
+                        Empty
+                      </div>
+                    ) : (
+                      items.map(item => (
+                        <div key={item._id}>{renderCard(item)}</div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Connector — only visible between stages */}
+                {!isLast && (
+                  <FlowConnector label={stage.exitLabel || 'Next'} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Mobile / narrow — stacked vertical flow ─────────────────
+          Same chrome as desktop, just stacked with the existing chevron
+          -down connector pattern from PipelineKanban (line 567-575). */}
+      <div className="lg:hidden space-y-1">
+        {stages.map((stage, i) => {
+          const items = byStage[stage.key] || [];
+          const tone  = flowTone(stage.tone);
+          const isLast = i === stages.length - 1;
+          return (
+            <div key={stage.key}>
+              <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <div className={`h-1 ${tone.stripe}`} />
+                <div className="px-3 py-3 border-b border-border">
+                  <p className={`text-[10px] uppercase tracking-[0.14em] font-bold ${tone.label}`}>
+                    {stage.label}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`px-1.5 h-5 inline-flex items-center rounded text-[10px] font-bold tabular-nums ${tone.chip}`}>
+                      {items.length}
+                    </span>
+                    <p className="text-[11px] text-muted-foreground">
+                      {items.length === 1 ? 'project' : 'projects'}
+                    </p>
+                  </div>
+                </div>
+                <div className="p-2 space-y-2">
+                  {items.length === 0 ? (
+                    <div className="py-6 text-center text-[11px] text-muted-foreground">Empty</div>
+                  ) : (
+                    items.map(item => <div key={item._id}>{renderCard(item)}</div>)
+                  )}
+                </div>
+              </div>
+              {!isLast && (
+                <div className="flex items-center justify-center py-1.5">
+                  <div className="h-6 w-[2px] bg-border" />
+                  <div className="h-6 w-6 -ml-3 -mr-3 rounded-full border-2 border-border bg-card flex items-center justify-center">
+                    <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                  </div>
+                  <div className="h-6 w-[2px] bg-border" />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── FlowConnector ─────────────────────────────────────────────────────
+//
+// Pure-SVG curved arrow that sits between two stage panels. The path is
+// a cubic Bezier so the line "swoops" gently instead of running flat —
+// matches the reference design while keeping the math simple. The pill
+// label rides on the line at its midpoint; we render it as an
+// absolutely-positioned div over the SVG (rather than <text>) so the
+// font matches the rest of the app and supports wrapping.
+function FlowConnector({ label }: { label: string }) {
+  // Width tuned so two stage panels + connector fit a 1280px viewport
+  // comfortably; height matches the stage card visual centre region.
+  const W = 80;
+  const H = 240;
+  // Path: start at left-middle, end at right-middle. Control points
+  // pushed in toward the centre to create the curve.
+  const path = `M 4 ${H / 2} C ${W / 2} ${H / 2 - 18}, ${W / 2} ${H / 2 + 18}, ${W - 14} ${H / 2}`;
+
+  return (
+    <div className="relative flex items-center justify-center shrink-0" style={{ width: W }}>
+      <svg
+        width={W}
+        height={H}
+        viewBox={`0 0 ${W} ${H}`}
+        className="absolute inset-0 m-auto"
+        aria-hidden
+      >
+        <defs>
+          <marker
+            id={`flow-arrow-${label.replace(/\s+/g, '-')}`}
+            viewBox="0 0 10 10"
+            refX="8" refY="5"
+            markerWidth="6" markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" className="fill-current text-muted-foreground" />
+          </marker>
+        </defs>
+        <path
+          d={path}
+          fill="none"
+          strokeWidth={1.5}
+          className="stroke-border"
+          strokeLinecap="round"
+          markerEnd={`url(#flow-arrow-${label.replace(/\s+/g, '-')})`}
+        />
+      </svg>
+      {/* Transition pill — small, capsule-shaped, sits over the
+          midpoint of the curve. Background is solid card colour so it
+          punches through the line cleanly without needing a mask. */}
+      <div className="relative z-10 px-2 py-0.5 rounded-full bg-card border border-border text-[10.5px] font-semibold text-muted-foreground whitespace-nowrap shadow-sm">
+        <ArrowRight className="h-2.5 w-2.5 inline -mt-px mr-1" />
+        {label}
+      </div>
     </div>
   );
 }

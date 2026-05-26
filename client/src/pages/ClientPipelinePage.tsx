@@ -21,8 +21,9 @@ import { StatusPill, type Status } from '@/components/ui/StatusPill';
 import { Avatar } from '@/components/shared/Avatar';
 import { AIInsight } from '@/components/ai/AIInsight';
 import {
-  PipelineToolbar, PipelineFocusView, PipelineTableView,
+  PipelineToolbar, PipelineFocusView, PipelineTableView, PipelineFlowView,
   usePipelineState, applyFilters,
+  type FlowStage,
 } from '@/components/pipeline/PipelineRevamp';
 
 /**
@@ -285,6 +286,34 @@ export default function ClientPipelinePage() {
             onMutated={load}
             onOpenDrawer={openProject}
           />
+        ) : view === 'flow' ? (
+          (() => {
+            // Bucket workflows into the same first-match scheme the Kanban
+            // uses. Done inline so the flow view stays a leaf component
+            // and doesn't need to know about ColumnDef/matches() — the
+            // page owns the matching logic for both layouts.
+            const byStage: Record<string, Workflow[]> = {};
+            for (const s of FLOW_STAGES) byStage[s.key] = [];
+            for (const wf of filteredList) {
+              const col = PIPELINE_COLUMNS.find(c => c.matches(wf));
+              if (col && byStage[col.key]) byStage[col.key].push(wf);
+            }
+            return (
+              <PipelineFlowView<Workflow>
+                stages={FLOW_STAGES}
+                byStage={byStage}
+                totalCount={filteredList.length}
+                renderCard={(wf) => (
+                  <ClientCard
+                    wf={wf}
+                    users={users}
+                    onMutated={load}
+                    onOpenDrawer={openProject}
+                  />
+                )}
+              />
+            );
+          })()
         ) : view === 'focus' ? (
           <PipelineFocusView
             list={filteredList}
@@ -418,6 +447,17 @@ interface ColumnDef {
   serviceType?: string;   // for highlighting the relevant service inside
   accent?:     string;    // header accent class (active column)
 }
+
+// Flow-view stage definitions. Mirrors PIPELINE_COLUMNS one-for-one and
+// reuses the SAME tone tokens (shopify / meta / influencer / done) so the
+// Flow view inherits the Kanban's exact color + font palette — no second
+// theme to drift out of sync.
+const FLOW_STAGES: FlowStage[] = [
+  { key: 'shopify',    label: 'Website Work',    tone: 'shopify',    exitLabel: 'Website done' },
+  { key: 'meta',       label: 'Meta Work',       tone: 'meta',       exitLabel: 'Meta done' },
+  { key: 'influencer', label: 'Influencer Work', tone: 'influencer', exitLabel: 'Influencer done' },
+  { key: 'done',       label: 'All Done',        tone: 'done' },
+];
 
 const PIPELINE_COLUMNS: ColumnDef[] = [
   {
