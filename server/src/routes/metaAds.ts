@@ -1,6 +1,6 @@
 import { Router, Response, NextFunction } from 'express';
 import { authMiddleware, AuthRequest } from '../middleware/authMiddleware';
-import { listAccounts, listAccountsHealth, getYesterday, getToday, getRange, getCampaigns } from '../controllers/metaAdsController';
+import { listAccounts, listAccountsHealth, getYesterday, getToday, getRange, getCampaigns, getAIInsights } from '../controllers/metaAdsController';
 import { createShare, listShares, revokeShare } from '../controllers/metaSharingController';
 
 const router = Router();
@@ -42,6 +42,7 @@ router.get('/yesterday',        getYesterday);
 router.get('/today',            getToday);
 router.get('/range',            getRange);
 router.get('/campaigns',        getCampaigns);
+router.get('/ai-insights',      getAIInsights);  // Robin AI: per-account do/don't/data-says panel
 
 // Sharing — same router so /share lives next to the rest of /ads/meta
 // (avoids any Express sub-router fall-through quirks when two routers

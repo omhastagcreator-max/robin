@@ -8,6 +8,7 @@ import {
   ExternalLink, ShoppingCart, CreditCard, FileSearch, Heart, PlayCircle, Users as UsersIcon, Award,
 } from 'lucide-react';
 import { BrandGrowthVisualization } from '@/components/dashboard/BrandGrowthVisualization';
+import { MetaAIInsights } from '@/components/dashboard/MetaAIInsights';
 import { toast } from 'sonner';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { format } from 'date-fns';
@@ -287,6 +288,19 @@ export default function MetaAdsReport() {
               <p className="text-xs text-muted-foreground mt-0.5">If you're seeing a permissions error, the System User token may not have access to this specific ad account.</p>
             </div>
           </div>
+        )}
+
+        {/* Robin AI — "what should we do with THIS ad account?" panel.
+            Sits at the top of the report so the agency-lead's eye lands
+            on the recommendations BEFORE the raw KPIs. Re-fetches on
+            every account switch (cached 30 min server-side per account
+            per day). Hidden when no account is selected — nothing to
+            advise about yet. */}
+        {accountId && (
+          <MetaAIInsights
+            adAccountId={accountId}
+            accountName={accounts.find(a => a.id === accountId)?.name}
+          />
         )}
 
         {/* Headline KPIs grouped by funnel stage — only in drill-down view.

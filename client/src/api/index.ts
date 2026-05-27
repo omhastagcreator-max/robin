@@ -496,6 +496,8 @@ export const metaAdsYesterday  = (adAccountId?: string) => api.get('/ads/meta/ye
 export const metaAdsToday      = (adAccountId?: string) => api.get('/ads/meta/today',     { params: adAccountId ? { adAccountId } : {} }).then(r => r.data);
 export const metaAdsRange      = (params: { adAccountId?: string; from: string; to: string; daily?: boolean }) =>
   api.get('/ads/meta/range', { params: { ...params, daily: params.daily ? 1 : 0 } }).then(r => r.data);
+export const metaAdsAIInsights = (adAccountId?: string, refresh = false) =>
+  api.get('/ads/meta/ai-insights', { params: { ...(adAccountId ? { adAccountId } : {}), ...(refresh ? { refresh: 1 } : {}) } }).then(r => r.data);
 export const metaAdsCampaigns  = (params: { adAccountId?: string; from?: string; to?: string; datePreset?: string }) =>
   api.get('/ads/meta/campaigns', { params }).then(r => r.data);
 
