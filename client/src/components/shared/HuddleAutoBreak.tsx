@@ -31,10 +31,14 @@ import { useSession } from '@/hooks/useSession';
  * Mount once at the AppLayout level so the logic runs on every page.
  * Returns null — no UI of its own.
  *
- * THRESHOLD_MS — 10 minutes. Easy to tune later if the team wants
- * shorter (5 min) or longer (15 min) tolerance.
+ * THRESHOLD_MS — was 10 minutes; tightened to 3 minutes (May 2026,
+ * v2). Combined with HuddleRequiredBanner + HuddleContext's auto-
+ * rejoin, this completes the "everyone working must be in huddle"
+ * enforcement loop the owner asked for. 3 min still allows a quick
+ * bathroom / kitchen break without auto-pausing, but doesn't let a
+ * sneaky 9-minute coffee chat hide inside paid time anymore.
  */
-const THRESHOLD_MS = 10 * 60 * 1000;          // 10 minutes
+const THRESHOLD_MS = 3 * 60 * 1000;           // 3 minutes
 const FLAG_KEY      = 'robin.session.autoBrokenByHuddle';
 
 export function HuddleAutoBreak() {
@@ -98,7 +102,7 @@ export function HuddleAutoBreak() {
       startBreak()
         .then(() => {
           toast(
-            'Auto-paused — you\'ve been out of the huddle for 10 min. Rejoin to resume the timer.',
+            'Auto-paused — you\'ve been out of the huddle for 3 min. Rejoin to resume the timer.',
             { duration: 6000 }
           );
         })

@@ -377,10 +377,24 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     }
   }, [pipAutoEnabled, pipSupported, openPiP]);
 
+  // Refs that drive auto-join + auto-rejoin enforcement. Declared HERE
+  // (above `leave`) so the leave handler can reset them in the same
+  // closure — keeping the two pieces of state colocated with the
+  // function that mutates them. See the auto-join useEffect below for
+  // how they get consumed.
+  const autoJoinedRef = useRef(false);
+  const lastLeaveAtRef = useRef<number>(0);
+
   const leave = useCallback(() => {
     meeting.leaveMeeting();
     setMode('idle');
     closePiP();
+    // Record the leave timestamp + arm a re-join so the user gets
+    // pulled back in after the REJOIN_DELAY_MS cooldown (handled in
+    // the auto-join effect). Without resetting autoJoinedRef the
+    // effect's mount-once guard would block re-entry permanently.
+    lastLeaveAtRef.current = Date.now();
+    autoJoinedRef.current = false;
   }, [meeting, closePiP]);
   const collapse = useCallback(() => setMode(m => (m === 'expanded' ? 'collapsed' : m)), []);
   const expand   = useCallback(() => setMode(m => (m === 'collapsed' || m === 'joining' ? 'expanded' : m)), []);
@@ -400,56 +414,62 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     };
   }, [join, leave]);
 
-  // ── Auto-join on login ────────────────────────────────────────────────
-  // The agency rule is "you're at work when you're in the huddle." Asking
-  // each rep to remember to click Join every morning was costing us idle
-  // time. So once a user lands in Robin, fire join() automatically.
+  // ── Auto-join (and auto-REJOIN) on login ──────────────────────────────
+  // The agency rule (May 2026, v2): EVERYONE in the org — admins included
+  // — is expected to be in the huddle when they're clocked in. The
+  // previous auto-join was single-shot per HuddleProvider mount, so a
+  // user who clicked Leave would just stay out for the rest of the
+  // session. Combined with HuddleRequiredBanner on the page, that turned
+  // into "user dismisses banner mentally and works without joining."
   //
-  // Strict guards:
-  //   - Internal-staff only — employee / sales / workroom. NOT admin
-  //     (observers by default — see auto-share comment too) and NOT
-  //     client (external).
-  //   - One attempt per HuddleProvider mount. Reload = fresh mount = one
-  //     fresh attempt. Single-page navigation = same mount = no re-attempt.
-  //     Combined with the join() function's own single-shot pattern, this
-  //     CANNOT 429 LiveKit Cloud no matter how the user navigates.
-  //   - Escape hatch: localStorage 'robin.huddle.autoJoinDisabled' = '1'
-  //     opts the user out. Set from the dock's "Don't auto-join" toggle.
+  // The new behaviour:
+  //   - Initial auto-join still happens once per provider mount, ~400ms
+  //     after the user is loaded.
+  //   - When the user clicks Leave, `autoJoinedRef` is RESET so the
+  //     effect below sees `mode === 'idle'`, no error, and re-fires.
+  //     A small `lastLeaveAt` debounce prevents an immediate re-join
+  //     loop (the user needs a few seconds to actually leave, e.g.
+  //     during a hard reload), but otherwise the system keeps pulling
+  //     them back in.
+  //   - Admins are now INCLUDED. Owner ask: leadership shouldn't be
+  //     visibly exempt from the same rule the team has.
+  //   - Clients still excluded (external — not a huddle participant).
+  //   - Escape hatch (`robin.huddle.autoJoinDisabled`) honoured — for
+  //     anyone who needs to legitimately stay out (focus block,
+  //     contractor mode, etc.).
   //   - Bail if `meetingError` is set — we already attempted and failed
-  //     this session; let the user retry manually.
+  //     this session; user has to retry manually so we don't hammer
+  //     LiveKit Cloud and get 429'd.
   //
   // PiP doesn't get auto-popped here — that requires a transient user
   // gesture which we don't have for an auto-fire. The existing PiP
   // auto-reopen effect catches the very next click and pops it then.
-  //
-  // IMPORTANT: do NOT call join() from here — join() chains into
-  // openPiP(), and documentPictureInPicture.requestWindow() hard-requires
-  // a fresh user activation. Calling it from setTimeout (no activation)
-  // produced "NotAllowedError: Document PiP requires user activation" in
-  // the console and broke the manual click path's first PiP open. We
-  // instead flip mode to 'joining' directly — the single-shot effect
-  // downstream still fires meeting.joinMeeting(), and PiP comes up the
-  // moment the user clicks anywhere afterwards.
-  const autoJoinedRef = useRef(false);
+  // Re-attempt delay after a manual Leave click. ~10s gives the user
+  // time to e.g. close the tab if they're actually trying to log off.
+  const REJOIN_DELAY_MS = 10_000;
   useEffect(() => {
-    if (autoJoinedRef.current) return;
     if (!user) return;
     if (mode !== 'idle') return;
     if (meeting.joining || meeting.joined) return;
     if (meeting.error) return;
 
-    // Roles that should NOT auto-join.
-    if (role === 'admin' || role === 'client') return;
+    // Clients are the only role we leave alone.
+    if (role === 'client') return;
 
     // User-level escape hatch.
     try {
       if (localStorage.getItem('robin.huddle.autoJoinDisabled') === '1') return;
     } catch { /* private mode — proceed with auto-join */ }
 
+    // Initial vs. re-join sizing — first time on this mount uses a
+    // ~400ms warm-up. After a manual Leave we wait REJOIN_DELAY_MS
+    // since `lastLeaveAtRef` was set.
+    const sinceLeave = Date.now() - lastLeaveAtRef.current;
+    const wait = autoJoinedRef.current
+      ? Math.max(0, REJOIN_DELAY_MS - sinceLeave)
+      : 400;
+
     autoJoinedRef.current = true;
-    // Tiny defer so any in-flight auth / token refresh settles before we
-    // hit /huddle-token. Pure UX nicety; not load-bearing.
-    //
     // Flip mode to 'joining' DIRECTLY — not via join() — because join()
     // chains into openPiP() which requires a transient user activation
     // we don't have here. The single-shot effect downstream fires the
@@ -457,7 +477,7 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     // listener catches the user's very next click.
     const t = setTimeout(() => {
       setMode(m => (m === 'idle' ? 'joining' : m));
-    }, 400);
+    }, wait);
     return () => clearTimeout(t);
   }, [user, role, mode, meeting.joining, meeting.joined, meeting.error]);
 

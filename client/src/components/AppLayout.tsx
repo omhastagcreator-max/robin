@@ -12,6 +12,7 @@ import { SessionTopBar } from '@/components/shared/SessionTopBar';
 import { HuddleAutoBreak } from '@/components/shared/HuddleAutoBreak';
 import { RobinOrb } from '@/components/shared/RobinOrb';
 import { ScreenShareRequiredBanner } from '@/components/shared/ScreenShareRequiredBanner';
+import { HuddleRequiredBanner } from '@/components/shared/HuddleRequiredBanner';
 import { ScreenShareReminder } from '@/components/shared/ScreenShareReminder';
 import { ScreenShareResumeBanner } from '@/components/shared/ScreenShareResumeBanner';
 import { ClientMeetingDock } from '@/components/shared/ClientMeetingDock';
@@ -179,6 +180,13 @@ function AppLayoutInner({ children }: Props) {
 
         {/* Sticky session controls — timer + start/break/end on every page */}
         <SessionTopBar />
+
+        {/* Sticky "huddle required" banner. Visible whenever a clocked-in
+            teammate (any non-client role) is NOT currently in the huddle.
+            Owner rule: huddle attendance is mandatory during work. Click
+            → joins the huddle. Cannot be dismissed; complements the auto-
+            rejoin in HuddleContext + the 3-min auto-break threshold. */}
+        <HuddleRequiredBanner />
 
         {/* Sticky "screen share required" banner. Visible only when an
             internal teammate is clocked-in active AND not currently sharing
