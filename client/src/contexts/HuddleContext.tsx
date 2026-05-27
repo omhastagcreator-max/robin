@@ -12,6 +12,7 @@ import type { IceSource } from '@/lib/iceServers';
 import { screenShareManager } from '@/lib/screenShareManager';
 import { logShareEvent } from '@/lib/screenShareDebug';
 import { acquireTabKeepAlive, releaseTabKeepAlive } from '@/lib/tabKeepAlive';
+import { ensureNotificationPermissionAsked } from '@/lib/buzzer';
 
 type HuddleMode = 'idle' | 'joining' | 'expanded' | 'collapsed';
 
@@ -524,6 +525,22 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
       setMode('expanded');
     }
   }, [meeting.joined, mode]);
+
+  // ── Proactively ask for notification permission on huddle join ────
+  // The user just clicked Join (or auto-join fired right after a fresh
+  // gesture), so we have a meaningful "they care about Robin alerts"
+  // signal. Asking now has a much higher accept-rate than asking on
+  // page load. No-op if they've already decided either way.
+  const notifPromptedRef = useRef(false);
+  useEffect(() => {
+    if (!meeting.joined) return;
+    if (notifPromptedRef.current) return;
+    notifPromptedRef.current = true;
+    // Tiny defer so the join settles first and the prompt doesn't
+    // fight LiveKit's mic-permission flow on Safari.
+    const t = setTimeout(() => ensureNotificationPermissionAsked(), 1500);
+    return () => clearTimeout(t);
+  }, [meeting.joined]);
 
   // ── Keep Robin's tab alive while the user is in the huddle ────────
   // Hooks the existing silent-audio keep-alive (lib/tabKeepAlive.ts)

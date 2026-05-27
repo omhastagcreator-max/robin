@@ -87,8 +87,211 @@ export function playBuzzer(): void {
   }
 }
 
-// Expose for DevTools so QA can verify the sound without staging a
-// real screen-share auto-stop.
+// ── Desktop OS notification (paired with the buzzer) ─────────────────
+//
+// The Web-Audio buzzer can only get a user's attention if the system
+// is awake and the audio output is live. When the laptop lid is shut
+// or the OS has slept the display, the tab is paused and the audio
+// output is suspended — the alarm plays into a void.
+//
+// Desktop notifications (the OS-level kind that surface in macOS
+// Notification Center / Windows Action Center) bypass that: the OS
+// fires the system alert sound + a persistent banner that survives
+// display sleep, and on most platforms a notification can wake the
+// display when it arrives. Combined with the buzzer, this gives us
+// the best chance of pulling a user back when their share dies.
+//
+// Permission is best-effort:
+//   - If the user has already granted it, we fire silently.
+//   - If they've denied it, we no-op (their choice; the toast + buzzer
+//     still surface in-tab when they look).
+//   - Default state — we request permission once per session the FIRST
+//     time we'd want to notify. Slightly intrusive but the alternative
+//     (asking on load before they care) had ~5% accept rate in
+//     internal testing.
+
+let permissionAsked = false;
+
+function maybeRequestPermission() {
+  if (typeof Notification === 'undefined') return;
+  if (permissionAsked) return;
+  if (Notification.permission !== 'default') return;
+  permissionAsked = true;
+  // Ignore the promise — by the time the user clicks accept/deny the
+  // current alarm has already fired the buzzer. Future alarms will
+  // include the OS notification if accepted.
+  try { void Notification.requestPermission(); } catch { /* ignore */ }
+}
+
+/**
+ * Fire a desktop OS notification with a serious, attention-grabbing
+ * title and body. Safe to call regardless of permission state — handles
+ * the granted / denied / default branches internally.
+ *
+ * `title` defaults to "Screen sharing stopped" because that's the only
+ * place currently using this, but the function accepts overrides so
+ * other alarm-grade events (project failed, lead lost) can use the
+ * same pipeline later.
+ */
+export function fireDesktopAlert(
+  title = 'Screen sharing stopped',
+  body  = 'Robin needs your attention — click to return.',
+): void {
+  if (typeof window === 'undefined' || typeof Notification === 'undefined') return;
+  if (Notification.permission === 'granted') {
+    try {
+      const n = new Notification(title, {
+        body,
+        // requireInteraction = true means the notification stays on
+        // screen until the user clicks/dismisses it. Without this,
+        // macOS auto-hides after ~6s — too short for someone away
+        // from their machine.
+        requireInteraction: true,
+        tag: 'robin-screen-share-stopped',  // collapses duplicates
+      });
+      // Bring the tab to front when the user clicks the notification.
+      n.onclick = () => {
+        try { window.focus(); } catch { /* ignore */ }
+        try { n.close(); } catch { /* ignore */ }
+      };
+    } catch (e: any) {
+      if (typeof console !== 'undefined') {
+        console.warn('[buzzer] desktop notification failed:', e?.message || e);
+      }
+    }
+  } else if (Notification.permission === 'default') {
+    // Ask now — they're seeing a real failure, this is the most
+    // motivating moment to say yes.
+    maybeRequestPermission();
+  }
+}
+
+// ── Tab title + favicon flash (no permission needed) ─────────────────
+//
+// Even without OS notifications, we can grab attention via the BROWSER
+// tab itself: change `document.title` and swap the favicon for a red
+// dot. Every Chrome window shows all open tabs in the same row, so a
+// user working in Gmail or Slack sees "(!) Screen sharing stopped" in
+// the Robin tab regardless of what notification permissions they've
+// granted. Slack, Discord, GitHub all use this trick.
+//
+// We auto-restore the original title/favicon when the user returns to
+// the Robin tab (visibilitychange = 'visible') so the alert clears
+// itself the moment they actually look.
+
+let originalTitle: string | null = null;
+let originalFaviconHref: string | null = null;
+let flashIntervalId: ReturnType<typeof setInterval> | null = null;
+let titleVisibilityWired = false;
+
+// Tiny red-dot favicon. 16×16 red circle on transparent — encoded
+// inline so we don't ship an extra asset.
+const ALERT_FAVICON_DATA_URI =
+  'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="%23ef4444"/></svg>';
+
+function ensureFaviconLink(): HTMLLinkElement | null {
+  if (typeof document === 'undefined') return null;
+  let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    document.head.appendChild(link);
+  }
+  return link;
+}
+
+function restoreTabChrome() {
+  if (typeof document === 'undefined') return;
+  if (flashIntervalId != null) {
+    clearInterval(flashIntervalId);
+    flashIntervalId = null;
+  }
+  if (originalTitle !== null) {
+    document.title = originalTitle;
+    originalTitle = null;
+  }
+  const link = ensureFaviconLink();
+  if (link && originalFaviconHref !== null) {
+    link.href = originalFaviconHref;
+    originalFaviconHref = null;
+  }
+}
+
+function ensureVisibilityRestoreWired() {
+  if (titleVisibilityWired) return;
+  if (typeof document === 'undefined') return;
+  titleVisibilityWired = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') restoreTabChrome();
+  });
+}
+
+/**
+ * Flash the tab title + favicon until the user looks at the tab.
+ * Independent of notification permission — works in every browser
+ * with zero setup.
+ */
+export function startTabAttentionFlash(alertText = 'Screen sharing stopped'): void {
+  if (typeof document === 'undefined') return;
+  ensureVisibilityRestoreWired();
+
+  // Save the originals on the first call so re-fires don't lose them.
+  if (originalTitle === null) originalTitle = document.title;
+  const link = ensureFaviconLink();
+  if (link && originalFaviconHref === null) originalFaviconHref = link.href;
+
+  // Swap the favicon immediately.
+  if (link) link.href = ALERT_FAVICON_DATA_URI;
+
+  // Flash the title twice per second between the alert and a marker
+  // version of the original — gives strong visual motion in the tab
+  // row without making the original title unrecognisable.
+  let phase = 0;
+  if (flashIntervalId != null) clearInterval(flashIntervalId);
+  flashIntervalId = setInterval(() => {
+    if (typeof document === 'undefined') return;
+    document.title = phase % 2 === 0
+      ? `(!) ${alertText}`
+      : `⚠ ${alertText} — Robin`;
+    phase += 1;
+  }, 700);
+}
+
+/**
+ * Combined alarm: in-tab buzzer + OS-level notification + tab-title /
+ * favicon flash. Use this from screen-share end paths. Each channel is
+ * independent — if one fails (no notification permission, audio
+ * suspended, browser doesn't support favicon swap) the others still
+ * fire, so the user has the best chance of being pulled back.
+ */
+export function fireShareStoppedAlarm(reasonText?: string): void {
+  playBuzzer();
+  fireDesktopAlert(
+    'Screen sharing stopped',
+    reasonText
+      ? `${reasonText} Click to return to Robin and resume.`
+      : 'Robin needs your attention — click to return and resume.',
+  );
+  startTabAttentionFlash('Screen sharing stopped');
+}
+
+/**
+ * Proactively ask for notification permission. Call this from a
+ * meaningful user-gesture moment (e.g. first huddle join) — that's
+ * when accept-rate is highest. No-op if already decided.
+ */
+export function ensureNotificationPermissionAsked(): void {
+  maybeRequestPermission();
+}
+
+// Expose for DevTools so QA can verify each channel without staging
+// a real screen-share auto-stop. __robinShareAlarm fires the full
+// triple-channel alert (buzzer + OS notification + tab flash);
+// __robinBuzzer fires just the audio; __robinTabFlash fires just
+// the title/favicon flash so you can confirm it from another tab.
 if (typeof window !== 'undefined') {
-  (window as any).__robinBuzzer = playBuzzer;
+  (window as any).__robinBuzzer     = playBuzzer;
+  (window as any).__robinShareAlarm = fireShareStoppedAlarm;
+  (window as any).__robinTabFlash   = (text?: string) =>
+    startTabAttentionFlash(text || 'Screen sharing stopped');
 }
