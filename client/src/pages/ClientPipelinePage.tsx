@@ -27,6 +27,7 @@ import {
   usePipelineState, applyFilters,
   type FlowStage,
 } from '@/components/pipeline/PipelineRevamp';
+import { PipelineExecutiveView } from '@/components/pipeline/PipelineExecutiveView';
 
 /**
  * ClientPipelinePage — universal "where is X at?" view.
@@ -268,10 +269,10 @@ export default function ClientPipelinePage() {
         <div className="flex items-end justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Workflow className="h-6 w-6 text-primary" /> Projects
+              <Workflow className="h-6 w-6 text-primary" /> Client project pipeline
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Every client, every step. Search by phone, name or email. Click any card to see what's left to do.
+              Live overview of all active agency projects — current stage, blockers, latest update at a glance.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -329,6 +330,12 @@ export default function ClientPipelinePage() {
           <div className="py-16 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : list.length === 0 ? (
           <EmptyState query={query} isAdminOrSales={isAdminOrSales} onCreate={() => setShowCreate(true)} />
+        ) : view === 'executive' ? (
+          <PipelineExecutiveView
+            list={filteredList}
+            users={users}
+            onOpenDrawer={openProject}
+          />
         ) : view === 'kanban' ? (
           <PipelineKanban
             list={filteredList}

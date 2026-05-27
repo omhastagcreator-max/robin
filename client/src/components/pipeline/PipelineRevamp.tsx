@@ -4,7 +4,7 @@ import {
   Filter, Flame, AlertTriangle, CheckCircle2, Sparkles, X,
   ChevronDown, ChevronUp, Save, Trash2, Bookmark, Layers, ListChecks,
   LayoutGrid, Rows3, Loader2, Send, ShieldCheck, MessagesSquare,
-  Workflow, ArrowRight,
+  Workflow, ArrowRight, LayoutDashboard,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/api';
@@ -34,7 +34,7 @@ import * as api from '@/api';
  * re-configure on every reload.
  */
 
-export type PipelineView = 'kanban' | 'focus' | 'table' | 'flow';
+export type PipelineView = 'executive' | 'kanban' | 'focus' | 'table' | 'flow';
 
 export interface PipelineFilters {
   health:   '' | 'on_track' | 'at_risk' | 'blocked' | 'done';
@@ -76,7 +76,7 @@ function writeLS<T>(key: string, value: T): void {
 // Hook for view-state persistence — used by ClientPipelinePage so the
 // view, filter combo, and saved-views all survive refresh.
 export function usePipelineState() {
-  const [view, setView_]       = useState<PipelineView>(() => readLS<PipelineView>(LS_VIEW, 'kanban'));
+  const [view, setView_]       = useState<PipelineView>(() => readLS<PipelineView>(LS_VIEW, 'executive'));
   const [filters, setFilters_] = useState<PipelineFilters>(() => readLS<PipelineFilters>(LS_FILTERS, EMPTY_FILTERS));
   const [savedViews, setSavedViews_] = useState<SavedView[]>(() => readLS<SavedView[]>(LS_SAVED_VIEWS, []));
 
@@ -181,10 +181,11 @@ export function PipelineToolbar({
         {/* View toggle */}
         <div className="inline-flex items-center rounded-lg border border-border bg-card overflow-hidden">
           {[
-            { key: 'kanban' as const, label: 'Board',            icon: LayoutGrid },
-            { key: 'flow'   as const, label: 'Flow',             icon: Workflow },
-            { key: 'focus'  as const, label: 'Needs attention',  icon: Flame },
-            { key: 'table'  as const, label: 'List',             icon: Rows3 },
+            { key: 'executive' as const, label: 'Dashboard',        icon: LayoutDashboard },
+            { key: 'kanban'    as const, label: 'Board',            icon: LayoutGrid },
+            { key: 'flow'      as const, label: 'Flow',             icon: Workflow },
+            { key: 'focus'     as const, label: 'Needs attention',  icon: Flame },
+            { key: 'table'     as const, label: 'List',             icon: Rows3 },
           ].map(o => {
             const Icon = o.icon;
             const active = view === o.key;
