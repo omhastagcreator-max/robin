@@ -11,6 +11,7 @@ import { RemoteAudio } from '@/components/shared/RemoteAudio';
 import type { IceSource } from '@/lib/iceServers';
 import { screenShareManager } from '@/lib/screenShareManager';
 import { logShareEvent } from '@/lib/screenShareDebug';
+import { acquireTabKeepAlive, releaseTabKeepAlive } from '@/lib/tabKeepAlive';
 
 type HuddleMode = 'idle' | 'joining' | 'expanded' | 'collapsed';
 
@@ -523,6 +524,39 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
       setMode('expanded');
     }
   }, [meeting.joined, mode]);
+
+  // ── Keep Robin's tab alive while the user is in the huddle ────────
+  // Hooks the existing silent-audio keep-alive (lib/tabKeepAlive.ts)
+  // into the huddle's joined state. Effect: any time the user is
+  // joined, Chrome treats the tab as audio-active and refuses to
+  // background-throttle it. Combined with the huddle enforcement
+  // (auto-join, auto-rejoin, required banner), this means every
+  // working employee's Robin tab stays fully responsive no matter
+  // how many other tabs they switch to — websockets keep pinging,
+  // timers keep firing, screen capture keeps running.
+  //
+  // Refcounted so we play nice with the screen-share manager and
+  // useMeetingRoom (which both also acquire on their own paths).
+  // The local ref prevents a double-acquire across StrictMode mounts.
+  const huddleKeepAliveHeldRef = useRef(false);
+  useEffect(() => {
+    if (meeting.joined && !huddleKeepAliveHeldRef.current) {
+      acquireTabKeepAlive();
+      huddleKeepAliveHeldRef.current = true;
+    }
+    if (!meeting.joined && huddleKeepAliveHeldRef.current) {
+      releaseTabKeepAlive();
+      huddleKeepAliveHeldRef.current = false;
+    }
+    // Final release on provider unmount — covers tab-close / logout
+    // paths where meeting.joined never flips to false before teardown.
+    return () => {
+      if (huddleKeepAliveHeldRef.current) {
+        releaseTabKeepAlive();
+        huddleKeepAliveHeldRef.current = false;
+      }
+    };
+  }, [meeting.joined]);
 
   // ── Tie working time to huddle attendance ───────────────────────────
   // The agency rule is "you're at work when you're in the huddle." When
