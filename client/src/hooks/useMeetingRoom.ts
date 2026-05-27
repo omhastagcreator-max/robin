@@ -11,6 +11,7 @@ import {
 import * as api from '@/api';
 import { logShareEvent } from '@/lib/screenShareDebug';
 import { acquireTabKeepAlive, releaseTabKeepAlive } from '@/lib/tabKeepAlive';
+import { playBuzzer } from '@/lib/buzzer';
 import { toast } from 'sonner';
 
 // Dev-only debug logger. In production these are no-ops — the ~10 calls
@@ -316,6 +317,12 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
           logShareEvent('error', 'livekit screen pub disappeared unexpectedly', {
             reason: 'no toggleScreen call; probably Chrome stop-pill / source closed / display sleep',
           });
+          // Loud audible alarm so an out-of-tab user comes back to fix
+          // it. See lib/buzzer.ts — three 300ms square-wave bursts at
+          // 70% gain. Wrapped in try/catch so a Web-Audio failure
+          // (Safari < 14, locked-down browser) doesn't suppress the
+          // toast that follows.
+          try { playBuzzer(); } catch { /* swallow — toast still surfaces */ }
           toast.error(
             'Screen sharing stopped. Most likely: you clicked Chrome\'s "Stop sharing" pill, the source window closed, or your Mac display slept. Click the screen icon to share again.',
             { duration: 9000, action: { label: 'Share again', onClick: () => { void toggleScreenRef.current?.(); } } },

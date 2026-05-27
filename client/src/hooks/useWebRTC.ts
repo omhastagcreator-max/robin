@@ -6,6 +6,7 @@ import { getIceServers } from '@/lib/iceServers';
 import { getSharedSocket } from '@/hooks/useSocket';
 import { screenShareManager } from '@/lib/screenShareManager';
 import { logShareEvent } from '@/lib/screenShareDebug';
+import { playBuzzer } from '@/lib/buzzer';
 
 // Resolved at first use via getIceServers() — see lib/iceServers.ts. Order:
 // (1) Metered.live REST API   (2) static VITE_TURN_*   (3) public STUN.
@@ -130,6 +131,12 @@ export function useWebRTCSender(userId: string) {
       const reason = snap.lastEndReason;
       const userIntended = reason === 'user';
       if (!userIntended && !stoppingRef.current) {
+        // Loud audible alarm — the user almost certainly tabbed away
+        // when the share died, and a silent toast doesn't bring them
+        // back. The buzzer is three quick square-wave bursts at 70%
+        // gain; system volume permitting, it's unmissable.
+        try { playBuzzer(); } catch { /* swallow — toast still surfaces */ }
+
         const reasonCopy: Record<string, string> = {
           'browser-stop-pill': 'You clicked Chrome\'s "Stop sharing" toolbar.',
           'source-closed':     'The window or tab you were sharing was closed.',
