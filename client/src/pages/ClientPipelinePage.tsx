@@ -148,43 +148,10 @@ export default function ClientPipelinePage() {
   // Refs used by the search-to-open path so we don't auto-open the same
   // workflow twice for the same query (e.g. when filters change but the
   // top match is still the same client). Reset whenever query changes.
+  // The actual handlers + useEffect that consume `filteredList` live
+  // BELOW where filteredList is declared (TS won't let us reference a
+  // const before its declaration site).
   const lastAutoOpenedRef = useRef<string>('');
-
-  // Press Enter in the search input → open the first matching client's
-  // full detail panel with AI brief auto-generated. Behaviour matches
-  // the implicit user expectation when typing a phone number: hit Enter,
-  // you see everything about that client.
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter') return;
-    if (!query.trim()) return;
-    const top = filteredList[0];
-    if (!top) {
-      toast.error('No clients match that search.');
-      return;
-    }
-    lastAutoOpenedRef.current = top._id;
-    openProject(top._id, top.clientName, true);
-  };
-
-  // Heuristic auto-open. If the user typed something that LOOKS like a
-  // full phone number (≥10 digits, ignoring spaces/dashes/+) AND the
-  // server has narrowed the list to exactly one match, open that client
-  // automatically. Most users type a phone number expecting "show me
-  // this client"; Enter-key works too but auto-open feels magic for the
-  // common case. Guarded by lastAutoOpenedRef so it fires at most once
-  // per unique top match.
-  useEffect(() => {
-    if (!query.trim()) { lastAutoOpenedRef.current = ''; return; }
-    const digits = query.replace(/[^0-9]/g, '');
-    const looksLikePhone = digits.length >= 10;
-    if (!looksLikePhone) return;
-    if (filteredList.length !== 1) return;
-    const top = filteredList[0];
-    if (lastAutoOpenedRef.current === top._id) return;
-    lastAutoOpenedRef.current = top._id;
-    openProject(top._id, top.clientName, true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, filteredList]);
 
   // `n` — quick "new project" when admin/sales is on this page.
   useShortcut('n', () => { if (isAdminOrSales) setShowCreate(true); });
@@ -239,6 +206,42 @@ export default function ClientPipelinePage() {
 
   // Apply client-side filters (server already handled q + mineOnly).
   const filteredList = useMemo(() => applyFilters(list, filters), [list, filters]);
+
+  // Press Enter in the search input → open the first matching client's
+  // full detail panel with AI brief auto-generated. Behaviour matches
+  // the implicit user expectation when typing a phone number: hit Enter,
+  // you see everything about that client.
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    if (!query.trim()) return;
+    const top = filteredList[0];
+    if (!top) {
+      toast.error('No clients match that search.');
+      return;
+    }
+    lastAutoOpenedRef.current = top._id;
+    openProject(top._id, top.clientName, true);
+  };
+
+  // Heuristic auto-open. If the user typed something that LOOKS like a
+  // full phone number (≥10 digits, ignoring spaces/dashes/+) AND the
+  // server has narrowed the list to exactly one match, open that client
+  // automatically. Most users type a phone number expecting "show me
+  // this client"; Enter-key works too but auto-open feels magic for the
+  // common case. Guarded by lastAutoOpenedRef so it fires at most once
+  // per unique top match.
+  useEffect(() => {
+    if (!query.trim()) { lastAutoOpenedRef.current = ''; return; }
+    const digits = query.replace(/[^0-9]/g, '');
+    const looksLikePhone = digits.length >= 10;
+    if (!looksLikePhone) return;
+    if (filteredList.length !== 1) return;
+    const top = filteredList[0];
+    if (lastAutoOpenedRef.current === top._id) return;
+    lastAutoOpenedRef.current = top._id;
+    openProject(top._id, top.clientName, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, filteredList]);
 
   // Bulk action handler — fans out to the server bulk endpoint, surfaces
   // a "12 updated, 1 skipped" toast, refreshes the list, clears selection.

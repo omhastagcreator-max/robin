@@ -53,7 +53,17 @@ interface Workflow {
   blockerType?: string;
   blockerReason?: string;
   blockedSince?: string;
-  lastUpdate?: { detail?: string; at?: string };
+  // ── Fields surfaced in the at-a-glance section ────────────────────
+  // All of these are already populated by /api/client-workflows; the
+  // panel just needed to start rendering them so a user opening the
+  // drawer from search lands on a complete status snapshot.
+  lastUpdate?: { detail?: string; at?: string; action?: string; serviceType?: string; actorId?: string };
+  nextAction?: string;
+  nextBestAction?: string;
+  currentOwnerTeam?: '' | 'sales' | 'development' | 'meta' | 'influencer' | 'qa';
+  eta?: string | null;
+  etaConfidence?: '' | 'high' | 'medium' | 'low';
+  delayCause?: string;
   updatedAt?: string;
 }
 
@@ -309,7 +319,14 @@ function ActivityTimeline({ workflowId, refreshKey }: { workflowId: string; refr
 }
 
 // ─── Main panel ──────────────────────────────────────────────────────────────
-export function ProjectDetailPanel({ workflowId }: { workflowId: string }) {
+//
+// Props:
+//   - workflowId: the project to load
+//   - autoSummary (optional): fire the AI status snapshot automatically
+//     as soon as the workflow data lands. The search-bar entry point on
+//     ClientPipelinePage passes this so a user who types a phone number
+//     and hits Enter sees the AI brief without an extra click.
+export function ProjectDetailPanel({ workflowId, autoSummary = false }: { workflowId: string; autoSummary?: boolean }) {
   const [wf, setWf]           = useState<Workflow | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -338,6 +355,20 @@ export function ProjectDetailPanel({ workflowId }: { workflowId: string }) {
     catch { toast.error('AI summary failed'); }
     finally { setAiBusy(false); }
   };
+
+  // Auto-fire the AI summary once when caller asked for it and the
+  // workflow has loaded. `firedRef` prevents a second fire if the
+  // panel re-renders before the summary call resolves.
+  const autoSummaryFiredRef = useRef(false);
+  useEffect(() => {
+    if (!autoSummary) return;
+    if (!wf) return;
+    if (autoSummaryFiredRef.current) return;
+    if (aiSummary) return;
+    autoSummaryFiredRef.current = true;
+    void generateSummary();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSummary, wf]);
 
   if (loading || !wf) {
     return <div className="p-6 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
@@ -424,6 +455,96 @@ export function ProjectDetailPanel({ workflowId }: { workflowId: string }) {
           )}
         </div>
       </section>
+
+      {/* At-a-glance — current stage, last update, next action. Added so
+          a user opening the panel from search (Enter / phone-number
+          auto-open) sees the most important context immediately,
+          without having to scroll into the activity feed or scan the
+          services list. All fields come from the same /api/client
+          -workflows payload the page already loads — we just weren't
+          rendering them before. */}
+      {(() => {
+        // Pick the current stage label. Preference order:
+        //   1. The first service with status 'in_progress'
+        //   2. Otherwise the first non-done service ('pending' / 'blocked')
+        //   3. Otherwise "All done" when every service is done
+        //   4. Fallback "—" when there are no services
+        const inProgress = services.find(s => s.status === 'in_progress');
+        const pending    = services.find(s => s.status !== 'done');
+        const stageLabel = inProgress?.label
+          || (pending ? pending.label : (services.length > 0 ? 'All done' : '—'));
+        const stageStatus = inProgress?.status || pending?.status || (services.length > 0 ? 'done' : 'pending');
+        const lastUpdateAt = wf.lastUpdate?.at || wf.updatedAt;
+        const nextAction   = wf.nextAction || wf.nextBestAction;
+        return (
+          <section className="p-4 space-y-2">
+            <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground">
+              At a glance
+            </p>
+            <div className="space-y-2">
+              {/* Current stage */}
+              <div className="flex items-start gap-2">
+                <span className="text-[11px] text-muted-foreground w-24 shrink-0 pt-0.5">Current stage</span>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-[12.5px] font-semibold truncate">{stageLabel}</span>
+                  <StatusPill state={statusToPill(stageStatus)} size="xs" />
+                </div>
+              </div>
+              {/* Last update (most recent activity-log entry the server
+                  decorates onto the workflow) */}
+              {(wf.lastUpdate?.detail || lastUpdateAt) && (
+                <div className="flex items-start gap-2">
+                  <span className="text-[11px] text-muted-foreground w-24 shrink-0 pt-0.5">Last update</span>
+                  <div className="min-w-0">
+                    {wf.lastUpdate?.detail && (
+                      <p className="text-[12.5px] leading-snug">{wf.lastUpdate.detail}</p>
+                    )}
+                    {lastUpdateAt && (
+                      <p className="text-[10.5px] text-muted-foreground mt-0.5">
+                        {formatDistanceToNow(new Date(lastUpdateAt), { addSuffix: true })}
+                        {wf.lastUpdate?.serviceType && ` · ${wf.lastUpdate.serviceType}`}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+              {/* Next action — either the human-set field or the AI
+                  recommendation if it's the only one we have. */}
+              {nextAction && (
+                <div className="flex items-start gap-2">
+                  <span className="text-[11px] text-muted-foreground w-24 shrink-0 pt-0.5">Next action</span>
+                  <p className="text-[12.5px] leading-snug">{nextAction}</p>
+                </div>
+              )}
+              {/* Owner team & ETA — only render when present so we don't
+                  show two empty rows for half-onboarded workflows. */}
+              {wf.currentOwnerTeam && (
+                <div className="flex items-start gap-2">
+                  <span className="text-[11px] text-muted-foreground w-24 shrink-0 pt-0.5">Owner team</span>
+                  <span className="text-[12.5px] capitalize">{wf.currentOwnerTeam}</span>
+                </div>
+              )}
+              {wf.eta && (
+                <div className="flex items-start gap-2">
+                  <span className="text-[11px] text-muted-foreground w-24 shrink-0 pt-0.5">ETA</span>
+                  <span className="text-[12.5px]">
+                    {wf.eta}
+                    {wf.etaConfidence && (
+                      <span className="text-muted-foreground"> · {wf.etaConfidence} confidence</span>
+                    )}
+                  </span>
+                </div>
+              )}
+              {wf.delayCause && (
+                <div className="flex items-start gap-2">
+                  <span className="text-[11px] text-muted-foreground w-24 shrink-0 pt-0.5">Delay cause</span>
+                  <p className="text-[12.5px] leading-snug text-rose-700">{wf.delayCause}</p>
+                </div>
+              )}
+            </div>
+          </section>
+        );
+      })()}
 
       {/* Progress + AI */}
       <section className="p-4 space-y-3">
