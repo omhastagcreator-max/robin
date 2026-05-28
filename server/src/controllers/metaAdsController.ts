@@ -213,12 +213,20 @@ export async function getAIInsights(req: AuthRequest, res: Response): Promise<vo
     }
 
     const cacheKey = `meta-ai:${adAccountId}:${new Date().toISOString().slice(0, 10)}`; // per-day key — fresh each calendar day
+    // getInsightsDaily doesn't accept a datePreset shortcut like the other
+    // service helpers do — it requires an explicit { since, until } range.
+    // Build a 7-day window ending today so we mirror the 'last_7d' preset
+    // the surrounding calls use.
+    const today  = new Date();
+    const weekAgo = new Date(today.getTime() - 6 * 86_400_000);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    const last7dRange = { since: fmt(weekAgo), until: fmt(today) };
     const result = await withAICache(cacheKey, META_AI_TTL_MS, async () => {
       // ── Gather: same data the dashboard already shows ───────────────
       const [yesterday, last7d, daily7d, campaigns, dailyBudget, accountName] = await Promise.all([
         meta.getInsights({ adAccountId, datePreset: 'yesterday' }).catch(() => null),
         meta.getInsights({ adAccountId, datePreset: 'last_7d' }).catch(() => null),
-        meta.getInsightsDaily({ adAccountId, datePreset: 'last_7d' }).catch(() => []),
+        meta.getInsightsDaily({ adAccountId, timeRange: last7dRange }).catch(() => []),
         meta.getCampaignBreakdown({ adAccountId, datePreset: 'last_7d' }).catch(() => []),
         meta.getActiveDailyBudget(adAccountId).catch(() => 0),
         meta.listAdAccounts().then(list => list.find(a => a.id === adAccountId)?.name || adAccountId).catch(() => adAccountId),
