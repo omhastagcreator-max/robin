@@ -11,6 +11,7 @@ import {
 
 import { AppLayout } from '@/components/AppLayout';
 import { ActivityTimeline } from '@/components/panels/ProjectDetailPanel';
+import { CommentRequiredModal } from '@/components/shared/CommentRequiredModal';
 import { useAuth } from '@/contexts/AuthContext';
 import * as api from '@/api';
 
@@ -154,6 +155,16 @@ export default function StageWorkspacePage() {
   const [expandedItem, setExpandedItem] = useState<number | null>(null);
   const [onLeaveIds, setOnLeaveIds] = useState<Set<string>>(new Set());
 
+  // Pending checklist toggle. Holds the item we're about to tick /
+  // un-tick — the CommentRequiredModal opens against it and posts
+  // through to cwToggleCheck on confirm. We need the index + the
+  // NEXT done value because the server endpoint takes both.
+  const [pendingToggle, setPendingToggle] = useState<{
+    index: number;
+    nextDone: boolean;
+    itemText: string;
+  } | null>(null);
+
   const stageDef = stageKey ? STAGE_DEFS[stageKey] : null;
 
   useEffect(() => {
@@ -267,6 +278,11 @@ export default function StageWorkspacePage() {
                       ownerInitials={initials(owner?.name)}
                       expanded={expandedItem === i}
                       onToggle={() => setExpandedItem(prev => prev === i ? null : i)}
+                      onTickRequest={() => setPendingToggle({
+                        index: i,
+                        nextDone: !c.done,
+                        itemText: c.text || c.title || `Step ${i + 1}`,
+                      })}
                       tone={stageDef.tone}
                       workflowId={wf._id}
                       onMutated={() => setActivityRev(r => r + 1)}
@@ -289,6 +305,37 @@ export default function StageWorkspacePage() {
           </div>
         </div>
       </div>
+
+      {/* Tick / un-tick modal. Server requires a short audit comment
+          on every check change — that's the whole point of the
+          activity log, so we surface it instead of swallowing it. */}
+      {pendingToggle && svc?._id && (
+        <CommentRequiredModal
+          title={pendingToggle.nextDone ? 'Mark task complete' : 'Re-open this task?'}
+          description={`"${pendingToggle.itemText}" — leave a short note for the team.`}
+          placeholder={pendingToggle.nextDone
+            ? 'e.g. theme installed and customized'
+            : 'e.g. revision needed — see Slack thread'}
+          primaryLabel={pendingToggle.nextDone ? 'Mark complete' : 'Re-open'}
+          tone={pendingToggle.nextDone ? 'success' : 'primary'}
+          onSubmit={async (comment) => {
+            try {
+              const updated = await api.cwToggleCheck(wf._id, svc._id!, {
+                index:   pendingToggle.index,
+                done:    pendingToggle.nextDone,
+                comment,
+              });
+              setWf(updated as Workflow);
+              setActivityRev(r => r + 1);
+              toast.success(pendingToggle.nextDone ? 'Task marked complete' : 'Task re-opened');
+            } catch (err: any) {
+              toast.error(err?.response?.data?.error || 'Could not update the task');
+              throw err;  // keeps the modal open so the user can retry
+            }
+          }}
+          onClose={() => setPendingToggle(null)}
+        />
+      )}
     </AppLayout>
   );
 }
@@ -420,7 +467,7 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 // Checklist row — expandable, holds comments + attachments + meta
 // ─────────────────────────────────────────────────────────────────────
 function ChecklistRow({
-  index, item, ownerName, ownerInitials, expanded, onToggle, tone,
+  index, item, ownerName, ownerInitials, expanded, onToggle, onTickRequest, tone,
   workflowId, onMutated,
 }: {
   index: number;
@@ -429,6 +476,10 @@ function ChecklistRow({
   ownerInitials: string;
   expanded: boolean;
   onToggle: () => void;
+  /** Called when the user clicks the round checkbox itself — opens the
+   *  audit-comment modal in the parent page so the server-required
+   *  comment is captured before cwToggleCheck fires. */
+  onTickRequest: () => void;
   tone: 'emerald' | 'amber' | 'blue';
   workflowId: string;
   onMutated: () => void;
@@ -437,15 +488,31 @@ function ChecklistRow({
   const doneTimeRel = item.doneAt ? formatDistanceToNow(parseISO(item.doneAt), { addSuffix: true }) : null;
   return (
     <li>
-      <button
-        onClick={onToggle}
-        className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-muted/30 text-left"
-      >
-        <span className={`h-4 w-4 rounded-full flex items-center justify-center shrink-0 ${
-          item.done ? 'bg-emerald-500 text-white' : 'border border-border'
-        }`}>
-          {item.done && <CheckCircle2 className="h-3 w-3" />}
-        </span>
+      <div className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-muted/30">
+        {/* Checkbox — its own button so clicking the circle never
+            triggers the row expand. stopPropagation guards against
+            container clicks bubbling up if that ever happens. */}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onTickRequest(); }}
+          aria-label={item.done ? `Re-open ${text}` : `Mark ${text} complete`}
+          title={item.done ? 'Click to re-open' : 'Click to mark complete'}
+          className={`h-5 w-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+            item.done
+              ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+              : 'border-2 border-border bg-card hover:border-primary'
+          }`}
+        >
+          {item.done && <CheckCircle2 className="h-3.5 w-3.5" />}
+        </button>
+        {/* Row-expand affordance — separate clickable area for the
+            label / details. Hovers and clicks here do NOT toggle the
+            checkbox, and vice versa. */}
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex-1 min-w-0 flex items-center gap-3 text-left"
+        >
         <div className="flex-1 min-w-0">
           <p className={`text-[13px] truncate ${item.done ? 'line-through text-muted-foreground' : 'font-semibold'}`}>
             {text}
@@ -462,7 +529,8 @@ function ChecklistRow({
           </span>
         )}
         {expanded ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-      </button>
+        </button>
+      </div>
 
       <AnimatePresence initial={false}>
         {expanded && (
@@ -511,7 +579,11 @@ function ChecklistItemDetails({
     if (t.length < 3 || busy) return;
     setBusy(true);
     try {
-      await (api as any).cwAddNote?.(workflowId, { text: `[${text}] ${t}` });
+      // cwAddNote signature is { detail, serviceType? }. We prefix the
+      // item text so admin reading the audit log knows which checklist
+      // step the comment was on (server doesn't yet store per-item
+      // comments — once it does, drop the prefix).
+      await api.cwAddNote(workflowId, { detail: `[${text}] ${t}` });
       setComment('');
       onMutated();
       toast.success('Note added');
