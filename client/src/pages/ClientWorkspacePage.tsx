@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, formatDistanceToNow, parseISO } from 'date-fns';
 import { toast } from 'sonner';
@@ -174,6 +174,12 @@ export default function ClientWorkspacePage() {
   const { id }   = useParams();
   const { role } = useAuth();
   const isAdminOrSales = role === 'admin' || role === 'sales';
+  const navigate = useNavigate();
+  // Click a service card → drill into its Stage Workspace (Layer 2).
+  const openStage = (stageKey: StageKey) => {
+    if (!id) return;
+    navigate(`/clients/pipeline/${id}/stage/${stageKey}`);
+  };
 
   const [wf,        setWf]        = useState<Workflow | null>(null);
   const [users,     setUsers]     = useState<Record<string, UserLite>>({});
@@ -371,12 +377,15 @@ export default function ClientWorkspacePage() {
           {/* ── 4. PROJECT JOURNEY ──────────────────────────────── */}
           <JourneyStrip states={journey} currentKey={currentStageKey} />
 
-          {/* ── 5. SERVICE OVERVIEW — 3 cards, active elevated ──── */}
+          {/* ── 5. SERVICE OVERVIEW — 3 cards, active elevated.
+              Each card click drills into Layer 2 (Stage Workspace) at
+              /clients/pipeline/:id/stage/:stageKey. */}
           <ServiceOverview
             wf={wf}
             users={users}
             onLeaveIds={onLeaveIds}
             currentStageKey={currentStageKey}
+            onOpen={openStage}
           />
 
           {/* ── 6. THREE-COLUMN FOOTER ──────────────────────────── */}
@@ -650,12 +659,13 @@ function JourneyStrip({ states, currentKey }: { states: Record<StageKey, StageSt
 // 5. Service overview — 3 cards, active elevated
 // ─────────────────────────────────────────────────────────────────────
 function ServiceOverview({
-  wf, users, onLeaveIds, currentStageKey,
+  wf, users, onLeaveIds, currentStageKey, onOpen,
 }: {
   wf: Workflow;
   users: Record<string, UserLite>;
   onLeaveIds: Set<string>;
   currentStageKey: StageKey;
+  onOpen: (stageKey: StageKey) => void;
 }) {
   const cards = [
     { key: 'shopify',    label: 'Development', tone: 'emerald', stageKey: 'dev'   as StageKey },
@@ -677,6 +687,7 @@ function ServiceOverview({
             users={users}
             onLeaveIds={onLeaveIds}
             nextAction={wf.nextAction || wf.nextBestAction}
+            onClick={() => onOpen(c.stageKey)}
           />
         );
       })}
@@ -684,7 +695,7 @@ function ServiceOverview({
   );
 }
 function ServiceCard({
-  title, tone, elevated, svc, users, onLeaveIds, nextAction,
+  title, tone, elevated, svc, users, onLeaveIds, nextAction, onClick,
 }: {
   title: string;
   tone: 'emerald' | 'amber' | 'blue';
@@ -693,6 +704,7 @@ function ServiceCard({
   users: Record<string, UserLite>;
   onLeaveIds: Set<string>;
   nextAction?: string;
+  onClick: () => void;
 }) {
   const stripe = tone === 'emerald' ? 'bg-emerald-500' : tone === 'amber' ? 'bg-amber-500' : 'bg-blue-500';
   const ttext  = tone === 'emerald' ? 'text-emerald-700' : tone === 'amber' ? 'text-amber-700' : 'text-blue-700';
@@ -719,7 +731,12 @@ function ServiceCard({
     : 'rounded-xl border border-border bg-card';
 
   return (
-    <div className={`${cardCls} overflow-hidden`}>
+    <button
+      onClick={onClick}
+      type="button"
+      title={`Open ${title} workspace`}
+      className={`${cardCls} overflow-hidden text-left hover:border-primary/60 transition-colors cursor-pointer w-full`}
+    >
       <div className={`h-1 ${stripe}`} />
       <div className={`px-4 ${elevated ? 'py-4' : 'py-3.5'} space-y-3`}>
         <div className="flex items-start justify-between gap-2">
@@ -758,7 +775,7 @@ function ServiceCard({
           </Meta>
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 function Meta({ label, children }: { label: string; children: React.ReactNode }) {

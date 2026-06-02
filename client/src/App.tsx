@@ -33,6 +33,7 @@ const ClientSchedulePage = lazy(() => import('@/pages/ClientSchedulePage'));
 const ClientPipelinePage = lazy(() => import('@/pages/ClientPipelinePage'));
 const ClientWorkflowDetailPage = lazy(() => import('@/pages/ClientWorkflowDetailPage'));
 const ClientWorkspacePage      = lazy(() => import('@/pages/ClientWorkspacePage'));
+const StageWorkspacePage       = lazy(() => import('@/pages/StageWorkspacePage'));
 const MetaAdsReport     = lazy(() => import('@/pages/MetaAdsReport'));
 const MetaShareView     = lazy(() => import('@/pages/MetaShareView'));
 const TeamCalendar      = lazy(() => import('@/pages/TeamCalendar'));
@@ -167,10 +168,13 @@ function AppRoutes() {
           <Route path="/admin/issues"     element={<ProtectedRoute requiredRole="admin"><E><AdminIssues /></E></ProtectedRoute>} />
           <Route path="/client-schedule"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientSchedulePage /></E></ProtectedRoute>} />
           <Route path="/clients/pipeline"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientPipelinePage /></E></ProtectedRoute>} />
-          {/* New v2 workspace — Salesforce-style command center (May 2026 rebuild).
-              Old detail page kept around at /clients/pipeline/:id/legacy for fallback. */}
-          <Route path="/clients/pipeline/:id"        element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientWorkspacePage /></E></ProtectedRoute>} />
-          <Route path="/clients/pipeline/:id/legacy" element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientWorkflowDetailPage /></E></ProtectedRoute>} />
+          {/* Two-layer system (May 2026, v3):
+              :id              → ClientWorkspacePage  (Layer 1 — project command center)
+              :id/stage/:stageKey → StageWorkspacePage (Layer 2 — checklist + per-stage detail)
+              :id/legacy       → old ClientWorkflowDetailPage as a rollback escape hatch */}
+          <Route path="/clients/pipeline/:id"                   element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientWorkspacePage /></E></ProtectedRoute>} />
+          <Route path="/clients/pipeline/:id/stage/:stageKey"   element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><StageWorkspacePage /></E></ProtectedRoute>} />
+          <Route path="/clients/pipeline/:id/legacy"            element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientWorkflowDetailPage /></E></ProtectedRoute>} />
           <Route path="/ads/meta"         element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><MetaAdsReport /></E></ProtectedRoute>} />
           <Route path="/team/calendar"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TeamCalendar /></E></ProtectedRoute>} />
           <Route path="/meet/host/:slug"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><MeetHost /></E></ProtectedRoute>} />
