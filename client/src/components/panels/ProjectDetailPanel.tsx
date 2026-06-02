@@ -241,7 +241,11 @@ function BlockProjectModal({
 }
 
 // ─── Activity timeline ────────────────────────────────────────────────────────
-function ActivityTimeline({ workflowId, refreshKey }: { workflowId: string; refreshKey: number }) {
+// Exported (May 2026) so the new PipelineFocusedView can embed the same
+// timeline inline instead of forcing users into the drawer. Same data,
+// same look; consumers pass workflowId + a refreshKey they can bump
+// after mutations.
+export function ActivityTimeline({ workflowId, refreshKey }: { workflowId: string; refreshKey: number }) {
   const [rows, setRows]           = useState<ActivityRow[]>([]);
   const [cursor, setCursor]       = useState<string | null>(null);
   const [hasMore, setHasMore]     = useState(false);

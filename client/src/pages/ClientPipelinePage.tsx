@@ -28,6 +28,7 @@ import {
   type FlowStage,
 } from '@/components/pipeline/PipelineRevamp';
 import { PipelineExecutiveView } from '@/components/pipeline/PipelineExecutiveView';
+import { PipelineFocusedView }   from '@/components/pipeline/PipelineFocusedView';
 
 /**
  * ClientPipelinePage — universal "where is X at?" view.
@@ -288,24 +289,28 @@ export default function ClientPipelinePage() {
           </div>
         </div>
 
-        {/* Search — kept full-width as the primary affordance. The mine-only
-            toggle is now in the toolbar below alongside the view switcher. */}
-        <div className="relative">
-          <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={handleSearchKeyDown}
-            placeholder="Search by phone, name or email — press Enter to open the top match"
-            className="w-full pl-10 pr-9 py-2.5 bg-card border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-          {query && (
-            <button onClick={() => setQuery('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-muted-foreground hover:bg-muted flex items-center justify-center">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+        {/* Search — full-width primary affordance. Hidden in the focused
+            view because that view renders its own larger centred search
+            box; showing two would duplicate the same affordance with
+            no benefit. */}
+        {view !== 'focused' && (
+          <div className="relative">
+            <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Search by phone, name or email — press Enter to open the top match"
+              className="w-full pl-10 pr-9 py-2.5 bg-card border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            {query && (
+              <button onClick={() => setQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-muted-foreground hover:bg-muted flex items-center justify-center">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Pipeline toolbar — view toggle, filters, saved views, bulk-action bar. */}
         <PipelineToolbar
@@ -330,6 +335,14 @@ export default function ClientPipelinePage() {
           <div className="py-16 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : list.length === 0 ? (
           <EmptyState query={query} isAdminOrSales={isAdminOrSales} onCreate={() => setShowCreate(true)} />
+        ) : view === 'focused' ? (
+          <PipelineFocusedView
+            list={filteredList}
+            users={users}
+            query={query}
+            onQuery={setQuery}
+            onOpenDrawer={openProject}
+          />
         ) : view === 'executive' ? (
           <PipelineExecutiveView
             list={filteredList}

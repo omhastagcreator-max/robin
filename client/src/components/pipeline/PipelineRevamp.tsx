@@ -4,7 +4,7 @@ import {
   Filter, Flame, AlertTriangle, CheckCircle2, Sparkles, X,
   ChevronDown, ChevronUp, Save, Trash2, Bookmark, Layers, ListChecks,
   LayoutGrid, Rows3, Loader2, Send, ShieldCheck, MessagesSquare,
-  Workflow, ArrowRight, LayoutDashboard,
+  Workflow, ArrowRight, LayoutDashboard, Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/api';
@@ -34,7 +34,7 @@ import * as api from '@/api';
  * re-configure on every reload.
  */
 
-export type PipelineView = 'executive' | 'kanban' | 'focus' | 'table' | 'flow';
+export type PipelineView = 'focused' | 'executive' | 'kanban' | 'focus' | 'table' | 'flow';
 
 export interface PipelineFilters {
   health:   '' | 'on_track' | 'at_risk' | 'blocked' | 'done';
@@ -76,7 +76,7 @@ function writeLS<T>(key: string, value: T): void {
 // Hook for view-state persistence — used by ClientPipelinePage so the
 // view, filter combo, and saved-views all survive refresh.
 export function usePipelineState() {
-  const [view, setView_]       = useState<PipelineView>(() => readLS<PipelineView>(LS_VIEW, 'executive'));
+  const [view, setView_]       = useState<PipelineView>(() => readLS<PipelineView>(LS_VIEW, 'focused'));
   const [filters, setFilters_] = useState<PipelineFilters>(() => readLS<PipelineFilters>(LS_FILTERS, EMPTY_FILTERS));
   const [savedViews, setSavedViews_] = useState<SavedView[]>(() => readLS<SavedView[]>(LS_SAVED_VIEWS, []));
 
@@ -174,13 +174,34 @@ export function PipelineToolbar({
     onSavedViews(savedViews.filter(s => s.id !== id));
   };
 
+  // Owner ask (May 2026, v2): "Multiple options = multiple confusion."
+  // 'focused' is the default search-first view; the multi-brand views
+  // (Dashboard / Board / Flow / Needs attention / List) live behind a
+  // small "Advanced views" disclosure so the default screen is calm.
+  // When the user picks one of the advanced views, the toggle stays
+  // open — flipping back to 'focused' re-collapses it.
+  const [advancedOpen, setAdvancedOpen] = useState(view !== 'focused');
+  useEffect(() => {
+    if (view !== 'focused') setAdvancedOpen(true);
+  }, [view]);
+
   return (
     <div className="space-y-2">
       {/* Row 1 — view toggle + saved views + filter button + mine */}
       <div className="flex items-center gap-2 flex-wrap">
-        {/* View toggle */}
+        {/* Focused view is always pinned — it's the canonical resting
+            state. Advanced views are revealed inline when the user
+            opens the disclosure or has previously picked one. */}
         <div className="inline-flex items-center rounded-lg border border-border bg-card overflow-hidden">
-          {[
+          <button
+            onClick={() => onView('focused')}
+            className={`flex items-center gap-1 px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors ${
+              view === 'focused' ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Search className="h-3 w-3" /> Focused
+          </button>
+          {advancedOpen && [
             { key: 'executive' as const, label: 'Dashboard',        icon: LayoutDashboard },
             { key: 'kanban'    as const, label: 'Board',            icon: LayoutGrid },
             { key: 'flow'      as const, label: 'Flow',             icon: Workflow },
@@ -193,7 +214,7 @@ export function PipelineToolbar({
               <button
                 key={o.key}
                 onClick={() => onView(o.key)}
-                className={`flex items-center gap-1 px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors ${
+                className={`flex items-center gap-1 px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors border-l border-border ${
                   active ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -201,6 +222,15 @@ export function PipelineToolbar({
               </button>
             );
           })}
+          {!advancedOpen && (
+            <button
+              onClick={() => setAdvancedOpen(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-[11.5px] text-muted-foreground hover:text-foreground border-l border-border"
+              title="Show Dashboard / Board / Flow / List views"
+            >
+              <ChevronDown className="h-3 w-3" /> Advanced
+            </button>
+          )}
         </div>
 
         {/* Filter button */}
