@@ -32,6 +32,7 @@ const AdminCrashLogs    = lazy(() => import('@/pages/AdminCrashLogs'));
 const ClientSchedulePage = lazy(() => import('@/pages/ClientSchedulePage'));
 const ClientPipelinePage = lazy(() => import('@/pages/ClientPipelinePage'));
 const ClientWorkflowDetailPage = lazy(() => import('@/pages/ClientWorkflowDetailPage'));
+const ClientWorkspacePage      = lazy(() => import('@/pages/ClientWorkspacePage'));
 const MetaAdsReport     = lazy(() => import('@/pages/MetaAdsReport'));
 const MetaShareView     = lazy(() => import('@/pages/MetaShareView'));
 const TeamCalendar      = lazy(() => import('@/pages/TeamCalendar'));
@@ -166,7 +167,10 @@ function AppRoutes() {
           <Route path="/admin/issues"     element={<ProtectedRoute requiredRole="admin"><E><AdminIssues /></E></ProtectedRoute>} />
           <Route path="/client-schedule"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientSchedulePage /></E></ProtectedRoute>} />
           <Route path="/clients/pipeline"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientPipelinePage /></E></ProtectedRoute>} />
-          <Route path="/clients/pipeline/:id" element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientWorkflowDetailPage /></E></ProtectedRoute>} />
+          {/* New v2 workspace — Salesforce-style command center (May 2026 rebuild).
+              Old detail page kept around at /clients/pipeline/:id/legacy for fallback. */}
+          <Route path="/clients/pipeline/:id"        element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientWorkspacePage /></E></ProtectedRoute>} />
+          <Route path="/clients/pipeline/:id/legacy" element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientWorkflowDetailPage /></E></ProtectedRoute>} />
           <Route path="/ads/meta"         element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><MetaAdsReport /></E></ProtectedRoute>} />
           <Route path="/team/calendar"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TeamCalendar /></E></ProtectedRoute>} />
           <Route path="/meet/host/:slug"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><MeetHost /></E></ProtectedRoute>} />

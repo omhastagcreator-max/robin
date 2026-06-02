@@ -6,7 +6,7 @@ import { getIceServers } from '@/lib/iceServers';
 import { getSharedSocket } from '@/hooks/useSocket';
 import { screenShareManager } from '@/lib/screenShareManager';
 import { logShareEvent } from '@/lib/screenShareDebug';
-import { playBuzzer } from '@/lib/buzzer';
+import { fireShareStoppedAlarm } from '@/lib/buzzer';
 
 // Resolved at first use via getIceServers() — see lib/iceServers.ts. Order:
 // (1) Metered.live REST API   (2) static VITE_TURN_*   (3) public STUN.
@@ -131,12 +131,6 @@ export function useWebRTCSender(userId: string) {
       const reason = snap.lastEndReason;
       const userIntended = reason === 'user';
       if (!userIntended && !stoppingRef.current) {
-        // Loud audible alarm — the user almost certainly tabbed away
-        // when the share died, and a silent toast doesn't bring them
-        // back. The buzzer is three quick square-wave bursts at 70%
-        // gain; system volume permitting, it's unmissable.
-        try { playBuzzer(); } catch { /* swallow — toast still surfaces */ }
-
         const reasonCopy: Record<string, string> = {
           'browser-stop-pill': 'You clicked Chrome\'s "Stop sharing" toolbar.',
           'source-closed':     'The window or tab you were sharing was closed.',
@@ -147,6 +141,14 @@ export function useWebRTCSender(userId: string) {
           'unknown':           'The browser ended the share without telling us why.',
         };
         const description = reasonCopy[reason || 'unknown'] || reasonCopy.unknown;
+        // Triple-channel alert so we reach the user wherever they are:
+        //   1. In-tab toast (covers users actively on a Robin page)
+        //   2. Loud Web-Audio buzzer (covers users on another tab on the
+        //      same awake machine)
+        //   3. OS desktop notification (covers users with a sleeping
+        //      display / closed-lid laptop — the notification can wake
+        //      the screen and survives audio suspension)
+        try { fireShareStoppedAlarm(description); } catch { /* swallow — toast still surfaces */ }
         toast.error('Screen sharing stopped — click anywhere to resume', {
           id:       'screen-share-resume',
           description,
