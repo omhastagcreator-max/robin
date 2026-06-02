@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow, format, parseISO, differenceInCalendarDays } from 'date-fns';
 import {
   Search, X, Phone, Mail, Calendar, UserCheck, Plane, AlertTriangle,
   CheckCircle2, Clock, Inbox, Rocket, ArrowLeft, MessageSquare,
-  ChevronDown, Loader2, Filter,
+  ChevronDown, Loader2,
 } from 'lucide-react';
 import * as api from '@/api';
 import { ActivityTimeline } from '@/components/panels/ProjectDetailPanel';
@@ -196,6 +197,13 @@ function computeKpis(list: FocusedWorkflow[]) {
 
 // ── Main component ──────────────────────────────────────────────────
 export function PipelineFocusedView({ list, users, query, onQuery }: Props) {
+  // Clicking a stage card or the brand panel sends the user to the
+  // existing Salesforce-style full-record page at /clients/pipeline/:id.
+  // Owner ask (May 2026): "I have something else like Salesforce
+  // client CRM" — the inline panel is the preview, the dedicated route
+  // is the canonical full client view.
+  const navigate = useNavigate();
+  const openFullClient = (wfId: string) => navigate(`/clients/pipeline/${wfId}`);
   // Who is on leave today? One fetch, cached for the page session.
   const [onLeaveIds, setOnLeaveIds] = useState<Set<string>>(new Set());
   const [leavesLoaded, setLeavesLoaded] = useState(false);
@@ -249,11 +257,8 @@ export function PipelineFocusedView({ list, users, query, onQuery }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [match?._id]);
 
-  // Stage focus — clicking a stage card sets this to the stage's key
-  // and the detail panel narrows to just that stage's content. Click
-  // the same stage again to clear and see all stages.
-  const [focusedStage, setFocusedStage] = useState<string | null>(null);
-  useEffect(() => { setFocusedStage(null); }, [match?._id]);
+  // Stage clicks now navigate to the full Salesforce-style page
+  // (see openFullClient above). No inline focus-stage state needed.
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -301,15 +306,19 @@ export function PipelineFocusedView({ list, users, query, onQuery }: Props) {
           onFocus={cancelCollapse}
         >
           {collapsed ? (
-            <CollapsedSummary wf={match} users={users} onExpand={cancelCollapse} />
+            <CollapsedSummary
+              wf={match}
+              users={users}
+              onExpand={cancelCollapse}
+              onOpenFull={() => openFullClient(match._id)}
+            />
           ) : (
             <FullDetail
               wf={match}
               users={users}
               onLeaveIds={onLeaveIds}
               leavesLoaded={leavesLoaded}
-              focusedStage={focusedStage}
-              onFocusStage={(key) => setFocusedStage(prev => prev === key ? null : key)}
+              onOpenFull={() => openFullClient(match._id)}
             />
           )}
         </div>
@@ -347,11 +356,12 @@ function Kpi({
 
 // ── Collapsed summary (post-inactivity) ─────────────────────────────
 function CollapsedSummary({
-  wf, users, onExpand,
+  wf, users, onExpand, onOpenFull,
 }: {
   wf:    FocusedWorkflow;
   users: Record<string, FocusedUser>;
   onExpand: () => void;
+  onOpenFull: () => void;
 }) {
   const activeSvc = wf.services.find(s => s.status === 'in_progress')
                  || wf.services.find(s => s.status !== 'done')
@@ -360,6 +370,7 @@ function CollapsedSummary({
   return (
     <div
       onMouseEnter={onExpand}
+      onClick={onOpenFull}
       className="rounded-2xl border border-border bg-card px-4 py-3 cursor-pointer hover:bg-muted/20 transition-colors flex items-center gap-3"
     >
       <div className="h-9 w-9 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-[12px] font-bold">
@@ -399,20 +410,21 @@ function CollapsedSummary({
 // everywhere, and the SVG progress arc as the one "hero" data point
 // the eye lands on.
 function FullDetail({
-  wf, users, onLeaveIds, leavesLoaded, focusedStage, onFocusStage,
+  wf, users, onLeaveIds, leavesLoaded, onOpenFull,
 }: {
   wf:            FocusedWorkflow;
   users:         Record<string, FocusedUser>;
   onLeaveIds:    Set<string>;
   leavesLoaded:  boolean;
-  focusedStage:  string | null;
-  onFocusStage:  (key: string) => void;
+  /** Navigates to the Salesforce-style full-page client view at
+   *  /clients/pipeline/:id. Wired to the hero "Open full client" CTA
+   *  and to each stage card's click handler. */
+  onOpenFull:    () => void;
 }) {
   // Headline status pill — aggregates per-stage states.
   const workflowStatus = computeWorkflowStatus(wf, onLeaveIds);
 
-  // Aggregate stage counters for the progress band. Renders as small
-  // chip row under the arc.
+  // Per-stage state for both the progress counters and the card grid.
   const stageStates = STAGES.map(s => {
     const svc = wf.services.find(s.matches);
     return { stage: s, svc, status: computeStageStatus(svc, wf, onLeaveIds) };
@@ -465,15 +477,13 @@ function FullDetail({
               )}
             </div>
           </div>
-          {focusedStage && (
-            <button
-              onClick={() => onFocusStage(focusedStage)}
-              className="text-[12px] inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted text-foreground"
-              title="Show all stages again"
-            >
-              <Filter className="h-3.5 w-3.5" /> Showing one stage · clear
-            </button>
-          )}
+          <button
+            onClick={onOpenFull}
+            className="text-[12.5px] inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-semibold shadow-sm"
+            title="Open the full client record"
+          >
+            Open full client view <ChevronDown className="h-3.5 w-3.5 -rotate-90" />
+          </button>
         </div>
       </div>
 
@@ -496,47 +506,41 @@ function FullDetail({
       </div>
 
       {/* ── Stages ────────────────────────────────────────────────── */}
-      {focusedStage ? (
-        // Single-stage focus mode — one big card with checklist + everything.
-        <div className="px-6 sm:px-8 py-6 border-b border-border">
-          {(() => {
-            const s = stageStates.find(s => s.stage.key === focusedStage);
-            if (!s) return null;
-            return <FocusedStageCard
-              stage={s.stage}
-              svc={s.svc}
-              status={s.status}
-              wf={wf}
-              users={users}
-              onLeaveIds={onLeaveIds}
-            />;
-          })()}
-        </div>
-      ) : (
-        // All-stages view — grid of compact cards.
-        <div className="px-6 sm:px-8 py-6 border-b border-border grid grid-cols-1 md:grid-cols-3 gap-4">
-          {stageStates.map(({ stage, svc, status }) => (
-            <StageCard
-              key={stage.key}
-              stage={stage}
-              svc={svc}
-              status={status}
-              wf={wf}
-              users={users}
-              onLeaveIds={onLeaveIds}
-              onClick={() => onFocusStage(stage.key)}
-            />
-          ))}
-        </div>
-      )}
+      {/* Single grid layout — clicking any card navigates to the full
+          Salesforce-style client page. Owner ask: stage clicks should
+          OPEN the dedicated client view, not narrow the inline panel.
+          The previous focused-stage swap was too subtle ("nothing
+          happens") so we replaced it with a real route change. */}
+      <div className="px-6 sm:px-8 py-6 border-b border-border grid grid-cols-1 md:grid-cols-3 gap-4">
+        {stageStates.map(({ stage, svc, status }) => (
+          <StageCard
+            key={stage.key}
+            stage={stage}
+            svc={svc}
+            status={status}
+            wf={wf}
+            users={users}
+            onLeaveIds={onLeaveIds}
+            onClick={onOpenFull}
+          />
+        ))}
+      </div>
 
       {/* ── Activity timeline ─────────────────────────────────────── */}
       <div>
-        <div className="px-6 sm:px-8 pt-5 pb-2 flex items-center gap-2">
-          <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
-          <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground">
-            Activity {focusedStage ? `· ${STAGES.find(s => s.key === focusedStage)?.label}` : ''}
-          </p>
+        <div className="px-6 sm:px-8 pt-5 pb-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+            <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground">
+              Activity
+            </p>
+          </div>
+          <button
+            onClick={onOpenFull}
+            className="text-[11px] text-primary hover:underline"
+          >
+            See full timeline →
+          </button>
         </div>
         <ActivityTimeline workflowId={wf._id} refreshKey={0} />
       </div>
@@ -645,108 +649,9 @@ function StageCard({
   );
 }
 
-// ── Focused stage card (single-stage mode) ──────────────────────────
-// When the user clicks into a single stage, this is what shows: the
-// full per-stage detail with checklist progress, full meta, and any
-// scoped comment. More breathing room than the grid card.
-function FocusedStageCard({
-  stage, svc, status, wf, users, onLeaveIds,
-}: {
-  stage:      { key: string; label: string };
-  svc?:       ServiceSummary;
-  status:     StatusInfo;
-  wf:         FocusedWorkflow;
-  users:      Record<string, FocusedUser>;
-  onLeaveIds: Set<string>;
-}) {
-  const tone = stageTone(stage.key);
-  const assignee = svc?.assignedTo ? users[svc.assignedTo] : undefined;
-  const onLeave  = !!(svc?.assignedTo && onLeaveIds.has(svc.assignedTo));
-  const etaStr = svc?.eta || wf.eta || undefined;
-  const meetingStr = svc?.nextMeetingAt || wf.nextMeetingAt || undefined;
-
-  // Checklist roll-up — show the per-step progress so the user sees
-  // exactly what's left in this stage.
-  const checklist = svc?.checklist || [];
-  const checklistDone = checklist.filter(c => c.done).length;
-  const checklistPct  = checklist.length === 0 ? (svc?.status === 'done' ? 100 : 0) : Math.round((checklistDone / checklist.length) * 100);
-
-  return (
-    <div className="rounded-2xl border border-border bg-card overflow-hidden">
-      <div className={`h-1.5 ${tone.stripe}`} />
-      <div className="p-5 sm:p-6 space-y-5">
-        {/* Stage header */}
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div>
-            <p className={`text-[10.5px] uppercase tracking-[0.14em] font-bold ${tone.text}`}>
-              {stage.label}
-            </p>
-            <h3 className="text-[18px] font-bold mt-1 leading-tight">
-              {svc?.label || 'Unnamed task'}
-            </h3>
-          </div>
-          <span className={`shrink-0 inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${pillClasses(status.tone)}`} title={status.hint || ''}>
-            {status.label}
-          </span>
-        </div>
-
-        {/* Meta grid — assignee, end date, next meeting */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Meta label="Assignee">
-            <div className="flex items-center gap-2">
-              <span className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
-                {initials(assignee?.name) || '·'}
-              </span>
-              <span className={onLeave ? 'text-sky-700 font-medium' : ''}>
-                {assignee?.name || <span className="text-muted-foreground italic">Unassigned</span>}
-              </span>
-              {onLeave && <Plane className="h-3 w-3 text-sky-600" />}
-            </div>
-          </Meta>
-          <Meta label="End date">
-            {etaStr ? <span className="font-medium">{formatDate(etaStr)}</span> : <span className="text-muted-foreground italic">Not set</span>}
-          </Meta>
-          <Meta label="Next meeting">
-            {meetingStr ? <span className="font-medium">{formatDate(meetingStr)}</span> : <span className="text-muted-foreground italic">None scheduled</span>}
-          </Meta>
-        </div>
-
-        {/* Checklist progress */}
-        {checklist.length > 0 && (
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground">
-                Checklist · {checklistDone} of {checklist.length}
-              </p>
-              <p className="text-[11px] text-muted-foreground tabular-nums">{checklistPct}%</p>
-            </div>
-            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-              <div className={`h-full ${tone.stripe} transition-all`} style={{ width: `${checklistPct}%` }} />
-            </div>
-          </div>
-        )}
-
-        {/* Last comment */}
-        {wf.lastUpdate?.detail && (
-          <div className={`rounded-xl ${tone.soft} px-4 py-3`}>
-            <div className="flex items-start gap-2">
-              <MessageSquare className={`h-3.5 w-3.5 mt-0.5 ${tone.text} shrink-0`} />
-              <div className="min-w-0">
-                <p className="text-[13px] leading-snug">{wf.lastUpdate.detail}</p>
-                {wf.lastUpdate.at && (
-                  <p className="text-[10.5px] text-muted-foreground mt-1">
-                    {wf.lastUpdate.actorId ? `${users[wf.lastUpdate.actorId]?.name} · ` : ''}
-                    {formatDistanceToNow(parseISO(wf.lastUpdate.at), { addSuffix: true })}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+// (FocusedStageCard removed — stage clicks now navigate to the
+// existing Salesforce-style page at /clients/pipeline/:id instead of
+// rendering an inline single-stage view.)
 
 // ── Small atoms ─────────────────────────────────────────────────────
 
@@ -782,16 +687,7 @@ function CountChip({ label, n, tone }: { label: string; n: number; tone: 'emeral
   );
 }
 
-function Meta({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground mb-1.5">
-        {label}
-      </p>
-      <div className="text-[13px]">{children}</div>
-    </div>
-  );
-}
+// (Meta atom removed alongside FocusedStageCard — was only used there.)
 
 // ── Workflow-level status ──────────────────────────────────────────
 // Aggregates the per-stage statuses into one headline pill. Priority
