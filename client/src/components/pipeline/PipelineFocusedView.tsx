@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatDistanceToNow, format, parseISO, differenceInCalendarDays } from 'date-fns';
 import {
   Search, X, Phone, Mail, Calendar, UserCheck, Plane, AlertTriangle,
-  CheckCircle2, Clock, Inbox, Rocket, ArrowRight, ArrowLeft, MessageSquare,
+  CheckCircle2, Clock, Inbox, Rocket, ArrowLeft, MessageSquare,
   ChevronDown, Loader2, Filter,
 } from 'lucide-react';
 import * as api from '@/api';
@@ -70,6 +70,9 @@ interface Props {
   users:   Record<string, FocusedUser>;
   query:   string;
   onQuery: (q: string) => void;
+  /** Optional escape hatch — power users can still pop a full drawer
+   *  from elsewhere in the app. The focused view itself no longer
+   *  uses this; opening a brand here is purely inline. */
   onOpenDrawer?: (wfId: string, clientName?: string) => void;
 }
 
@@ -192,7 +195,7 @@ function computeKpis(list: FocusedWorkflow[]) {
 }
 
 // ── Main component ──────────────────────────────────────────────────
-export function PipelineFocusedView({ list, users, query, onQuery, onOpenDrawer }: Props) {
+export function PipelineFocusedView({ list, users, query, onQuery }: Props) {
   // Who is on leave today? One fetch, cached for the page session.
   const [onLeaveIds, setOnLeaveIds] = useState<Set<string>>(new Set());
   const [leavesLoaded, setLeavesLoaded] = useState(false);
@@ -307,7 +310,6 @@ export function PipelineFocusedView({ list, users, query, onQuery, onOpenDrawer 
               leavesLoaded={leavesLoaded}
               focusedStage={focusedStage}
               onFocusStage={(key) => setFocusedStage(prev => prev === key ? null : key)}
-              onOpenFull={() => onOpenDrawer?.(match._id, match.clientName)}
             />
           )}
         </div>
@@ -377,8 +379,27 @@ function CollapsedSummary({
 }
 
 // ── Full detail (the focus mode) ────────────────────────────────────
+//
+// Layout philosophy (May 2026 redesign):
+//   - Hero band at top — generous, calm, brand-first. Big avatar, big
+//     name, headline status pill, contact links underneath.
+//   - Progress band — overall % done as an SVG arc + counts of stages
+//     done / in progress / waiting. One quick read.
+//   - Stage cards in a grid, NOT a stack of dense rows. Each card has
+//     a colored top stripe, generous padding, a single status pill,
+//     and exactly three rows of meta (assignee · end date · last
+//     comment). Clickable → narrows to one-stage focus mode.
+//   - Focused-stage mode renders ONE big card with everything the
+//     spec listed (assignee + availability, dates, checklist, comments,
+//     stage-scoped activity).
+//   - Activity timeline at the bottom as a properly-headed section.
+//
+// The visual difference from v1 — bigger type, fewer borders, more
+// whitespace, a single accent colour per stage instead of pills
+// everywhere, and the SVG progress arc as the one "hero" data point
+// the eye lands on.
 function FullDetail({
-  wf, users, onLeaveIds, leavesLoaded, focusedStage, onFocusStage, onOpenFull,
+  wf, users, onLeaveIds, leavesLoaded, focusedStage, onFocusStage,
 }: {
   wf:            FocusedWorkflow;
   users:         Record<string, FocusedUser>;
@@ -386,160 +407,133 @@ function FullDetail({
   leavesLoaded:  boolean;
   focusedStage:  string | null;
   onFocusStage:  (key: string) => void;
-  onOpenFull?:   () => void;
 }) {
-  // Which stages to show. If focusedStage is set, narrow to just that
-  // one (per spec: "When a stage is selected: Display only information
-  // related to that stage. Hide everything unrelated").
-  const visibleStages = focusedStage
-    ? STAGES.filter(s => s.key === focusedStage)
-    : STAGES;
-
-  // Top-level workflow status — derived from services. Sets the
-  // headline pill next to the client name.
+  // Headline status pill — aggregates per-stage states.
   const workflowStatus = computeWorkflowStatus(wf, onLeaveIds);
 
+  // Aggregate stage counters for the progress band. Renders as small
+  // chip row under the arc.
+  const stageStates = STAGES.map(s => {
+    const svc = wf.services.find(s.matches);
+    return { stage: s, svc, status: computeStageStatus(svc, wf, onLeaveIds) };
+  });
+  const doneCount       = stageStates.filter(s => s.status.key === 'completed').length;
+  const inProgressCount = stageStates.filter(s => ['active_on_time', 'active_delayed', 'active_on_holiday'].includes(s.status.key)).length;
+  const blockedCount    = stageStates.filter(s => s.status.key === 'blocked').length;
+
+  // Overall percent — average of per-service checklist progress.
+  const overallPct = (() => {
+    if (wf.services.length === 0) return 0;
+    let total = 0, done = 0;
+    for (const s of wf.services) {
+      const cl = s.checklist || [];
+      total += cl.length;
+      done  += cl.filter(c => c.done).length;
+      // Empty checklist but done → count as fully complete (1 of 1).
+      if (cl.length === 0 && s.status === 'done') { total += 1; done += 1; }
+    }
+    return total === 0 ? 0 : Math.round((done / total) * 100);
+  })();
+
   return (
-    <div className="rounded-2xl border border-border bg-card overflow-hidden">
-      {/* Header — client identity + headline status + contacts */}
-      <div className="px-5 py-4 border-b border-border flex items-start gap-3 flex-wrap">
-        <div className="h-11 w-11 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[14px] font-bold shrink-0">
-          {initials(wf.clientName)}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-[16px] font-bold tracking-tight">{wf.clientName || 'Unnamed client'}</p>
-            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold whitespace-nowrap ${pillClasses(workflowStatus.tone)}`}>
-              {workflowStatus.label}
-            </span>
+    <div className="rounded-3xl border border-border bg-card overflow-hidden">
+      {/* ── Hero band ─────────────────────────────────────────────── */}
+      <div className="px-6 sm:px-8 pt-6 pb-5 border-b border-border">
+        <div className="flex items-start gap-4 flex-wrap">
+          <div className="h-14 w-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center text-[18px] font-bold shrink-0">
+            {initials(wf.clientName)}
           </div>
-          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-[12px]">
-            {wf.clientPhone && (
-              <a href={`tel:${wf.clientPhone}`} className="text-primary hover:underline tabular-nums inline-flex items-center gap-1">
-                <Phone className="h-3 w-3" /> {wf.clientPhone}
-              </a>
-            )}
-            {wf.clientEmail && (
-              <a href={`mailto:${wf.clientEmail}`} className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-                <Mail className="h-3 w-3" /> {wf.clientEmail}
-              </a>
-            )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h2 className="text-[22px] sm:text-[24px] font-bold tracking-tight leading-none">
+                {wf.clientName || 'Unnamed client'}
+              </h2>
+              <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap ${pillClasses(workflowStatus.tone)}`}>
+                {workflowStatus.label}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[12.5px]">
+              {wf.clientPhone && (
+                <a href={`tel:${wf.clientPhone}`} className="text-primary hover:underline tabular-nums inline-flex items-center gap-1.5">
+                  <Phone className="h-3.5 w-3.5" /> {wf.clientPhone}
+                </a>
+              )}
+              {wf.clientEmail && (
+                <a href={`mailto:${wf.clientEmail}`} className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5">
+                  <Mail className="h-3.5 w-3.5" /> {wf.clientEmail}
+                </a>
+              )}
+            </div>
           </div>
-        </div>
-        {focusedStage && (
-          <button
-            onClick={() => onFocusStage(focusedStage)}
-            className="text-[12px] inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-muted hover:bg-muted/70 text-foreground"
-            title="Show all stages again"
-          >
-            <Filter className="h-3 w-3" /> Showing one stage · clear
-          </button>
-        )}
-        {onOpenFull && !focusedStage && (
-          <button
-            onClick={onOpenFull}
-            className="text-[12px] inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-muted hover:bg-muted/70 text-foreground"
-          >
-            Full drawer <ArrowRight className="h-3 w-3" />
-          </button>
-        )}
-      </div>
-
-      {/* Per-stage breakdown */}
-      <div className="divide-y divide-border">
-        {visibleStages.map(stage => {
-          const svc = wf.services.find(stage.matches);
-          const status = computeStageStatus(svc, wf, onLeaveIds);
-          const assignee = svc?.assignedTo ? users[svc.assignedTo] : undefined;
-          const onLeave  = !!(svc?.assignedTo && onLeaveIds.has(svc.assignedTo));
-          const etaStr = svc?.eta || wf.eta || undefined;
-          const meetingStr = svc?.nextMeetingAt || wf.nextMeetingAt || undefined;
-          const isFocused = focusedStage === stage.key;
-
-          return (
+          {focusedStage && (
             <button
-              key={stage.key}
-              onClick={() => onFocusStage(stage.key)}
-              className={`w-full text-left px-5 py-4 grid grid-cols-1 sm:grid-cols-[140px_1fr_auto] gap-x-4 gap-y-2 items-start transition-colors ${
-                isFocused ? 'bg-primary/[0.04]' : 'hover:bg-muted/30'
-              }`}
-              title={isFocused ? 'Click to show all stages again' : `Click to focus only on ${stage.label}`}
+              onClick={() => onFocusStage(focusedStage)}
+              className="text-[12px] inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted text-foreground"
+              title="Show all stages again"
             >
-              {/* Stage label */}
-              <div>
-                <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground">
-                  {stage.label}
-                </p>
-                {svc?.label && <p className="text-[12px] text-foreground/80 mt-0.5">{svc.label}</p>}
-              </div>
-
-              {/* Meta — assignee, dates, meeting */}
-              <div className="space-y-1.5">
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px]">
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-[9.5px] font-bold text-muted-foreground">
-                      {initials(assignee?.name) || '·'}
-                    </span>
-                    <span className={onLeave ? 'text-sky-700 font-medium' : 'text-foreground'}>
-                      {assignee?.name || <span className="text-muted-foreground italic">Unassigned</span>}
-                    </span>
-                    {onLeave && (
-                      <Plane className="h-3 w-3 text-sky-600" aria-label="On approved leave today" />
-                    )}
-                  </span>
-                  {etaStr && (
-                    <span className="inline-flex items-center gap-1 text-foreground/80">
-                      <Calendar className="h-3 w-3" />
-                      End date: <span className="font-medium">{formatDate(etaStr)}</span>
-                    </span>
-                  )}
-                  {meetingStr && (
-                    <span className="inline-flex items-center gap-1 text-foreground/80">
-                      <Calendar className="h-3 w-3 text-emerald-600" />
-                      Next meeting: <span className="font-medium">{formatDate(meetingStr)}</span>
-                    </span>
-                  )}
-                </div>
-                {/* Last comment scoped to this stage when available */}
-                {wf.lastUpdate?.detail && (
-                  <div className="flex items-start gap-1.5 text-[12px] text-foreground/85 leading-snug">
-                    <MessageSquare className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
-                    <span className="truncate">
-                      {wf.lastUpdate.detail}
-                      {wf.lastUpdate.at && (
-                        <span className="text-muted-foreground">
-                          {' '}· {wf.lastUpdate.actorId ? users[wf.lastUpdate.actorId]?.name + ' · ' : ''}
-                          {formatDistanceToNow(parseISO(wf.lastUpdate.at), { addSuffix: true })}
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Status pill */}
-              <div className="flex flex-col items-end gap-1 min-w-[120px]">
-                <span className={`inline-flex items-center px-2 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap ${pillClasses(status.tone)}`}
-                  title={status.hint || ''}>
-                  {status.label}
-                </span>
-                {status.key === 'inactive' && (
-                  <span className="text-[10.5px] text-muted-foreground inline-flex items-center gap-0.5">
-                    <ArrowLeft className="h-2.5 w-2.5" /> Moved back
-                  </span>
-                )}
-              </div>
+              <Filter className="h-3.5 w-3.5" /> Showing one stage · clear
             </button>
-          );
-        })}
+          )}
+        </div>
       </div>
 
-      {/* Activity timeline — chronological history (calls, notes, stage
-          changes, approvals, deliveries). Embedded inline so users
-          don't have to open the drawer to see what happened. */}
-      <div className="border-t border-border">
-        <div className="px-5 pt-3 pb-1 flex items-center gap-1.5">
-          <MessageSquare className="h-3 w-3 text-muted-foreground" />
+      {/* ── Progress band ─────────────────────────────────────────── */}
+      <div className="px-6 sm:px-8 py-5 border-b border-border bg-muted/20">
+        <div className="flex items-center gap-6 flex-wrap">
+          <ProgressArc pct={overallPct} />
+          <div className="flex-1 min-w-0">
+            <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground mb-2">
+              Pipeline progress
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <CountChip label="Done"        n={doneCount}       tone="emerald" />
+              <CountChip label="In progress" n={inProgressCount} tone="amber" />
+              <CountChip label="Blocked"     n={blockedCount}    tone="rose" />
+              <CountChip label="Total stages" n={STAGES.length}  tone="neutral" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Stages ────────────────────────────────────────────────── */}
+      {focusedStage ? (
+        // Single-stage focus mode — one big card with checklist + everything.
+        <div className="px-6 sm:px-8 py-6 border-b border-border">
+          {(() => {
+            const s = stageStates.find(s => s.stage.key === focusedStage);
+            if (!s) return null;
+            return <FocusedStageCard
+              stage={s.stage}
+              svc={s.svc}
+              status={s.status}
+              wf={wf}
+              users={users}
+              onLeaveIds={onLeaveIds}
+            />;
+          })()}
+        </div>
+      ) : (
+        // All-stages view — grid of compact cards.
+        <div className="px-6 sm:px-8 py-6 border-b border-border grid grid-cols-1 md:grid-cols-3 gap-4">
+          {stageStates.map(({ stage, svc, status }) => (
+            <StageCard
+              key={stage.key}
+              stage={stage}
+              svc={svc}
+              status={status}
+              wf={wf}
+              users={users}
+              onLeaveIds={onLeaveIds}
+              onClick={() => onFocusStage(stage.key)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ── Activity timeline ─────────────────────────────────────── */}
+      <div>
+        <div className="px-6 sm:px-8 pt-5 pb-2 flex items-center gap-2">
+          <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
           <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground">
             Activity {focusedStage ? `· ${STAGES.find(s => s.key === focusedStage)?.label}` : ''}
           </p>
@@ -547,12 +541,254 @@ function FullDetail({
         <ActivityTimeline workflowId={wf._id} refreshKey={0} />
       </div>
 
-      {/* Footer — small "loading leaves" hint while the fetch is in flight */}
+      {/* Footer — leaves-loading hint */}
       {!leavesLoaded && (
-        <div className="px-5 py-2 border-t border-border text-[11px] text-muted-foreground inline-flex items-center gap-1.5">
+        <div className="px-6 py-2 border-t border-border text-[11px] text-muted-foreground inline-flex items-center gap-1.5">
           <Loader2 className="h-3 w-3 animate-spin" /> Checking who's on leave today…
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Stage tone resolver (matches the executive view convention) ────
+function stageTone(key: string): { stripe: string; soft: string; text: string } {
+  switch (key) {
+    case 'dev':   return { stripe: 'bg-emerald-500', soft: 'bg-emerald-50',  text: 'text-emerald-700' };
+    case 'video': return { stripe: 'bg-amber-500',   soft: 'bg-amber-50',    text: 'text-amber-700'   };
+    case 'meta':  return { stripe: 'bg-blue-500',    soft: 'bg-blue-50',     text: 'text-blue-700'    };
+    default:      return { stripe: 'bg-slate-400',   soft: 'bg-slate-50',    text: 'text-slate-700'   };
+  }
+}
+
+// ── Stage card (grid mode) ──────────────────────────────────────────
+function StageCard({
+  stage, svc, status, wf, users, onLeaveIds, onClick,
+}: {
+  stage:      { key: string; label: string };
+  svc?:       ServiceSummary;
+  status:     StatusInfo;
+  wf:         FocusedWorkflow;
+  users:      Record<string, FocusedUser>;
+  onLeaveIds: Set<string>;
+  onClick:    () => void;
+}) {
+  const tone = stageTone(stage.key);
+  const assignee = svc?.assignedTo ? users[svc.assignedTo] : undefined;
+  const onLeave  = !!(svc?.assignedTo && onLeaveIds.has(svc.assignedTo));
+  const etaStr = svc?.eta || wf.eta || undefined;
+
+  return (
+    <button
+      onClick={onClick}
+      className="text-left rounded-2xl border border-border bg-card overflow-hidden hover:border-border/80 hover:shadow-sm transition-all group"
+      title={`Click to focus on ${stage.label}`}
+    >
+      <div className={`h-1 ${tone.stripe}`} />
+      <div className="p-4 space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className={`text-[10.5px] uppercase tracking-[0.14em] font-bold ${tone.text}`}>
+              {stage.label}
+            </p>
+            {svc?.label && (
+              <p className="text-[12.5px] text-foreground/85 mt-0.5 truncate">{svc.label}</p>
+            )}
+          </div>
+          <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold ${pillClasses(status.tone)}`} title={status.hint || ''}>
+            {status.label}
+          </span>
+        </div>
+
+        {/* Assignee row */}
+        <div className="flex items-center gap-2 text-[12px]">
+          <span className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-[9.5px] font-bold text-muted-foreground shrink-0">
+            {initials(assignee?.name) || '·'}
+          </span>
+          <span className={`truncate ${onLeave ? 'text-sky-700 font-medium' : ''}`}>
+            {assignee?.name || <span className="text-muted-foreground italic">Unassigned</span>}
+          </span>
+          {onLeave && <Plane className="h-3 w-3 text-sky-600 shrink-0" />}
+        </div>
+
+        {/* ETA row */}
+        <div className="flex items-center gap-2 text-[12px] text-foreground/80">
+          <Calendar className="h-3 w-3 text-muted-foreground shrink-0" />
+          {etaStr ? (
+            <span>End date · <span className="font-medium">{formatDate(etaStr)}</span></span>
+          ) : (
+            <span className="italic text-muted-foreground">No end date set</span>
+          )}
+        </div>
+
+        {/* Last comment row */}
+        {wf.lastUpdate?.detail ? (
+          <div className="pt-2 border-t border-border/60">
+            <div className="flex items-start gap-1.5 text-[11.5px] text-foreground/80 leading-snug">
+              <MessageSquare className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
+              <span className="line-clamp-2">{wf.lastUpdate.detail}</span>
+            </div>
+            {wf.lastUpdate.at && (
+              <p className="text-[10.5px] text-muted-foreground mt-1 ml-4.5">
+                {wf.lastUpdate.actorId ? `${users[wf.lastUpdate.actorId]?.name} · ` : ''}
+                {formatDistanceToNow(parseISO(wf.lastUpdate.at), { addSuffix: true })}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="pt-2 border-t border-border/60">
+            <p className="text-[11.5px] text-muted-foreground italic">No updates yet</p>
+          </div>
+        )}
+      </div>
+    </button>
+  );
+}
+
+// ── Focused stage card (single-stage mode) ──────────────────────────
+// When the user clicks into a single stage, this is what shows: the
+// full per-stage detail with checklist progress, full meta, and any
+// scoped comment. More breathing room than the grid card.
+function FocusedStageCard({
+  stage, svc, status, wf, users, onLeaveIds,
+}: {
+  stage:      { key: string; label: string };
+  svc?:       ServiceSummary;
+  status:     StatusInfo;
+  wf:         FocusedWorkflow;
+  users:      Record<string, FocusedUser>;
+  onLeaveIds: Set<string>;
+}) {
+  const tone = stageTone(stage.key);
+  const assignee = svc?.assignedTo ? users[svc.assignedTo] : undefined;
+  const onLeave  = !!(svc?.assignedTo && onLeaveIds.has(svc.assignedTo));
+  const etaStr = svc?.eta || wf.eta || undefined;
+  const meetingStr = svc?.nextMeetingAt || wf.nextMeetingAt || undefined;
+
+  // Checklist roll-up — show the per-step progress so the user sees
+  // exactly what's left in this stage.
+  const checklist = svc?.checklist || [];
+  const checklistDone = checklist.filter(c => c.done).length;
+  const checklistPct  = checklist.length === 0 ? (svc?.status === 'done' ? 100 : 0) : Math.round((checklistDone / checklist.length) * 100);
+
+  return (
+    <div className="rounded-2xl border border-border bg-card overflow-hidden">
+      <div className={`h-1.5 ${tone.stripe}`} />
+      <div className="p-5 sm:p-6 space-y-5">
+        {/* Stage header */}
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <p className={`text-[10.5px] uppercase tracking-[0.14em] font-bold ${tone.text}`}>
+              {stage.label}
+            </p>
+            <h3 className="text-[18px] font-bold mt-1 leading-tight">
+              {svc?.label || 'Unnamed task'}
+            </h3>
+          </div>
+          <span className={`shrink-0 inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${pillClasses(status.tone)}`} title={status.hint || ''}>
+            {status.label}
+          </span>
+        </div>
+
+        {/* Meta grid — assignee, end date, next meeting */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Meta label="Assignee">
+            <div className="flex items-center gap-2">
+              <span className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                {initials(assignee?.name) || '·'}
+              </span>
+              <span className={onLeave ? 'text-sky-700 font-medium' : ''}>
+                {assignee?.name || <span className="text-muted-foreground italic">Unassigned</span>}
+              </span>
+              {onLeave && <Plane className="h-3 w-3 text-sky-600" />}
+            </div>
+          </Meta>
+          <Meta label="End date">
+            {etaStr ? <span className="font-medium">{formatDate(etaStr)}</span> : <span className="text-muted-foreground italic">Not set</span>}
+          </Meta>
+          <Meta label="Next meeting">
+            {meetingStr ? <span className="font-medium">{formatDate(meetingStr)}</span> : <span className="text-muted-foreground italic">None scheduled</span>}
+          </Meta>
+        </div>
+
+        {/* Checklist progress */}
+        {checklist.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground">
+                Checklist · {checklistDone} of {checklist.length}
+              </p>
+              <p className="text-[11px] text-muted-foreground tabular-nums">{checklistPct}%</p>
+            </div>
+            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+              <div className={`h-full ${tone.stripe} transition-all`} style={{ width: `${checklistPct}%` }} />
+            </div>
+          </div>
+        )}
+
+        {/* Last comment */}
+        {wf.lastUpdate?.detail && (
+          <div className={`rounded-xl ${tone.soft} px-4 py-3`}>
+            <div className="flex items-start gap-2">
+              <MessageSquare className={`h-3.5 w-3.5 mt-0.5 ${tone.text} shrink-0`} />
+              <div className="min-w-0">
+                <p className="text-[13px] leading-snug">{wf.lastUpdate.detail}</p>
+                {wf.lastUpdate.at && (
+                  <p className="text-[10.5px] text-muted-foreground mt-1">
+                    {wf.lastUpdate.actorId ? `${users[wf.lastUpdate.actorId]?.name} · ` : ''}
+                    {formatDistanceToNow(parseISO(wf.lastUpdate.at), { addSuffix: true })}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Small atoms ─────────────────────────────────────────────────────
+
+function ProgressArc({ pct }: { pct: number }) {
+  // 72px diameter SVG arc — same visual weight as a metric card. The
+  // strokeDashoffset trick draws a partial circle equal to pct%.
+  const R = 30, C = 2 * Math.PI * R;
+  const offset = C - (Math.max(0, Math.min(100, pct)) / 100) * C;
+  return (
+    <div className="relative" style={{ width: 72, height: 72 }}>
+      <svg width="72" height="72" className="-rotate-90">
+        <circle cx="36" cy="36" r={R} fill="none" stroke="hsl(var(--muted))" strokeWidth="6" />
+        <circle cx="36" cy="36" r={R} fill="none" stroke="hsl(var(--primary))" strokeWidth="6"
+          strokeDasharray={C} strokeDashoffset={offset} strokeLinecap="round" className="transition-all duration-500" />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-[14px] font-bold tabular-nums">
+        {pct}%
+      </span>
+    </div>
+  );
+}
+
+function CountChip({ label, n, tone }: { label: string; n: number; tone: 'emerald' | 'amber' | 'rose' | 'neutral' }) {
+  const cls =
+    tone === 'emerald' ? 'bg-emerald-500/12 text-emerald-700' :
+    tone === 'amber'   ? 'bg-amber-500/15 text-amber-700'    :
+    tone === 'rose'    ? 'bg-rose-500/12 text-rose-700'      :
+                          'bg-muted text-muted-foreground';
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11.5px] font-medium ${cls}`}>
+      <span className="font-bold tabular-nums">{n}</span> {label}
+    </span>
+  );
+}
+
+function Meta({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground mb-1.5">
+        {label}
+      </p>
+      <div className="text-[13px]">{children}</div>
     </div>
   );
 }

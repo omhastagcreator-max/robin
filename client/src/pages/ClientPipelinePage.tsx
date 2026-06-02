@@ -209,29 +209,26 @@ export default function ClientPipelinePage() {
   // Apply client-side filters (server already handled q + mineOnly).
   const filteredList = useMemo(() => applyFilters(list, filters), [list, filters]);
 
-  // Press Enter in the search input → open the first matching client's
-  // full detail panel with AI brief auto-generated. Behaviour matches
-  // the implicit user expectation when typing a phone number: hit Enter,
-  // you see everything about that client.
+  // Press Enter in the search input → land on the focused-view inline
+  // pipeline panel instead of the drawer. Owner ask (May 2026): "when
+  // brand name is entered it should open the full pipeline only, not
+  // the drawer". So we just flip the view to 'focused' and let the
+  // PipelineFocusedView take the query and expand the panel inline.
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter') return;
     if (!query.trim()) return;
-    const top = filteredList[0];
-    if (!top) {
+    if (filteredList.length === 0) {
       toast.error('No clients match that search.');
       return;
     }
-    lastAutoOpenedRef.current = top._id;
-    openProject(top._id, top.clientName, true);
+    setView('focused');  // PipelineFocusedView matches query and expands
   };
 
-  // Heuristic auto-open. If the user typed something that LOOKS like a
-  // full phone number (≥10 digits, ignoring spaces/dashes/+) AND the
-  // server has narrowed the list to exactly one match, open that client
-  // automatically. Most users type a phone number expecting "show me
-  // this client"; Enter-key works too but auto-open feels magic for the
-  // common case. Guarded by lastAutoOpenedRef so it fires at most once
-  // per unique top match.
+  // Heuristic auto-open. When the typed query looks like a complete
+  // phone number AND the server narrowed to a single match, snap into
+  // focused view automatically — no extra click needed. Guarded by
+  // lastAutoOpenedRef so it fires at most once per unique top match.
+  // Also flips view to 'focused' (was: opening the drawer).
   useEffect(() => {
     if (!query.trim()) { lastAutoOpenedRef.current = ''; return; }
     const digits = query.replace(/[^0-9]/g, '');
@@ -241,7 +238,7 @@ export default function ClientPipelinePage() {
     const top = filteredList[0];
     if (lastAutoOpenedRef.current === top._id) return;
     lastAutoOpenedRef.current = top._id;
-    openProject(top._id, top.clientName, true);
+    setView('focused');  // PipelineFocusedView already has the query — expands inline
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, filteredList]);
 
