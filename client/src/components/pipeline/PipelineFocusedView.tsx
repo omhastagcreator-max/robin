@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow, format, parseISO, differenceInCalendarDays } from 'date-fns';
 import {
-  Search, X, Phone, Mail, Calendar, UserCheck, Plane, AlertTriangle,
+  Search, X, Phone, Mail, UserCheck, Plane, AlertTriangle,
   CheckCircle2, Clock, Inbox, Rocket, ArrowLeft, MessageSquare,
   ChevronDown, Loader2,
 } from 'lucide-react';
@@ -506,27 +506,123 @@ function FullDetail({
       </div>
 
       {/* ── Stages ────────────────────────────────────────────────── */}
-      {/* Single grid layout — clicking any card navigates to the full
-          Salesforce-style client page. Owner ask: stage clicks should
-          OPEN the dedicated client view, not narrow the inline panel.
-          The previous focused-stage swap was too subtle ("nothing
-          happens") so we replaced it with a real route change. */}
-      <div className="px-6 sm:px-8 py-6 border-b border-border grid grid-cols-1 md:grid-cols-3 gap-4">
-        {stageStates.map(({ stage, svc, status }) => (
-          <StageCard
-            key={stage.key}
-            stage={stage}
-            svc={svc}
-            status={status}
-            wf={wf}
-            users={users}
-            onLeaveIds={onLeaveIds}
-            onClick={onOpenFull}
-          />
-        ))}
+      {/* Tab strip + single focused stage. Owner spec: ONE STAGE AT A
+          TIME, auto-selected to the in-progress stage so the user
+          lands directly on the stage that needs attention. Other
+          stages live in the tab strip — click to switch focus. The
+          big "Open full client view →" button in the hero is the
+          only path to the dedicated record page. */}
+      <FocusedStagesBlock
+        wf={wf}
+        users={users}
+        onLeaveIds={onLeaveIds}
+        stageStates={stageStates}
+        onOpenFull={onOpenFull}
+      />
+
+      {/* Footer — leaves-loading hint */}
+      {!leavesLoaded && (
+        <div className="px-6 py-2 border-t border-border text-[11px] text-muted-foreground inline-flex items-center gap-1.5">
+          <Loader2 className="h-3 w-3 animate-spin" /> Checking who's on leave today…
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── FocusedStagesBlock ──────────────────────────────────────────────
+// The middle band of the panel. Three responsibilities:
+//   1. Tab strip — one chip per stage, each showing its status pill.
+//      Active chip = currently focused stage. Clicking a chip swaps
+//      focus. Auto-defaults to the in-progress stage so the user
+//      doesn't have to find it manually.
+//   2. Focused stage detail — assignee + dates + comment in a tight
+//      left-to-right meta row (matches "left to right xyz" from the
+//      voice memo). Completed stages collapse to ONE LINE per spec.
+//   3. Activity timeline — chronological feed. Stays here so the user
+//      sees what just happened on this brand without leaving.
+function FocusedStagesBlock({
+  wf, users, onLeaveIds, stageStates, onOpenFull,
+}: {
+  wf:          FocusedWorkflow;
+  users:       Record<string, FocusedUser>;
+  onLeaveIds:  Set<string>;
+  stageStates: Array<{ stage: { key: string; label: string }; svc?: ServiceSummary; status: StatusInfo }>;
+  onOpenFull:  () => void;
+}) {
+  // Default focus → in-progress stage. If none in progress, fall back
+  // to the first blocked/inactive stage, then the first stage outright.
+  const defaultStageKey =
+    stageStates.find(s => ['active_on_time','active_delayed','active_on_holiday'].includes(s.status.key))?.stage.key
+    || stageStates.find(s => s.status.key === 'blocked')?.stage.key
+    || stageStates.find(s => s.status.key === 'inactive')?.stage.key
+    || stageStates[0]?.stage.key
+    || '';
+  const [activeKey, setActiveKey] = useState<string>(defaultStageKey);
+
+  // Reset when workflow changes — fresh brand should always land on
+  // the new brand's current active stage, never carry over the old
+  // selection.
+  useEffect(() => { setActiveKey(defaultStageKey); }, [wf._id, defaultStageKey]);
+
+  const active = stageStates.find(s => s.stage.key === activeKey) || stageStates[0];
+  if (!active) return null;
+
+  // "Moved back" detection: this stage is in_progress while a stage
+  // AFTER it (in the canonical sequence) has been completed or is
+  // ahead. That implies the project regressed. Per spec: surface as
+  // a small badge so the user sees it without asking.
+  const movedBack = (() => {
+    const idx = stageStates.findIndex(s => s.stage.key === activeKey);
+    if (idx < 0) return false;
+    if (!active.svc || active.svc.status === 'done') return false;
+    return stageStates.slice(idx + 1).some(s =>
+      s.svc?.status === 'done' || s.svc?.status === 'in_progress'
+    );
+  })();
+
+  return (
+    <>
+      {/* Tab strip */}
+      <div className="px-6 sm:px-8 pt-5 pb-4 border-b border-border">
+        <div className="inline-flex items-center rounded-xl bg-muted/40 p-1 gap-1 flex-wrap">
+          {stageStates.map(({ stage, status }) => {
+            const tone = stageTone(stage.key);
+            const isActive = stage.key === activeKey;
+            return (
+              <button
+                key={stage.key}
+                onClick={() => setActiveKey(stage.key)}
+                onMouseEnter={() => setActiveKey(stage.key)}
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold transition-colors ${
+                  isActive ? 'bg-card text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${tone.stripe}`} />
+                {stage.label}
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${pillClasses(status.tone)}`}>
+                  {status.label.split(' · ')[0]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* ── Activity timeline ─────────────────────────────────────── */}
+      {/* Active stage detail */}
+      <div className="px-6 sm:px-8 py-6 border-b border-border">
+        <ActiveStageDetail
+          stage={active.stage}
+          svc={active.svc}
+          status={active.status}
+          wf={wf}
+          users={users}
+          onLeaveIds={onLeaveIds}
+          movedBack={movedBack}
+        />
+      </div>
+
+      {/* Activity timeline */}
       <div>
         <div className="px-6 sm:px-8 pt-5 pb-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -544,13 +640,122 @@ function FullDetail({
         </div>
         <ActivityTimeline workflowId={wf._id} refreshKey={0} />
       </div>
+    </>
+  );
+}
 
-      {/* Footer — leaves-loading hint */}
-      {!leavesLoaded && (
-        <div className="px-6 py-2 border-t border-border text-[11px] text-muted-foreground inline-flex items-center gap-1.5">
-          <Loader2 className="h-3 w-3 animate-spin" /> Checking who's on leave today…
+// ── ActiveStageDetail ──────────────────────────────────────────────
+// The content shown for whichever stage is currently selected in
+// FocusedStagesBlock. Layout intentionally left-to-right to match the
+// voice memo's "left to right xyz" guidance. Completed stages
+// collapse to one line per spec ("bas ek hi point bahut hai").
+function ActiveStageDetail({
+  stage, svc, status, wf, users, onLeaveIds, movedBack,
+}: {
+  stage:       { key: string; label: string };
+  svc?:        ServiceSummary;
+  status:      StatusInfo;
+  wf:          FocusedWorkflow;
+  users:       Record<string, FocusedUser>;
+  onLeaveIds:  Set<string>;
+  movedBack:   boolean;
+}) {
+  const tone = stageTone(stage.key);
+  const assignee = svc?.assignedTo ? users[svc.assignedTo] : undefined;
+  const onLeave  = !!(svc?.assignedTo && onLeaveIds.has(svc.assignedTo));
+  const etaStr = svc?.eta || wf.eta || undefined;
+  const meetingStr = svc?.nextMeetingAt || wf.nextMeetingAt || undefined;
+
+  // Completed → one-liner. Per spec: nothing else should appear under
+  // a completed stage. Show the stage label, "Completed" pill, and a
+  // small "Moved to next task" hint when a next-stage exists.
+  if (status.key === 'completed') {
+    return (
+      <div className="flex items-center gap-3 py-2">
+        <span className={`h-2 w-2 rounded-full ${tone.stripe}`} />
+        <p className={`text-[10.5px] uppercase tracking-[0.14em] font-bold ${tone.text}`}>
+          {stage.label}
+        </p>
+        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/12 text-emerald-700">
+          Completed
+        </span>
+        <span className="text-[11.5px] text-muted-foreground">· Moved to next task</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header row: stage label + status pill + moved-back badge */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className={`h-2 w-2 rounded-full ${tone.stripe}`} />
+          <p className={`text-[10.5px] uppercase tracking-[0.14em] font-bold ${tone.text}`}>
+            {stage.label}
+          </p>
+        </div>
+        {svc?.label && (
+          <h3 className="text-[16px] font-bold leading-none">{svc.label}</h3>
+        )}
+        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${pillClasses(status.tone)}`} title={status.hint || ''}>
+          {status.label}
+        </span>
+        {movedBack && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-amber-500/12 text-amber-700">
+            <ArrowLeft className="h-3 w-3" /> Moved back to this stage
+          </span>
+        )}
+      </div>
+
+      {/* Left-to-right meta row: assignee · end date · next meeting */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-6">
+        <MetaCell label="Assignee">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground shrink-0">
+              {initials(assignee?.name) || '·'}
+            </span>
+            <span className={`truncate ${onLeave ? 'text-sky-700 font-medium' : ''}`}>
+              {assignee?.name || <span className="text-muted-foreground italic">Unassigned</span>}
+            </span>
+            {onLeave && <Plane className="h-3 w-3 text-sky-600 shrink-0" />}
+          </div>
+        </MetaCell>
+        <MetaCell label="End date">
+          {etaStr ? <span className="font-medium">{formatDate(etaStr)}</span> : <span className="text-muted-foreground italic">Not set</span>}
+        </MetaCell>
+        <MetaCell label="Next meeting">
+          {meetingStr ? <span className="font-medium">{formatDate(meetingStr)}</span> : <span className="text-muted-foreground italic">None scheduled</span>}
+        </MetaCell>
+      </div>
+
+      {/* Comment / blocker */}
+      {wf.lastUpdate?.detail && (
+        <div className={`rounded-xl ${tone.soft} px-4 py-3`}>
+          <div className="flex items-start gap-2">
+            <MessageSquare className={`h-3.5 w-3.5 mt-0.5 ${tone.text} shrink-0`} />
+            <div className="min-w-0">
+              <p className="text-[13px] leading-snug">{wf.lastUpdate.detail}</p>
+              {wf.lastUpdate.at && (
+                <p className="text-[10.5px] text-muted-foreground mt-1">
+                  {wf.lastUpdate.actorId ? `${users[wf.lastUpdate.actorId]?.name} · ` : ''}
+                  {formatDistanceToNow(parseISO(wf.lastUpdate.at), { addSuffix: true })}
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function MetaCell({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground mb-1">
+        {label}
+      </p>
+      <div className="text-[13px]">{children}</div>
     </div>
   );
 }
@@ -565,93 +770,9 @@ function stageTone(key: string): { stripe: string; soft: string; text: string } 
   }
 }
 
-// ── Stage card (grid mode) ──────────────────────────────────────────
-function StageCard({
-  stage, svc, status, wf, users, onLeaveIds, onClick,
-}: {
-  stage:      { key: string; label: string };
-  svc?:       ServiceSummary;
-  status:     StatusInfo;
-  wf:         FocusedWorkflow;
-  users:      Record<string, FocusedUser>;
-  onLeaveIds: Set<string>;
-  onClick:    () => void;
-}) {
-  const tone = stageTone(stage.key);
-  const assignee = svc?.assignedTo ? users[svc.assignedTo] : undefined;
-  const onLeave  = !!(svc?.assignedTo && onLeaveIds.has(svc.assignedTo));
-  const etaStr = svc?.eta || wf.eta || undefined;
-
-  return (
-    <button
-      onClick={onClick}
-      className="text-left rounded-2xl border border-border bg-card overflow-hidden hover:border-border/80 hover:shadow-sm transition-all group"
-      title={`Click to focus on ${stage.label}`}
-    >
-      <div className={`h-1 ${tone.stripe}`} />
-      <div className="p-4 space-y-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className={`text-[10.5px] uppercase tracking-[0.14em] font-bold ${tone.text}`}>
-              {stage.label}
-            </p>
-            {svc?.label && (
-              <p className="text-[12.5px] text-foreground/85 mt-0.5 truncate">{svc.label}</p>
-            )}
-          </div>
-          <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold ${pillClasses(status.tone)}`} title={status.hint || ''}>
-            {status.label}
-          </span>
-        </div>
-
-        {/* Assignee row */}
-        <div className="flex items-center gap-2 text-[12px]">
-          <span className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-[9.5px] font-bold text-muted-foreground shrink-0">
-            {initials(assignee?.name) || '·'}
-          </span>
-          <span className={`truncate ${onLeave ? 'text-sky-700 font-medium' : ''}`}>
-            {assignee?.name || <span className="text-muted-foreground italic">Unassigned</span>}
-          </span>
-          {onLeave && <Plane className="h-3 w-3 text-sky-600 shrink-0" />}
-        </div>
-
-        {/* ETA row */}
-        <div className="flex items-center gap-2 text-[12px] text-foreground/80">
-          <Calendar className="h-3 w-3 text-muted-foreground shrink-0" />
-          {etaStr ? (
-            <span>End date · <span className="font-medium">{formatDate(etaStr)}</span></span>
-          ) : (
-            <span className="italic text-muted-foreground">No end date set</span>
-          )}
-        </div>
-
-        {/* Last comment row */}
-        {wf.lastUpdate?.detail ? (
-          <div className="pt-2 border-t border-border/60">
-            <div className="flex items-start gap-1.5 text-[11.5px] text-foreground/80 leading-snug">
-              <MessageSquare className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
-              <span className="line-clamp-2">{wf.lastUpdate.detail}</span>
-            </div>
-            {wf.lastUpdate.at && (
-              <p className="text-[10.5px] text-muted-foreground mt-1 ml-4.5">
-                {wf.lastUpdate.actorId ? `${users[wf.lastUpdate.actorId]?.name} · ` : ''}
-                {formatDistanceToNow(parseISO(wf.lastUpdate.at), { addSuffix: true })}
-              </p>
-            )}
-          </div>
-        ) : (
-          <div className="pt-2 border-t border-border/60">
-            <p className="text-[11.5px] text-muted-foreground italic">No updates yet</p>
-          </div>
-        )}
-      </div>
-    </button>
-  );
-}
-
-// (FocusedStageCard removed — stage clicks now navigate to the
-// existing Salesforce-style page at /clients/pipeline/:id instead of
-// rendering an inline single-stage view.)
+// (StageCard removed — the 3-card grid was replaced by the tab strip +
+// single ActiveStageDetail. See FocusedStagesBlock above. Per spec:
+// one stage at a time, auto-focused on the in-progress stage.)
 
 // ── Small atoms ─────────────────────────────────────────────────────
 
