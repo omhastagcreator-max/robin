@@ -4,10 +4,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { format, formatDistanceToNow, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import {
-  ArrowLeft, Phone, Mail, AlertTriangle, Clock, User as UserIcon,
-  Rocket, Calendar, Sparkles, ChevronDown, ChevronUp, CheckCircle2,
-  Loader2, RotateCcw, ShieldX, Unlock, Plane, MessageSquare, Send,
-  Activity as ActivityIcon, Flag, Building2,
+  ArrowLeft, Phone, Mail, AlertTriangle, Sparkles,
+  ChevronDown, ChevronUp, CheckCircle2, Loader2, RotateCcw,
+  ShieldX, Unlock, Plane, ArrowRight,
 } from 'lucide-react';
 
 import { AppLayout } from '@/components/AppLayout';
@@ -17,60 +16,47 @@ import { useAuth } from '@/contexts/AuthContext';
 import * as api from '@/api';
 
 /**
- * ClientWorkspacePage — the "project command center" rebuild.
+ * ClientWorkspacePage — mission-control rebuild (May 2026, v2).
  *
- * Replaces the legacy ClientWorkflowDetailPage with an enterprise SaaS
- * layout inspired by Salesforce Lightning / Odoo / HubSpot. Owner spec
- * (May 2026):
+ * Density-first redesign. Spec: agency owner understands the entire
+ * project in 3 seconds, no scrolling, single viewport.
  *
- *   "The page should answer 'what is happening with this project right
- *   now' — not 'what tasks exist'."
+ * Layout (top → bottom, all visible above the fold on 1440×900):
  *
- * Anatomy (top → bottom):
+ *   ┌───────────────────────────────────────────────────────────────┐
+ *   │ HEADER ROW — 1 line: avatar, name, contact, stage, health,    │
+ *   │              owner, launch, next action                        │
+ *   ├───────────────────────────────────────────────────────────────┤
+ *   │ STATUS BAR — 1 line: blocker, owner, waiting, next, risk,     │
+ *   │              estimated delay                                   │
+ *   ├───────────────────────────────────────────────────────────────┤
+ *   │ JOURNEY STRIP — compact horizontal: 6 stages, current dominant │
+ *   ├───────────────────────────────────┬───────────────────────────┤
+ *   │ SERVICES TABLE                     │ SIDEBAR                    │
+ *   │  Dev | Active | Rishi | 100% | …  │   Team                     │
+ *   │  Vid | Wait   | Priya | 45%  | …  │   Milestones               │
+ *   │  Met | Block. | Om    | 10%  | …  │   Client pending           │
+ *   │                                    │                            │
+ *   │ LATEST UPDATES — 5-line feed       │                            │
+ *   │ AI INSIGHTS — 4 lines              │                            │
+ *   │ TASKS — counter (collapsed)        │                            │
+ *   └───────────────────────────────────┴───────────────────────────┘
  *
- *   1. BACK + HERO band
- *      ↳ Large client name, contact strip, project dates on the left.
- *      ↳ Health card on the right — % score, on-track / at-risk
- *        badge, current department owner, current active stage as a
- *        big chip.
+ * Visual rules:
+ *   - One bordered container — internal sections separated by 1-px
+ *     dividers, not stacked rounded cards. Saves ~80 px of vertical
+ *     gutters and reads as a single "command center" surface.
+ *   - Padding is 12–16 px throughout (was 20–32). Section headers are
+ *     10.5-px uppercase muted text, inline with content.
+ *   - Tables, not cards, for the services. Enterprise-density rows.
+ *   - Activity feed is one-line bullets, max 5.
+ *   - AI is 4 lines max. No paragraph wall.
+ *   - Sidebar is ~280 px wide (was 320), 3 stacked sections only.
  *
- *   2. COMMAND BAR
- *      ↳ A single horizontal band that's impossible to miss. Carries
- *        the current blocker, waiting-since, responsible person, next
- *        milestone, and due date. Tinted amber/rose when there IS a
- *        blocker; neutral green when there isn't.
- *
- *   3. PROJECT JOURNEY (horizontal timeline)
- *      ↳ Discovery → Development → Video → Meta Ads → Launch → Scaling.
- *        Completed stages green, current stage glowing, future gray,
- *        blocked rose. One-glance "where are we".
- *
- *   4. SERVICE TRACKER (3 cards)
- *      ↳ Development / Video / Meta Ads. Each shows progress %, owner
- *        (with leave indicator), status, current action, blockers,
- *        ETA. NOT giant checklists — the spec was explicit on that.
- *
- *   5. LATEST UPDATE card (big)
- *      ↳ The most recent team note, with actor + time-ago.
- *
- *   6. AI PROJECT ANALYSIS
- *      ↳ Pulls from /api/ai/summarize-workflow. Health %, risk level,
- *        bottleneck, predicted launch, one-line recommendation.
- *
- *   7. TASKS (collapsed by default)
- *      ↳ "Open (5) · Completed (12)" chips that expand into the
- *        checklist when clicked. Hidden by default per spec.
- *
- *   STICKY RIGHT SIDEBAR
- *      ↳ Project health · Team · Upcoming milestones · Recent activity.
- *
- * Data: reuses cwGetWorkflow / cwBlock / cwUnblock / cwAddNote /
- * cwListActivity / aiSummarizeWorkflow / onLeaveToday. No new backend
- * needed; some computed fields (Discovery stage, Scaling stage,
- * predictedLaunch) are derived client-side from the existing shape.
+ * Reuses the data hooks unchanged from v1.
  */
 
-// ── Local Workflow shape ────────────────────────────────────────────
+// ── Local Workflow shape (matches the server payload) ──────────────
 interface ChecklistItem { _id?: string; text?: string; title?: string; done: boolean }
 interface Service {
   _id?: string;
@@ -87,7 +73,7 @@ interface Workflow {
   clientPhone?: string;
   clientEmail?: string;
   services: Service[];
-  health?: 'on_track' | 'at_risk' | 'blocked' | 'done' | string;
+  health?: string;
   healthReason?: string;
   blockerType?: string;
   blockerReason?: string;
@@ -105,10 +91,9 @@ interface Workflow {
   riskScore?: number;
   predictedCompletionAt?: string | null;
 }
+interface UserLite { _id: string; name?: string }
 
-interface UserLite { _id: string; name?: string; email?: string; avatarUrl?: string }
-
-// ── Stage definitions (project journey) ────────────────────────────
+// ── Journey stages ──────────────────────────────────────────────────
 const JOURNEY = [
   { key: 'discovery', label: 'Discovery' },
   { key: 'dev',       label: 'Development' },
@@ -118,50 +103,33 @@ const JOURNEY = [
   { key: 'scaling',   label: 'Scaling' },
 ] as const;
 type StageKey = typeof JOURNEY[number]['key'];
-
-// Compute each journey stage's state from the workflow's services.
-// Discovery = done once any service is past pending.
-// Launch    = done once every service is done.
-// Scaling   = in_progress once meta_ads is done (and we're post-launch).
 type StageState = 'future' | 'current' | 'completed' | 'blocked';
+
 function computeJourneyStates(wf: Workflow): Record<StageKey, StageState> {
   const shopify    = wf.services.find(s => s.serviceType === 'shopify');
   const meta       = wf.services.find(s => s.serviceType === 'meta_ads');
   const influencer = wf.services.find(s => s.serviceType === 'influencer');
   const allDone    = wf.services.length > 0 && wf.services.every(s => s.status === 'done');
   const anyStarted = wf.services.some(s => s.status !== 'pending');
-
   const states: Record<StageKey, StageState> = {
     discovery: anyStarted ? 'completed' : 'current',
-    dev:       'future',
-    video:     'future',
-    meta:      'future',
-    launch:    'future',
-    scaling:   'future',
+    dev: 'future', video: 'future', meta: 'future', launch: 'future', scaling: 'future',
   };
   const mark = (key: StageKey, svc?: Service) => {
-    if (!svc)                          return;
-    if (svc.status === 'done')         states[key] = 'completed';
-    else if (svc.status === 'blocked') states[key] = 'blocked';
-    else if (svc.status === 'in_progress') states[key] = 'current';
+    if (!svc) return;
+    if (svc.status === 'done')              states[key] = 'completed';
+    else if (svc.status === 'blocked')      states[key] = 'blocked';
+    else if (svc.status === 'in_progress')  states[key] = 'current';
   };
   mark('dev',   shopify);
   mark('video', influencer);
   mark('meta',  meta);
-
-  if (allDone) {
-    states.launch  = 'current';
-    states.scaling = 'future';
-  } else if (meta?.status === 'done') {
-    states.launch  = 'completed';
-    states.scaling = 'current';
-  }
+  if (allDone) { states.launch = 'current'; }
+  else if (meta?.status === 'done') { states.launch = 'completed'; states.scaling = 'current'; }
   return states;
 }
 
-// Headline status for the project health card.
 function healthDisplay(wf: Workflow): { label: string; tone: 'success' | 'warning' | 'danger' | 'neutral'; pct: number } {
-  // Pct = average per-service checklist completion.
   let total = 0, done = 0;
   for (const s of wf.services) {
     total += s.checklist?.length || 0;
@@ -172,9 +140,9 @@ function healthDisplay(wf: Workflow): { label: string; tone: 'success' | 'warnin
   if (wf.services.length > 0 && wf.services.every(s => s.status === 'done')) {
     return { label: 'Completed', tone: 'success', pct: 100 };
   }
-  if (wf.health === 'blocked') return { label: 'Blocked',  tone: 'danger',  pct };
-  if (wf.health === 'at_risk') return { label: 'At risk',  tone: 'warning', pct };
-  if (wf.health === 'on_track') return { label: 'On track', tone: 'success', pct };
+  if (wf.health === 'blocked')  return { label: 'Blocked',     tone: 'danger',  pct };
+  if (wf.health === 'at_risk')  return { label: 'At risk',     tone: 'warning', pct };
+  if (wf.health === 'on_track') return { label: 'On track',    tone: 'success', pct };
   return { label: 'In progress', tone: 'neutral', pct };
 }
 
@@ -184,7 +152,7 @@ function initials(name?: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Main page
+// Page
 // ─────────────────────────────────────────────────────────────────────
 export default function ClientWorkspacePage() {
   const { id }   = useParams();
@@ -195,22 +163,13 @@ export default function ClientWorkspacePage() {
   const [users,     setUsers]     = useState<Record<string, UserLite>>({});
   const [loading,   setLoading]   = useState(true);
   const [activityRev, setActivityRev] = useState(0);
-
-  // Block / unblock modal state.
   const [blockOpen,   setBlockOpen]   = useState(false);
   const [unblockOpen, setUnblockOpen] = useState(false);
-
-  // AI snapshot.
-  const [ai, setAi]                 = useState<{ text: string; aiUsed: boolean } | null>(null);
-  const [aiBusy, setAiBusy]         = useState(false);
-
-  // Tasks expand state (collapsed by default per spec).
-  const [tasksOpen, setTasksOpen]   = useState(false);
-
-  // On-leave-today set, looked up once per page mount.
+  const [ai, setAi]               = useState<{ text: string; aiUsed: boolean } | null>(null);
+  const [aiBusy, setAiBusy]       = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);
   const [onLeaveIds, setOnLeaveIds] = useState<Set<string>>(new Set());
 
-  // ── Loaders ──────────────────────────────────────────────────────
   const load = async () => {
     if (!id) return;
     try { setWf(await api.cwGetWorkflow(id)); }
@@ -235,8 +194,6 @@ export default function ClientWorkspacePage() {
       .catch(() => {});
   }, []);
 
-  // Auto-generate AI summary on first load. Owner ask: the AI take
-  // should be visible without an extra click.
   const aiFiredRef = useRef(false);
   useEffect(() => {
     if (!wf || aiFiredRef.current || ai) return;
@@ -249,16 +206,16 @@ export default function ClientWorkspacePage() {
     if (!id) return;
     setAiBusy(true);
     try { setAi(await api.aiSummarizeWorkflow(id)); }
-    catch { /* silent — surfaced via the panel's empty state */ }
+    catch { /* silent */ }
     finally { setAiBusy(false); }
   };
 
   const bumpActivity = () => setActivityRev(r => r + 1);
 
-  const handleBlock = async (payload: { blockerType: string; blockerReason: string; comment: string }) => {
+  const handleBlock = async (comment: string) => {
     if (!id) return;
     try {
-      const updated = await api.cwBlock(id, payload);
+      const updated = await api.cwBlock(id, { blockerType: 'waiting_client_input', blockerReason: comment, comment });
       setWf(updated as Workflow);
       bumpActivity();
       toast.success('Project marked blocked');
@@ -280,229 +237,218 @@ export default function ClientWorkspacePage() {
     }
   };
 
-  const handleAddNote = async (text: string) => {
-    if (!id) return;
-    try {
-      await (api as any).cwAddNote?.(id, { text });
-      bumpActivity();
-      toast.success('Note added');
-    } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Failed to add note');
-    }
-  };
-
-  // ── Loading / not-found ──────────────────────────────────────────
   if (loading) {
-    return (
-      <AppLayout>
-        <div className="py-24 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-      </AppLayout>
-    );
+    return <AppLayout><div className="py-24 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div></AppLayout>;
   }
   if (!wf) {
-    return (
-      <AppLayout>
-        <div className="py-24 text-center text-sm text-muted-foreground">
-          Client CRM entry not found.
-        </div>
-      </AppLayout>
-    );
+    return <AppLayout><div className="py-24 text-center text-sm text-muted-foreground">Client CRM entry not found.</div></AppLayout>;
   }
 
   // ── Derived ──────────────────────────────────────────────────────
   const health   = healthDisplay(wf);
   const journey  = computeJourneyStates(wf);
-  const isBlocked = !!wf.blockerType;
-  const currentStage = (() => {
+  const currentStageKey: StageKey = (() => {
     const order: StageKey[] = ['scaling', 'launch', 'meta', 'video', 'dev', 'discovery'];
     for (const k of order) if (journey[k] === 'current')   return k;
     for (const k of order) if (journey[k] === 'blocked')   return k;
     for (const k of order) if (journey[k] === 'completed') return k;
     return 'discovery';
   })();
-  const currentStageLabel = JOURNEY.find(s => s.key === currentStage)?.label || 'Discovery';
+  const currentStageLabel = JOURNEY.find(s => s.key === currentStageKey)?.label || 'Discovery';
 
-  // Owner team — heuristic from the in-progress service.
-  const ownerTeam = (() => {
-    if (wf.currentOwnerTeam) return wf.currentOwnerTeam.replace(/^\w/, c => c.toUpperCase()) + ' team';
-    const inProg = wf.services.find(s => s.status === 'in_progress');
-    if (inProg?.serviceType === 'shopify')    return 'Development team';
-    if (inProg?.serviceType === 'meta_ads')   return 'Meta ads team';
-    if (inProg?.serviceType === 'influencer') return 'Video team';
-    return 'Sales team';
+  const ownerId   = wf.services.find(s => s.assignedTo)?.assignedTo;
+  const ownerName = ownerId ? users[ownerId]?.name : undefined;
+  const onLeaveOwner = !!(ownerId && onLeaveIds.has(ownerId));
+  const isBlocked = !!wf.blockerType;
+  const nextAction = wf.nextAction || wf.nextBestAction;
+  const launchLabel = wf.eta ? format(parseISO(wf.eta), 'd MMM') : null;
+
+  // Estimated delay: if past ETA or blockedSince > 0, surface the gap.
+  const estimatedDelay = (() => {
+    if (wf.blockedSince) {
+      try {
+        const days = Math.max(1, Math.round((Date.now() - parseISO(wf.blockedSince).getTime()) / 86400000));
+        return `${days}d`;
+      } catch { return null; }
+    }
+    if (wf.predictedCompletionAt && wf.eta) {
+      try {
+        const gap = Math.round((parseISO(wf.predictedCompletionAt).getTime() - parseISO(wf.eta).getTime()) / 86400000);
+        if (gap > 0) return `+${gap}d`;
+      } catch { /* ignore */ }
+    }
+    return null;
   })();
-
-  // Waiting-since for the blocker.
   const waitingSince = wf.blockedSince
     ? formatDistanceToNow(parseISO(wf.blockedSince), { addSuffix: false })
     : null;
 
-  // Latest update digest.
-  const lastUpdater = wf.lastUpdate?.actorId ? users[wf.lastUpdate.actorId] : undefined;
+  // Task counts.
+  const allChecklist = wf.services.flatMap(s => s.checklist || []);
+  const openCount = allChecklist.filter(c => !c.done).length;
+  const doneCount = allChecklist.filter(c => c.done).length;
 
-  // Open vs completed task counts (collapsed view).
-  const allChecklist = wf.services.flatMap(s => (s.checklist || []).map(c => ({ ...c, serviceLabel: s.label })));
-  const openTasks      = allChecklist.filter(c => !c.done);
-  const completedTasks = allChecklist.filter(c => c.done);
-
-  // Team list from per-service assignees (unique).
-  const teamList = (() => {
-    const seen = new Set<string>();
-    const out: Array<{ userId: string; role: string }> = [];
-    for (const s of wf.services) {
-      if (s.assignedTo && !seen.has(s.assignedTo)) {
-        seen.add(s.assignedTo);
-        const roleLabel =
+  // Team list (unique assignees).
+  const teamSeen = new Set<string>();
+  const team: Array<{ userId: string; role: string }> = [];
+  for (const s of wf.services) {
+    if (s.assignedTo && !teamSeen.has(s.assignedTo)) {
+      teamSeen.add(s.assignedTo);
+      team.push({
+        userId: s.assignedTo,
+        role:
           s.serviceType === 'shopify'    ? 'Development' :
           s.serviceType === 'meta_ads'   ? 'Meta ads'    :
-          s.serviceType === 'influencer' ? 'Video'       : 'Team';
-        out.push({ userId: s.assignedTo, role: roleLabel });
-      }
+          s.serviceType === 'influencer' ? 'Video'       : 'Team',
+      });
     }
-    return out;
-  })();
+  }
 
   return (
     <AppLayout>
-      <div className="max-w-[1280px] mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+      <div className="max-w-[1400px] mx-auto p-3 sm:p-4 lg:p-5">
 
-        {/* ── Back link ────────────────────────────────────────────── */}
-        <Link to="/clients/pipeline" className="inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground hover:text-foreground transition-colors">
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to Client CRM
+        <Link to="/clients/pipeline" className="inline-flex items-center gap-1 text-[11.5px] text-muted-foreground hover:text-foreground mb-2">
+          <ArrowLeft className="h-3 w-3" /> Back to Client CRM
         </Link>
 
-        {/* ── HERO BAND ─────────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4">
-          <Hero wf={wf} />
-          <HealthCard
-            health={health}
-            ownerTeam={ownerTeam}
-            currentStageLabel={currentStageLabel}
-            isBlocked={isBlocked}
-          />
-        </div>
+        {/* ── ONE BORDERED CONTAINER — all sections in flow ───────── */}
+        <div className="rounded-xl border border-border bg-card">
 
-        {/* ── COMMAND BAR ──────────────────────────────────────────── */}
-        <CommandBar
-          wf={wf}
-          users={users}
-          waitingSince={waitingSince}
-          isAdminOrSales={isAdminOrSales}
-          onBlock={() => setBlockOpen(true)}
-          onUnblock={() => setUnblockOpen(true)}
-        />
-
-        {/* ── Main grid: content + sticky sidebar ─────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 items-start">
-
-          <div className="space-y-6">
-            <JourneyStrip states={journey} />
-
-            <ServiceTracker
-              wf={wf}
-              users={users}
-              onLeaveIds={onLeaveIds}
-            />
-
-            <LatestUpdateCard
-              wf={wf}
-              actor={lastUpdater}
-              onAddNote={handleAddNote}
-            />
-
-            <AIAnalysis ai={ai} busy={aiBusy} onRegenerate={generateAI} wf={wf} />
-
-            <TasksBlock
-              open={tasksOpen}
-              onToggle={() => setTasksOpen(o => !o)}
-              openCount={openTasks.length}
-              doneCount={completedTasks.length}
-              services={wf.services}
-            />
+          {/* HEADER ROW ──────────────────────────────────────────── */}
+          <div className="px-4 py-3 border-b border-border grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto_auto] gap-x-5 gap-y-1.5 items-center">
+            <div className="flex items-center gap-2.5">
+              <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-[12px] font-bold shrink-0">
+                {initials(wf.clientName)}
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-[17px] font-bold tracking-tight leading-none truncate">{wf.clientName}</h1>
+                <div className="flex items-center gap-2.5 text-[10.5px] text-muted-foreground mt-0.5">
+                  {wf.clientPhone && <a href={`tel:${wf.clientPhone}`} className="hover:text-primary tabular-nums inline-flex items-center gap-1"><Phone className="h-2.5 w-2.5" />{wf.clientPhone}</a>}
+                  {wf.clientEmail && <a href={`mailto:${wf.clientEmail}`} className="hover:text-foreground inline-flex items-center gap-1"><Mail className="h-2.5 w-2.5" />{wf.clientEmail}</a>}
+                </div>
+              </div>
+            </div>
+            <div /> {/* spacer */}
+            <HeaderField label="Stage" value={currentStageLabel} accent="primary" />
+            <HeaderField label="Health" value={`${health.pct}% ${health.label}`} accent={health.tone} />
+            <HeaderField label="Owner" value={ownerName || '—'} extra={onLeaveOwner ? <Plane className="h-2.5 w-2.5 text-sky-600 inline -mt-0.5 ml-1" /> : null} />
+            <HeaderField label="Launch" value={launchLabel || 'TBD'} />
+            <HeaderField label="Next" value={nextAction || '—'} className="max-w-[180px]" />
           </div>
 
-          {/* ── Sticky right sidebar ──────────────────────────────── */}
-          <aside className="space-y-4 lg:sticky lg:top-4">
-            <SidebarCard title="Team" icon={UserIcon}>
-              {teamList.length === 0 ? (
-                <SidebarEmpty>No assignments yet.</SidebarEmpty>
-              ) : teamList.map(({ userId, role }) => {
-                const u = users[userId];
-                const onLeave = onLeaveIds.has(userId);
-                return (
-                  <div key={userId} className="flex items-center gap-2.5 py-2">
-                    <div className="h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10.5px] font-bold shrink-0">
-                      {initials(u?.name)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[12.5px] font-semibold truncate flex items-center gap-1.5">
-                        {u?.name || 'Unknown'}
-                        {onLeave && <Plane className="h-3 w-3 text-sky-600 shrink-0" />}
-                      </p>
-                      <p className="text-[10.5px] text-muted-foreground">{role}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </SidebarCard>
+          {/* STATUS BAR ─────────────────────────────────────────── */}
+          <StatusStrip
+            blocked={isBlocked}
+            blockerReason={wf.blockerReason || (wf.blockerType ? wf.blockerType.replace(/_/g, ' ') : null)}
+            ownerName={ownerName}
+            waitingSince={waitingSince}
+            nextAction={nextAction}
+            riskLabel={wf.riskScore != null ? (wf.riskScore > 66 ? 'High' : wf.riskScore > 33 ? 'Medium' : 'Low') : (health.tone === 'warning' ? 'Medium' : health.tone === 'danger' ? 'High' : 'Low')}
+            estimatedDelay={estimatedDelay}
+            isAdminOrSales={isAdminOrSales}
+            onBlock={() => setBlockOpen(true)}
+            onUnblock={() => setUnblockOpen(true)}
+          />
 
-            <SidebarCard title="Upcoming milestones" icon={Calendar}>
-              {wf.eta ? (
-                <SidebarRow
-                  left="Project ETA"
-                  right={format(parseISO(wf.eta), 'd MMM')}
-                  hint={wf.etaConfidence ? `${wf.etaConfidence} confidence` : undefined}
-                />
-              ) : <SidebarEmpty>No ETA set.</SidebarEmpty>}
-              {(wf as any).nextMeetingAt && (
-                <SidebarRow
-                  left="Next meeting"
-                  right={format(parseISO((wf as any).nextMeetingAt), 'd MMM')}
-                />
-              )}
-            </SidebarCard>
+          {/* JOURNEY STRIP ──────────────────────────────────────── */}
+          <JourneyStrip states={journey} currentKey={currentStageKey} />
 
-            <SidebarCard title="Recent activity" icon={ActivityIcon}>
-              <div className="-mx-3 -mb-3">
-                <ActivityTimeline workflowId={wf._id} refreshKey={activityRev} />
-              </div>
-            </SidebarCard>
-          </aside>
+          {/* MAIN GRID: SERVICES + ACTIVITY (left)  /  SIDEBAR (right) */}
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px]">
+
+            <div className="lg:border-r border-border">
+              {/* SERVICES TABLE */}
+              <SectionHeader>Services</SectionHeader>
+              <ServicesTable wf={wf} users={users} onLeaveIds={onLeaveIds} />
+
+              {/* LATEST UPDATES (compact feed) */}
+              <SectionHeader>Latest updates</SectionHeader>
+              <RecentFeed workflowId={wf._id} refreshKey={activityRev} />
+
+              {/* AI INSIGHTS — 4 lines */}
+              <SectionHeader rightSlot={
+                <button onClick={generateAI} disabled={aiBusy} className="text-[10.5px] inline-flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50">
+                  <RotateCcw className={`h-2.5 w-2.5 ${aiBusy ? 'animate-spin' : ''}`} /> Refresh
+                </button>
+              }>AI insights</SectionHeader>
+              <AILines wf={wf} ai={ai} busy={aiBusy} health={health} />
+
+              {/* TASKS — collapsed */}
+              <TasksRow
+                open={tasksOpen}
+                onToggle={() => setTasksOpen(o => !o)}
+                openCount={openCount}
+                doneCount={doneCount}
+                services={wf.services}
+              />
+            </div>
+
+            {/* SIDEBAR ──────────────────────────────────────────── */}
+            <aside className="divide-y divide-border">
+              <SidebarBlock title="Team">
+                {team.length === 0 ? <Empty>No assignments yet.</Empty> : team.map(({ userId, role }) => {
+                  const u = users[userId];
+                  const onLeave = onLeaveIds.has(userId);
+                  return (
+                    <div key={userId} className="flex items-center gap-2 py-1">
+                      <div className="h-5 w-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[9px] font-bold shrink-0">
+                        {initials(u?.name)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11.5px] font-semibold truncate inline-flex items-center gap-1">
+                          {u?.name || 'Unknown'}
+                          {onLeave && <Plane className="h-2.5 w-2.5 text-sky-600" />}
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground shrink-0">{role}</span>
+                    </div>
+                  );
+                })}
+              </SidebarBlock>
+
+              <SidebarBlock title="Upcoming milestones">
+                {wf.eta ? (
+                  <Row left="Project launch" right={format(parseISO(wf.eta), 'd MMM')} />
+                ) : null}
+                {(wf as any).nextMeetingAt && (
+                  <Row left="Next meeting" right={format(parseISO((wf as any).nextMeetingAt), 'd MMM')} />
+                )}
+                {!wf.eta && !(wf as any).nextMeetingAt && <Empty>No milestones set.</Empty>}
+              </SidebarBlock>
+
+              <SidebarBlock title="Client pending">
+                {wf.blockerType === 'waiting_client_input' && wf.blockerReason ? (
+                  <Row left={wf.blockerReason} right={waitingSince || ''} />
+                ) : (
+                  <Empty>Nothing waiting on the client.</Empty>
+                )}
+              </SidebarBlock>
+            </aside>
+          </div>
         </div>
       </div>
 
-      {/* ── Block / Unblock modals ─────────────────────────────────
-          CommentRequiredModal is single-field. For richer per-blocker
-          metadata (waiting_client / waiting_internal / dependency /
-          technical / budget), the user can still use the legacy detail
-          page at /clients/pipeline/:id/legacy. Default blocker type
-          here is waiting_client_input — the most common case in this
-          agency's workflow. */}
+      {/* Modals */}
       {blockOpen && (
         <CommentRequiredModal
           title="Mark project blocked"
-          description="Tell the audit log WHY — e.g. 'waiting for product photos from client'."
-          placeholder="What's blocking the project?"
+          description="Why is the project blocked? Shown to admin in the audit log."
+          placeholder="e.g. waiting for product photos from client"
           primaryLabel="Mark blocked"
           tone="danger"
-          onSubmit={async (comment) => {
-            await handleBlock({ blockerType: 'waiting_client_input', blockerReason: comment, comment });
-            setBlockOpen(false);
-          }}
+          onSubmit={async (comment) => { await handleBlock(comment); setBlockOpen(false); }}
           onClose={() => setBlockOpen(false)}
         />
       )}
       {unblockOpen && (
         <CommentRequiredModal
           title="Unblock this project?"
-          description="Tell the audit log what changed — e.g. client confirmed assets received."
-          placeholder="What unblocked the project?"
+          description="What changed?"
+          placeholder="e.g. client confirmed access"
           primaryLabel="Unblock"
           tone="success"
-          onSubmit={async (comment) => {
-            await handleUnblock(comment);
-            setUnblockOpen(false);
-          }}
+          onSubmit={async (comment) => { await handleUnblock(comment); setUnblockOpen(false); }}
           onClose={() => setUnblockOpen(false)}
         />
       )}
@@ -511,486 +457,275 @@ export default function ClientWorkspacePage() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Hero — client identity + contact + dates
+// Small density atoms — colocated, single file
 // ─────────────────────────────────────────────────────────────────────
-function Hero({ wf }: { wf: Workflow }) {
-  const startDate = wf.createdAt ? format(parseISO(wf.createdAt), 'd MMM yyyy') : null;
-  const launchDate = wf.eta ? format(parseISO(wf.eta), 'd MMM yyyy') : null;
-  return (
-    <div className="rounded-2xl border border-border bg-card p-6">
-      <div className="flex items-start gap-4">
-        <div className="h-14 w-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center text-[18px] font-bold shrink-0">
-          {initials(wf.clientName)}
-        </div>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-[26px] sm:text-[30px] font-bold tracking-tight leading-none">
-            {wf.clientName || 'Unnamed client'}
-          </h1>
-          <div className="flex flex-wrap gap-x-5 gap-y-1 mt-3 text-[13px]">
-            {wf.clientPhone && (
-              <a href={`tel:${wf.clientPhone}`} className="inline-flex items-center gap-1.5 text-primary hover:underline tabular-nums">
-                <Phone className="h-3.5 w-3.5" /> {wf.clientPhone}
-              </a>
-            )}
-            {wf.clientEmail && (
-              <a href={`mailto:${wf.clientEmail}`} className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
-                <Mail className="h-3.5 w-3.5" /> {wf.clientEmail}
-              </a>
-            )}
-            <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-              <Building2 className="h-3.5 w-3.5" /> Brand · {wf.clientName}
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-[12px] text-muted-foreground">
-            {startDate && (
-              <span className="inline-flex items-center gap-1.5">
-                <Calendar className="h-3 w-3" /> Started {startDate}
-              </span>
-            )}
-            {launchDate && (
-              <span className="inline-flex items-center gap-1.5">
-                <Rocket className="h-3 w-3" /> Launch {launchDate}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// HealthCard — % score + tone + owner team + active stage chip
-// ─────────────────────────────────────────────────────────────────────
-function HealthCard({
-  health, ownerTeam, currentStageLabel, isBlocked,
+function HeaderField({
+  label, value, extra, accent, className,
 }: {
-  health: ReturnType<typeof healthDisplay>;
-  ownerTeam: string;
-  currentStageLabel: string;
-  isBlocked: boolean;
+  label: string;
+  value: string;
+  extra?: React.ReactNode;
+  accent?: 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
+  className?: string;
 }) {
-  const toneRing =
-    health.tone === 'success' ? 'ring-emerald-500/30' :
-    health.tone === 'warning' ? 'ring-amber-500/30' :
-    health.tone === 'danger'  ? 'ring-rose-500/30' : 'ring-border';
-  const toneAccent =
-    health.tone === 'success' ? 'text-emerald-700' :
-    health.tone === 'warning' ? 'text-amber-700' :
-    health.tone === 'danger'  ? 'text-rose-700' : 'text-foreground';
-  const R = 38, C = 2 * Math.PI * R;
-  const offset = C - (Math.max(0, Math.min(100, health.pct)) / 100) * C;
-
+  const valueCls =
+    accent === 'success' ? 'text-emerald-700' :
+    accent === 'warning' ? 'text-amber-700'   :
+    accent === 'danger'  ? 'text-rose-700'    :
+    accent === 'primary' ? 'text-primary'     : 'text-foreground';
   return (
-    <div className={`rounded-2xl border border-border bg-card p-5 ring-1 ${toneRing}`}>
-      <div className="flex items-center gap-4">
-        <div className="relative" style={{ width: 90, height: 90 }}>
-          <svg width="90" height="90" className="-rotate-90">
-            <circle cx="45" cy="45" r={R} fill="none" stroke="hsl(var(--muted))" strokeWidth="7" />
-            <circle cx="45" cy="45" r={R} fill="none"
-              stroke={
-                health.tone === 'success' ? 'hsl(160 80% 32%)' :
-                health.tone === 'warning' ? 'hsl(35  100% 45%)' :
-                health.tone === 'danger'  ? 'hsl(0   75% 50%)' :
-                                            'hsl(var(--primary))'
-              }
-              strokeWidth="7" strokeDasharray={C} strokeDashoffset={offset} strokeLinecap="round"
-              className="transition-all duration-500" />
-          </svg>
-          <span className={`absolute inset-0 flex items-center justify-center text-[18px] font-bold tabular-nums ${toneAccent}`}>
-            {health.pct}%
-          </span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground">Project health</p>
-          <p className={`text-[18px] font-bold ${toneAccent} leading-tight mt-0.5`}>{health.label}</p>
-          {isBlocked && (
-            <p className="text-[11px] text-rose-600 mt-1 inline-flex items-center gap-1">
-              <ShieldX className="h-3 w-3" /> Blocker active
-            </p>
-          )}
-        </div>
-      </div>
-      <div className="mt-4 pt-4 border-t border-border space-y-2.5">
-        <div>
-          <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground">Owned by</p>
-          <p className="text-[13px] font-semibold mt-0.5">{ownerTeam}</p>
-        </div>
-        <div>
-          <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground">Current active stage</p>
-          <span className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12.5px] font-bold bg-primary/10 text-primary">
-            <Flag className="h-3 w-3" /> {currentStageLabel}
-          </span>
-        </div>
-      </div>
+    <div className={`min-w-0 ${className || ''}`}>
+      <p className="text-[9.5px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">{label}</p>
+      <p className={`text-[12.5px] font-semibold leading-tight mt-0.5 truncate ${valueCls}`}>{value}{extra}</p>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// CommandBar — impossible-to-miss blocker / next-milestone strip
-// ─────────────────────────────────────────────────────────────────────
-function CommandBar({
-  wf, users, waitingSince, isAdminOrSales, onBlock, onUnblock,
+function StatusStrip({
+  blocked, blockerReason, ownerName, waitingSince, nextAction,
+  riskLabel, estimatedDelay, isAdminOrSales, onBlock, onUnblock,
 }: {
-  wf: Workflow;
-  users: Record<string, UserLite>;
+  blocked: boolean;
+  blockerReason: string | null;
+  ownerName?: string;
   waitingSince: string | null;
+  nextAction?: string;
+  riskLabel: string;
+  estimatedDelay: string | null;
   isAdminOrSales: boolean;
   onBlock: () => void;
   onUnblock: () => void;
 }) {
-  const blocked = !!wf.blockerType;
-  const ownerId = wf.services.find(s => s.assignedTo)?.assignedTo;
-  const ownerName = ownerId ? users[ownerId]?.name : undefined;
-  const nextAction = wf.nextAction || wf.nextBestAction;
-  const dueLabel = wf.eta
-    ? `Due ${format(parseISO(wf.eta), 'd MMM')}${wf.etaConfidence ? ` · ${wf.etaConfidence} confidence` : ''}`
-    : 'Due date not set';
-
   if (!blocked) {
     return (
-      <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.06] p-4 sm:p-5">
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="h-10 w-10 rounded-full bg-emerald-500/15 text-emerald-700 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="h-5 w-5" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-emerald-700">No active blocker</p>
-            <p className="text-[14.5px] font-semibold text-foreground mt-0.5">
-              {nextAction || 'Project running cleanly · no blockers reported'}
-            </p>
-            <p className="text-[12px] text-emerald-700/80 mt-0.5">
-              {dueLabel}{ownerName && <> · Owner {ownerName}</>}
-            </p>
-          </div>
-          {isAdminOrSales && (
-            <button
-              onClick={onBlock}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted text-[12px] font-semibold shrink-0"
-            >
-              <ShieldX className="h-3.5 w-3.5" /> Mark blocked
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl border border-rose-500/30 bg-rose-500/[0.06] p-4 sm:p-5">
-      <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr_auto_auto] gap-4 items-center">
-        <div className="h-10 w-10 rounded-full bg-rose-500/15 text-rose-700 flex items-center justify-center shrink-0">
-          <AlertTriangle className="h-5 w-5" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-rose-700">Current blocker</p>
-          <p className="text-[14.5px] font-bold text-foreground mt-0.5 truncate">
-            {wf.blockerReason || wf.blockerType?.replace(/_/g, ' ')}
-          </p>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 lg:gap-6 col-span-full lg:col-span-1 lg:col-start-3 lg:row-start-1">
-          <CommandStat icon={Clock}    label="Waiting since" value={waitingSince ? `${waitingSince}` : '—'} />
-          <CommandStat icon={UserIcon} label="Owner"         value={ownerName || '—'} />
-          <CommandStat icon={Flag}     label="Next"          value={nextAction || '—'} />
-          <CommandStat icon={Calendar} label="Due"           value={wf.eta ? format(parseISO(wf.eta), 'EEE, d MMM') : '—'} />
-        </div>
+      <div className="px-4 py-2.5 border-b border-border bg-emerald-500/[0.04] flex items-center gap-5 flex-wrap text-[12px]">
+        <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-700">
+          <CheckCircle2 className="h-3.5 w-3.5" /> No blocker
+        </span>
+        <StripField label="Owner" value={ownerName || '—'} />
+        <StripField label="Next"  value={nextAction || '—'} />
+        <StripField label="Risk"  value={riskLabel} />
         {isAdminOrSales && (
-          <button
-            onClick={onUnblock}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-foreground text-background text-[12px] font-semibold shrink-0 col-span-full lg:col-auto"
-          >
-            <Unlock className="h-3.5 w-3.5" /> Mark unblocked
+          <button onClick={onBlock} className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border hover:bg-muted text-[11px] font-semibold">
+            <ShieldX className="h-3 w-3" /> Mark blocked
           </button>
         )}
       </div>
+    );
+  }
+  return (
+    <div className="px-4 py-2.5 border-b border-border bg-rose-500/[0.05] flex items-center gap-5 flex-wrap text-[12px]">
+      <span className="inline-flex items-center gap-1.5 font-bold text-rose-700 shrink-0">
+        <AlertTriangle className="h-3.5 w-3.5" /> BLOCKER
+      </span>
+      <span className="font-semibold truncate min-w-0 max-w-[280px]" title={blockerReason || ''}>
+        {blockerReason || '—'}
+      </span>
+      <StripField label="Owner"   value={ownerName || '—'} />
+      <StripField label="Waiting" value={waitingSince || '—'} />
+      <StripField label="Next"    value={nextAction || '—'} />
+      <StripField label="Risk"    value={riskLabel} accent="warning" />
+      <StripField label="Delay"   value={estimatedDelay || '—'} accent="danger" />
+      {isAdminOrSales && (
+        <button onClick={onUnblock} className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md bg-foreground text-background text-[11px] font-semibold">
+          <Unlock className="h-3 w-3" /> Unblock
+        </button>
+      )}
     </div>
   );
 }
-function CommandStat({ icon: Icon, label, value }: { icon: typeof Clock; label: string; value: string }) {
+function StripField({ label, value, accent }: { label: string; value: string; accent?: 'warning' | 'danger' }) {
+  const cls = accent === 'warning' ? 'text-amber-700' : accent === 'danger' ? 'text-rose-700' : 'text-foreground';
   return (
-    <div className="min-w-0">
-      <p className="text-[10.5px] uppercase tracking-[0.12em] font-bold text-muted-foreground inline-flex items-center gap-1">
-        <Icon className="h-3 w-3" /> {label}
-      </p>
-      <p className="text-[12.5px] font-semibold mt-0.5 truncate">{value}</p>
+    <span className="inline-flex items-center gap-1 shrink-0">
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className={`font-semibold ${cls}`}>{value}</span>
+    </span>
+  );
+}
+
+function JourneyStrip({ states, currentKey }: { states: Record<StageKey, StageState>; currentKey: StageKey }) {
+  return (
+    <div className="px-4 py-2.5 border-b border-border flex items-center gap-1 overflow-x-auto">
+      {JOURNEY.map((stage, i) => {
+        const s = states[stage.key];
+        const isCurrent = stage.key === currentKey;
+        const dotCls =
+          s === 'completed' ? 'bg-emerald-500 text-white border-emerald-500' :
+          s === 'current'   ? 'bg-primary text-primary-foreground border-primary' :
+          s === 'blocked'   ? 'bg-rose-500 text-white border-rose-500' :
+                              'bg-card text-muted-foreground border-border';
+        const textCls =
+          isCurrent ? 'text-foreground font-bold' :
+          s === 'completed' ? 'text-foreground/80' :
+          s === 'blocked'   ? 'text-rose-700 font-semibold' :
+                              'text-muted-foreground';
+        return (
+          <div key={stage.key} className="flex items-center gap-1 shrink-0">
+            <span className={`h-4 w-4 rounded-full border flex items-center justify-center text-[8px] font-bold ${dotCls}`}>
+              {s === 'completed' ? <CheckCircle2 className="h-2.5 w-2.5" /> : (s === 'current' ? '●' : i + 1)}
+            </span>
+            <span className={`text-[11px] ${textCls} ${isCurrent ? 'mr-1' : ''}`}>{stage.label}</span>
+            {i < JOURNEY.length - 1 && <span className="h-px w-3 bg-border" />}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Journey strip — horizontal 6-stage timeline
-// ─────────────────────────────────────────────────────────────────────
-function JourneyStrip({ states }: { states: Record<StageKey, StageState> }) {
+function SectionHeader({ children, rightSlot }: { children: React.ReactNode; rightSlot?: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-border bg-card p-5 overflow-x-auto">
-      <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground mb-4">
-        Project journey
-      </p>
-      <div className="flex items-center gap-1.5 min-w-fit">
-        {JOURNEY.map((stage, i) => {
-          const s = states[stage.key];
-          const dotCls =
-            s === 'completed' ? 'bg-emerald-500 text-white'  :
-            s === 'current'   ? 'bg-primary text-primary-foreground ring-4 ring-primary/20' :
-            s === 'blocked'   ? 'bg-rose-500 text-white'     :
-                                'bg-muted text-muted-foreground';
-          const labelCls =
-            s === 'completed' ? 'text-emerald-700' :
-            s === 'current'   ? 'text-primary font-bold' :
-            s === 'blocked'   ? 'text-rose-700' :
-                                'text-muted-foreground';
-          const connectorCls =
-            s === 'completed' ? 'bg-emerald-500/60' :
-            s === 'current' || s === 'blocked' ? 'bg-muted' :
-                                'bg-muted';
-          return (
-            <div key={stage.key} className="flex items-center gap-1.5">
-              <div className="flex flex-col items-center gap-1.5 min-w-[88px]">
-                <span className={`h-7 w-7 rounded-full flex items-center justify-center text-[10.5px] font-bold ${dotCls}`}>
-                  {s === 'completed' ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
-                </span>
-                <p className={`text-[11px] text-center ${labelCls}`}>{stage.label}</p>
-              </div>
-              {i < JOURNEY.length - 1 && (
-                <div className={`h-[2px] w-12 ${connectorCls}`} />
-              )}
-            </div>
-          );
-        })}
-      </div>
+    <div className="px-4 py-2 border-b border-border bg-muted/20 flex items-center justify-between gap-2">
+      <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-muted-foreground">{children}</p>
+      {rightSlot}
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Service tracker — 3 cards
-// ─────────────────────────────────────────────────────────────────────
-function ServiceTracker({
+function ServicesTable({
   wf, users, onLeaveIds,
 }: {
   wf: Workflow;
   users: Record<string, UserLite>;
   onLeaveIds: Set<string>;
 }) {
-  const cards = [
-    { key: 'shopify',    label: 'Development', tone: 'emerald' },
-    { key: 'influencer', label: 'Video',       tone: 'amber'   },
-    { key: 'meta_ads',   label: 'Meta ads',    tone: 'blue'    },
-  ] as const;
+  const rows = [
+    { key: 'shopify',    label: 'Development' },
+    { key: 'influencer', label: 'Video'       },
+    { key: 'meta_ads',   label: 'Meta ads'    },
+  ];
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      {cards.map(c => {
-        const svc = wf.services.find(s => s.serviceType === c.key);
-        return <ServiceCard key={c.key} title={c.label} tone={c.tone} svc={svc} users={users} onLeaveIds={onLeaveIds} />;
-      })}
-    </div>
-  );
-}
-function ServiceCard({
-  title, tone, svc, users, onLeaveIds,
-}: {
-  title: string;
-  tone: 'emerald' | 'amber' | 'blue';
-  svc?: Service;
-  users: Record<string, UserLite>;
-  onLeaveIds: Set<string>;
-}) {
-  const stripe = tone === 'emerald' ? 'bg-emerald-500' : tone === 'amber' ? 'bg-amber-500' : 'bg-blue-500';
-  const tText  = tone === 'emerald' ? 'text-emerald-700' : tone === 'amber' ? 'text-amber-700' : 'text-blue-700';
-  const tBar   = tone === 'emerald' ? 'bg-emerald-500'   : tone === 'amber' ? 'bg-amber-500'   : 'bg-blue-500';
-  const total = svc?.checklist?.length || 0;
-  const done  = svc?.checklist?.filter(c => c.done).length || 0;
-  const pct   = total === 0 ? (svc?.status === 'done' ? 100 : 0) : Math.round((done / total) * 100);
-  const assignee = svc?.assignedTo ? users[svc.assignedTo] : undefined;
-  const onLeave  = !!(svc?.assignedTo && onLeaveIds.has(svc.assignedTo));
-  const statusLabel =
-    !svc                          ? 'Not started' :
-    svc.status === 'done'         ? 'Completed'   :
-    svc.status === 'blocked'      ? 'Blocked'     :
-    svc.status === 'in_progress'  ? 'In progress' : 'Not started';
-  const statusPill =
-    !svc || svc.status === 'pending' ? 'bg-muted text-muted-foreground' :
-    svc.status === 'done'            ? 'bg-emerald-500/12 text-emerald-700' :
-    svc.status === 'blocked'         ? 'bg-rose-500/12 text-rose-700' :
-                                       'bg-amber-500/15 text-amber-700';
-  return (
-    <div className="rounded-2xl border border-border bg-card overflow-hidden">
-      <div className={`h-1 ${stripe}`} />
-      <div className="p-5 space-y-4">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className={`text-[10.5px] uppercase tracking-[0.14em] font-bold ${tText}`}>{title}</p>
-            <h3 className="text-[16px] font-bold mt-0.5 leading-tight">{svc?.label || 'Not configured'}</h3>
-          </div>
-          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${statusPill}`}>
-            {statusLabel}
-          </span>
-        </div>
-
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[10.5px] uppercase tracking-[0.12em] font-bold text-muted-foreground">Progress</p>
-            <p className="text-[12px] font-semibold tabular-nums">{pct}%</p>
-          </div>
-          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-            <div className={`h-full ${tBar} transition-all`} style={{ width: `${pct}%` }} />
-          </div>
-          {total > 0 && (
-            <p className="text-[10.5px] text-muted-foreground mt-1">{done}/{total} steps</p>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <p className="text-[10.5px] uppercase tracking-[0.12em] font-bold text-muted-foreground mb-1">Owner</p>
-            <div className="flex items-center gap-1.5">
-              <span className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-[9px] font-bold text-muted-foreground">
-                {initials(assignee?.name) || '·'}
-              </span>
-              <span className={`text-[12px] truncate ${onLeave ? 'text-sky-700 font-medium' : ''}`}>
-                {assignee?.name || 'Unassigned'}
-              </span>
-              {onLeave && <Plane className="h-3 w-3 text-sky-600 shrink-0" />}
-            </div>
-          </div>
-          <div>
-            <p className="text-[10.5px] uppercase tracking-[0.12em] font-bold text-muted-foreground mb-1">ETA</p>
-            <p className="text-[12px]">
-              {svc?.eta ? format(parseISO(svc.eta), 'd MMM') : <span className="text-muted-foreground italic">Not set</span>}
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
+    <table className="w-full border-b border-border text-[12px]">
+      <thead>
+        <tr className="border-b border-border bg-muted/10 text-muted-foreground">
+          <th className="text-left font-semibold uppercase text-[9.5px] tracking-wider px-4 py-1.5">Service</th>
+          <th className="text-left font-semibold uppercase text-[9.5px] tracking-wider px-3 py-1.5">Status</th>
+          <th className="text-left font-semibold uppercase text-[9.5px] tracking-wider px-3 py-1.5">Owner</th>
+          <th className="text-left font-semibold uppercase text-[9.5px] tracking-wider px-3 py-1.5 w-[140px]">Progress</th>
+          <th className="text-left font-semibold uppercase text-[9.5px] tracking-wider px-3 py-1.5">Blocker</th>
+          <th className="text-left font-semibold uppercase text-[9.5px] tracking-wider px-3 py-1.5">Next</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(r => {
+          const svc = wf.services.find(s => s.serviceType === r.key);
+          const total = svc?.checklist?.length || 0;
+          const done  = svc?.checklist?.filter(c => c.done).length || 0;
+          const pct = total === 0 ? (svc?.status === 'done' ? 100 : 0) : Math.round((done / total) * 100);
+          const assignee = svc?.assignedTo ? users[svc.assignedTo] : undefined;
+          const onLeave = !!(svc?.assignedTo && onLeaveIds.has(svc.assignedTo));
+          const statusLabel =
+            !svc                            ? 'Not started' :
+            svc.status === 'done'           ? 'Completed'   :
+            svc.status === 'blocked'        ? 'Blocked'     :
+            svc.status === 'in_progress'    ? 'Active'      : 'Not started';
+          const statusCls =
+            !svc || svc.status === 'pending' ? 'text-muted-foreground' :
+            svc.status === 'done'            ? 'text-emerald-700' :
+            svc.status === 'blocked'         ? 'text-rose-700' :
+                                               'text-amber-700';
+          const dot =
+            !svc || svc.status === 'pending' ? 'bg-muted-foreground/40' :
+            svc.status === 'done'            ? 'bg-emerald-500' :
+            svc.status === 'blocked'         ? 'bg-rose-500' :
+                                               'bg-amber-500';
+          const tone =
+            !svc                       ? 'bg-muted' :
+            svc.status === 'done'      ? 'bg-emerald-500' :
+            svc.status === 'blocked'   ? 'bg-rose-500' :
+                                         'bg-amber-500';
+          return (
+            <tr key={r.key} className="border-b border-border/60 last:border-0">
+              <td className="px-4 py-2 font-semibold">{r.label}</td>
+              <td className="px-3 py-2">
+                <span className={`inline-flex items-center gap-1.5 ${statusCls}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+                  {statusLabel}
+                </span>
+              </td>
+              <td className="px-3 py-2">
+                <span className="inline-flex items-center gap-1.5">
+                  {assignee?.name || <span className="text-muted-foreground italic">Unassigned</span>}
+                  {onLeave && <Plane className="h-2.5 w-2.5 text-sky-600" />}
+                </span>
+              </td>
+              <td className="px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <div className="h-1 bg-muted rounded-full overflow-hidden flex-1 max-w-[80px]">
+                    <div className={`h-full ${tone}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="text-[11px] tabular-nums text-muted-foreground">{pct}%</span>
+                </div>
+              </td>
+              <td className="px-3 py-2 text-rose-700 truncate max-w-[140px]">
+                {svc?.status === 'blocked' ? (wf.blockerReason || 'Yes') : <span className="text-muted-foreground">—</span>}
+              </td>
+              <td className="px-3 py-2 truncate max-w-[180px]" title={wf.nextAction || ''}>
+                {(svc?.status !== 'done' && (wf.nextAction || wf.nextBestAction)) ? (wf.nextAction || wf.nextBestAction) : <span className="text-muted-foreground">—</span>}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// LatestUpdateCard — prominent note + inline add
-// ─────────────────────────────────────────────────────────────────────
-function LatestUpdateCard({
-  wf, actor, onAddNote,
+// Compact 5-line activity feed. Wraps ActivityTimeline visually but the
+// underlying component already paginates; we cap CSS height so only ~5
+// rows show without the user opening the full drawer.
+function RecentFeed({ workflowId, refreshKey }: { workflowId: string; refreshKey: number }) {
+  return (
+    <div className="px-2 py-1 max-h-[200px] overflow-hidden border-b border-border">
+      <ActivityTimeline workflowId={workflowId} refreshKey={refreshKey} />
+    </div>
+  );
+}
+
+function AILines({
+  wf, ai, busy, health,
 }: {
   wf: Workflow;
-  actor?: UserLite;
-  onAddNote: (text: string) => Promise<void>;
-}) {
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const send = async () => {
-    const t = text.trim();
-    if (t.length < 3 || busy) return;
-    setBusy(true);
-    try { await onAddNote(t); setText(''); }
-    finally { setBusy(false); }
-  };
-  return (
-    <div className="rounded-2xl border border-border bg-card p-5">
-      <div className="flex items-center gap-2 mb-3">
-        <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
-        <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground">Latest update</p>
-      </div>
-      {wf.lastUpdate?.detail ? (
-        <>
-          <p className="text-[15px] leading-relaxed text-foreground/90">
-            "{wf.lastUpdate.detail}"
-          </p>
-          <p className="text-[12px] text-muted-foreground mt-3">
-            {actor?.name || 'Team'}{wf.lastUpdate.at && <> · {formatDistanceToNow(parseISO(wf.lastUpdate.at), { addSuffix: true })}</>}
-          </p>
-        </>
-      ) : (
-        <p className="text-[13px] text-muted-foreground italic">No updates yet — be the first to add a note.</p>
-      )}
-      <div className="mt-4 flex items-center gap-2 border-t border-border pt-3">
-        <input
-          value={text}
-          onChange={e => setText(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); send(); } }}
-          placeholder="Add a note — visible to the whole team on this client…"
-          maxLength={600}
-          className="flex-1 min-w-0 px-3 h-9 bg-background border border-input rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-        <button
-          onClick={send}
-          disabled={busy || text.trim().length < 3}
-          className="h-9 px-3 rounded-lg bg-primary text-primary-foreground flex items-center gap-1.5 disabled:opacity-50 hover:bg-primary/90 text-[12.5px] font-semibold"
-        >
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-          Send
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// AIAnalysis
-// ─────────────────────────────────────────────────────────────────────
-function AIAnalysis({
-  ai, busy, onRegenerate, wf,
-}: {
   ai: { text: string; aiUsed: boolean } | null;
   busy: boolean;
-  onRegenerate: () => void;
-  wf: Workflow;
+  health: ReturnType<typeof healthDisplay>;
 }) {
-  const riskLabel =
-    typeof wf.riskScore === 'number'
-      ? wf.riskScore > 66 ? 'High' : wf.riskScore > 33 ? 'Medium' : 'Low'
-      : null;
-  const predicted = wf.predictedCompletionAt
-    ? format(parseISO(wf.predictedCompletionAt), 'd MMM')
-    : wf.eta ? format(parseISO(wf.eta), 'd MMM') : null;
+  const risk = wf.riskScore != null
+    ? (wf.riskScore > 66 ? 'High' : wf.riskScore > 33 ? 'Medium' : 'Low')
+    : (health.tone === 'warning' ? 'Medium' : health.tone === 'danger' ? 'High' : 'Low');
+  const confidence = Math.max(0, Math.min(100, 100 - (wf.riskScore ?? (health.tone === 'danger' ? 50 : health.tone === 'warning' ? 30 : 15))));
+  const bottleneck = wf.delayCause || (wf.blockerType ? wf.blockerType.replace(/_/g, ' ') : '—');
+
   return (
-    <div className="rounded-2xl border border-primary/20 bg-primary/[0.03] p-5">
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-primary/85">AI project analysis</p>
-        </div>
-        <button
-          onClick={onRegenerate}
-          disabled={busy}
-          className="text-[11px] inline-flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50"
-        >
-          <RotateCcw className={`h-3 w-3 ${busy ? 'animate-spin' : ''}`} /> Refresh
-        </button>
+    <div className="px-4 py-2.5 border-b border-border text-[12px] space-y-1">
+      <div className="flex items-center gap-1.5">
+        <Sparkles className="h-3 w-3 text-primary" />
+        <span className="text-muted-foreground">Risk</span>
+        <span className="font-semibold">{risk}</span>
+        <span className="text-muted-foreground/60">·</span>
+        <span className="text-muted-foreground">Launch confidence</span>
+        <span className="font-semibold tabular-nums">{confidence}%</span>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Stat label="Risk level" value={riskLabel || '—'} />
-        <Stat label="Bottleneck" value={wf.delayCause || (wf.blockerType ? wf.blockerType.replace(/_/g, ' ') : '—')} />
-        <Stat label="Predicted launch" value={predicted || '—'} />
-        <Stat label="Priority" value={wf.priority || 'Medium'} />
+      <div className="flex items-center gap-1.5">
+        <span className="text-muted-foreground">Bottleneck</span>
+        <span className="font-semibold capitalize">{bottleneck}</span>
       </div>
-      <div className="mt-4 pt-4 border-t border-border">
+      <div className="flex items-start gap-1.5">
+        <ArrowRight className="h-3 w-3 text-primary mt-0.5 shrink-0" />
         {busy && !ai ? (
-          <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating recommendation…
-          </div>
-        ) : ai ? (
-          <p className="text-[13.5px] leading-relaxed text-foreground/90">{ai.text}</p>
+          <span className="text-muted-foreground italic">Generating recommendation…</span>
+        ) : ai?.text ? (
+          <span className="line-clamp-2">{ai.text}</span>
         ) : (
-          <p className="text-[12px] text-muted-foreground italic">Click Refresh to generate the AI take.</p>
+          <span className="text-muted-foreground italic">No recommendation yet.</span>
         )}
       </div>
     </div>
   );
 }
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-[10.5px] uppercase tracking-[0.12em] font-bold text-muted-foreground mb-1">{label}</p>
-      <p className="text-[14px] font-semibold capitalize truncate">{value}</p>
-    </div>
-  );
-}
 
-// ─────────────────────────────────────────────────────────────────────
-// TasksBlock — collapsed by default, expand to show checklist
-// ─────────────────────────────────────────────────────────────────────
-function TasksBlock({
+function TasksRow({
   open, onToggle, openCount, doneCount, services,
 }: {
   open: boolean;
@@ -1000,42 +735,34 @@ function TasksBlock({
   services: Service[];
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-card overflow-hidden">
+    <>
       <button
         onClick={onToggle}
-        className="w-full px-5 py-4 flex items-center justify-between gap-3 hover:bg-muted/30 transition-colors text-left"
+        className="w-full px-4 py-2 flex items-center justify-between gap-2 hover:bg-muted/30 text-left text-[12px]"
       >
         <div className="flex items-center gap-3">
-          <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground">Tasks</p>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-700">
-              <span className="font-bold tabular-nums mr-1">{openCount}</span> open
-            </span>
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/12 text-emerald-700">
-              <span className="font-bold tabular-nums mr-1">{doneCount}</span> done
-            </span>
-          </div>
+          <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-muted-foreground">Tasks</p>
+          <span className="inline-flex items-center gap-1 text-amber-700"><span className="font-bold tabular-nums">{openCount}</span> open</span>
+          <span className="text-muted-foreground/60">·</span>
+          <span className="inline-flex items-center gap-1 text-emerald-700"><span className="font-bold tabular-nums">{doneCount}</span> done</span>
         </div>
-        {open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+        {open ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
       </button>
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-            className="border-t border-border overflow-hidden"
-          >
-            <div className="p-5 space-y-4">
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden border-t border-border">
+            <div className="p-4 space-y-3">
               {services.map(svc => (
                 <div key={svc._id || svc.serviceType}>
-                  <p className="text-[12px] font-semibold mb-2">{svc.label}</p>
+                  <p className="text-[11px] font-semibold mb-1.5">{svc.label}</p>
                   {(svc.checklist || []).length === 0 ? (
-                    <p className="text-[11.5px] text-muted-foreground italic">No checklist items.</p>
+                    <p className="text-[11px] text-muted-foreground italic">No checklist items.</p>
                   ) : (
-                    <ul className="space-y-1.5">
+                    <ul className="space-y-1">
                       {svc.checklist.map((c, i) => (
-                        <li key={i} className="flex items-center gap-2 text-[12.5px]">
-                          <span className={`h-3.5 w-3.5 rounded-full flex items-center justify-center ${c.done ? 'bg-emerald-500/15 text-emerald-700' : 'bg-muted text-muted-foreground'}`}>
-                            {c.done && <CheckCircle2 className="h-2.5 w-2.5" />}
+                        <li key={i} className="flex items-center gap-2 text-[12px]">
+                          <span className={`h-3 w-3 rounded-full flex items-center justify-center ${c.done ? 'bg-emerald-500/15 text-emerald-700' : 'bg-muted text-muted-foreground'}`}>
+                            {c.done && <CheckCircle2 className="h-2 w-2" />}
                           </span>
                           <span className={c.done ? 'line-through text-muted-foreground' : ''}>
                             {c.text || c.title || `Step ${i + 1}`}
@@ -1050,35 +777,28 @@ function TasksBlock({
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Sidebar atoms
-// ─────────────────────────────────────────────────────────────────────
-function SidebarCard({ title, icon: Icon, children }: { title: string; icon: typeof UserIcon; children: React.ReactNode }) {
+function SidebarBlock({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-border bg-card px-4 py-3.5">
-      <div className="flex items-center gap-1.5 mb-2.5">
-        <Icon className="h-3 w-3 text-muted-foreground" />
-        <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-muted-foreground">{title}</p>
-      </div>
-      {children}
+    <div className="px-3 py-3">
+      <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-muted-foreground mb-2">{title}</p>
+      <div className="space-y-0.5">{children}</div>
     </div>
   );
 }
-function SidebarRow({ left, right, hint }: { left: string; right: string; hint?: string }) {
+function Row({ left, right }: { left: string; right: string }) {
   return (
-    <div className="flex items-center justify-between py-1.5 border-b border-border/60 last:border-0">
-      <div className="min-w-0">
-        <p className="text-[12.5px] truncate">{left}</p>
-        {hint && <p className="text-[10.5px] text-muted-foreground">{hint}</p>}
-      </div>
-      <p className="text-[11.5px] text-muted-foreground tabular-nums">{right}</p>
+    <div className="flex items-center justify-between gap-2 py-1 text-[11.5px]">
+      <span className="truncate min-w-0">{left}</span>
+      <span className="text-muted-foreground shrink-0">{right}</span>
     </div>
   );
 }
-function SidebarEmpty({ children }: { children: React.ReactNode }) {
-  return <p className="py-3 text-[11.5px] text-muted-foreground text-center italic">{children}</p>;
+function Empty({ children }: { children: React.ReactNode }) {
+  return <p className="py-1 text-[11px] text-muted-foreground italic">{children}</p>;
 }
+
+// Re-export so the route lazy-loader gets a stable identity.
