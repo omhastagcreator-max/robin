@@ -174,6 +174,11 @@ export const cwAddNote          = (wid: string, body: { detail: string; serviceT
   api.post(`/client-workflows/${wid}/notes`, body).then(r => r.data);
 export const cwReassignService  = (wid: string, sid: string, body: { userId: string }) =>
   api.put(`/client-workflows/${wid}/services/${sid}/reassign`, body).then(r => r.data);
+// Assignee's tentative completion date — see server route comment.
+// `eta` is YYYY-MM-DD (or null to clear). Optional one-line comment
+// for the audit log so admin can see WHY the ETA was set / shifted.
+export const cwSetServiceEta    = (wid: string, sid: string, body: { eta: string | null; comment?: string }) =>
+  api.put(`/client-workflows/${wid}/services/${sid}/eta`, body).then(r => r.data);
 export const cwGetTemplates     = () => api.get('/client-workflows/templates').then(r => r.data);
 
 // Pipeline 2.0 — explicit project-level blocker.

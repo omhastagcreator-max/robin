@@ -659,6 +659,70 @@ export async function reassignService(req: AuthRequest, res: Response): Promise<
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
+// ── Service ETA (per-assignee tentative completion date) ───────────────
+/**
+ * PUT /api/client-workflows/:id/services/:sid/eta  { eta, comment? }
+ *
+ * Owner ask (May 2026): every person responsible for a stage must
+ * enter their tentative completion date so admin sees a realistic
+ * launch plan, not just wishful thinking from the sales side. The
+ * StageWorkspacePage surfaces a yellow banner when the current user
+ * is the assignee and `service.eta` is empty — clicking the banner
+ * date picker hits this endpoint.
+ *
+ * Auth rule: assignee-or-admin (mirrors toggleChecklist). The
+ * assignee is the one with the most accurate ETA so we resist
+ * letting other employees overwrite it accidentally.
+ *
+ * Audit: writes an 'eta_updated' activity row with the before/after
+ * dates so admin can see how a stage's ETA drifted over time.
+ */
+export async function setServiceEta(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    const { eta, comment } = req.body || {};
+    // Empty string / null is allowed — clears the ETA. A non-empty
+    // value must parse as a real date or we 400.
+    let etaDate: Date | null = null;
+    if (eta) {
+      const parsed = new Date(eta);
+      if (Number.isNaN(parsed.getTime())) {
+        res.status(400).json({ error: 'eta must be a valid date (YYYY-MM-DD).' });
+        return;
+      }
+      etaDate = parsed;
+    }
+
+    const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
+    const svc = wf.services.id(req.params.sid);
+    if (!svc) { res.status(404).json({ error: 'Service not found' }); return; }
+    if (svc.assignedTo !== req.user!.id && req.user!.role !== 'admin') {
+      res.status(403).json({ error: 'You can only set the ETA on your own assigned service' });
+      return;
+    }
+
+    const beforeEta = svc.eta || null;
+    svc.eta = etaDate || undefined;
+
+    // Tiny audit detail line so the activity log makes sense at a
+    // glance — "ETA: 28 Jun (was 20 Jun)" beats a date-only diff.
+    const fmt = (d: Date | string | null) => d ? new Date(d).toISOString().slice(0, 10) : '—';
+    const detail = `${svc.label}: ETA ${fmt(etaDate)}${beforeEta ? ` (was ${fmt(beforeEta)})` : ''}${comment ? ` — ${String(comment).slice(0, 280)}` : ''}`;
+    wf.activity.push({
+      actorId:     req.user!.id,
+      action:      'eta_updated',
+      serviceType: svc.serviceType,
+      detail,
+    } as any);
+
+    await wf.save();
+    res.json(wf);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
 // ── Service templates endpoint (read-only) ───────────────────────────────
 export async function getServiceTemplates(_req: AuthRequest, res: Response): Promise<void> {
   res.json(SERVICE_TEMPLATES);

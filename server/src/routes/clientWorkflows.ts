@@ -5,7 +5,7 @@ import {
   createWorkflow, listWorkflows, getWorkflow, toggleChecklist,
   completeService, returnService, addNote, reassignService, getServiceTemplates,
   blockWorkflow, unblockWorkflow, listWorkflowActivity,
-  bulkWorkflowAction,
+  bulkWorkflowAction, setServiceEta,
 } from '../controllers/clientWorkflowController';
 
 const router = Router();
@@ -25,6 +25,9 @@ router.put ('/:id/services/:sid/complete',               requireRole('admin', 'e
 router.put ('/:id/return',                               requireRole('admin', 'employee', 'sales'),   returnService);
 router.post('/:id/notes',                                requireRole('admin', 'employee', 'sales'),   addNote);
 router.put ('/:id/services/:sid/reassign',               requireRole('admin'),                        reassignService);
+// Assignee enters their tentative completion date — see controller
+// docstring. Assignee-or-admin only; controller enforces it.
+router.put ('/:id/services/:sid/eta',                    requireRole('admin', 'employee', 'sales'),   setServiceEta);
 
 // Pipeline 2.0 — explicit blocker + activity timeline.
 router.put ('/:id/block',                                requireRole('admin', 'employee', 'sales'),   blockWorkflow);

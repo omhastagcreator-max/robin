@@ -145,8 +145,9 @@ function computeStageHealth(svc: Service | undefined, wf: Workflow): { pct: numb
 // ─────────────────────────────────────────────────────────────────────
 export default function StageWorkspacePage() {
   const { id, stageKey } = useParams();
-  const { role } = useAuth();
+  const { user, role } = useAuth();
   const isAdminOrSales = role === 'admin' || role === 'sales';
+  const currentUserId  = (user as any)?.id;
 
   const [wf, setWf]           = useState<Workflow | null>(null);
   const [users, setUsers]     = useState<Record<string, UserLite>>({});
@@ -248,6 +249,22 @@ export default function StageWorkspacePage() {
             etaAt={etaAt || undefined}
             blockerReason={stageBlocked ? wf.blockerReason : undefined}
           />
+
+          {/* ── ETA prompt — assignee must enter tentative completion
+              date when a project is first assigned to them. Banner
+              hides once etaAt is set. Owner spec (May 2026): every
+              person responsible for a stage enters their own ETA
+              instead of admin guessing one. */}
+          {svc && !etaAt && (
+            <EtaBanner
+              workflowId={wf._id}
+              serviceId={svc._id!}
+              isAssignee={!!(svc.assignedTo && currentUserId && svc.assignedTo === currentUserId)}
+              isAdmin={role === 'admin'}
+              ownerName={owner?.name}
+              onSaved={(updated) => setWf(updated)}
+            />
+          )}
 
           {/* ── MANAGER METRICS ──────────────────────────────────── */}
           <ManagerMetrics
@@ -734,4 +751,87 @@ function EmptyChecklist({ isAdminOrSales }: { isAdminOrSales: boolean }) {
 }
 
 // Silence TS noise on icons not used in v1 but kept for future expansion.
-void Calendar; void Flag; void ExternalLink; void UserIcon; void useMemo;
+void ExternalLink; void UserIcon; void useMemo;
+
+// ─────────────────────────────────────────────────────────────────────
+// EtaBanner — assignee enters tentative completion date
+// ─────────────────────────────────────────────────────────────────────
+//
+// Renders when service.eta is empty. Two presentation modes:
+//   - Assignee sees a yellow "action required" banner with an inline
+//     date picker + Save button. Their input is what gets saved.
+//   - Admin or any other viewer sees a muted info banner saying
+//     "Owner Rishi hasn't set the ETA yet" — visibility without the
+//     editor, since only the assignee should set it (admins still
+//     CAN via the same endpoint, but the social contract is the
+//     assignee owns the number).
+function EtaBanner({
+  workflowId, serviceId, isAssignee, isAdmin, ownerName, onSaved,
+}: {
+  workflowId: string;
+  serviceId:  string;
+  isAssignee: boolean;
+  isAdmin:    boolean;
+  ownerName?: string;
+  onSaved:    (updated: Workflow) => void;
+}) {
+  const [eta, setEta]     = useState<string>('');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!eta || saving) return;
+    setSaving(true);
+    try {
+      const updated = await api.cwSetServiceEta(workflowId, serviceId, { eta });
+      onSaved(updated as Workflow);
+      toast.success('Tentative completion date saved');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Could not save the ETA');
+    } finally { setSaving(false); }
+  };
+
+  // Today as a min — the date picker won't let the assignee pick a
+  // date in the past, which is the most common mis-set.
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (!isAssignee && !isAdmin) {
+    // Non-assignee, non-admin viewer (e.g. another teammate just
+    // browsing). Show a muted info row so they know it's missing
+    // but can't act on it.
+    return (
+      <div className="px-6 py-2.5 border-b border-border bg-amber-500/[0.04] text-[12px] text-amber-800">
+        <span className="font-semibold">{ownerName || 'Owner'} hasn't entered a tentative completion date yet.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-6 py-3 border-b border-border bg-amber-500/[0.06] flex items-center gap-3 flex-wrap">
+      <span className="inline-flex items-center gap-1.5 text-[12px] font-bold text-amber-800 uppercase tracking-wider shrink-0">
+        <AlertTriangle className="h-3.5 w-3.5" /> Action required
+      </span>
+      <p className="text-[13px] font-semibold flex-1 min-w-[200px]">
+        {isAssignee
+          ? 'Enter your tentative completion date for this stage.'
+          : `${ownerName || 'Owner'} hasn't entered a tentative completion date — admin can set it on their behalf.`}
+      </p>
+      <div className="flex items-center gap-2 shrink-0">
+        <input
+          type="date"
+          value={eta}
+          min={today}
+          onChange={e => setEta(e.target.value)}
+          className="h-8 px-2 bg-card border border-input rounded-md text-[12.5px] focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <button
+          onClick={save}
+          disabled={!eta || saving}
+          className="h-8 px-3 rounded-md bg-amber-600 text-white text-[12px] font-semibold flex items-center gap-1.5 disabled:opacity-50 hover:bg-amber-700"
+        >
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          Save ETA
+        </button>
+      </div>
+    </div>
+  );
+}
