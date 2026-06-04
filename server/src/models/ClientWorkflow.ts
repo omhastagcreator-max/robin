@@ -35,6 +35,14 @@ const ServiceSchema = new Schema({
   checklist:   { type: [ChecklistItemSchema], default: [] },
   startedAt:   { type: Date },
   completedAt: { type: Date },
+  // Per-assignee tentative completion date. Owner ask (May 2026):
+  // each service owner enters their OWN ETA so admin sees realistic
+  // launch plans, not optimistic sales-side estimates. The
+  // StageWorkspacePage banner prompts the assignee to set this on
+  // first open; controller setServiceEta writes here. Workflow-level
+  // `eta` field (further down) is the project-wide launch date and
+  // is independent of these per-service ETAs.
+  eta:         { type: Date, default: null },
   // If this service was returned by a downstream team for rework — the
   // last return note. Cleared when the service is re-completed.
   returnedReason: { type: String },
