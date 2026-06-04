@@ -75,6 +75,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const mapped: RobinUser = { id: u.id, email: u.email, name: u.name, role: u.role, roles: u.roles || [], team: u.team, teams: u.teams || [], avatarUrl: u.avatarUrl, organizationId: u.organizationId, canManageWorkroom: u.canManageWorkroom === true };
       localStorage.setItem(USER_KEY, JSON.stringify(mapped));
       setUser(mapped);
+      // Auto-clock-in. Owner ask (May 2026): "when I log in then start
+      // the timer". Internal staff get an automatic session START here
+      // so they don't have to click a separate "Start day" button. The
+      // huddle auto-join is handled separately by HuddleContext.
+      //   - Clients: skipped (they don't have work sessions).
+      //   - Existing active session: server's getActiveSession check is
+      //     skipped — startSession is idempotent server-side (returns
+      //     the existing session if one is already open).
+      //   - Per-tab latch so a refresh on the same tab doesn't try to
+      //     start a second time. Cleared on logout above.
+      try {
+        const isStaff = ['admin', 'employee', 'sales', 'workroom'].includes(mapped.role);
+        if (isStaff && sessionStorage.getItem('robin.session.autoStartedThisTab') !== '1') {
+          await api.startSession().catch(() => { /* silent — UI will surface if needed */ });
+          try { sessionStorage.setItem('robin.session.autoStartedThisTab', '1'); } catch { /* private mode */ }
+        }
+      } catch { /* never block login on a session-start hiccup */ }
       return {};
     } catch (err: any) {
       return { error: err.response?.data?.error || 'Login failed' };
@@ -89,6 +106,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = useCallback(() => {
+    // Auto-clock-out. Owner ask (May 2026): "when I log out then stop
+    // the timer". Fire endSession BEFORE we clear the token so the
+    // request is still authenticated. Fire-and-forget — we never want
+    // a session-end network failure to leave the user stuck logged
+    // in. Server-side endSession is idempotent (no-op if no session
+    // is open). Best-effort huddle-left fires from HuddleProvider's
+    // pagehide listener when the redirect to /login unloads this tab.
+    try { void api.endSession().catch(() => { /* silent */ }); } catch { /* never block logout */ }
+
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     // Reset the 401-strike counter (see axios.ts) — otherwise a strike
@@ -104,6 +130,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // set (e.g. crashed while on auto-break), user B logging in shouldn't
     // be treated as resuming someone else's break.
     try { localStorage.removeItem('robin.session.autoBrokenByHuddle'); } catch { /* ignore */ }
+    // Auto-join disable latch — if the user explicitly turned auto-join
+    // off and then logged out, that preference shouldn't bleed across
+    // logins. Clearing here means next login defaults to auto-join again.
+    try { localStorage.removeItem('robin.huddle.autoJoinDisabled'); } catch { /* ignore */ }
     // Tear down the shared socket so the next login doesn't inherit the
     // previous user's identity in chat/presence.
     try { disconnectSharedSocket(); } catch { /* ignore */ }
