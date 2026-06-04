@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { User, Lock, Save, Loader2, Mail } from 'lucide-react';
+import { User, Lock, Save, Loader2, Mail, ImageIcon, X as XIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { AppLayout } from '@/components/AppLayout';
@@ -24,6 +24,13 @@ export default function ProfilePage() {
   const [name, setName]     = useState(user?.name || '');
   const [phone, setPhone]   = useState((user as any)?.phone || '');
   const [team, setTeam]     = useState(user?.team || '');
+  // Profile picture URL — paste any publicly-accessible image link
+  // (gravatar, Slack avatar, Google account, S3 bucket, etc.). The
+  // shared <Avatar /> primitive already renders it everywhere user
+  // identities show — sidebar header, meeting tiles, activity log,
+  // service-owner chip on the workspace pages.
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || '');
+  const [avatarSaving, setAvatarSaving] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -31,8 +38,19 @@ export default function ProfilePage() {
       setName(user.name || '');
       setPhone((user as any).phone || '');
       setTeam(user.team || '');
+      setAvatarUrl(user.avatarUrl || '');
     }
   }, [user]);
+
+  const saveAvatar = async (nextUrl: string) => {
+    setAvatarSaving(true);
+    try {
+      await api.updateMe({ avatarUrl: nextUrl || null });
+      await refreshProfile();
+      toast.success(nextUrl ? 'Profile picture updated' : 'Profile picture removed');
+    } catch { toast.error('Failed to update profile picture'); }
+    finally { setAvatarSaving(false); }
+  };
 
   const [curPw, setCurPw]   = useState('');
   const [newPw, setNewPw]   = useState('');
@@ -68,17 +86,58 @@ export default function ProfilePage() {
           <p className="text-[12px] text-muted-foreground">Update your details and password.</p>
         </div>
 
-        {/* Identity card */}
-        <div className="border border-border rounded-xl bg-card p-5 flex items-center gap-4">
-          <Avatar name={user?.name} email={user?.email} url={user?.avatarUrl} size="lg" tone="primary" />
-          <div className="min-w-0 flex-1">
-            <p className="text-[15px] font-bold truncate">{user?.name || 'Unnamed'}</p>
-            <p className="text-[12px] text-muted-foreground flex items-center gap-1.5 truncate">
-              <Mail className="h-3 w-3" /> {user?.email}
+        {/* Identity card — avatar is editable inline */}
+        <div className="border border-border rounded-xl bg-card p-5">
+          <div className="flex items-center gap-4">
+            <Avatar name={user?.name} email={user?.email} url={avatarUrl || user?.avatarUrl} size="lg" tone="primary" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[15px] font-bold truncate">{user?.name || 'Unnamed'}</p>
+              <p className="text-[12px] text-muted-foreground flex items-center gap-1.5 truncate">
+                <Mail className="h-3 w-3" /> {user?.email}
+              </p>
+              <span className="inline-flex items-center mt-1.5 text-[10.5px] uppercase tracking-[0.16em] font-bold bg-primary/12 text-primary px-2 h-5 rounded">
+                {user?.role}
+              </span>
+            </div>
+          </div>
+
+          {/* Avatar editor */}
+          <div className="mt-4 pt-4 border-t border-border space-y-2">
+            <label className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground inline-flex items-center gap-1.5">
+              <ImageIcon className="h-3 w-3" /> Profile picture URL
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                value={avatarUrl}
+                onChange={e => setAvatarUrl(e.target.value)}
+                placeholder="https://your-image.png — Gravatar, Slack avatar, anywhere"
+                className="flex-1 min-w-0 px-3 h-9 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              {avatarUrl && (
+                <button
+                  type="button"
+                  onClick={() => { setAvatarUrl(''); void saveAvatar(''); }}
+                  disabled={avatarSaving}
+                  className="h-9 px-2.5 rounded-lg border border-input text-muted-foreground hover:text-foreground hover:bg-muted text-[12px] inline-flex items-center gap-1"
+                  title="Remove profile picture"
+                >
+                  <XIcon className="h-3.5 w-3.5" /> Remove
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => saveAvatar(avatarUrl.trim())}
+                disabled={avatarSaving || avatarUrl === (user?.avatarUrl || '')}
+                className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-[12px] font-semibold disabled:opacity-50 hover:bg-primary/90 inline-flex items-center gap-1.5"
+              >
+                {avatarSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                Save
+              </button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Paste a link to any image (PNG / JPG). It'll show up in your sidebar,
+              activity log, and team panels across Robin. Native upload coming next pass.
             </p>
-            <span className="inline-flex items-center mt-1.5 text-[10.5px] uppercase tracking-[0.16em] font-bold bg-primary/12 text-primary px-2 h-5 rounded">
-              {user?.role}
-            </span>
           </div>
         </div>
 

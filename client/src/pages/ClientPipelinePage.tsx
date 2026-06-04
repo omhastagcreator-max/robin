@@ -1353,6 +1353,12 @@ function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCr
   const [templates, setTemplates] = useState<Record<string, any>>({});
   const [clientId, setClientId] = useState('');
   const [chosen, setChosen]     = useState<Set<string>>(new Set());
+  // Priority is captured on creation. Defaults to 'medium' — the
+  // bulk of the agency's projects sit here. Owner ask (May 2026):
+  // every member adding a Client CRM entry should commit to a
+  // priority upfront so the sort/filter on the dashboard reflects
+  // real urgency from day one, not whatever was auto-assigned.
+  const [priority, setPriority] = useState<'urgent' | 'high' | 'medium' | 'low'>('medium');
   const [saving, setSaving]     = useState(false);
   // Needed to fire the org-wide confetti broadcast on a successful save.
   const socket = useSocket();
@@ -1374,7 +1380,10 @@ function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCr
     if (chosen.size === 0) { toast.error('Pick at least one service'); return; }
     setSaving(true);
     try {
-      await api.cwCreateWorkflow({ clientId, services: Array.from(chosen) });
+      // Priority is sent alongside the standard fields. The server's
+      // createWorkflow controller persists it as `workflow.priority`
+      // — same field the dashboard's existing priority filter reads.
+      await (api.cwCreateWorkflow as any)({ clientId, services: Array.from(chosen), priority });
       toast.success('Client CRM entry created — teammates have been auto-assigned');
       // Broadcast the celebration org-wide. Surface the client name on
       // every receiver's toast so the team knows WHO was just brought
@@ -1414,6 +1423,37 @@ function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCr
               ))}
             </select>
             <p className="text-[11px] text-muted-foreground mt-1">Don't see them? Add them in Admin → Clients first.</p>
+          </div>
+
+          {/* Priority — captured upfront so the dashboard's filters
+              and sort reflect the creator's intent from day one. */}
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground">Priority</label>
+            <div className="mt-2 grid grid-cols-4 gap-2">
+              {([
+                { v: 'urgent', label: 'Urgent', cls: 'border-rose-500/40 bg-rose-500/10 text-rose-700' },
+                { v: 'high',   label: 'High',   cls: 'border-amber-500/40 bg-amber-500/10 text-amber-700' },
+                { v: 'medium', label: 'Medium', cls: 'border-blue-500/30 bg-blue-500/10 text-blue-700' },
+                { v: 'low',    label: 'Low',    cls: 'border-border bg-muted text-muted-foreground' },
+              ] as const).map(p => {
+                const active = priority === p.v;
+                return (
+                  <button
+                    key={p.v}
+                    type="button"
+                    onClick={() => setPriority(p.v)}
+                    className={`rounded-lg border px-2 py-1.5 text-[12px] font-semibold transition-all ${
+                      active ? `${p.cls} ring-1 ring-current/20` : 'border-border bg-background text-foreground/70 hover:border-primary/30'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Drives sort + filter on the Client CRM dashboard. Change later from the project page.
+            </p>
           </div>
 
           {/* Services */}

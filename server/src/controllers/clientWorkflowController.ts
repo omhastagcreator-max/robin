@@ -110,7 +110,7 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
 
-    const { clientId, services } = req.body || {};
+    const { clientId, services, priority } = req.body || {};
     if (!clientId) { res.status(400).json({ error: 'clientId required' }); return; }
     if (!Array.isArray(services) || services.length === 0) {
       res.status(400).json({ error: 'Pick at least one service' });
@@ -118,6 +118,11 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
     }
     const invalid = services.filter((s: string) => !SERVICE_TYPES.includes(s as any));
     if (invalid.length) { res.status(400).json({ error: `Unknown service: ${invalid.join(', ')}` }); return; }
+    // Priority is optional — defaults to 'medium' on the schema. We
+    // validate against the enum so a typo doesn't silently drop to
+    // null and confuse the dashboard filters later.
+    const VALID_PRIORITIES = ['urgent', 'high', 'medium', 'low'];
+    const safePriority = (priority && VALID_PRIORITIES.includes(String(priority))) ? String(priority) : undefined;
 
     const client = await User.findOne({ _id: clientId, organizationId: orgId, role: 'client' }).select('name phone email').lean();
     if (!client) { res.status(400).json({ error: 'Client not found' }); return; }
@@ -164,11 +169,12 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
         clientPhone: (client as any).phone,
         clientEmail: client.email,
         services: serviceDocs,
+        ...(safePriority ? { priority: safePriority } : {}),
         createdBy: req.user!.id,
         activity: [{
           actorId: req.user!.id,
           action: 'created',
-          detail: `Pipeline created with: ${serviceDocs.map(s => s.label).join(', ')}`,
+          detail: `Pipeline created with: ${serviceDocs.map(s => s.label).join(', ')}${safePriority ? ` · priority ${safePriority}` : ''}`,
         }],
       });
       recomputeServiceStatuses(wf);

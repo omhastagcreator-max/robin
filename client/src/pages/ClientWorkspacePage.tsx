@@ -637,8 +637,14 @@ function JourneyStrip({ states, currentKey }: { states: Record<StageKey, StageSt
           s === 'completed' ? 'text-foreground/70' :
           s === 'blocked'   ? 'text-rose-700 font-semibold' :
                               'text-muted-foreground';
+        // Owner ask (May 2026): blur future stages that haven't been
+        // reached so the eye lands on done/current/blocked first. We
+        // use a slight blur + 50% opacity instead of full grayscale
+        // so the labels are still readable for a stakeholder asking
+        // "what comes next" — they just don't compete for attention.
+        const futureCls = s === 'future' ? 'opacity-50 blur-[0.5px] grayscale' : '';
         return (
-          <div key={stage.key} className="flex items-center gap-1.5 shrink-0">
+          <div key={stage.key} className={`flex items-center gap-1.5 shrink-0 transition-all ${futureCls}`}>
             <div className="flex items-center gap-2">
               <span className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold ${dotCls}`}>
                 {s === 'completed' ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
