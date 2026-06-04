@@ -19,7 +19,11 @@ router.get('/',                  requireRole('admin', 'employee', 'sales'), list
 router.get('/:id',               requireRole('admin', 'employee', 'sales'), getWorkflow);
 
 // Mutations
-router.post('/',                                         requireRole('admin', 'sales'),               createWorkflow);
+// May 2026 — opened to all internal roles so any team member can
+// onboard a client they're bringing in. createWorkflow already stamps
+// createdBy = req.user.id and writes a 'created' activity row, so
+// audit-trail integrity is preserved across the wider author pool.
+router.post('/',                                         requireRole('admin', 'sales', 'employee'),   createWorkflow);
 router.put ('/:id/services/:sid/check',                  requireRole('admin', 'employee', 'sales'),   toggleChecklist);
 router.put ('/:id/services/:sid/complete',               requireRole('admin', 'employee', 'sales'),   completeService);
 router.put ('/:id/return',                               requireRole('admin', 'employee', 'sales'),   returnService);

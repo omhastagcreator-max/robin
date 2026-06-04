@@ -24,7 +24,7 @@ import { Avatar } from '@/components/shared/Avatar';
 import { AIInsight } from '@/components/ai/AIInsight';
 import {
   PipelineToolbar, PipelineFocusView, PipelineTableView, PipelineFlowView,
-  usePipelineState, applyFilters,
+  usePipelineState, applyFilters, applySort,
   type FlowStage,
 } from '@/components/pipeline/PipelineRevamp';
 import { PipelineExecutiveView } from '@/components/pipeline/PipelineExecutiveView';
@@ -99,7 +99,10 @@ interface UserLite { _id: string; name?: string; email?: string; avatarUrl?: str
 
 export default function ClientPipelinePage() {
   const { role } = useAuth();
-  const isAdminOrSales = ['admin', 'sales'].includes(role);
+  // May 2026 — opened to all internal staff; matches the new server
+  // route gate. We keep the variable name `isAdminOrSales` for now to
+  // avoid touching every read site; the predicate just got wider.
+  const isAdminOrSales = ['admin', 'sales', 'employee'].includes(role);
 
   const [query, setQuery]       = useState('');
   const [mineOnly, setMineOnly] = useState(role === 'employee'); // employees default to their own
@@ -109,7 +112,7 @@ export default function ClientPipelinePage() {
 
   // Pipeline revamp — view toggle (kanban / focus / table), filter chips,
   // saved-views, and bulk selection state. All persisted via usePipelineState().
-  const { view, setView, filters, setFilters, savedViews, setSavedViews } = usePipelineState();
+  const { view, setView, filters, setFilters, sort, setSort, savedViews, setSavedViews } = usePipelineState();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const toggleSelect = (id: string) =>
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -207,7 +210,9 @@ export default function ClientPipelinePage() {
   useVisiblePoll(() => load({ background: true }), 300_000, [query, mineOnly]);
 
   // Apply client-side filters (server already handled q + mineOnly).
-  const filteredList = useMemo(() => applyFilters(list, filters), [list, filters]);
+  // Filter first, then sort. Sort is stable so two equal priorities
+  // keep their post-filter order (which is server-side updatedAt desc).
+  const filteredList = useMemo(() => applySort(applyFilters(list, filters), sort), [list, filters, sort]);
 
   // Press Enter in the search input → land on the focused-view inline
   // pipeline panel instead of the drawer. Owner ask (May 2026): "when
@@ -313,6 +318,7 @@ export default function ClientPipelinePage() {
         <PipelineToolbar
           view={view} onView={setView}
           filters={filters} onFilters={setFilters}
+          sort={sort} onSort={setSort}
           savedViews={savedViews} onSavedViews={setSavedViews}
           mineOnly={mineOnly} onMineOnly={setMineOnly}
           selectedIds={selectedIds} onClearSelected={clearSelected}

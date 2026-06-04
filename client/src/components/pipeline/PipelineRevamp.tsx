@@ -47,16 +47,28 @@ export const EMPTY_FILTERS: PipelineFilters = {
   health: '', team: '', priority: '', blocker: '',
 };
 
+// Sort order for the Client CRM dashboard. Owner ask (May 2026): the
+// list should be sortable by priority first, but also by completion
+// percentage (so completed work surfaces) and by recent update (so
+// fresh activity surfaces). 'priority' is the default landing sort.
+export type PipelineSort =
+  | 'priority'         // urgent > high > medium > low → secondary sort: recent update
+  | 'completion_desc'  // most-complete first
+  | 'completion_asc'   // least-complete first (helps find work that hasn't started)
+  | 'recent';          // most recently updated first
+
 export interface SavedView {
   id:       string;
   name:     string;
   view:     PipelineView;
   filters:  PipelineFilters;
+  sort?:    PipelineSort;
   mineOnly: boolean;
 }
 
 const LS_VIEW         = 'pipeline.view';
 const LS_FILTERS      = 'pipeline.filters';
+const LS_SORT         = 'pipeline.sort';
 const LS_SAVED_VIEWS  = 'pipeline.savedViews';
 const LS_GROUP_OPEN   = 'pipeline.groupOpen';
 
@@ -78,13 +90,51 @@ function writeLS<T>(key: string, value: T): void {
 export function usePipelineState() {
   const [view, setView_]       = useState<PipelineView>(() => readLS<PipelineView>(LS_VIEW, 'focused'));
   const [filters, setFilters_] = useState<PipelineFilters>(() => readLS<PipelineFilters>(LS_FILTERS, EMPTY_FILTERS));
+  const [sort, setSort_]       = useState<PipelineSort>(() => readLS<PipelineSort>(LS_SORT, 'priority'));
   const [savedViews, setSavedViews_] = useState<SavedView[]>(() => readLS<SavedView[]>(LS_SAVED_VIEWS, []));
 
   const setView      = (v: PipelineView)      => { setView_(v); writeLS(LS_VIEW, v); };
   const setFilters   = (f: PipelineFilters)   => { setFilters_(f); writeLS(LS_FILTERS, f); };
+  const setSort      = (s: PipelineSort)      => { setSort_(s); writeLS(LS_SORT, s); };
   const setSavedViews = (a: SavedView[])      => { setSavedViews_(a); writeLS(LS_SAVED_VIEWS, a); };
 
-  return { view, setView, filters, setFilters, savedViews, setSavedViews };
+  return { view, setView, filters, setFilters, sort, setSort, savedViews, setSavedViews };
+}
+
+// ── applySort — stable sort of workflows by the chosen ordering ────
+// Pure, exported so any view (focused, executive, kanban, table, etc.)
+// applies the same ordering before bucketing.
+const PRIORITY_RANK: Record<string, number> = { urgent: 4, high: 3, medium: 2, low: 1 };
+function svcChecklistPct<T extends { services?: Array<{ status?: string; checklist?: Array<{ done?: boolean }> }> }>(w: T): number {
+  let total = 0, done = 0;
+  for (const s of (w.services || [])) {
+    const cl = s.checklist || [];
+    total += cl.length;
+    done  += cl.filter(c => c.done).length;
+    if (cl.length === 0 && s.status === 'done') { total += 1; done += 1; }
+  }
+  return total === 0 ? 0 : Math.round((done / total) * 100);
+}
+export function applySort<T extends {
+  priority?: string;
+  updatedAt?: string;
+  services?: Array<{ status?: string; checklist?: Array<{ done?: boolean }> }>;
+}>(list: T[], sort: PipelineSort): T[] {
+  const copy = list.slice();
+  copy.sort((a, b) => {
+    if (sort === 'priority') {
+      const pa = PRIORITY_RANK[a.priority || 'medium'] || 2;
+      const pb = PRIORITY_RANK[b.priority || 'medium'] || 2;
+      if (pa !== pb) return pb - pa;
+      // Tiebreak on most-recent.
+      return Date.parse(b.updatedAt || '') - Date.parse(a.updatedAt || '');
+    }
+    if (sort === 'completion_desc') return svcChecklistPct(b) - svcChecklistPct(a);
+    if (sort === 'completion_asc')  return svcChecklistPct(a) - svcChecklistPct(b);
+    // recent
+    return Date.parse(b.updatedAt || '') - Date.parse(a.updatedAt || '');
+  });
+  return copy;
 }
 
 /** Apply filters to a list of workflows. Pure — used by every view. */
@@ -124,6 +174,7 @@ export function applyFilters<T extends {
 export function PipelineToolbar({
   view, onView,
   filters, onFilters,
+  sort, onSort,
   savedViews, onSavedViews,
   mineOnly, onMineOnly,
   selectedIds, onClearSelected, onBulk,
@@ -131,6 +182,9 @@ export function PipelineToolbar({
 }: {
   view: PipelineView; onView: (v: PipelineView) => void;
   filters: PipelineFilters; onFilters: (f: PipelineFilters) => void;
+  /** Sort + setter — optional so legacy callers don't break. When
+   *  omitted the toolbar skips the Sort dropdown. */
+  sort?: PipelineSort; onSort?: (s: PipelineSort) => void;
   savedViews: SavedView[]; onSavedViews: (a: SavedView[]) => void;
   mineOnly: boolean; onMineOnly: (b: boolean) => void;
   selectedIds: string[]; onClearSelected: () => void;
@@ -233,6 +287,24 @@ export function PipelineToolbar({
           )}
         </div>
 
+        {/* Sort dropdown — only if the caller wired sort + onSort. */}
+        {sort && onSort && (
+          <div className="relative inline-flex items-center h-[30px] rounded-lg border border-border bg-card text-[11.5px]">
+            <span className="px-2.5 text-muted-foreground font-semibold uppercase tracking-wider text-[10px]">Sort</span>
+            <select
+              value={sort}
+              onChange={e => onSort(e.target.value as PipelineSort)}
+              className="bg-transparent pr-7 pl-1 py-0 h-[28px] text-[11.5px] font-semibold focus:outline-none cursor-pointer text-foreground"
+              aria-label="Sort projects"
+            >
+              <option value="priority">Priority · high → low</option>
+              <option value="completion_desc">Completion · high → low</option>
+              <option value="completion_asc">Completion · low → high</option>
+              <option value="recent">Recently updated</option>
+            </select>
+          </div>
+        )}
+
         {/* Filter button */}
         <button
           onClick={() => setFilterOpen(o => !o)}
@@ -248,6 +320,18 @@ export function PipelineToolbar({
             <span className="ml-0.5 px-1 h-[16px] rounded bg-primary text-primary-foreground text-[10px] tabular-nums">{filterCount}</span>
           )}
         </button>
+        {/* One-click clear when ANY filter / mine-only is active. Helps
+            an admin who applied a quick filter realise why "no clients
+            show up" and reset in one tap. */}
+        {(filterCount > 0 || mineOnly) && (
+          <button
+            onClick={() => { clearFilters(); onMineOnly(false); }}
+            className="inline-flex items-center gap-1 h-[30px] px-2 rounded-lg text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+            title="Clear all filters + mine-only"
+          >
+            <X className="h-3 w-3" /> Clear
+          </button>
+        )}
 
         {/* Saved views */}
         {savedViews.length > 0 && (

@@ -339,7 +339,7 @@ function PeerTile({ peer, presenceStatus, onCall, deafened, hasMutedYou, inMeeti
           ALSO gave us two <audio> elements per peer playing the same
           track; deafen only ever muted one of them, so some users
           reported "I can still hear them after I muted." */}
-      <AvatarWithRing initial={initial} active={peer.audioOn && level > 0.05} />
+      <AvatarWithRing initial={initial} active={peer.audioOn && level > 0.05} avatarUrl={peer.avatarUrl} />
       <div className="flex-1 min-w-0">
         <p className="text-xs font-semibold truncate flex items-center gap-1.5 flex-wrap">
           {peer.name || 'Teammate'}
@@ -385,14 +385,30 @@ function PeerTile({ peer, presenceStatus, onCall, deafened, hasMutedYou, inMeeti
   );
 }
 
-function AvatarWithRing({ initial, active }: { initial: string; active: boolean }) {
-  return (
-    <div className={`h-9 w-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 transition-all ${
-      active ? 'ring-2 ring-green-500/70 bg-primary/20 text-primary' : 'bg-primary/15 text-primary'
-    }`}>
-      {initial}
-    </div>
-  );
+function AvatarWithRing({ initial, active, avatarUrl }: { initial: string; active: boolean; avatarUrl?: string }) {
+  // Owner ask (May 2026, v2): "profile pic should appear in the
+  // meetings in small size rounded square". When the peer has set a
+  // profile picture URL on their Robin profile, the participant tile
+  // shows that image instead of an initial. The shape stays the
+  // rounded-square (rounded-lg) the spec asked for; the audio-active
+  // ring still wraps it.
+  const base = `h-9 w-9 rounded-lg overflow-hidden flex items-center justify-center text-sm font-bold shrink-0 transition-all ${
+    active ? 'ring-2 ring-green-500/70 bg-primary/20 text-primary' : 'bg-primary/15 text-primary'
+  }`;
+  if (avatarUrl) {
+    return (
+      <div className={base}>
+        <img
+          src={avatarUrl}
+          alt={initial}
+          referrerPolicy="no-referrer"
+          className="h-full w-full object-cover"
+          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        />
+      </div>
+    );
+  }
+  return <div className={base}>{initial}</div>;
 }
 
 // ─── Screen-share card + fullscreen views ─────────────────────────────────

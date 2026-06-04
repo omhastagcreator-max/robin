@@ -38,6 +38,10 @@ export interface PeerView {
   userId: string;
   name?: string;
   role?: string;
+  /** Profile picture URL. Picked off LiveKit participant metadata
+   *  which the server stamps from the user's stored avatarUrl. Renders
+   *  as a rounded-square fallback when there's no camera track. */
+  avatarUrl?: string;
   /** A MediaStream we synthesise from this peer's audio + screen tracks. */
   stream: MediaStream;
   audioOn: boolean;
@@ -164,9 +168,10 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
     });
 
     return {
-      userId: p.identity,
-      name:   p.name || p.identity,
-      role:   safeJsonRole(p.metadata),
+      userId:    p.identity,
+      name:      p.name || p.identity,
+      role:      safeJsonRole(p.metadata),
+      avatarUrl: safeJsonAvatar(p.metadata),
       stream,
       audioOn,
       screenOn,
@@ -640,4 +645,8 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
 function safeJsonRole(metadata?: string): string | undefined {
   if (!metadata) return undefined;
   try { return JSON.parse(metadata).role; } catch { return undefined; }
+}
+function safeJsonAvatar(metadata?: string): string | undefined {
+  if (!metadata) return undefined;
+  try { return JSON.parse(metadata).avatarUrl || undefined; } catch { return undefined; }
 }

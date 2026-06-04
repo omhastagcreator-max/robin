@@ -71,7 +71,12 @@ router.post('/token', requireRole('admin', 'employee', 'sales', 'workroom'), asy
       identity: u.id,
       name:     u.name || u.email,
       ttl:      10 * 60, // 10 min — client reconnects with a fresh token if needed
-      metadata: JSON.stringify({ role: u.role, email: u.email }),
+      // Avatar piggy-backs on the participant metadata so other tabs
+      // in the same huddle can render the user's profile pic on their
+      // tile (Owner ask May 2026 — rounded-square avatars when no
+      // camera). `u` is the JWT payload, populated by authMiddleware
+      // — see User model for what's available.
+      metadata: JSON.stringify({ role: u.role, email: u.email, avatarUrl: (u as any).avatarUrl || null }),
     });
 
     at.addGrant({
