@@ -199,6 +199,7 @@ export function HuddleDock() {
                 <div className="flex-1 overflow-y-auto p-3 space-y-2">
                   <ParticipantTile
                     name={user?.name || user?.email || 'You'}
+                    avatarUrl={user?.avatarUrl}
                     isSelf
                     audioOn={huddle.audioOn}
                     screenOn={huddle.screenOn}
@@ -251,7 +252,7 @@ export function HuddleDock() {
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 function ParticipantTile({
-  name, audioOn, screenOn, isSelf, peer,
+  name, audioOn, screenOn, isSelf, peer, avatarUrl,
 }: {
   name: string;
   audioOn?: boolean;
@@ -259,16 +260,29 @@ function ParticipantTile({
   isSelf?: boolean;
   /** Real peer — used to render their hidden audio element so we hear them. */
   peer?: PeerView;
+  /** Self-tile avatar URL (peers pick it up from peer.avatarUrl below).
+   *  Owner ask (May 2026): show the profile pic everywhere a name shows. */
+  avatarUrl?: string;
 }) {
   const initial = (name || '?')[0].toUpperCase();
   const showAudioOn = isSelf ? audioOn : peer?.audioOn;
   const showScreenOn = isSelf ? screenOn : peer?.screenOn;
+  // Effective avatar — self uses the prop, peers use the LiveKit metadata.
+  const effectiveAvatar = isSelf ? avatarUrl : peer?.avatarUrl;
 
   return (
     <div className="relative flex items-center gap-2 px-2 py-1.5 rounded-xl bg-muted/30 border border-border/40">
       {peer && <RemoteAudio stream={peer.stream} />}
-      <div className="h-8 w-8 rounded-full bg-primary/15 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-        {initial}
+      <div className="h-8 w-8 rounded-lg overflow-hidden bg-primary/15 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+        {effectiveAvatar ? (
+          <img
+            src={effectiveAvatar}
+            alt={initial}
+            referrerPolicy="no-referrer"
+            className="h-full w-full object-cover"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+        ) : initial}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium truncate">{name}{isSelf ? ' (you)' : ''}</p>

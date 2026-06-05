@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { User, Lock, Save, Loader2, Mail, ImageIcon, X as XIcon } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { User, Lock, Save, Loader2, Mail, ImageIcon, X as XIcon, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { AppLayout } from '@/components/AppLayout';
@@ -8,6 +8,45 @@ import { Avatar }    from '@/components/shared/Avatar';
 import { useAuth }   from '@/contexts/AuthContext';
 import { USER_TEAMS, USER_TEAM_LABEL } from '@/lib/enums';
 import * as api from '@/api';
+
+// ── Image resize/compress helper ───────────────────────────────────
+// No backend file storage in this repo yet, so we resize on the client
+// to a 256×256 JPEG (~10-20 KB) and store the data URL on the user
+// doc. Trade-off: keeps the DB payload tiny + works offline; the
+// downside is hot-loaded images instead of CDN-cached ones. Easy to
+// upgrade to S3 + presigned upload later — only this helper changes.
+async function imageFileToDataUrl(file: File, maxSide = 256, quality = 0.85): Promise<string> {
+  // 1) Decode the file. createImageBitmap is much faster than <img>
+  //    + onload when available; we fall back gracefully.
+  let bitmap: ImageBitmap | HTMLImageElement;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    bitmap = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+  // 2) Compute output dimensions — square-crop to the smaller side
+  //    so portraits / landscapes both land on a square avatar.
+  const srcW = (bitmap as any).width;
+  const srcH = (bitmap as any).height;
+  const side = Math.min(srcW, srcH);
+  const sx = Math.floor((srcW - side) / 2);
+  const sy = Math.floor((srcH - side) / 2);
+  // 3) Draw into a downscaled canvas + encode as JPEG.
+  const canvas = document.createElement('canvas');
+  canvas.width = maxSide;
+  canvas.height = maxSide;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas not supported');
+  ctx.fillStyle = '#ffffff'; // JPEG has no alpha — use white instead of black.
+  ctx.fillRect(0, 0, maxSide, maxSide);
+  ctx.drawImage(bitmap as any, sx, sy, side, side, 0, 0, maxSide, maxSide);
+  return canvas.toDataURL('image/jpeg', quality);
+}
 
 /**
  * ProfilePage v2 — rebuilt on design-system primitives.
@@ -24,13 +63,14 @@ export default function ProfilePage() {
   const [name, setName]     = useState(user?.name || '');
   const [phone, setPhone]   = useState((user as any)?.phone || '');
   const [team, setTeam]     = useState(user?.team || '');
-  // Profile picture URL — paste any publicly-accessible image link
-  // (gravatar, Slack avatar, Google account, S3 bucket, etc.). The
-  // shared <Avatar /> primitive already renders it everywhere user
-  // identities show — sidebar header, meeting tiles, activity log,
-  // service-owner chip on the workspace pages.
+  // Profile picture. Click-to-upload: we resize the chosen file to a
+  // 256×256 JPEG in the browser and store the resulting data URL on
+  // the user doc. The shared <Avatar /> primitive renders it
+  // everywhere a user identity shows — sidebar, huddle dock, meeting
+  // tiles, activity log, service-owner chip on the workspace pages.
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || '');
   const [avatarSaving, setAvatarSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -47,9 +87,35 @@ export default function ProfilePage() {
     try {
       await api.updateMe({ avatarUrl: nextUrl || null });
       await refreshProfile();
+      setAvatarUrl(nextUrl);
       toast.success(nextUrl ? 'Profile picture updated' : 'Profile picture removed');
     } catch { toast.error('Failed to update profile picture'); }
     finally { setAvatarSaving(false); }
+  };
+
+  const onFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';  // allow re-picking the same file
+    if (!file) return;
+    // Loose guard rails: type by mime, size capped at 8 MB raw (we'll
+    // shrink it to ~10-20 KB ourselves but we don't want to spend
+    // CPU decoding a 50-MB raw camera dump).
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please pick an image file (PNG / JPG / WebP)');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error('Image too large (max 8 MB). Pick a smaller file.');
+      return;
+    }
+    setAvatarSaving(true);
+    try {
+      const dataUrl = await imageFileToDataUrl(file);
+      await saveAvatar(dataUrl);
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not process that image');
+      setAvatarSaving(false);
+    }
   };
 
   const [curPw, setCurPw]   = useState('');
@@ -101,42 +167,49 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* Avatar editor */}
+          {/* Avatar editor — click to upload an image from disk. We
+              resize on the client to 256×256 JPEG so the stored payload
+              is tiny and the same picture renders crisp at every
+              avatar size across the app. */}
           <div className="mt-4 pt-4 border-t border-border space-y-2">
             <label className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground inline-flex items-center gap-1.5">
-              <ImageIcon className="h-3 w-3" /> Profile picture URL
+              <ImageIcon className="h-3 w-3" /> Profile picture
             </label>
-            <div className="flex items-center gap-2">
-              <input
-                value={avatarUrl}
-                onChange={e => setAvatarUrl(e.target.value)}
-                placeholder="https://your-image.png — Gravatar, Slack avatar, anywhere"
-                className="flex-1 min-w-0 px-3 h-9 bg-background border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-              {avatarUrl && (
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={onFilePicked}
+              className="hidden"
+            />
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={avatarSaving}
+                className="h-9 px-3.5 rounded-lg bg-primary text-primary-foreground text-[12.5px] font-semibold disabled:opacity-50 hover:bg-primary/90 inline-flex items-center gap-1.5"
+              >
+                {avatarSaving
+                  ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading…</>
+                  : <><Upload className="h-3.5 w-3.5" /> {user?.avatarUrl ? 'Change picture' : 'Upload picture'}</>
+                }
+              </button>
+              {(avatarUrl || user?.avatarUrl) && (
                 <button
                   type="button"
-                  onClick={() => { setAvatarUrl(''); void saveAvatar(''); }}
+                  onClick={() => saveAvatar('')}
                   disabled={avatarSaving}
-                  className="h-9 px-2.5 rounded-lg border border-input text-muted-foreground hover:text-foreground hover:bg-muted text-[12px] inline-flex items-center gap-1"
+                  className="h-9 px-3 rounded-lg border border-input text-muted-foreground hover:text-foreground hover:bg-muted text-[12px] inline-flex items-center gap-1.5"
                   title="Remove profile picture"
                 >
                   <XIcon className="h-3.5 w-3.5" /> Remove
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => saveAvatar(avatarUrl.trim())}
-                disabled={avatarSaving || avatarUrl === (user?.avatarUrl || '')}
-                className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-[12px] font-semibold disabled:opacity-50 hover:bg-primary/90 inline-flex items-center gap-1.5"
-              >
-                {avatarSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                Save
-              </button>
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Paste a link to any image (PNG / JPG). It'll show up in your sidebar,
-              activity log, and team panels across Robin. Native upload coming next pass.
+              PNG / JPG / WebP up to 8 MB. We'll auto-resize and crop to a square — it
+              shows up everywhere your name appears across Robin (sidebar, huddle dock,
+              activity log, team panels).
             </p>
           </div>
         </div>
