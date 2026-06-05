@@ -14,15 +14,17 @@ interface Props { children: ReactNode; requiredRole?: string | string[]; }
  */
 export function dashboardForRole(role: string): string {
   switch (role) {
-    case 'admin':    return '/admin';
     case 'client':   return '/client';
-    case 'sales':    return '/sales';
-    case 'employee': return '/dashboard';
-    // 'workroom' = bare-minimum employee — only the Workroom + a tiny
-    // landing page. Lands on /workroom-home which has Open Workroom +
-    // Join huddle buttons and nothing else.
+    // Owner ask (May 2026): Workroom is now the canonical landing for
+    // ALL internal staff — it's the single page that shows the work
+    // clock, important-items checklist, and the priority Client CRM
+    // shortlist. Admin / sales / employee can still navigate to their
+    // legacy dashboards from the sidebar; they just don't land there.
+    case 'admin':    return '/workroom-home';
+    case 'sales':    return '/workroom-home';
+    case 'employee': return '/workroom-home';
     case 'workroom': return '/workroom-home';
-    default:         return '/dashboard';
+    default:         return '/workroom-home';
   }
 }
 

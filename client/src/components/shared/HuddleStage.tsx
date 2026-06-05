@@ -191,6 +191,7 @@ export function HuddleStage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
               <SelfTile
                 name={user?.name || user?.email || 'You'}
+                avatarUrl={user?.avatarUrl}
                 audioOn={meeting.audioOn}
                 screenOn={meeting.screenOn}
                 stream={meeting.localStream}
@@ -287,9 +288,10 @@ function PresenceTopRight({ status }: { status: PresenceStatus }) {
 }
 
 function SelfTile({
-  name, audioOn, screenOn, stream, presenceStatus,
+  name, audioOn, screenOn, stream, presenceStatus, avatarUrl,
 }: {
   name: string;
+  avatarUrl?: string;
   audioOn: boolean;
   screenOn: boolean;
   stream: MediaStream | null;
@@ -300,7 +302,7 @@ function SelfTile({
   return (
     <div className="relative bg-muted/30 border border-primary/30 rounded-xl p-2 flex items-center gap-2.5">
       <PresenceTopRight status={presenceStatus} />
-      <AvatarWithRing initial={initial} active={audioOn && level > 0.05} />
+      <AvatarWithRing initial={initial} active={audioOn && level > 0.05} avatarUrl={avatarUrl} />
       <div className="flex-1 min-w-0">
         <p className="text-xs font-semibold truncate">{name}</p>
         <p className="text-[10px] text-muted-foreground">you</p>
