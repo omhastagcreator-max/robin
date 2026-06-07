@@ -50,6 +50,20 @@ const ProjectTaskSchema = new Schema({
   timeSpent: { type: Number, default: 0 },
   completedAt: Date,
   comments: [CommentSchema],
+  // ── Employee-set ETA (May 2026 agency-OS rebuild) ────────────────
+  // The ASSIGNEE'S own estimate of when they'll finish + how many
+  // hours of effort it'll take. Separate from `dueDate` (which is
+  // the deadline set by the creator). This lets admin distinguish:
+  //
+  //   - "Sakshi's task is due Friday" (dueDate)        — the deadline
+  //   - "Sakshi says she'll finish Thursday, 4h work"  (estimates)   — her plan
+  //
+  // estimatedBy is stamped with whichever user set the value so we
+  // can show "Sakshi estimated 4h" vs. "Om (admin) estimated 4h".
+  estimatedHours:        { type: Number, default: null, min: 0 },
+  estimatedCompletionAt: { type: Date, default: null },
+  estimatedBy:           { type: String, default: '' },
+  estimatedAt:           { type: Date, default: null },
 }, { timestamps: true });
 
 // Hot path: "tasks assigned to me, not done, sorted by due date" — the

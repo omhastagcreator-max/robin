@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Target, Plus, X, Save, Sparkles } from 'lucide-react';
+import { Target, Plus, X, Save, Sparkles, Clock } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -17,13 +18,16 @@ import { useAuth } from '@/contexts/AuthContext';
  * services / brand launches for the current month).
  */
 
+type Source = 'tasks_done' | 'services_done' | 'brands_live' | 'deals_won' | 'sales_revenue' | 'manual';
 interface TargetLine {
   _id?: string;
   label: string;
   target: number;
   unit?: string;
   actual: number;
-  source: 'tasks_done' | 'services_done' | 'brands_live' | 'manual';
+  source: Source;
+  etaDate?: string | null;
+  employeeNote?: string;
 }
 interface TeamRow {
   userId: string;
@@ -35,22 +39,25 @@ interface TeamRow {
   notes: string;
   exists: boolean;
   month: string;
+  period?: 'weekly' | 'monthly';
 }
 
 export function ExecutiveTargetsSection() {
   const { role } = useAuth();
+  const [period, setPeriod] = useState<'monthly' | 'weekly'>('monthly');
   const [team, setTeam] = useState<TeamRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
 
   const refresh = () => {
     setLoading(true);
-    api.getTeamTargets()
+    api.getTeamTargets({ period })
       .then((d: TeamRow[]) => setTeam(Array.isArray(d) ? d : []))
       .catch(() => setTeam([]))
       .finally(() => setLoading(false));
   };
-  useEffect(refresh, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(refresh, [period]);
 
   if (loading) {
     return (
@@ -76,9 +83,21 @@ export function ExecutiveTargetsSection() {
           <Target className="h-3.5 w-3.5 text-violet-600" />
           <p className="text-[12px] font-bold">Team targets</p>
         </div>
-        <p className="text-[10.5px] text-muted-foreground">
-          {team[0]?.month || ''}
-        </p>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-muted rounded-md p-0.5 text-[10.5px]">
+            <button
+              type="button"
+              onClick={() => setPeriod('monthly')}
+              className={`px-2 py-0.5 rounded ${period === 'monthly' ? 'bg-background text-foreground font-semibold shadow-sm' : 'text-muted-foreground'}`}
+            >Monthly</button>
+            <button
+              type="button"
+              onClick={() => setPeriod('weekly')}
+              className={`px-2 py-0.5 rounded ${period === 'weekly' ? 'bg-background text-foreground font-semibold shadow-sm' : 'text-muted-foreground'}`}
+            >Weekly</button>
+          </div>
+          <p className="text-[10.5px] text-muted-foreground">{team[0]?.month || ''}</p>
+        </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 p-3">
         {sorted.map(row =>
@@ -86,6 +105,7 @@ export function ExecutiveTargetsSection() {
             <TargetEditor
               key={row.userId}
               row={row}
+              period={period}
               onClose={() => setEditingUserId(null)}
               onSaved={() => { setEditingUserId(null); refresh(); }}
             />
@@ -139,15 +159,25 @@ function TargetTile({ row, canEdit, onEdit }: { row: TeamRow; canEdit: boolean; 
                            'bg-rose-500';
             return (
               <li key={t._id || i}>
-                <div className="flex items-baseline justify-between mb-0.5">
+                <div className="flex items-baseline justify-between mb-0.5 gap-2">
                   <span className="text-[10.5px] truncate">{t.label}</span>
-                  <span className="text-[10px] tabular-nums font-semibold text-foreground/80">
+                  <span className="text-[10px] tabular-nums font-semibold text-foreground/80 shrink-0">
                     {t.actual} / {t.target}{t.unit ? ' ' + t.unit : ''}
                   </span>
                 </div>
                 <div className="h-1 bg-muted rounded-full overflow-hidden">
                   <div className={`h-full ${tone}`} style={{ width: `${pct * 100}%` }} />
                 </div>
+                {/* Employee's own ETA + note (read-only — set by the
+                    employee from their MyTargetsCard). Surface it
+                    here so admin sees the team's own forecast. */}
+                {(t.etaDate || t.employeeNote) && (
+                  <div className="flex items-center gap-1 mt-0.5 text-[9.5px] text-muted-foreground">
+                    <Clock className="h-2.5 w-2.5 text-violet-500/80" />
+                    {t.etaDate && <span>by {format(parseISO(t.etaDate), 'MMM d')}</span>}
+                    {t.employeeNote && <span className="truncate">· {t.employeeNote}</span>}
+                  </div>
+                )}
               </li>
             );
           })}
@@ -157,7 +187,12 @@ function TargetTile({ row, canEdit, onEdit }: { row: TeamRow; canEdit: boolean; 
   );
 }
 
-function TargetEditor({ row, onClose, onSaved }: { row: TeamRow; onClose: () => void; onSaved: () => void }) {
+function TargetEditor({ row, period, onClose, onSaved }: {
+  row: TeamRow;
+  period: 'monthly' | 'weekly';
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const [lines, setLines] = useState<TargetLine[]>(row.targets.length ? row.targets : [{ label: '', target: 0, unit: '', actual: 0, source: 'manual' }]);
   const [saving, setSaving] = useState(false);
 
@@ -170,7 +205,9 @@ function TargetEditor({ row, onClose, onSaved }: { row: TeamRow; onClose: () => 
     setSaving(true);
     try {
       const cleaned = lines.filter(l => l.label.trim());
-      await api.setUserTargets(row.userId, { targets: cleaned });
+      // Save under the currently-selected period so weekly + monthly
+      // sheets stay independent.
+      await api.setUserTargets(row.userId, { targets: cleaned }, { period });
       onSaved();
     } catch { /* leave the editor open so the admin can retry */ }
     finally { setSaving(false); }
@@ -215,6 +252,8 @@ function TargetEditor({ row, onClose, onSaved }: { row: TeamRow; onClose: () => 
               <option value="tasks_done">Tasks done</option>
               <option value="services_done">Services done</option>
               <option value="brands_live">Brands launched</option>
+              <option value="deals_won">Deals won (sales)</option>
+              <option value="sales_revenue">Revenue (sales)</option>
             </select>
             <button type="button" onClick={() => removeLine(i)} className="text-muted-foreground hover:text-rose-600">
               <X className="h-3 w-3" />

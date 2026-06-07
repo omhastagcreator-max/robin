@@ -8,6 +8,7 @@ import {
   CheckCircle2, Loader2, RotateCcw, ShieldX, Unlock, Plane,
   Clock, Flag,
 } from 'lucide-react';
+// Clock is used by BrandTaskEtaInline below; harmless if also used above.
 
 import { AppLayout } from '@/components/AppLayout';
 import { ActivityTimeline } from '@/components/panels/ProjectDetailPanel';
@@ -1010,6 +1011,7 @@ function BrandTasksSection({ workflowId }: { workflowId: string }) {
   };
 
   const visible = rows.slice(0, 8);
+  const { user } = useAuth();
   return (
     <div className="border-t border-border/60 pt-3 mt-2">
       <div className="flex items-center justify-between mb-1.5">
@@ -1044,28 +1046,97 @@ function BrandTasksSection({ workflowId }: { workflowId: string }) {
       ) : visible.length === 0 ? (
         <p className="text-[11px] text-muted-foreground italic">No brand tasks yet.</p>
       ) : (
-        <ul className="space-y-1">
+        <ul className="space-y-1.5">
           {visible.map(t => {
             const isDone = t.status === 'done';
             const due = t.dueDate ? new Date(t.dueDate).toLocaleDateString() : '';
+            // Only the assignee can set their own ETA. Admin/other users
+            // see it read-only — keeps the "I commit to" model honest.
+            const isAssignee = user?.id && (t.assignedTo === user.id);
             return (
-              <li key={t._id} className="flex items-center gap-2 text-[12px]">
-                <button
-                  type="button"
-                  onClick={() => toggleDone(t)}
-                  className={`h-3.5 w-3.5 rounded flex items-center justify-center shrink-0 ${
-                    isDone ? 'bg-emerald-500 text-white' : 'border border-border hover:border-primary'
-                  }`}
-                >
-                  {isDone && <CheckCircle2 className="h-2 w-2" />}
-                </button>
-                <span className={`flex-1 truncate ${isDone ? 'line-through text-muted-foreground' : ''}`}>{t.title}</span>
-                {due && <span className="text-[10px] text-muted-foreground">{due}</span>}
+              <li key={t._id} className="text-[12px]">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleDone(t)}
+                    className={`h-3.5 w-3.5 rounded flex items-center justify-center shrink-0 ${
+                      isDone ? 'bg-emerald-500 text-white' : 'border border-border hover:border-primary'
+                    }`}
+                  >
+                    {isDone && <CheckCircle2 className="h-2 w-2" />}
+                  </button>
+                  <span className={`flex-1 truncate ${isDone ? 'line-through text-muted-foreground' : ''}`}>{t.title}</span>
+                  {due && <span className="text-[10px] text-muted-foreground">due {due}</span>}
+                </div>
+                {!isDone && (t.estimatedCompletionAt || t.estimatedHours || isAssignee) && (
+                  <BrandTaskEtaInline task={t} editable={!!isAssignee} onSaved={refresh} />
+                )}
               </li>
             );
           })}
         </ul>
       )}
+    </div>
+  );
+}
+
+// Inline ETA editor row used inside BrandTasksSection — slim mirror of
+// MyTasksCard's TaskEtaRow, but only one place so it doesn't have to
+// be exported (keeps the WorkspacePage file self-contained).
+function BrandTaskEtaInline({ task, editable, onSaved }: {
+  task: { _id: string; estimatedHours?: number | null; estimatedCompletionAt?: string | null };
+  editable: boolean;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [date, setDate] = useState(task.estimatedCompletionAt ? task.estimatedCompletionAt.slice(0, 10) : '');
+  const [hours, setHours] = useState(task.estimatedHours != null ? String(task.estimatedHours) : '');
+  const [saving, setSaving] = useState(false);
+
+  const hasEta = !!task.estimatedCompletionAt || (task.estimatedHours != null);
+  if (!hasEta && !editable) return null;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.updateTask(task._id, {
+        estimatedCompletionAt: date ? new Date(date).toISOString() : null,
+        estimatedHours: hours ? Math.max(0, Number(hours)) : null,
+      });
+      setEditing(false);
+      onSaved();
+    } catch { /* swallow */ }
+    finally { setSaving(false); }
+  };
+
+  if (editing) {
+    return (
+      <div className="ml-5 mt-1 flex items-center gap-1.5 text-[10.5px]">
+        <Clock className="h-3 w-3 text-violet-600" />
+        <input type="date" value={date} onChange={e => setDate(e.target.value)}
+          className="px-1.5 h-6 rounded border border-input bg-background text-[10.5px] focus:ring-1 focus:ring-violet-500" />
+        <input type="number" min={0} step={0.5} value={hours} onChange={e => setHours(e.target.value)} placeholder="hrs"
+          className="px-1.5 h-6 w-14 rounded border border-input bg-background text-[10.5px] tabular-nums focus:ring-1 focus:ring-violet-500" />
+        <button type="button" onClick={save} disabled={saving}
+          className="h-6 px-1.5 rounded bg-violet-600 text-white text-[10px] font-semibold disabled:opacity-50 hover:bg-violet-700">Save</button>
+        <button type="button" onClick={() => setEditing(false)} className="text-[10px] text-muted-foreground">Cancel</button>
+      </div>
+    );
+  }
+  if (!hasEta) {
+    return (
+      <button type="button" onClick={() => setEditing(true)}
+        className="ml-5 mt-0.5 text-[10.5px] text-muted-foreground hover:text-violet-700 inline-flex items-center gap-1">
+        <Clock className="h-3 w-3" /> Add ETA
+      </button>
+    );
+  }
+  return (
+    <div className="ml-5 mt-0.5 flex items-center gap-1.5 text-[10.5px] text-foreground/80">
+      <Clock className="h-3 w-3 text-violet-600" />
+      {task.estimatedCompletionAt && <span>{`by ${new Date(task.estimatedCompletionAt).toLocaleDateString()}`}</span>}
+      {task.estimatedHours != null && <span>· {task.estimatedHours}h</span>}
+      {editable && <button type="button" onClick={() => setEditing(true)} className="text-violet-700 hover:underline">edit</button>}
     </div>
   );
 }

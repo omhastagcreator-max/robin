@@ -105,10 +105,24 @@ export async function updateTask(req: AuthRequest, res: Response): Promise<void>
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     // Whitelist updatable fields — same defense against mass assignment.
-    const allowed = ['title', 'description', 'priority', 'status', 'dueDate', 'taskType', 'projectId', 'clientWorkflowId', 'assignedTo', 'completedAt'];
+    const allowed = [
+      'title', 'description', 'priority', 'status', 'dueDate', 'taskType',
+      'projectId', 'clientWorkflowId', 'assignedTo', 'completedAt',
+      // Employee-set ETA (May 2026). Anyone with write access on the
+      // task can set these; in practice the UI gates them to the
+      // assignee. estimatedBy + estimatedAt are stamped server-side
+      // here so the client can't spoof "who set this".
+      'estimatedHours', 'estimatedCompletionAt',
+    ];
     const patch: Record<string, any> = {};
     for (const k of allowed) if (req.body[k] !== undefined) patch[k] = req.body[k];
     if (patch.status === 'done' && !patch.completedAt) patch.completedAt = new Date();
+    // Stamp the estimate-setter so the UI can show "Sakshi estimated
+    // Thursday" rather than just an anonymous date.
+    if (patch.estimatedHours !== undefined || patch.estimatedCompletionAt !== undefined) {
+      patch.estimatedBy = req.user!.id;
+      patch.estimatedAt = new Date();
+    }
 
     // Snapshot the assignee BEFORE the update so we can detect a real change.
     const before = await ProjectTask.findOne({ _id: req.params.id, organizationId: orgId }).select('assignedTo').lean();

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ListChecks, CheckSquare, ChevronRight, ArrowRight, Sparkles } from 'lucide-react';
-import { formatDistanceToNowStrict, parseISO } from 'date-fns';
+import { ListChecks, CheckSquare, ChevronRight, ArrowRight, Sparkles, Clock, Check } from 'lucide-react';
+import { format, formatDistanceToNowStrict, parseISO } from 'date-fns';
 import * as api from '@/api';
 
 /**
@@ -34,6 +34,8 @@ interface TaskRow {
   assignedTo?: string;
   assignedBy?: string;
   clientWorkflowId?: string;
+  estimatedHours?: number | null;
+  estimatedCompletionAt?: string | null;
 }
 
 type Tab = 'mine' | 'delegated' | 'brand';
@@ -98,42 +100,157 @@ export function MyTasksCard() {
             const isDone = t.status === 'done';
             const due = t.dueDate ? formatDistanceToNowStrict(parseISO(t.dueDate), { addSuffix: true }) : '';
             const overdueCls = t.dueDate && parseISO(t.dueDate).getTime() < Date.now() && !isDone ? 'text-rose-600 font-semibold' : 'text-muted-foreground';
+            const canEditEta = tab === 'mine';
             return (
-              <li key={t._id} className="px-3 py-2 flex items-center gap-2.5 hover:bg-muted/30 group">
-                {tab === 'mine' && (
-                  <button
-                    type="button"
-                    onClick={() => toggleDone(t)}
-                    className={`h-4 w-4 rounded flex items-center justify-center shrink-0 ${
-                      isDone ? 'bg-emerald-500 text-white' : 'border border-border hover:border-primary'
-                    }`}
-                    aria-label={isDone ? 'Re-open' : 'Mark done'}
-                  >
-                    {isDone && <CheckSquare className="h-2.5 w-2.5" />}
-                  </button>
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className={`text-[12px] truncate ${isDone ? 'line-through text-muted-foreground' : 'font-medium'}`}>
-                    {t.title}
-                  </p>
-                  <p className="text-[10.5px] truncate">
-                    {t.clientName && <span className="text-foreground/70">{t.clientName}</span>}
-                    {t.clientName && due && <span className="text-muted-foreground/60"> · </span>}
-                    {due && <span className={overdueCls}>{due}</span>}
-                  </p>
+              <li key={t._id} className="px-3 py-2 hover:bg-muted/30 group">
+                <div className="flex items-center gap-2.5">
+                  {tab === 'mine' && (
+                    <button
+                      type="button"
+                      onClick={() => toggleDone(t)}
+                      className={`h-4 w-4 rounded flex items-center justify-center shrink-0 ${
+                        isDone ? 'bg-emerald-500 text-white' : 'border border-border hover:border-primary'
+                      }`}
+                      aria-label={isDone ? 'Re-open' : 'Mark done'}
+                    >
+                      {isDone && <CheckSquare className="h-2.5 w-2.5" />}
+                    </button>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-[12px] truncate ${isDone ? 'line-through text-muted-foreground' : 'font-medium'}`}>
+                      {t.title}
+                    </p>
+                    <p className="text-[10.5px] truncate">
+                      {t.clientName && <span className="text-foreground/70">{t.clientName}</span>}
+                      {t.clientName && due && <span className="text-muted-foreground/60"> · </span>}
+                      {due && <span className={overdueCls}>{due}</span>}
+                    </p>
+                  </div>
+                  <span className={`text-[9.5px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${PR_CLS[priority]}`}>
+                    {priority}
+                  </span>
+                  {t.clientWorkflowId && (
+                    <Link to={`/clients/pipeline/${t.clientWorkflowId}`} className="opacity-60 group-hover:opacity-100">
+                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Link>
+                  )}
                 </div>
-                <span className={`text-[9.5px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${PR_CLS[priority]}`}>
-                  {priority}
-                </span>
-                {t.clientWorkflowId && (
-                  <Link to={`/clients/pipeline/${t.clientWorkflowId}`} className="opacity-60 group-hover:opacity-100">
-                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-                  </Link>
+                {/* Employee-set ETA. Editable only on the 'Mine' tab so
+                    you can't accidentally set someone else's estimate. */}
+                {!isDone && (
+                  <TaskEtaRow
+                    task={t}
+                    editable={canEditEta}
+                    onSaved={refresh}
+                  />
                 )}
               </li>
             );
           })}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * TaskEtaRow — inline strip below a task showing the assignee's own
+ * estimated completion date + hours of effort. Click "Add ETA" to edit.
+ * Read-only when not the assignee (Delegated / Brands tabs).
+ *
+ * Compact: the row sits inside the task card padding and shows nothing
+ * when no ETA is set + the user can't edit (read-only tabs). When the
+ * user CAN edit, we show a small "+ I'll finish by" affordance.
+ */
+function TaskEtaRow({ task, editable, onSaved }: {
+  task: TaskRow;
+  editable: boolean;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [date, setDate] = useState(task.estimatedCompletionAt ? task.estimatedCompletionAt.slice(0, 10) : '');
+  const [hours, setHours] = useState(task.estimatedHours != null ? String(task.estimatedHours) : '');
+  const [saving, setSaving] = useState(false);
+
+  const hasEta = !!task.estimatedCompletionAt || (task.estimatedHours != null);
+
+  // No ETA, no permission → render nothing (keeps the card clean).
+  if (!hasEta && !editable) return null;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.updateTask(task._id, {
+        estimatedCompletionAt: date ? new Date(date).toISOString() : null,
+        estimatedHours: hours ? Math.max(0, Number(hours)) : null,
+      });
+      setEditing(false);
+      onSaved();
+    } catch { /* swallow */ }
+    finally { setSaving(false); }
+  };
+
+  if (editing) {
+    return (
+      <div className="ml-6 mt-1.5 flex items-center gap-1.5 text-[10.5px]">
+        <Clock className="h-3 w-3 text-violet-600 shrink-0" />
+        <input
+          type="date"
+          value={date}
+          onChange={e => setDate(e.target.value)}
+          className="px-1.5 h-6 rounded border border-input bg-background text-[10.5px] focus:ring-1 focus:ring-violet-500"
+        />
+        <input
+          type="number"
+          min={0}
+          step={0.5}
+          value={hours}
+          onChange={e => setHours(e.target.value)}
+          placeholder="hrs"
+          className="px-1.5 h-6 w-14 rounded border border-input bg-background text-[10.5px] tabular-nums focus:ring-1 focus:ring-violet-500"
+        />
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="h-6 px-1.5 rounded bg-violet-600 text-white text-[10px] font-semibold inline-flex items-center gap-0.5 disabled:opacity-50 hover:bg-violet-700"
+        >
+          <Check className="h-2.5 w-2.5" /> Save
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditing(false)}
+          className="text-[10px] text-muted-foreground hover:text-foreground"
+        >Cancel</button>
+      </div>
+    );
+  }
+
+  // Display state — read-only or as-clickable for editor.
+  if (!hasEta) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="ml-6 mt-1 text-[10.5px] text-muted-foreground hover:text-violet-700 inline-flex items-center gap-1"
+      >
+        <Clock className="h-3 w-3" /> Add your ETA
+      </button>
+    );
+  }
+
+  const etaText = task.estimatedCompletionAt
+    ? `I'll finish by ${format(parseISO(task.estimatedCompletionAt), 'MMM d')}`
+    : '';
+  const hrsText = task.estimatedHours != null ? ` · ${task.estimatedHours}h` : '';
+  return (
+    <div className="ml-6 mt-1 flex items-center gap-1.5 text-[10.5px]">
+      <Clock className="h-3 w-3 text-violet-600" />
+      <span className="text-foreground/80">{etaText}{hrsText}</span>
+      {editable && (
+        <button type="button" onClick={() => setEditing(true)} className="text-[10px] text-violet-700 hover:underline">
+          edit
+        </button>
       )}
     </div>
   );

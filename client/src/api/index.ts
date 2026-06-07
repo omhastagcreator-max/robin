@@ -584,13 +584,18 @@ export const taskInbox            = (showDone = false) =>
 export const tasksForWorkflow     = (workflowId: string) =>
   api.get(`/tasks/workflow/${workflowId}`).then(r => r.data);
 
-// Targets — self read, admin team read, admin upsert.
-export const getMyTargets         = (month?: string) =>
-  api.get('/targets/me', { params: month ? { month } : undefined }).then(r => r.data);
-export const getTeamTargets       = (month?: string) =>
-  api.get('/targets/team', { params: month ? { month } : undefined }).then(r => r.data);
-export const setUserTargets       = (userId: string, body: { targets: any[]; notes?: string }, month?: string) =>
-  api.put(`/targets/user/${userId}`, body, { params: month ? { month } : undefined }).then(r => r.data);
+// Targets — self read, admin team read, admin upsert, self ETA.
+// `period` is 'weekly' | 'monthly' (default monthly when omitted).
+// `month` here is the periodKey: YYYY-MM for monthly, YYYY-Www for weekly.
+export const getMyTargets         = (opts?: { period?: 'weekly' | 'monthly'; month?: string }) =>
+  api.get('/targets/me',   { params: opts }).then(r => r.data);
+export const getTeamTargets       = (opts?: { period?: 'weekly' | 'monthly'; month?: string }) =>
+  api.get('/targets/team', { params: opts }).then(r => r.data);
+export const setUserTargets       = (userId: string, body: { targets: any[]; notes?: string }, opts?: { period?: 'weekly' | 'monthly'; month?: string }) =>
+  api.put(`/targets/user/${userId}`, body, { params: opts }).then(r => r.data);
+// Self ETA / commentary on one target line — no admin gate.
+export const setMyTargetLineEta   = (lineId: string, body: { etaDate?: string | null; employeeNote?: string }, opts?: { period?: 'weekly' | 'monthly'; month?: string }) =>
+  api.put(`/targets/me/line/${lineId}`, body, { params: opts }).then(r => r.data);
 
 // Risks — top "needs attention" feed for admin/sales.
 export const listRisks            = (limit = 15) =>
