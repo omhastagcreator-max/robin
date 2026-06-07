@@ -4,7 +4,9 @@ import User from '../models/User';
 import ProjectTask from '../models/ProjectTask';
 import ClientWorkflow from '../models/ClientWorkflow';
 import Meeting from '../models/Meeting';
+import UserBriefAI from '../models/UserBriefAI';
 import { nextRecurrence } from './meetingScheduleController';
+import { callGemini } from '../services/aiTriage';
 
 /**
  * briefController — per-employee morning + evening brief.
@@ -50,6 +52,10 @@ export interface Brief {
   priorityBrands: Array<{ id: string; name: string; reason: string }>;
   accomplishments: Array<{ id: string; title: string; clientName?: string }>;
   summary: string;
+  // Gemini-generated 2-3 sentence paragraph with concrete advice.
+  // Populated by getOrGenerateNarrative() lazily; empty string if AI
+  // is unreachable (we never fail the brief over an AI hiccup).
+  aiNarrative?: string;
 }
 
 export async function computeBrief(orgId: string, userId: string, kind: 'morning' | 'evening'): Promise<Brief> {
@@ -170,6 +176,85 @@ export async function computeBrief(orgId: string, userId: string, kind: 'morning
   };
 }
 
+/**
+ * getOrGenerateNarrative — returns the cached Gemini paragraph for
+ * (user, day, kind), or generates + caches a new one.
+ *
+ * Prompt design:
+ *   - System prompt fixes Robin's voice: warm, direct, agency-internal,
+ *     uses first names, ends with ONE concrete suggestion. Two sentences
+ *     max for morning ("focus on X"), three for evening ("you closed
+ *     X; tomorrow start with Y"). No emojis (agency owner is allergic).
+ *   - Payload is the structured brief, plus the user's first name.
+ *   - maxOutputTokens kept tight (180) — the paragraph should be
+ *     scannable, not a wall of text.
+ *
+ * The cache key is (userId, dateIST, kind). A second call within the
+ * same day for the same kind returns the cached paragraph instantly.
+ * The dailyBriefCron warms the cache at 9am + 7pm so the page never
+ * waits on Gemini.
+ *
+ * Failure mode: if Gemini is unreachable / billed-out / blocked, we
+ * log a warning and return an empty string. The structured brief
+ * still renders — the UI hides the AI section when narrative is empty.
+ */
+export async function getOrGenerateNarrative(orgId: string, userId: string, brief: Brief, firstName?: string): Promise<string> {
+  // 1. Cache hit?
+  const cached = await UserBriefAI.findOne({
+    userId, dateIST: brief.dateIST, kind: brief.kind,
+  }).lean();
+  if (cached?.narrative) return cached.narrative;
+
+  // 2. Build the payload — tight, structured, no chit-chat.
+  const payload = JSON.stringify({
+    employeeFirstName: firstName || 'there',
+    kind: brief.kind,
+    openTasksCount:    brief.openTasks.length,
+    overdueTasksCount: brief.overdueTasks.length,
+    meetingsTodayCount: brief.todaysMeetings.length,
+    priorityBrandCount: brief.priorityBrands.length,
+    accomplishmentsCount: brief.accomplishments.length,
+    overdueExamples:   brief.overdueTasks.slice(0, 3).map(t => `${t.title} (${t.daysLate}d late)`),
+    openExamples:      brief.openTasks.slice(0, 3).map(t => `${t.title}${t.clientName ? ' for ' + t.clientName : ''}`),
+    meetingsToday:     brief.todaysMeetings.slice(0, 3).map(m => m.title),
+    priorityBrands:    brief.priorityBrands.slice(0, 3).map(b => `${b.name} — ${b.reason}`),
+    finishedToday:     brief.accomplishments.slice(0, 4).map(a => a.title),
+  });
+
+  const system = brief.kind === 'morning'
+    ? `You are Robin, an agency operations assistant writing a morning brief for one team member.
+Write TWO short, warm sentences using their first name. Be direct, not chirpy.
+Sentence 1: state what their day looks like at a glance.
+Sentence 2: one specific, concrete suggestion of what to start with — name a brand or task by name.
+No emojis. No exclamation marks. No "good morning" preamble (the UI already says that).
+Max ~50 words total.`
+    : `You are Robin, an agency operations assistant writing an end-of-day digest for one team member.
+Write TWO or THREE short, warm sentences using their first name. Be direct, not chirpy.
+Sentence 1: acknowledge what they finished (name the work).
+Sentence 2: flag what didn't move or is still overdue.
+Sentence 3 (only if relevant): one suggestion of what to start with tomorrow.
+No emojis. No exclamation marks. Max ~60 words total.`;
+
+  let narrative = '';
+  try {
+    narrative = (await callGemini(system, payload, 180)).trim();
+  } catch (err) {
+    console.warn(`[brief] AI narrative failed for ${userId}:`, (err as Error).message);
+    return '';
+  }
+  if (!narrative) return '';
+
+  // 3. Cache it. Upsert so two concurrent first-loads don't race.
+  try {
+    await UserBriefAI.findOneAndUpdate(
+      { userId, dateIST: brief.dateIST, kind: brief.kind },
+      { $set: { organizationId: orgId, narrative } },
+      { upsert: true, new: true },
+    );
+  } catch { /* unique-index race — fine, the other write won */ }
+  return narrative;
+}
+
 function buildMorningSummary(open: number, overdue: number, meetings: number, brands: number): string {
   const parts: string[] = [];
   if (overdue) parts.push(`${overdue} overdue`);
@@ -204,6 +289,12 @@ export async function getMyBrief(req: AuthRequest, res: Response): Promise<void>
     const kind = (req.query.kind as 'morning' | 'evening')
       || (ist.getUTCHours() >= 17 ? 'evening' : 'morning');
     const brief = await computeBrief(orgId, me, kind);
+
+    // Attach Gemini paragraph (cached per IST day). Best-effort: any
+    // failure leaves aiNarrative empty and the UI hides that section.
+    const u = await User.findById(me).select('name email').lean();
+    const firstName = (u?.name || u?.email || '').split(/[\s@]/)[0];
+    brief.aiNarrative = await getOrGenerateNarrative(orgId, me, brief, firstName);
     res.json(brief);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }

@@ -1,6 +1,6 @@
 import User from '../models/User';
 import Notification from '../models/Notification';
-import { computeBrief } from '../controllers/briefController';
+import { computeBrief, getOrGenerateNarrative } from '../controllers/briefController';
 
 /**
  * dailyBriefCron — fires twice a day in IST.
@@ -53,12 +53,20 @@ async function runBriefRound(kind: 'morning' | 'evening') {
       if (kind === 'evening' && brief.accomplishments.length === 0 && brief.overdueTasks.length === 0 && brief.openTasks.length === 0) {
         skipped++; continue;
       }
+      // Warm the AI narrative cache so when the employee opens Robin
+      // the rich paragraph is instant. Best-effort — if Gemini is
+      // unreachable the structured brief still surfaces.
+      const firstName = (u.name || u.email || '').split(/[\s@]/)[0];
+      const narrative = await getOrGenerateNarrative(String(u.organizationId), String(u._id), brief, firstName);
+
       await Notification.create({
         organizationId: u.organizationId,
         recipientId: String(u._id),
         type: kind === 'morning' ? 'brief.morning' : 'brief.evening',
         title: kind === 'morning' ? 'Good morning — your day at a glance' : 'End of day · here\'s how today went',
-        body: brief.summary,
+        // Prefer the AI paragraph (more useful for the bell preview).
+        // Fall back to the deterministic summary if Gemini failed.
+        body: narrative || brief.summary,
         meta: { entityType: 'brief' },
       });
       ok++;

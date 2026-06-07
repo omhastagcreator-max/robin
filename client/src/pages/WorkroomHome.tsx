@@ -9,10 +9,10 @@ import { AppLayout }  from '@/components/AppLayout';
 import { useAuth }    from '@/contexts/AuthContext';
 import { useHuddle }  from '@/contexts/HuddleContext';
 import { SessionClockCard } from '@/components/shared/SessionClockCard';
-import { BriefStrip }      from '@/components/workroom/BriefStrip';
-import { UpcomingStrip }   from '@/components/workroom/UpcomingStrip';
-import { MyTasksCard }     from '@/components/workroom/MyTasksCard';
-import { MyTargetsCard }   from '@/components/workroom/MyTargetsCard';
+import { BriefStrip }              from '@/components/workroom/BriefStrip';
+import { MyTasksCard }             from '@/components/workroom/MyTasksCard';
+import { MyTargetsCard }           from '@/components/workroom/MyTargetsCard';
+import { MeetingReminderBanner }   from '@/components/workroom/MeetingReminderBanner';
 import * as api from '@/api';
 
 /**
@@ -47,6 +47,11 @@ export default function WorkroomHome() {
   return (
     <AppLayout>
       <div className="max-w-5xl mx-auto space-y-5">
+        {/* Top-priority — meeting reminders. Renders nothing when the
+            user has no meetings in the next 48h, so quiet days stay
+            clean. When live, the 'Starting soon' card pulses red. */}
+        {role !== 'workroom' && <MeetingReminderBanner />}
+
         {/* Hero — gradient strip matching the Login brand panel */}
         <div
           className="relative overflow-hidden rounded-2xl p-6 sm:p-7 text-white"
@@ -67,12 +72,12 @@ export default function WorkroomHome() {
         <SessionClockCard />
 
         {/* Daily brief — single row collapsed; expands into a 4-tile
-            grid on click. Hides itself when empty so quiet days don't
-            see a clutter banner. Internal roles only. */}
+            grid on click + Robin's AI read paragraph. Hides itself
+            when empty so quiet days don't see a clutter banner.
+            (MeetingReminderBanner above already covers next-up
+            meetings prominently, so the secondary UpcomingStrip
+            is intentionally removed — single source of truth.) */}
         {role !== 'workroom' && <BriefStrip />}
-
-        {/* Next-up meetings — auto-hides when calendar is clear. */}
-        {role !== 'workroom' && <UpcomingStrip />}
 
         {/* Action tiles — Workroom + huddle, same as before but tighter. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

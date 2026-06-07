@@ -28,6 +28,8 @@ interface Brief {
   todaysMeetings: any[];
   priorityBrands: any[];
   accomplishments: any[];
+  /** Gemini-generated 2-3 sentence paragraph. Empty when AI unreachable. */
+  aiNarrative?: string;
 }
 
 export function BriefStrip() {
@@ -80,6 +82,19 @@ export function BriefStrip() {
         </div>
         {hasContent && (expanded ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />)}
       </button>
+
+      {/* AI narrative — shows even when collapsed if it's the most
+          useful thing on the row. Falls back to summary when empty. */}
+      {expanded && brief.aiNarrative && (
+        <div className="px-4 py-2.5 border-t border-border bg-gradient-to-r from-primary/5 to-transparent">
+          <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-primary/80 mb-1">
+            Robin's read
+          </p>
+          <p className="text-[12.5px] text-foreground leading-relaxed">
+            {brief.aiNarrative}
+          </p>
+        </div>
+      )}
 
       {expanded && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-4 py-3 border-t border-border bg-muted/20">

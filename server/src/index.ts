@@ -65,6 +65,7 @@ import meetingsScheduleRoutes from './routes/meetingsSchedule';
 import briefRoutes            from './routes/brief';
 import { startMeetingScheduler } from './jobs/meetingScheduler';
 import { startDailyBriefCron }   from './jobs/dailyBriefCron';
+import { startMeetingReminderCron, setReminderIo } from './jobs/meetingReminderCron';
 
 const app = express();
 const httpServer = createServer(app);
@@ -681,10 +682,14 @@ connectDB().then(() => {
     startHealthInferenceCron();
 
     // May 2026 agency-OS rebuild — auto-materialise weekly brand meetings
-    // 24h ahead so they show up on every attendee's calendar, AND fire
-    // per-employee morning + evening briefs at 9am / 7pm IST.
+    // 7 days ahead so they show up on every attendee's calendar, fire
+    // per-employee morning + evening briefs at 9am / 7pm IST, AND
+    // push three waves of reminders before each meeting starts
+    // (day-before, day-of at 08:30 IST, imminent at T-15min).
     startMeetingScheduler();
     startDailyBriefCron();
+    setReminderIo(io);
+    startMeetingReminderCron();
 
     // Stale-socket sweep — runs every 10 minutes.
     //

@@ -32,6 +32,18 @@ const MeetingSchema = new Schema({
   attendees:      { type: [String], default: [] },   // userIds of invited internal staff
   visibility:     { type: String, enum: ['public', 'private'], default: 'public' },
   status:         { type: String, enum: ['scheduled', 'cancelled'], default: 'scheduled' },
+
+  // Reminder bookkeeping (May 2026 — agency-OS rebuild).
+  // The meetingReminderCron stamps these so we don't ping the same
+  // person twice for the same milestone. Both default null so any
+  // pre-existing Meeting row works without backfill.
+  //
+  //   dayBeforeReminderSentAt — fired ~24h before startTime once.
+  //   dayOfReminderSentAt     — fired at 08:30 IST the morning of.
+  //   imminentReminderSentAt  — fired ~15 min before startTime.
+  dayBeforeReminderSentAt: { type: Date, default: null },
+  dayOfReminderSentAt:     { type: Date, default: null },
+  imminentReminderSentAt:  { type: Date, default: null },
 }, { timestamps: true });
 
 // The hot query is "what meetings overlap this day for these users?"

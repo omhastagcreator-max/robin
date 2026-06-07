@@ -20,8 +20,11 @@ import { nextRecurrence } from '../controllers/meetingScheduleController';
  * duplicates on the next tick.
  */
 
-const TICK_INTERVAL_MS = 60 * 60 * 1000;       // every hour
-const LOOK_AHEAD_MS    = 24 * 60 * 60 * 1000;  // 24h
+const TICK_INTERVAL_MS = 60 * 60 * 1000;          // every hour
+// Materialise 7 days ahead so the TeamCalendar shows the next week
+// of brand meetings AND the day-before reminder cron has a row to
+// stamp 24h before each occurrence.
+const LOOK_AHEAD_MS    = 7 * 24 * 60 * 60 * 1000;
 
 async function tick() {
   try {
