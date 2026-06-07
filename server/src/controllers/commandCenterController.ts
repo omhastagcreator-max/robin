@@ -6,6 +6,7 @@ import ClientWorkflow from '../models/ClientWorkflow';
 import ProjectTask from '../models/ProjectTask';
 import Meeting from '../models/Meeting';
 import Notification from '../models/Notification';
+import Deal from '../models/Deal';
 
 /**
  * commandCenterController — the single endpoint that powers the admin
@@ -82,6 +83,21 @@ interface KpiBlock {
   upcomingDeadlines7d: number;
   teamCapacityPct: number;     // avg workloadPct across team
   overallCompletionPct: number;
+  // June 2026 redesign additions:
+  revenueThisMonth: number;          // sum dealValue of Deal status='won' closedAt this month
+  revenueLastMonth: number;          // for the trend indicator
+  trends: {
+    brands: number[];                // 7-day daily count of active brands (creation rolling)
+    activeProjects: number[];        // 7-day daily count of active workflows
+    overdueTasks: number[];          // 7-day daily count of overdue tasks
+    revenue: number[];               // 7-day daily revenue
+  };
+  statusDistribution: {
+    completed:   number;
+    inProgress:  number;
+    atRisk:      number;
+    delayed:     number;
+  };
 }
 
 export async function getSnapshot(req: AuthRequest, res: Response): Promise<void> {
@@ -338,6 +354,58 @@ export async function getSnapshot(req: AuthRequest, res: Response): Promise<void
         };
       });
 
+    // ── Revenue (current + previous month, IST window) ──────────────
+    const istNow = new Date(now.getTime() + 330 * 60_000);
+    const monthStartIst = new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), 1) - 330 * 60_000);
+    const monthEndIst   = new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth() + 1, 1) - 330 * 60_000);
+    const prevStartIst  = new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth() - 1, 1) - 330 * 60_000);
+    const [thisMonthDeals, lastMonthDeals] = await Promise.all([
+      Deal.find({ organizationId: orgObjId, status: 'won', closedAt: { $gte: monthStartIst, $lt: monthEndIst } }).select('dealValue closedAt').lean(),
+      Deal.find({ organizationId: orgObjId, status: 'won', closedAt: { $gte: prevStartIst, $lt: monthStartIst } }).select('dealValue').lean(),
+    ]);
+    const revenueThisMonth = thisMonthDeals.reduce((s, d) => s + (d.dealValue || 0), 0);
+    const revenueLastMonth = lastMonthDeals.reduce((s, d) => s + (d.dealValue || 0), 0);
+
+    // ── 7-day sparklines (trailing window, IST days). Counts use the
+    // documents we already have in-memory; revenue requires its own
+    // bucket since deals weren't fetched bucketed.
+    const dayBucket = (d: Date | string | null) => {
+      if (!d) return -1;
+      const t = new Date(d).getTime();
+      if (Number.isNaN(t)) return -1;
+      const diffDays = Math.floor((now.getTime() - t) / 86_400_000);
+      return diffDays >= 0 && diffDays < 7 ? 6 - diffDays : -1;
+    };
+    const trendBrands     = Array(7).fill(0);
+    const trendActiveProj = Array(7).fill(0);
+    const trendOverdue    = Array(7).fill(0);
+    const trendRevenue    = Array(7).fill(0);
+    for (const w of workflows) {
+      const i = dayBucket(w.createdAt as any);
+      if (i >= 0) trendBrands[i] += 1;
+      // active = any service not done at creation; we proxy with current activeness.
+      if (i >= 0 && ((w.services as any[]) || []).some((s: any) => s.status !== 'done')) trendActiveProj[i] += 1;
+    }
+    for (const t of overdueTasks) {
+      const i = dayBucket(t.dueDate as any);
+      if (i >= 0) trendOverdue[i] += 1;
+    }
+    for (const d of thisMonthDeals) {
+      const i = dayBucket((d as any).closedAt);
+      if (i >= 0) trendRevenue[i] += d.dealValue || 0;
+    }
+
+    // ── Status distribution for the donut ────────────────────────────
+    let dist_completed = 0, dist_inProgress = 0, dist_atRisk = 0, dist_delayed = 0;
+    for (const w of workflows) {
+      const services = (w.services as any[]) || [];
+      const allDone = services.length > 0 && services.every(s => s.status === 'done');
+      if (allDone) { dist_completed++; continue; }
+      if (w.healthLevel === 'red')    { dist_delayed++; continue; }
+      if (w.healthLevel === 'orange') { dist_atRisk++; continue; }
+      dist_inProgress++;
+    }
+
     const kpis: KpiBlock = {
       totalBrands: workflows.length,
       activeBrands: activeBrands.length,
@@ -347,6 +415,20 @@ export async function getSnapshot(req: AuthRequest, res: Response): Promise<void
       upcomingDeadlines7d,
       teamCapacityPct,
       overallCompletionPct,
+      revenueThisMonth,
+      revenueLastMonth,
+      trends: {
+        brands:         trendBrands,
+        activeProjects: trendActiveProj,
+        overdueTasks:   trendOverdue,
+        revenue:        trendRevenue,
+      },
+      statusDistribution: {
+        completed:  dist_completed,
+        inProgress: dist_inProgress,
+        atRisk:     dist_atRisk,
+        delayed:    dist_delayed,
+      },
     };
 
     res.json({

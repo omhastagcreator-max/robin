@@ -8,7 +8,9 @@
     "build": "npm install --include=dev && tsc",
     "start": "node dist/src/index.js",
     "seed": "npx ts-node scripts/seed.ts",
-    "import-crm": "npx ts-node src/scripts/importCrmSheets.ts"
+    "import-crm": "npx ts-node src/scripts/importCrmSheets.ts",
+    "reassign-roles": "npx ts-node src/scripts/reassignByRole.ts",
+    "seed-checklists": "npx ts-node src/scripts/seedChecklists.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

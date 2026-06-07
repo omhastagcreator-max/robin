@@ -44,6 +44,7 @@ import ClientWorkflow from '../models/ClientWorkflow';
 import ProjectTask from '../models/ProjectTask';
 import User from '../models/User';
 import Organization from '../models/Organization';
+import { SERVICE_TEMPLATES, type ServiceType } from '../lib/workflowTemplates';
 
 const IMPORT_TAG    = 'crm-sheets-jun-2026';
 const IMPORT_PREFIX = 'crm-sheets-';
@@ -218,15 +219,23 @@ async function findUserByName(orgId: any, name: string): Promise<any | null> {
     // 3c. Service inference based on combined task text.
     const allText = [row.tasks.join(' '), row.next_tasks.join(' '), row.brand].join(' ');
     const services = inferServices(allText);
-    const serviceDocs = services.map((type, i) => ({
-      serviceType: type,
-      label:       type === 'shopify' ? 'Development'
-                  : type === 'meta_ads' ? 'Meta Ads' : 'Video',
-      status:      'in_progress',
-      checklist:   [],
-      assignedTo:  ownerUsers[i % Math.max(1, ownerUsers.length)]?._id?.toString(),
-      eta:         row.eta ? new Date(row.eta) : undefined,
-    }));
+    const serviceDocs = services.map((type, i) => {
+      // Pull the default SOP checklist from workflowTemplates so every
+      // imported brand ships with a real per-step playbook instead of
+      // an empty array (which previously surfaced "No checklist
+      // configured for this stage yet" on the Stage Workspace page).
+      const tpl = SERVICE_TEMPLATES[type as ServiceType];
+      const checklist = (tpl?.checklist || []).map(text => ({ text, done: false }));
+      return {
+        serviceType: type,
+        label:       tpl?.label
+                    || (type === 'shopify' ? 'Development' : type === 'meta_ads' ? 'Meta Ads' : 'Video'),
+        status:      'in_progress',
+        checklist,
+        assignedTo:  ownerUsers[i % Math.max(1, ownerUsers.length)]?._id?.toString(),
+        eta:         row.eta ? new Date(row.eta) : undefined,
+      };
+    });
 
     const priority = priorityFromEta(row.eta);
     const rm = parseMeetingDay(row.meeting_day);

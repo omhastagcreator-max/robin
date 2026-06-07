@@ -107,41 +107,57 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
   const { user, role, logout } = useAuth();
   const location = useLocation();
   const { chat: chatUnread, notifications: notifUnread } = useUnreadCounts();
-  // Default: PINNED OPEN. Owner-mandated — Robin is an operational system,
-  // not a focus app. The sidebar carries critical real-time signals
-  // (chat/notif badges, role-grouped sections); hiding it behind a hover
-  // forces an extra mental hop on every page nav. Users who want it
-  // collapsed can still toggle the pin; we just persist their choice via
-  // localStorage. The flag stored is now an explicit "0" vs "1" instead
-  // of "presence vs absence" so first-load = pinned without a missing key.
+  // Default: COLLAPSED rail. Owner ask (June 2026 redesign) — the
+  // sidebar should default to an icon-only column and only expand on
+  // hover OR explicit click. Users who want it permanently visible
+  // can click the pin in the header; we persist that choice in
+  // localStorage. Storage convention: '1' = pinned open, '0' or
+  // missing = default-collapsed.
   const [pinned, setPinned] = useState<boolean>(() => {
     try {
       const v = localStorage.getItem(PIN_KEY);
-      return v === null ? true : v === '1';
-    } catch { return true; }
+      return v === '1';
+    } catch { return false; }
   });
-  const [hover, setHover] = useState(false);
-  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [hover, setHover]       = useState(false);
+  const [clickOpen, setClickOpen] = useState(false);
+  const hoverTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const leaveTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const expanded = pinned || hover;
+  // Expanded if pinned, hovered, OR user explicitly clicked the rail.
+  // clickOpen sticks until mouse leaves so a single click can be
+  // followed by moving over the items, even briefly off the bar.
+  const expanded = pinned || hover || clickOpen;
 
   const togglePin = () => {
     setPinned(p => {
       const v = !p;
-      // Persist explicit '0' so a user who CHOSE to collapse stays collapsed
-      // across reloads (a missing key now defaults back to pinned open).
       try { localStorage.setItem(PIN_KEY, v ? '1' : '0'); } catch {}
       return v;
     });
   };
 
   const onMouseEnter = () => {
+    if (leaveTimerRef.current) { clearTimeout(leaveTimerRef.current); leaveTimerRef.current = null; }
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-    hoverTimerRef.current = setTimeout(() => setHover(true), 60);
+    // Tiny delay prevents flicker on accidental edge brushes.
+    hoverTimerRef.current = setTimeout(() => setHover(true), 80);
   };
   const onMouseLeave = () => {
-    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-    setHover(false);
+    if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
+    // Delay collapse so the rail doesn't slam shut the instant a
+    // pointer skips over a 2px gap mid-nav. Snappy but forgiving.
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    leaveTimerRef.current = setTimeout(() => {
+      setHover(false);
+      setClickOpen(false);
+    }, 180);
+  };
+  // Bar click (anywhere not specifically handled below) toggles
+  // clickOpen — useful on touch devices where hover doesn't exist.
+  const onBarClick = () => {
+    if (expanded) return;     // already open
+    setClickOpen(true);
   };
 
   // Filter NAV by role + team + flag.
@@ -178,6 +194,7 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
       <aside
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
+        onClick={onBarClick}
         className="fixed left-0 top-0 h-screen z-40 flex flex-col bg-card border-r border-border transition-[width] overflow-hidden"
         style={{
           width: expanded ? 'var(--w-sidebar-expanded)' : 'var(--w-sidebar-collapsed)',

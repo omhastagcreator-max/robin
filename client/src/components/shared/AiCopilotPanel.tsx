@@ -48,10 +48,13 @@ interface ChatMessage {
 const STORAGE_KEY = 'robin.copilot.history';
 
 export function AiCopilotPanel() {
+  // IMPORTANT — Rules of Hooks: ALL hooks must run on every render in
+  // the same order. We compute the `onWorkroom` skip flag from
+  // useLocation but defer the actual return-null check until AFTER all
+  // hooks have run. A prior version returned null between useState
+  // and useEffect calls, which produced React error #310 and turned
+  // every subsequent navigation into a blank screen.
   const location = useLocation();
-  // The new Workroom mounts its own persistent Copilot in the right
-  // rail. Hide the floating launcher there so the user doesn't see
-  // two Copilot UIs at once.
   const onWorkroom = location.pathname === '/workroom-home';
   const [open, setOpen]       = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -59,9 +62,6 @@ export function AiCopilotPanel() {
   const [busy, setBusy]       = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const inputRef    = useRef<HTMLInputElement>(null);
-
-  // Bail out completely when the page provides its own Copilot.
-  if (onWorkroom) return null;
 
   useEffect(() => {
     try {
@@ -84,6 +84,9 @@ export function AiCopilotPanel() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
+
+  // SAFE to bail out now — all hooks above have already executed.
+  if (onWorkroom) return null;
 
   const ask = async (text?: string) => {
     const q = (text ?? draft).trim();
