@@ -4,6 +4,7 @@ import { requireRole } from '../middleware/roleMiddleware';
 import {
   listTasks, createTask, getTask, updateTask, deleteTask,
   getProjectTasks, addComment, inbox, listForWorkflow,
+  setDependencies, getGraph,
 } from '../controllers/tasksController';
 
 const router = Router();
@@ -14,6 +15,10 @@ router.use(authMiddleware);
 router.get('/inbox', inbox);
 router.get('/workflow/:workflowId', listForWorkflow);
 router.get('/project/:projectId', getProjectTasks);
+
+// Dependency engine — set + traverse the graph.
+router.put('/:id/dependencies', requireRole('admin', 'employee', 'sales'), setDependencies);
+router.get('/:id/graph', getGraph);
 
 router.get('/', listTasks);
 router.post('/', requireRole('admin', 'employee', 'sales'), createTask);

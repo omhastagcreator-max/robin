@@ -276,6 +276,138 @@ export async function listForWorkflow(req: AuthRequest, res: Response): Promise<
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
+/**
+ * setDependencies — PUT /api/tasks/:id/dependencies
+ * Body: { dependsOn: string[] }  // array of taskIds that must finish first
+ *
+ * Atomicity matters here: when task B says "I depend on A", we must
+ * ALSO update task A's `dependencyOf` to include B. Otherwise the
+ * inverse query "what does A unblock?" misses B and the dependency
+ * graph becomes a one-way street.
+ *
+ * Steps:
+ *   1. Validate every incoming dependsOn ID exists in the same org.
+ *   2. Snapshot the OLD dependsOn list so we can compute removed deps.
+ *   3. Save the new list.
+ *   4. For each ADDED dep → $addToSet on that task's dependencyOf.
+ *   5. For each REMOVED dep → $pull this task from its dependencyOf.
+ *
+ * Reject self-references and cycles (A→B→A) — refuse with 400.
+ */
+export async function setDependencies(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const taskId = req.params.id;
+    const incoming = Array.isArray(req.body?.dependsOn) ? req.body.dependsOn.map(String) : [];
+
+    if (incoming.includes(taskId)) {
+      res.status(400).json({ error: 'A task cannot depend on itself' }); return;
+    }
+
+    const me = await ProjectTask.findOne({ _id: taskId, organizationId: orgId }).select('_id dependsOn').lean();
+    if (!me) { res.status(404).json({ error: 'Task not found' }); return; }
+
+    // Validate the new deps exist in the same org. Bulk fetch.
+    const valid = await ProjectTask.find({
+      _id: { $in: incoming },
+      organizationId: orgId,
+    }).select('_id dependsOn').lean();
+    const validIds = new Set<string>(valid.map(v => String(v._id)));
+    const cleaned: string[] = incoming.filter((id: string) => validIds.has(id));
+
+    // Cycle detection: walk dependsOn from each new dep; if we reach `taskId`,
+    // adding this dep would create a cycle.
+    for (const depId of cleaned) {
+      const cycle = await hasCycle(orgId, depId, taskId, new Set());
+      if (cycle) {
+        res.status(400).json({ error: `Adding dependency ${depId} would create a cycle` }); return;
+      }
+    }
+
+    const oldDeps = new Set<string>(((me.dependsOn as any[]) || []).map(String));
+    const newDeps = new Set<string>(cleaned);
+    const added   = [...newDeps].filter((x: string) => !oldDeps.has(x));
+    const removed = [...oldDeps].filter((x: string) => !newDeps.has(x));
+
+    // Apply.
+    await ProjectTask.updateOne(
+      { _id: taskId, organizationId: orgId },
+      { $set: { dependsOn: cleaned } },
+    );
+    if (added.length > 0) {
+      await ProjectTask.updateMany(
+        { _id: { $in: added }, organizationId: orgId },
+        { $addToSet: { dependencyOf: taskId } },
+      );
+    }
+    if (removed.length > 0) {
+      await ProjectTask.updateMany(
+        { _id: { $in: removed }, organizationId: orgId },
+        { $pull: { dependencyOf: taskId } },
+      );
+    }
+
+    res.json({ dependsOn: cleaned, added: added.length, removed: removed.length });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/** Recursive cycle check. Returns true if dep eventually depends on `target`. */
+async function hasCycle(orgId: string, depId: string, target: string, visited: Set<string>): Promise<boolean> {
+  if (depId === target) return true;
+  if (visited.has(depId)) return false;
+  visited.add(depId);
+  const node = await ProjectTask.findOne({ _id: depId, organizationId: orgId }).select('dependsOn').lean();
+  if (!node) return false;
+  for (const child of ((node.dependsOn as any[]) || []).map(String)) {
+    if (await hasCycle(orgId, child, target, visited)) return true;
+  }
+  return false;
+}
+
+/**
+ * getGraph — GET /api/tasks/:id/graph
+ *
+ * Returns the task + its immediate dependency neighbors, both directions:
+ *   {
+ *     task: { ... },
+ *     dependsOn:    [{_id, title, status, dueDate, assignedTo}],
+ *     dependencyOf: [{_id, title, status, dueDate, assignedTo}],
+ *     impact: { downstreamOpenCount, downstreamOverdueCount }
+ *   }
+ *
+ * Used by the brand workspace to render "Blocked by X · Blocks Y, Z"
+ * and the AI Copilot for "what happens if I slip this?".
+ */
+export async function getGraph(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const task = await ProjectTask.findOne({ _id: req.params.id, organizationId: orgId }).lean();
+    if (!task) { res.status(404).json({ error: 'Task not found' }); return; }
+
+    const [dependsOnNodes, dependencyOfNodes] = await Promise.all([
+      ProjectTask.find({ _id: { $in: (task.dependsOn as any[]) || [] } })
+        .select('_id title status dueDate assignedTo').lean(),
+      ProjectTask.find({ _id: { $in: (task.dependencyOf as any[]) || [] } })
+        .select('_id title status dueDate assignedTo').lean(),
+    ]);
+
+    const now = Date.now();
+    const downstreamOpenCount = dependencyOfNodes.filter(t => t.status !== 'done').length;
+    const downstreamOverdueCount = dependencyOfNodes.filter(t =>
+      t.status !== 'done' && t.dueDate && new Date(t.dueDate as any).getTime() < now,
+    ).length;
+
+    res.json({
+      task,
+      dependsOn: dependsOnNodes,
+      dependencyOf: dependencyOfNodes,
+      impact: { downstreamOpenCount, downstreamOverdueCount },
+    });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
 export async function addComment(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await getOrgId(req.user!.id);

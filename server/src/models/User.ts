@@ -29,6 +29,7 @@ export interface IUser extends Document {
    * Default false. Admin-only to flip.
    */
   canManageWorkroom?: boolean;
+  importedFrom?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -60,6 +61,9 @@ const UserSchema = new Schema<IUser>(
     // teammates? Admins always can; this flag lets us grant the ability
     // to a trusted non-admin (e.g. Om) without giving them full admin.
     canManageWorkroom: { type: Boolean, default: false },
+    // Bookkeeping for bulk wipe-and-replace imports of placeholder
+    // client users from the CRM sheets. NOT set on real internal staff.
+    importedFrom: { type: String, default: '' },
   },
   { timestamps: true }
 );

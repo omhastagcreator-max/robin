@@ -69,6 +69,7 @@ import { startMeetingReminderCron, setReminderIo } from './jobs/meetingReminderC
 // Mission Control build (June 2026).
 import commandCenterRoutes      from './routes/commandCenter';
 import copilotRoutes            from './routes/copilot';
+import searchRoutes             from './routes/search';
 import { startClientHealthScoreCron } from './jobs/clientHealthScoreCron';
 import { startTaskEscalationCron, setEscalationIo } from './jobs/taskEscalationCron';
 
@@ -639,6 +640,7 @@ app.use('/api/brief',           briefRoutes);
 // June 2026 Mission Control — snapshot + AI copilot.
 app.use('/api/command-center',  commandCenterRoutes);
 app.use('/api/copilot',         copilotRoutes);
+app.use('/api/search',          searchRoutes);
 app.use('/api/seed',            seedRoutes);
 app.use('/api/logs',            errorLogRoutes);
 app.use('/api/integrations',    integrationsRoutes);

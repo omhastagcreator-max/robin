@@ -216,6 +216,8 @@ const ClientWorkflowSchema = new Schema({
   },
 
   createdBy:      { type: String, required: true },
+  // Bookkeeping for bulk wipe-and-replace imports.
+  importedFrom:   { type: String, default: '' },
 }, { timestamps: true });
 
 // One workflow per (org, client) — uniqueness enforced.

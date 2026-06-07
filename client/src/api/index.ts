@@ -583,6 +583,10 @@ export const taskInbox            = (showDone = false) =>
   api.get('/tasks/inbox', { params: showDone ? { done: 1 } : undefined }).then(r => r.data);
 export const tasksForWorkflow     = (workflowId: string) =>
   api.get(`/tasks/workflow/${workflowId}`).then(r => r.data);
+export const taskGraph            = (taskId: string) =>
+  api.get(`/tasks/${taskId}/graph`).then(r => r.data);
+export const setTaskDependencies  = (taskId: string, dependsOn: string[]) =>
+  api.put(`/tasks/${taskId}/dependencies`, { dependsOn }).then(r => r.data);
 
 // Targets — self read, admin team read, admin upsert, self ETA.
 // `period` is 'weekly' | 'monthly' (default monthly when omitted).
@@ -619,3 +623,6 @@ export const getCommandSnapshot   = () =>
 // AI Copilot — natural-language Q&A.
 export const copilotAsk           = (question: string) =>
   api.post('/copilot/ask', { question }).then(r => r.data);
+// Global entity search — instant jump-to results (no AI call).
+export const globalSearch         = (q: string) =>
+  api.get('/search', { params: { q } }).then(r => r.data);

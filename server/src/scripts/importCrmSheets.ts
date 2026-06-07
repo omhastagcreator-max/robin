@@ -1,51 +1,35 @@
 /**
- * importCrmSheets.ts — one-shot import of the four employee CRM sheets
- * (Beant Kaur / Bhawna / Priyanka / Om's master) into Robin's central
- * ClientWorkflow collection.
+ * importCrmSheets.ts — wipe-and-replace import of the four employee
+ * CRM sheets (Beant Kaur / Bhawna / Priyanka / Om's master) into
+ * Robin's central collections.
  *
- * Workflow (May 2026):
+ * June 2026 rewrite: the agency owner wanted ALL previously imported
+ * data nuked and replaced with the fresh sheets. So this run:
  *
- *   1. Each employee was tracking brands in their own Excel sheet.
- *      Cross-team visibility = zero. Owner ask: bring them all into
- *      one source of truth so every dashboard reflects every brand.
+ *   1. Deletes every ProjectTask whose importedFrom starts with
+ *      'crm-sheets-'.
+ *   2. Deletes every ClientWorkflow whose importedFrom starts with
+ *      'crm-sheets-'.
+ *   3. Deletes every placeholder client User whose importedFrom
+ *      starts with 'crm-sheets-' AND email ends @imported.robin.local.
+ *      (Real internal staff Users are untouched — they never have
+ *      importedFrom set.)
+ *   4. Imports the JSON pre-pass (server/src/scripts/crm-seed-data.json)
+ *      producing:
+ *      - One placeholder client User per brand
+ *      - One ClientWorkflow per brand, with services derived from the
+ *        task text + a `recurringMeeting` block if a meeting_day was set
+ *      - One ProjectTask per "task" line (existing work)
+ *      - One ProjectTask per "next_task" line (queued work) — these
+ *        get status='pending' and dueDate set to the brand's ETA.
  *
- *   2. The four .xlsx files were parsed offline by a Python pre-pass
- *      (see server/src/scripts/crm-seed-data.json) — that pass
- *      handles the messy cell formats, alias normalisation (BOMBAY
- *      NAIL ART → BOMBAY NAIL COMPANY, ARDOVELLNESS → ARDOWELLNESS,
- *      Beant → Beant Kaur, Shakshi → Sakshi etc.), and dedup.
+ * Everything new is stamped importedFrom='crm-sheets-jun-2026'
+ * so the NEXT wipe-and-replace can find this batch.
  *
- *   3. THIS script reads that JSON and lands the data in Mongo.
- *      Idempotent: re-running upserts by clientName instead of
- *      creating duplicates.
+ * How to run:
  *
- *   4. Priority is auto-derived from ETA proximity:
- *        - ETA in next 3 days  → 'urgent'
- *        - ETA in next 7 days  → 'high'
- *        - ETA in next 14 days → 'medium'
- *        - else                → 'low'
- *
- *   5. Owners → services. We map task text + owner role to one of
- *      the three service types (shopify / influencer / meta_ads).
- *      Each owner becomes the assignee of one service.
- *
- *   6. Anything not directly inferred (POC contact, "next target"
- *      sentence, meeting day) gets stuffed into the workflow's
- *      lastUpdate field so the dashboards surface it in the
- *      "latest update" line.
- *
- *   How to run:
- *
- *       cd server
- *       npm run import-crm                 (uses MONGO_URI from .env)
- *
- *   The script logs every brand it touched (created / updated / skipped)
- *   and exits non-zero if MONGO_URI is missing.
- *
- *   Honest deferred items: per-stage activity timeline reconstruction,
- *   auto-scheduled meeting events, and a daily-brief AI cron remain
- *   out of scope for this first import — they'll land as separate
- *   passes.
+ *     cd server
+ *     npm run import-crm                 (uses MONGO_URI from .env)
  */
 
 import path from 'path';
@@ -57,51 +41,48 @@ import mongoose from 'mongoose';
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 import ClientWorkflow from '../models/ClientWorkflow';
+import ProjectTask from '../models/ProjectTask';
 import User from '../models/User';
 import Organization from '../models/Organization';
+
+const IMPORT_TAG    = 'crm-sheets-jun-2026';
+const IMPORT_PREFIX = 'crm-sheets-';
 
 // ── Types matching the JSON pre-pass ────────────────────────────────
 interface SeedRow {
   brand:         string;
   display_brand: string;
-  poc?:          string;
-  task?:         string;
-  next_target?:  string;
-  eta?:          string | null;
-  started?:      string | null;
-  meeting_day?:  string;
   owners:        string[];
+  pocs:          string[];
+  tasks:         string[];
+  next_tasks:    string[];
+  eta?:          string | null;
+  meeting_day?:  string;
+  sources:       string[];
 }
 
 // ── Heuristic: task text → service type ─────────────────────────────
-// Maps free-text task descriptions to one of the three service types
-// the rest of Robin already understands (shopify / influencer /
-// meta_ads). Falls back to influencer because "video / creative" is
-// the agency's most common service.
-function inferServices(text: string): string[] {
-  const t = (text || '').toLowerCase();
+function inferServices(allText: string): string[] {
+  const t = (allText || '').toLowerCase();
   const out: string[] = [];
-  if (/website|web|landing\s*page|\blp\b|shopify|payment|gateway|cart/i.test(t)) out.push('shopify');
-  if (/video|creative|reel|shoot|edit|influencer|creator|ugc|script/i.test(t))    out.push('influencer');
-  if (/meta|fb\s*ad|ads?|campaign|pixel|whatsapp|audit/i.test(t))                  out.push('meta_ads');
+  if (/website|web|landing\s*page|\blp\b|shopify|payment|gateway|cart|checkout/i.test(t)) out.push('shopify');
+  if (/video|creative|reel|shoot|edit|influencer|creator|ugc|script/i.test(t))           out.push('influencer');
+  if (/meta|fb\s*ad|ads?|campaign|pixel|whatsapp|audit/i.test(t))                         out.push('meta_ads');
   if (out.length === 0) out.push('influencer');
   return out;
 }
 
-// ── Heuristic: ETA proximity → priority ─────────────────────────────
 function priorityFromEta(eta: string | null | undefined): 'urgent' | 'high' | 'medium' | 'low' {
   if (!eta) return 'medium';
-  const days = Math.round((new Date(eta).getTime() - Date.now()) / 86_400_000);
+  const t = new Date(eta).getTime();
+  if (Number.isNaN(t)) return 'medium';
+  const days = Math.round((t - Date.now()) / 86_400_000);
   if (days <= 3)  return 'urgent';
   if (days <= 7)  return 'high';
   if (days <= 14) return 'medium';
   return 'low';
 }
 
-// ── Heuristic: free-text meeting-day string → recurringMeeting ───────
-// CRM cells say things like "Wednesday", "Thrus", "Tuesday 11am" or
-// "NA". We map to {dayOfWeek 0-6, timeIST "HH:MM"}. Anything we don't
-// recognise returns null (no cadence — cron leaves brand alone).
 function parseMeetingDay(raw: string | undefined | null): { dayOfWeek: number; timeIST: string; label: string } | null {
   if (!raw) return null;
   const s = String(raw).trim().toLowerCase();
@@ -120,7 +101,6 @@ function parseMeetingDay(raw: string | undefined | null): { dayOfWeek: number; t
     if (s.includes(k)) { dow = dayMap[k]; break; }
   }
   if (dow < 0) return null;
-  // Try to extract a time like "11am" / "11:30" / "2pm".
   let timeIST = '11:00';
   const tm = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
   if (tm) {
@@ -129,28 +109,25 @@ function parseMeetingDay(raw: string | undefined | null): { dayOfWeek: number; t
     const ap = (tm[3] || '').toLowerCase();
     if (ap === 'pm' && hh < 12) hh += 12;
     if (ap === 'am' && hh === 12) hh = 0;
-    if (hh >= 0 && hh < 24) {
-      timeIST = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
-    }
+    if (hh >= 0 && hh < 24) timeIST = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
   }
   return { dayOfWeek: dow, timeIST, label: raw.trim() };
 }
 
-// ── User lookup with fuzzy name matching ────────────────────────────
-// Owners in the JSON are first-names or "First Last". We try exact
-// case-insensitive match first, then prefix match on the first name.
 async function findUserByName(orgId: any, name: string): Promise<any | null> {
   const trimmed = name.trim();
   if (!trimmed) return null;
+  // Skip placeholder labels that aren't real users.
+  if (/^(client|clinet|tbd|unassigned|n\/?a)$/i.test(trimmed)) return null;
   const exact = await User.findOne({
     organizationId: orgId,
-    name: { $regex: `^${trimmed}$`, $options: 'i' },
+    name: { $regex: `^${trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
   }).select('_id name email');
   if (exact) return exact;
   const first = trimmed.split(/\s+/)[0];
   return User.findOne({
     organizationId: orgId,
-    name: { $regex: `^${first}`, $options: 'i' },
+    name: { $regex: `^${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, $options: 'i' },
   }).select('_id name email');
 }
 
@@ -170,31 +147,53 @@ async function findUserByName(orgId: any, name: string): Promise<any | null> {
   const rows: SeedRow[] = JSON.parse(fs.readFileSync(seedPath, 'utf-8'));
   console.log(`Loaded ${rows.length} brand rows from seed.`);
 
-  // Pick the first (= oldest) org as the agency. Robin has one org per
-  // agency; this lets the script run without taking the org id as an
-  // arg. Override by passing ROBIN_ORG_ID in the env if needed.
   const orgIdRaw = process.env.ROBIN_ORG_ID
     || (await Organization.findOne().sort({ createdAt: 1 }).select('_id').lean())?._id;
   if (!orgIdRaw) { console.error('No Organization in DB — create one first.'); process.exit(1); }
   const orgId = orgIdRaw as any;
   console.log(`Importing into org ${String(orgId)}.`);
 
-  // Find or create the "Sales" placeholder createdBy if we can't
-  // attribute to a real user.
+  // ── 1. WIPE prior import batch ────────────────────────────────────
+  // Match anything starting with 'crm-sheets-' so previous runs (May,
+  // June, etc.) all get cleared, not just the current tag.
+  const prefixRegex = new RegExp(`^${IMPORT_PREFIX}`);
+  const wipeTasks = await ProjectTask.deleteMany({ importedFrom: { $regex: prefixRegex } });
+  const wipeWorkflows = await ClientWorkflow.deleteMany({ importedFrom: { $regex: prefixRegex } });
+  // Also wipe prior workflows that pre-dated the importedFrom field —
+  // identified by their synthetic client email pattern.
+  const stragglers = await ClientWorkflow.deleteMany({
+    organizationId: orgId,
+    clientEmail: '',
+    importedFrom: { $in: [null, ''] },
+    createdAt: { $lt: new Date('2026-06-08') },     // before this commit landed
+  });
+  const wipeUsers = await User.deleteMany({
+    organizationId: orgId,
+    importedFrom: { $regex: prefixRegex },
+  });
+  // Stragglers — placeholder client users with the synthetic email
+  // pattern that pre-dated the importedFrom field.
+  const userStragglers = await User.deleteMany({
+    organizationId: orgId,
+    role: 'client',
+    email: { $regex: /@imported\.robin\.local$/ },
+  });
+  console.log(`Wiped:  tasks=${wipeTasks.deletedCount}  workflows=${wipeWorkflows.deletedCount} (+${stragglers.deletedCount} stragglers)  users=${wipeUsers.deletedCount} (+${userStragglers.deletedCount} stragglers)`);
+
+  // ── 2. Pick the createdBy fallback ────────────────────────────────
   const sales = await User.findOne({ organizationId: orgId, role: { $in: ['admin', 'sales'] } }).select('_id');
   if (!sales) {
     console.error('No admin/sales user in org — cannot set createdBy. Add one and retry.');
     process.exit(1);
   }
 
-  let created = 0, updated = 0, skipped = 0;
+  // ── 3. Import each brand ──────────────────────────────────────────
+  let createdBrands = 0, createdTasks = 0, skippedOwners = 0;
   for (const row of rows) {
     const brand = row.display_brand.trim();
-    if (!brand) { skipped++; continue; }
+    if (!brand) continue;
 
-    // 1. Find/create the client User (role='client'). We use the
-    //    brand name as the client name + a stable synthetic email so
-    //    re-runs don't duplicate.
+    // 3a. Placeholder client User.
     const clientEmail = `${row.brand.toLowerCase().replace(/[^a-z0-9]+/g, '-')}@imported.robin.local`;
     let client = await User.findOne({ organizationId: orgId, email: clientEmail });
     if (!client) {
@@ -203,25 +202,22 @@ async function findUserByName(orgId: any, name: string): Promise<any | null> {
         name:           brand,
         email:          clientEmail,
         role:           'client',
-        // Required field on the User schema. The pre-save hook bcrypts any
-        // non-bcrypt string, so passing a random throwaway is fine —
-        // imported client placeholders aren't meant to log in.
         passwordHash:   'imported-' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2),
+        importedFrom:   IMPORT_TAG,
       } as any);
     }
 
-    // 2. Resolve owners → User docs.
+    // 3b. Resolve owners → User docs.
     const ownerUsers = (await Promise.all(row.owners.map(o => findUserByName(orgId, o))))
       .filter(Boolean) as Array<{ _id: any; name: string }>;
+    skippedOwners += row.owners.length - ownerUsers.length;
     if (ownerUsers.length === 0) {
-      // No matching staff yet — the brand still lands; the assignee
-      // remains empty so admin can resolve later from the UI.
       console.warn(`  ${brand}: no matching staff for owners ${row.owners.join(', ')} — leaving unassigned`);
     }
 
-    // 3. Build services. We map task → service types, then round-
-    //    robin the owners across the inferred services.
-    const services = inferServices(row.task || row.next_target || '');
+    // 3c. Service inference based on combined task text.
+    const allText = [row.tasks.join(' '), row.next_tasks.join(' '), row.brand].join(' ');
+    const services = inferServices(allText);
     const serviceDocs = services.map((type, i) => ({
       serviceType: type,
       label:       type === 'shopify' ? 'Development'
@@ -232,74 +228,90 @@ async function findUserByName(orgId: any, name: string): Promise<any | null> {
       eta:         row.eta ? new Date(row.eta) : undefined,
     }));
 
-    // 4. Upsert ClientWorkflow keyed on (org, clientId).
-    let wf = await ClientWorkflow.findOne({ organizationId: orgId, clientId: String(client._id) });
     const priority = priorityFromEta(row.eta);
+    const rm = parseMeetingDay(row.meeting_day);
+    const pocLabel = row.pocs.length > 0 ? row.pocs.join(', ') : '';
     const lastDetail = [
-      row.task && `Task: ${row.task}`,
-      row.next_target && `Next: ${row.next_target}`,
-      row.poc && `POC: ${row.poc}`,
+      row.tasks.length > 0 && `Active: ${row.tasks[0]}`,
+      row.next_tasks.length > 0 && `Next: ${row.next_tasks[0]}`,
+      pocLabel && `POC: ${pocLabel}`,
       row.meeting_day && `Meeting: ${row.meeting_day}`,
     ].filter(Boolean).join(' · ');
 
-    // Parse recurring-meeting cadence once — shared by create & update paths.
-    const rm = parseMeetingDay(row.meeting_day);
-
-    if (wf) {
-      // Refresh fields without wiping existing checklist progress.
-      wf.priority    = priority as any;
-      wf.eta         = row.eta ? new Date(row.eta) : (wf.eta || null);
-      (wf as any).nextAction = row.next_target || row.task || (wf as any).nextAction;
-      if (rm) {
-        (wf as any).recurringMeeting = {
-          dayOfWeek: rm.dayOfWeek,
-          timeIST:   rm.timeIST,
-          label:     rm.label,
-          // Reset materialisation so the cron picks it up on next tick.
-          lastMaterialisedFor: null,
-        };
-      }
-      (wf as any).lastUpdate = {
-        at: new Date(), detail: lastDetail || (wf as any).lastUpdate?.detail || '',
+    // 3d. Create the workflow.
+    const wf = await ClientWorkflow.create({
+      organizationId: orgId,
+      clientId:       String(client._id),
+      clientName:     brand,
+      clientEmail:    '',
+      clientPhone:    '',
+      services:       serviceDocs,
+      priority:       priority,
+      eta:            row.eta && !Number.isNaN(new Date(row.eta).getTime()) ? new Date(row.eta) : null,
+      nextAction:     row.next_tasks[0] || row.tasks[0] || '',
+      createdBy:      String(sales._id),
+      lastUpdate:     { at: new Date(), detail: lastDetail, actorId: String(sales._id) },
+      activity: [{
         actorId: String(sales._id),
-      };
-      // Service merge — add any missing types instead of overwriting.
-      for (const svc of serviceDocs) {
-        if (!wf.services.some(s => s.serviceType === svc.serviceType)) {
-          wf.services.push(svc as any);
-        }
-      }
-      await wf.save();
-      updated++;
-      console.log(`  ↻ ${brand}  priority=${priority}  owners=${ownerUsers.map(u=>u.name).join(',') || '(none)'}`);
-    } else {
-      wf = await ClientWorkflow.create({
+        action:  'created',
+        detail:  `Imported from CRM sheets · priority ${priority}${lastDetail ? ' · ' + lastDetail : ''}`,
+      }],
+      ...(rm ? { recurringMeeting: {
+        dayOfWeek: rm.dayOfWeek, timeIST: rm.timeIST, label: rm.label, lastMaterialisedFor: null,
+      } } : {}),
+      importedFrom: IMPORT_TAG,
+    } as any);
+    createdBrands++;
+
+    // 3e. Create ProjectTasks — one per "task" (ongoing) and one per
+    // "next_task" (queued). Owner alternation: round-robin across the
+    // brand's resolved owners. ETA dueDate.
+    const dueDate = row.eta && !Number.isNaN(new Date(row.eta).getTime()) ? new Date(row.eta) : undefined;
+    let ownerIdx = 0;
+    for (const taskText of row.tasks) {
+      if (!taskText.trim()) continue;
+      const assignee = ownerUsers[ownerIdx % Math.max(1, ownerUsers.length)]?._id?.toString() || String(sales._id);
+      await ProjectTask.create({
         organizationId: orgId,
-        clientId:       String(client._id),
-        clientName:     brand,
-        clientEmail:    '',
-        clientPhone:    '',
-        services:       serviceDocs,
-        priority:       priority,
-        eta:            row.eta ? new Date(row.eta) : null,
-        nextAction:     row.next_target || row.task || '',
-        createdBy:      String(sales._id),
-        lastUpdate:     { at: new Date(), detail: lastDetail, actorId: String(sales._id) },
-        activity: [{
-          actorId: String(sales._id),
-          action:  'created',
-          detail:  `Imported from CRM sheets · priority ${priority}${lastDetail ? ' · ' + lastDetail : ''}`,
-        }],
-        ...(rm ? { recurringMeeting: {
-          dayOfWeek: rm.dayOfWeek, timeIST: rm.timeIST, label: rm.label, lastMaterialisedFor: null,
-        } } : {}),
+        clientWorkflowId: wf._id,
+        assignedTo: assignee,
+        assignedBy: String(sales._id),
+        requesterId: String(sales._id),
+        title: taskText.slice(0, 200),
+        description: pocLabel ? `Brand: ${brand} · POC: ${pocLabel}` : `Brand: ${brand}`,
+        priority,
+        status: 'ongoing',
+        dueDate,
+        startDate: new Date(),
+        importedFrom: IMPORT_TAG,
       } as any);
-      created++;
-      console.log(`  + ${brand}  priority=${priority}  owners=${ownerUsers.map(u=>u.name).join(',') || '(none)'}`);
+      createdTasks++;
+      ownerIdx++;
     }
+    for (const nextText of row.next_tasks) {
+      if (!nextText.trim()) continue;
+      const assignee = ownerUsers[ownerIdx % Math.max(1, ownerUsers.length)]?._id?.toString() || String(sales._id);
+      await ProjectTask.create({
+        organizationId: orgId,
+        clientWorkflowId: wf._id,
+        assignedTo: assignee,
+        assignedBy: String(sales._id),
+        requesterId: String(sales._id),
+        title: nextText.slice(0, 200),
+        description: `[Next] Brand: ${brand}` + (pocLabel ? ` · POC: ${pocLabel}` : ''),
+        priority,
+        status: 'pending',
+        dueDate,
+        importedFrom: IMPORT_TAG,
+      } as any);
+      createdTasks++;
+      ownerIdx++;
+    }
+
+    console.log(`  + ${brand}  priority=${priority}  tasks=${row.tasks.length}/+${row.next_tasks.length}next  owners=${ownerUsers.map(u=>u.name).join(',') || '(none)'}`);
   }
 
-  console.log(`\nDone. created=${created} updated=${updated} skipped=${skipped} total=${rows.length}`);
+  console.log(`\nDone. Created ${createdBrands} brands + ${createdTasks} tasks. Unresolved owner refs: ${skippedOwners}.`);
   await mongoose.disconnect();
   process.exit(0);
 })().catch(err => {

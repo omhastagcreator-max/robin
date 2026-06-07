@@ -1,262 +1,403 @@
 [
   {
-    "brand": "ARDOWELLNESS",
-    "display_brand": "Ardowellness",
-    "poc": "",
-    "task": "Web",
-    "next_target": "Give banner to Beant Website edits",
-    "eta": "2026-06-10",
-    "started": null,
-    "meeting_day": "NA",
+    "brand": "WOODSIFY",
+    "display_brand": "WOODSIFY",
     "owners": [
-      "Priyanka",
-      "Janavi",
-      "Beant Kaur",
-      "Om"
-    ]
-  },
-  {
-    "brand": "BOMBAY NAIL COMPANY",
-    "display_brand": "Bombay Nail Company",
-    "poc": "",
-    "task": "NA",
-    "next_target": "Videos check",
-    "eta": "2026-06-12",
-    "started": null,
-    "meeting_day": "NA",
-    "owners": [
-      "Priyanka",
-      "Janavi",
       "Beant Kaur"
-    ]
-  },
-  {
-    "brand": "DARPAN",
-    "display_brand": "Darpan",
-    "poc": "",
-    "task": "POC+Web",
-    "next_target": "If mid week me contetn aya toh website ke updates+ social media me sscript ke baare me",
-    "eta": null,
-    "started": null,
-    "meeting_day": "Saturday",
-    "owners": [
-      "Om",
-      "Priyanka",
-      "Janavi",
-      "Beant Kaur"
-    ]
-  },
-  {
-    "brand": "DPK",
-    "display_brand": "Dpk",
-    "poc": "",
-    "task": "POC",
-    "next_target": "NA",
-    "eta": null,
-    "started": null,
-    "meeting_day": "NA",
-    "owners": [
-      "Sakshi"
-    ]
-  },
-  {
-    "brand": "GHEE-NEERAJ",
-    "display_brand": "Ghee-Neeraj",
-    "poc": "",
-    "task": "Web+Meta",
-    "next_target": "Monday Sales ads need to be live Checkout needs to be live",
+    ],
+    "pocs": [
+      "SENTHILRAJ"
+    ],
+    "tasks": [
+      "60 Creatives",
+      "Informed"
+    ],
+    "next_tasks": [
+      "Get all the creatives checked",
+      "Check"
+    ],
     "eta": "2026-06-08",
-    "started": null,
-    "meeting_day": "NA",
-    "owners": [
-      "Om",
-      "Bhawna"
-    ]
-  },
-  {
-    "brand": "HASTAG",
-    "display_brand": "Hastag",
-    "poc": "",
-    "task": "Web+Meta+Videos",
-    "next_target": "Make the website live",
-    "eta": "2026-06-11",
-    "started": null,
-    "meeting_day": "NA",
-    "owners": [
-      "Priyanka"
-    ]
-  },
-  {
-    "brand": "HEIGHTAYURA",
-    "display_brand": "Heightayura",
-    "poc": "",
-    "task": "POC",
-    "next_target": "NA",
-    "eta": null,
-    "started": null,
-    "meeting_day": "NA",
-    "owners": [
-      "Priyanka",
-      "Janavi",
-      "Beant Kaur",
-      "Sakshi"
-    ]
-  },
-  {
-    "brand": "MOTOCASA",
-    "display_brand": "Motocasa",
-    "poc": "",
-    "task": "Web",
-    "next_target": "Take updates over videos progress",
-    "eta": null,
-    "started": null,
-    "meeting_day": "NA",
-    "owners": [
-      "Priyanka",
-      "Janavi",
+    "meeting_day": "",
+    "sources": [
       "Beant Kaur",
       "Om"
     ]
   },
   {
-    "brand": "NMII",
-    "display_brand": "Nmii",
-    "poc": "",
-    "task": "Web",
-    "next_target": "",
-    "eta": null,
-    "started": null,
-    "meeting_day": "NA",
+    "brand": "ZAPROMART",
+    "display_brand": "ZAPROMART",
     "owners": [
-      "Om",
-      "Priyanka",
-      "Janavi",
-      "Beant Kaur"
-    ]
-  },
-  {
-    "brand": "OJAVIO",
-    "display_brand": "Ojavio",
-    "poc": "",
-    "task": "POC",
-    "next_target": "NA",
-    "eta": null,
-    "started": null,
-    "meeting_day": "Thrus",
-    "owners": [
-      "Sakshi",
-      "Priyanka",
-      "Janavi",
-      "Beant Kaur"
-    ]
-  },
-  {
-    "brand": "OUDFY",
-    "display_brand": "Oudfy",
-    "poc": "",
-    "task": "Web",
-    "next_target": "Call on Monday to get details",
-    "eta": null,
-    "started": null,
-    "meeting_day": "NA",
-    "owners": [
-      "Om",
-      "Priyanka",
-      "Janavi",
-      "Beant Kaur"
+      "Bhawna"
+    ],
+    "pocs": [
+      "Raja Francis"
+    ],
+    "tasks": [
+      "Changes in LP",
+      "Meta ads are live"
+    ],
+    "next_tasks": [
+      "NA",
+      "Get some sales"
+    ],
+    "eta": "2026-06-06",
+    "meeting_day": "",
+    "sources": [
+      "Bhawna",
+      "Om"
     ]
   },
   {
     "brand": "PURELYFARM",
-    "display_brand": "Purelyfarm",
-    "poc": "Neeraj Attri",
-    "task": "audit ad account and website through ai",
-    "next_target": "",
-    "eta": "2026-06-06",
-    "started": "2026-05-22",
-    "meeting_day": "",
+    "display_brand": "PURELYFARM",
     "owners": [
-      "Priyanka",
-      "Janavi",
-      "Beant Kaur",
-      "Bhawna"
+      "Bhawna",
+      "Priyanka"
+    ],
+    "pocs": [
+      "Neeraj",
+      "Neeraj Attri"
+    ],
+    "tasks": [
+      "audit ad account and website through ai",
+      "UGC 10 Video"
+    ],
+    "next_tasks": [],
+    "eta": "2026-06-06",
+    "meeting_day": "",
+    "sources": [
+      "Bhawna",
+      "Priyanka"
     ]
   },
   {
-    "brand": "SHRIKANTHAART",
-    "display_brand": "Shrikanthaart",
-    "poc": "",
-    "task": "POC+Web",
-    "next_target": "Monday tak combo wael ads live karne hai EOD",
-    "eta": "2026-06-08",
-    "started": null,
-    "meeting_day": "NA",
+    "brand": "BOMBAY NAIL COMPANY",
+    "display_brand": "BOMBAY NAIL COMPANY",
     "owners": [
-      "Priyanka",
-      "Janavi",
+      "Priyanka"
+    ],
+    "pocs": [
+      "Ishika"
+    ],
+    "tasks": [
+      "UCC 10 Video",
+      "Influencer Outreach",
+      "SSM",
+      "NA"
+    ],
+    "next_tasks": [
+      "Priynaks needs to get the videos",
+      "Videos check"
+    ],
+    "eta": "2026-06-12",
+    "meeting_day": "",
+    "sources": [
+      "Om",
+      "Priyanka"
+    ]
+  },
+  {
+    "brand": "DARPAN",
+    "display_brand": "DARPAN",
+    "owners": [
+      "Om",
+      "Priyanka"
+    ],
+    "pocs": [
+      "Jeet"
+    ],
+    "tasks": [
+      "SSM Baseline",
+      "SSM Next Step",
+      "Old Video Script",
+      "New Video Script",
+      "Ignite Script",
+      "Website , tasks give to darpan , \nsocial media plan bhi shared hai bas usko script karke dena hai ye decide huaa"
+    ],
+    "next_tasks": [
+      "Social media se related chizen karni hai\nWebsite me mid week tak contetn aayega",
+      "If mid week me contetn aya toh website ke updates+\nsocial media me sscript ke baare me"
+    ],
+    "eta": "2026-06-06",
+    "meeting_day": "Saturday",
+    "sources": [
+      "Om",
+      "Priyanka"
+    ]
+  },
+  {
+    "brand": "MOTOCASA",
+    "display_brand": "MOTOCASA",
+    "owners": [
+      "Om",
+      "Priyanka"
+    ],
+    "pocs": [
+      "Japjot"
+    ],
+    "tasks": [
+      "UGC 10 Video",
+      "Scripting",
+      "Website is ready"
+    ],
+    "next_tasks": [
+      "Website final touch is remaing\nVideos part",
+      "Take updates over videos progress"
+    ],
+    "eta": "2026-06-09",
+    "meeting_day": "",
+    "sources": [
+      "Om",
+      "Priyanka"
+    ]
+  },
+  {
+    "brand": "ARDOWELLNESS",
+    "display_brand": "ARDOWELLNESS",
+    "owners": [
       "Beant Kaur",
-      "Om"
+      "Om",
+      "Priyanka"
+    ],
+    "pocs": [
+      "Jatin"
+    ],
+    "tasks": [
+      "Scripting",
+      "Creator Finalize",
+      "UGC 10 Video",
+      "Credentials taken"
+    ],
+    "next_tasks": [
+      "Banners to be created\nWebsite needs to be edited",
+      "Give banner to Beant\nWebsite edits"
+    ],
+    "eta": "2026-06-08",
+    "meeting_day": "",
+    "sources": [
+      "Om",
+      "Priyanka"
     ]
   },
   {
     "brand": "SROJA",
-    "display_brand": "Sroja",
-    "poc": "",
-    "task": "POC+Web",
-    "next_target": "Tuesday tak website live chahiye",
-    "eta": "2026-06-08",
-    "started": null,
-    "meeting_day": "Tuesday",
+    "display_brand": "SROJA",
     "owners": [
       "Om",
-      "Yash",
+      "Priyanka",
+      "Yash"
+    ],
+    "pocs": [
+      "Archit"
+    ],
+    "tasks": [
+      "Product Finalize",
+      "Studio finalize",
+      "Scripting",
+      "UGC 10 Video",
+      "Discovery call done\nproducts selection done\nproducts shipped"
+    ],
+    "next_tasks": [
+      "Website to be live on Monday",
+      "Tuesday tak website live chahiye"
+    ],
+    "eta": "2026-06-05",
+    "meeting_day": "Tuesday",
+    "sources": [
+      "Om",
+      "Priyanka"
+    ]
+  },
+  {
+    "brand": "HASTAG",
+    "display_brand": "HASTAG",
+    "owners": [
+      "Priyanka"
+    ],
+    "pocs": [
+      "Rahul Sir"
+    ],
+    "tasks": [
+      "Scripting",
+      "Creator Finalize",
+      "Talked with priyanks for videos for international"
+    ],
+    "next_tasks": [
+      "chek if the videos are ready to go live or not",
+      "Make the website live"
+    ],
+    "eta": "2024-05-10",
+    "meeting_day": "",
+    "sources": [
+      "Om",
+      "Priyanka"
+    ]
+  },
+  {
+    "brand": "SHRIKANTHAART",
+    "display_brand": "SHRIKANTHAART",
+    "owners": [
+      "Beant Kaur",
+      "Om",
+      "Priyanka"
+    ],
+    "pocs": [
+      "Yug"
+    ],
+    "tasks": [
+      "UGC 6 Video",
+      "Catalog Ads are live"
+    ],
+    "next_tasks": [
+      "Combo to be creted \nAdded them as a product",
+      "Monday tak combo wael ads live karne hai EOD"
+    ],
+    "eta": "2024-06-15",
+    "meeting_day": "",
+    "sources": [
+      "Om",
+      "Priyanka"
+    ]
+  },
+  {
+    "brand": "OJAVIO",
+    "display_brand": "OJAVIO",
+    "owners": [
+      "Priyanka",
+      "Sakshi"
+    ],
+    "pocs": [
+      "Abhishek"
+    ],
+    "tasks": [
+      "UGC 10 Video",
+      "Meta ads are live"
+    ],
+    "next_tasks": [
+      "Ads are live for sales need to keep them posted"
+    ],
+    "eta": "2026-06-09",
+    "meeting_day": "Thrus",
+    "sources": [
+      "Om",
       "Priyanka"
     ]
   },
   {
     "brand": "VELLOR LIVING",
-    "display_brand": "Vellor Living",
-    "poc": "",
-    "task": "Meta+Web+POC",
-    "next_target": "before next meet on Monday need to achive the target order no plus vellore ke ATC IC",
-    "eta": "2026-06-08",
-    "started": null,
-    "meeting_day": "Monday",
+    "display_brand": "VELLOR LIVING",
     "owners": [
       "Om",
-      "Sakshi",
-      "Priyanka",
-      "Janavi",
-      "Beant Kaur"
-    ]
-  },
-  {
-    "brand": "WOODSIFY",
-    "display_brand": "Woodsify",
-    "poc": "SENTHILRAJ",
-    "task": "Creative · 60 Creatives",
-    "next_target": "Check",
+      "Sakshi"
+    ],
+    "pocs": [],
+    "tasks": [
+      "Wesbite changes update"
+    ],
+    "next_tasks": [
+      "Reviews to be added via  new app\nHistory life ka target hai 40 orders  to bundle create karne hai for offers briefed shakshi need to check again",
+      "before next meet on Monday need to achive the target order no\nplus vellore ke ATC IC"
+    ],
     "eta": "2026-06-08",
-    "started": "2026-06-05",
-    "meeting_day": "NA",
-    "owners": [
-      "Beant Kaur"
+    "meeting_day": "Monday",
+    "sources": [
+      "Om"
     ]
   },
   {
-    "brand": "ZAPROMART",
-    "display_brand": "Zapromart",
-    "poc": "Raja Francis",
-    "task": "NA",
-    "next_target": "Get some sales",
-    "eta": "2026-06-06",
-    "started": "2026-05-22",
-    "meeting_day": "NA",
+    "brand": "GHEE-NEERAJ",
+    "display_brand": "GHEE-NEERAJ",
     "owners": [
       "Bhawna",
-      "Priyanka",
-      "Janavi",
-      "Beant Kaur"
+      "Om"
+    ],
+    "pocs": [],
+    "tasks": [
+      "Everyhitng is done\nChekout has been applied"
+    ],
+    "next_tasks": [
+      "Need to finlaise the checkout wala thing\nstart meta ads",
+      "Monday Sales ads need to be live \nCheckout needs to be live"
+    ],
+    "eta": "2026-06-08",
+    "meeting_day": "",
+    "sources": [
+      "Om"
+    ]
+  },
+  {
+    "brand": "DPK",
+    "display_brand": "DPK",
+    "owners": [
+      "Client",
+      "Sakshi"
+    ],
+    "pocs": [],
+    "tasks": [
+      "Ads are live"
+    ],
+    "next_tasks": [
+      "Offers to be updates\nvideos to be share by clietn"
+    ],
+    "eta": null,
+    "meeting_day": "",
+    "sources": [
+      "Om"
+    ]
+  },
+  {
+    "brand": "OUDFY",
+    "display_brand": "OUDFY",
+    "owners": [
+      "Clinet",
+      "Om"
+    ],
+    "pocs": [],
+    "tasks": [
+      "Website Done"
+    ],
+    "next_tasks": [
+      "Products needs to added",
+      "Call on Monday to get details"
+    ],
+    "eta": "6//2026",
+    "meeting_day": "",
+    "sources": [
+      "Om"
+    ]
+  },
+  {
+    "brand": "HEIGHTAYURA",
+    "display_brand": "HEIGHTAYURA",
+    "owners": [
+      "Sakshi"
+    ],
+    "pocs": [],
+    "tasks": [
+      "Ads are live"
+    ],
+    "next_tasks": [
+      "Check to get orders"
+    ],
+    "eta": null,
+    "meeting_day": "",
+    "sources": [
+      "Om"
+    ]
+  },
+  {
+    "brand": "NMII",
+    "display_brand": "NMII",
+    "owners": [],
+    "pocs": [],
+    "tasks": [
+      "NA"
+    ],
+    "next_tasks": [],
+    "eta": null,
+    "meeting_day": "",
+    "sources": [
+      "Om"
     ]
   }
 ]

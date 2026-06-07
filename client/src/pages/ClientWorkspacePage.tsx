@@ -13,6 +13,7 @@ import {
 import { AppLayout } from '@/components/AppLayout';
 import { ActivityTimeline } from '@/components/panels/ProjectDetailPanel';
 import { CommentRequiredModal } from '@/components/shared/CommentRequiredModal';
+import { WarRoomBanner } from '@/components/workspace/WarRoomBanner';
 import { useAuth } from '@/contexts/AuthContext';
 import * as api from '@/api';
 
@@ -336,6 +337,15 @@ export default function ClientWorkspacePage() {
         <Link to="/clients/pipeline" className="inline-flex items-center gap-1 text-[11.5px] text-muted-foreground hover:text-foreground mb-2">
           <ArrowLeft className="h-3 w-3" /> Back to Client CRM
         </Link>
+
+        {/* War Room Banner — top-of-workspace summary so the user
+            answers "what / who / delayed / next" in 30 seconds. */}
+        <div className="mb-3">
+          <WarRoomBanner
+            workflow={wf}
+            ownerName={ownerName}
+          />
+        </div>
 
         <div className="rounded-xl border border-border bg-card">
 

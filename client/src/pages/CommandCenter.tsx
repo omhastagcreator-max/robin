@@ -4,7 +4,7 @@ import { format, formatDistanceToNowStrict, parseISO } from 'date-fns';
 import {
   AlertTriangle, AlertCircle, Building2, ChevronRight, Clock, Flame,
   Sparkles, Users, Calendar, Activity, Target, TrendingUp,
-  ArrowUpRight, Briefcase, ShieldCheck,
+  ArrowUpRight, Briefcase, ShieldCheck, Settings2,
 } from 'lucide-react';
 
 import { AppLayout } from '@/components/AppLayout';
@@ -86,10 +86,33 @@ interface Snapshot {
   generatedAt: string;
 }
 
+// Customisable widgets — admin can toggle each on/off. Persisted
+// per-browser via localStorage. Defaults: everything on.
+type WidgetKey = 'kpis' | 'alerts' | 'clients' | 'team' | 'meetings';
+const ALL_WIDGETS: { key: WidgetKey; label: string }[] = [
+  { key: 'kpis',     label: 'KPI strip' },
+  { key: 'alerts',   label: 'Critical alerts' },
+  { key: 'clients',  label: 'Client cards' },
+  { key: 'team',     label: 'Team accountability' },
+  { key: 'meetings', label: 'Upcoming meetings' },
+];
+const LS_WIDGETS = 'robin.cc.widgets';
+
 export default function CommandCenter() {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [widgets, setWidgets] = useState<Record<WidgetKey, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem(LS_WIDGETS);
+      if (raw) return { ...defaultWidgets(), ...JSON.parse(raw) };
+    } catch { /* private mode */ }
+    return defaultWidgets();
+  });
+  const [customizing, setCustomizing] = useState(false);
+  useEffect(() => {
+    try { localStorage.setItem(LS_WIDGETS, JSON.stringify(widgets)); } catch { /* ignore */ }
+  }, [widgets]);
 
   const load = (silent = false) => {
     if (!silent) setLoading(true);
@@ -109,7 +132,12 @@ export default function CommandCenter() {
   return (
     <AppLayout>
       <div className="max-w-7xl mx-auto space-y-4 pb-8">
-        <Header refreshing={refreshing} onRefresh={() => load()} generatedAt={snap?.generatedAt} />
+        <Header
+          refreshing={refreshing}
+          onRefresh={() => load()}
+          onCustomize={() => setCustomizing(true)}
+          generatedAt={snap?.generatedAt}
+        />
         {loading && !snap ? (
           <p className="py-20 text-center text-[13px] text-muted-foreground inline-flex items-center justify-center gap-1.5 w-full">
             <Sparkles className="h-3.5 w-3.5 animate-pulse" /> Loading mission control…
@@ -120,24 +148,74 @@ export default function CommandCenter() {
           </p>
         ) : (
           <>
-            <KpiStrip k={snap.kpis} />
-            <CriticalAlerts alerts={snap.criticalAlerts} />
+            {widgets.kpis    && <KpiStrip k={snap.kpis} />}
+            {widgets.alerts  && <CriticalAlerts alerts={snap.criticalAlerts} />}
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-4 items-start">
-              <ClientCardsGrid cards={snap.clientCards} />
+              {widgets.clients ? <ClientCardsGrid cards={snap.clientCards} /> : <div />}
               <div className="space-y-4 xl:sticky xl:top-4">
-                <TeamAccountability rows={snap.accountability} />
-                <UpcomingMeetings rows={snap.upcomingMeetings} />
+                {widgets.team     && <TeamAccountability rows={snap.accountability} />}
+                {widgets.meetings && <UpcomingMeetings rows={snap.upcomingMeetings} />}
               </div>
             </div>
           </>
+        )}
+        {customizing && (
+          <CustomizeWidgetsModal
+            widgets={widgets}
+            onToggle={(k) => setWidgets(prev => ({ ...prev, [k]: !prev[k] }))}
+            onClose={() => setCustomizing(false)}
+          />
         )}
       </div>
     </AppLayout>
   );
 }
 
+function defaultWidgets(): Record<WidgetKey, boolean> {
+  return { kpis: true, alerts: true, clients: true, team: true, meetings: true };
+}
+
+function CustomizeWidgetsModal({ widgets, onToggle, onClose }: {
+  widgets: Record<WidgetKey, boolean>;
+  onToggle: (k: WidgetKey) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="px-4 py-3 border-b border-border">
+          <p className="text-[13px] font-bold">Customize widgets</p>
+          <p className="text-[10.5px] text-muted-foreground">Show only what you actually use.</p>
+        </div>
+        <ul className="px-2 py-2">
+          {ALL_WIDGETS.map(w => (
+            <li key={w.key}>
+              <label className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-muted/40 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={widgets[w.key]}
+                  onChange={() => onToggle(w.key)}
+                  className="h-3.5 w-3.5"
+                />
+                <span className="text-[12.5px]">{w.label}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+        <div className="px-4 py-2.5 border-t border-border flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-7 px-3 rounded-md bg-primary text-primary-foreground text-[11.5px] font-semibold hover:bg-primary/90"
+          >Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Header ──────────────────────────────────────────────────────────
-function Header({ refreshing, onRefresh, generatedAt }: { refreshing: boolean; onRefresh: () => void; generatedAt?: string }) {
+function Header({ refreshing, onRefresh, onCustomize, generatedAt }: { refreshing: boolean; onRefresh: () => void; onCustomize: () => void; generatedAt?: string }) {
   return (
     <div className="flex items-end justify-between gap-3 pt-1">
       <div>
@@ -152,12 +230,20 @@ function Header({ refreshing, onRefresh, generatedAt }: { refreshing: boolean; o
           </p>
         )}
         <button
+          onClick={onCustomize}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-card text-[11.5px] font-semibold hover:bg-muted/40"
+          title="Customize widgets"
+        >
+          <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="hidden sm:inline">Customize</span>
+        </button>
+        <button
           onClick={onRefresh}
           disabled={refreshing}
           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-card text-[11.5px] font-semibold hover:bg-muted/40 disabled:opacity-50"
         >
           <Activity className={`h-3.5 w-3.5 ${refreshing ? 'animate-pulse text-primary' : 'text-muted-foreground'}`} />
-          Refresh
+          <span className="hidden sm:inline">Refresh</span>
         </button>
       </div>
     </div>

@@ -108,6 +108,11 @@ const ProjectTaskSchema = new Schema({
   // Cron stamps these so we never re-fire the same wave.
   escalationLevel:   { type: Number, default: 0, min: 0, max: 3 },
   lastEscalatedAt:   { type: Date, default: null },
+
+  // Bookkeeping for bulk wipe-and-replace imports. The import script
+  // tags everything it creates so subsequent re-runs can delete the
+  // previous batch cleanly without touching tasks created in-app.
+  importedFrom:      { type: String, default: '' },
 }, { timestamps: true });
 
 // Hot path: "tasks assigned to me, not done, sorted by due date" — the

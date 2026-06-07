@@ -19,6 +19,7 @@ import { ClientMeetingDock } from '@/components/shared/ClientMeetingDock';
 import { MeetingQuickFab } from '@/components/shared/MeetingQuickFab';
 import { HelpBubble } from '@/components/shared/HelpBubble';
 import { AiCopilotPanel } from '@/components/shared/AiCopilotPanel';
+import { GlobalSearch } from '@/components/shared/GlobalSearch';
 import { SlimSidebar }     from '@/components/v2/SlimSidebar';
 import { TopBar }          from '@/components/v2/TopBar';
 import { GlobalShortcuts } from '@/components/v2/GlobalShortcuts';
@@ -239,6 +240,8 @@ function AppLayoutInner({ children }: Props) {
       <HelpBubble />
       {/* Robin Copilot — always-on AI assistant. Internal roles only. */}
       {user && ['admin', 'sales', 'employee'].includes(role) && <AiCopilotPanel />}
+      {/* Cmd-K instant entity search. Cheap; no AI call. */}
+      {user && ['admin', 'sales', 'employee'].includes(role) && <GlobalSearch />}
       <GlobalShortcuts />
     </SlimSidebar>
     </AppLayoutNestedCtx.Provider>
