@@ -626,3 +626,6 @@ export const copilotAsk           = (question: string) =>
 // Global entity search — instant jump-to results (no AI call).
 export const globalSearch         = (q: string) =>
   api.get('/search', { params: { q } }).then(r => r.data);
+// New Workroom dashboard — user-scoped agency snapshot.
+export const getWorkroomSnapshot  = () =>
+  api.get('/workroom/snapshot').then(r => r.data);

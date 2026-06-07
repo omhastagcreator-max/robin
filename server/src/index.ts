@@ -70,6 +70,7 @@ import { startMeetingReminderCron, setReminderIo } from './jobs/meetingReminderC
 import commandCenterRoutes      from './routes/commandCenter';
 import copilotRoutes            from './routes/copilot';
 import searchRoutes             from './routes/search';
+import workroomSnapshotRoutes   from './routes/workroomSnapshot';
 import { startClientHealthScoreCron } from './jobs/clientHealthScoreCron';
 import { startTaskEscalationCron, setEscalationIo } from './jobs/taskEscalationCron';
 
@@ -641,6 +642,7 @@ app.use('/api/brief',           briefRoutes);
 app.use('/api/command-center',  commandCenterRoutes);
 app.use('/api/copilot',         copilotRoutes);
 app.use('/api/search',          searchRoutes);
+app.use('/api/workroom',        workroomSnapshotRoutes);
 app.use('/api/seed',            seedRoutes);
 app.use('/api/logs',            errorLogRoutes);
 app.use('/api/integrations',    integrationsRoutes);

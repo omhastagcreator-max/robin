@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Sparkles, Send, X, MessageCircleQuestion, ChevronRight, Wand2 } from 'lucide-react';
 import * as api from '@/api';
 
@@ -48,12 +48,20 @@ interface ChatMessage {
 const STORAGE_KEY = 'robin.copilot.history';
 
 export function AiCopilotPanel() {
+  const location = useLocation();
+  // The new Workroom mounts its own persistent Copilot in the right
+  // rail. Hide the floating launcher there so the user doesn't see
+  // two Copilot UIs at once.
+  const onWorkroom = location.pathname === '/workroom-home';
   const [open, setOpen]       = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft]     = useState('');
   const [busy, setBusy]       = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const inputRef    = useRef<HTMLInputElement>(null);
+
+  // Bail out completely when the page provides its own Copilot.
+  if (onWorkroom) return null;
 
   useEffect(() => {
     try {
