@@ -165,9 +165,10 @@ async function findUserByName(orgId: any, name: string): Promise<any | null> {
         name:           brand,
         email:          clientEmail,
         role:           'client',
-        // Random hash; client users don't log in via this account.
-        password:       'imported-' + Math.random().toString(36).slice(2),
-        importedFrom:   'crm-sheets-may-2026',
+        // Required field on the User schema. The pre-save hook bcrypts any
+        // non-bcrypt string, so passing a random throwaway is fine —
+        // imported client placeholders aren't meant to log in.
+        passwordHash:   'imported-' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2),
       } as any);
     }
 
