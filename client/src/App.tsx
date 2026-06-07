@@ -42,6 +42,8 @@ const MeetHost          = lazy(() => import('@/pages/MeetHost'));
 const WorkroomHome      = lazy(() => import('@/pages/WorkroomHome'));
 const WorkroomOnboardPage = lazy(() => import('@/pages/WorkroomOnboardPage'));
 const AdminIssues       = lazy(() => import('@/pages/AdminIssues'));
+// June 2026 Mission Control build.
+const CommandCenter     = lazy(() => import('@/pages/CommandCenter'));
 
 /**
  * BlankRoot — the public root (robin.hastagcreator.com/) renders nothing.
@@ -147,6 +149,9 @@ function AppRoutes() {
           <Route path="/chat"             element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><GroupChat /></E></ProtectedRoute>} />
           <Route path="/workroom"         element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><WorkRoom /></E></ProtectedRoute>} />
           <Route path="/workroom-home"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><WorkroomHome /></E></ProtectedRoute>} />
+          {/* Mission Control — admin landing (June 2026). Sales can
+              also view; employees / workroom keep their Workroom. */}
+          <Route path="/command-center"   element={<ProtectedRoute requiredRole={['admin', 'sales']}><E><CommandCenter /></E></ProtectedRoute>} />
           {/* Onboard a workroom teammate — admin OR any user the admin
               has flagged with canManageWorkroom (e.g. Om). The page itself
               re-checks the flag and bounces if accessed directly. */}

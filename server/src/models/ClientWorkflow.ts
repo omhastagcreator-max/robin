@@ -169,6 +169,28 @@ const ClientWorkflowSchema = new Schema({
   predictedCompletionAt: { type: Date,   default: null },
   insightsComputedAt:    { type: Date,   default: null },
 
+  // ── Mission Control health score (June 2026) ─────────────────────
+  // healthScore (0-100, higher is healthier) is computed from:
+  //   - delayed deliverables
+  //   - pending tasks count
+  //   - days inactive
+  //   - meeting attendance (skipped recurring meetings)
+  //   - approval delays
+  //   - blockers
+  // healthLevel buckets the score into the four-colour traffic-light
+  // taxonomy used everywhere in the Command Center:
+  //   90-100 = green    🟢 Healthy
+  //   70-89  = yellow   🟡 Attention required
+  //   40-69  = orange   🟠 At risk
+  //   0-39   = red      🔴 Critical
+  // healthFactors[] is a structured list of WHICH inputs hurt the
+  // score, so the UI can show "Down because: 2 overdue tasks · last
+  // update 6 days ago".
+  healthScore:        { type: Number, default: 100, min: 0, max: 100 },
+  healthLevel:        { type: String, enum: ['green', 'yellow', 'orange', 'red'], default: 'green', index: true },
+  healthFactors:      { type: [String], default: [] },
+  healthComputedAtV2: { type: Date, default: null },
+
   // Priority + tags — for filtering and prioritization in the table view.
   priority: { type: String, enum: ['low', 'medium', 'high', 'urgent'], default: 'medium' },
   tags:     { type: [String], default: [] },

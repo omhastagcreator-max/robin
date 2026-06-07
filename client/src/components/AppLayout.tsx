@@ -18,6 +18,7 @@ import { ScreenShareResumeBanner } from '@/components/shared/ScreenShareResumeBa
 import { ClientMeetingDock } from '@/components/shared/ClientMeetingDock';
 import { MeetingQuickFab } from '@/components/shared/MeetingQuickFab';
 import { HelpBubble } from '@/components/shared/HelpBubble';
+import { AiCopilotPanel } from '@/components/shared/AiCopilotPanel';
 import { SlimSidebar }     from '@/components/v2/SlimSidebar';
 import { TopBar }          from '@/components/v2/TopBar';
 import { GlobalShortcuts } from '@/components/v2/GlobalShortcuts';
@@ -236,6 +237,8 @@ function AppLayoutInner({ children }: Props) {
       <CommandPalette />
       <MeetingQuickFab />
       <HelpBubble />
+      {/* Robin Copilot — always-on AI assistant. Internal roles only. */}
+      {user && ['admin', 'sales', 'employee'].includes(role) && <AiCopilotPanel />}
       <GlobalShortcuts />
     </SlimSidebar>
     </AppLayoutNestedCtx.Provider>

@@ -66,6 +66,11 @@ import briefRoutes            from './routes/brief';
 import { startMeetingScheduler } from './jobs/meetingScheduler';
 import { startDailyBriefCron }   from './jobs/dailyBriefCron';
 import { startMeetingReminderCron, setReminderIo } from './jobs/meetingReminderCron';
+// Mission Control build (June 2026).
+import commandCenterRoutes      from './routes/commandCenter';
+import copilotRoutes            from './routes/copilot';
+import { startClientHealthScoreCron } from './jobs/clientHealthScoreCron';
+import { startTaskEscalationCron, setEscalationIo } from './jobs/taskEscalationCron';
 
 const app = express();
 const httpServer = createServer(app);
@@ -631,6 +636,9 @@ app.use('/api/client-meetings', clientMeetingsRoutes);  // host endpoints
 app.use('/api/targets',         targetsRoutes);
 app.use('/api/risks',           risksRoutes);
 app.use('/api/brief',           briefRoutes);
+// June 2026 Mission Control — snapshot + AI copilot.
+app.use('/api/command-center',  commandCenterRoutes);
+app.use('/api/copilot',         copilotRoutes);
 app.use('/api/seed',            seedRoutes);
 app.use('/api/logs',            errorLogRoutes);
 app.use('/api/integrations',    integrationsRoutes);
@@ -690,6 +698,12 @@ connectDB().then(() => {
     startDailyBriefCron();
     setReminderIo(io);
     startMeetingReminderCron();
+
+    // Mission Control — recompute brand health every 15 min, walk
+    // task escalation chain every 30 min.
+    startClientHealthScoreCron();
+    setEscalationIo(io);
+    startTaskEscalationCron();
 
     // Stale-socket sweep — runs every 10 minutes.
     //

@@ -64,6 +64,50 @@ const ProjectTaskSchema = new Schema({
   estimatedCompletionAt: { type: Date, default: null },
   estimatedBy:           { type: String, default: '' },
   estimatedAt:           { type: Date, default: null },
+
+  // ── Responsibility matrix (June 2026 — Mission Control build) ───
+  // Every task answers "Who is responsible?" in one click.
+  // Roles are independent; one person can occupy multiple roles.
+  //
+  //   assignedTo    — Owner (doer)                          [existing]
+  //   reviewerId    — checks the work before approval
+  //   approverId    — signs off (often an admin / lead)
+  //   requesterId   — the person who asked for this
+  //   supportingIds — extra team members helping out
+  //
+  // The Command Center reads these to render the "Who is responsible"
+  // mini-panel: { Owner, Reviewer, Approver, Requester, Supporting }.
+  reviewerId:    { type: String, default: '', index: true },
+  approverId:    { type: String, default: '', index: true },
+  requesterId:   { type: String, default: '', index: true },
+  supportingIds: { type: [String], default: [] },
+
+  // ── Dependency engine ────────────────────────────────────────────
+  // dependsOn[]   = tasks that must finish before THIS can start
+  // dependencyOf[] = tasks that are blocked until THIS finishes
+  // Both maintained server-side to enable bi-directional traversal:
+  // "If I delay this, what slips downstream?"
+  dependsOn:    { type: [{ type: Schema.Types.ObjectId, ref: 'ProjectTask' }], default: [] },
+  dependencyOf: { type: [{ type: Schema.Types.ObjectId, ref: 'ProjectTask' }], default: [] },
+
+  // ── Lifecycle timestamps ─────────────────────────────────────────
+  // startDate          — when work is allowed to start
+  // actualCompletionAt — when status flipped to 'done' (mirror of
+  //                      completedAt; kept for naming-consistency with
+  //                      `estimatedCompletionAt` so admin can compare
+  //                      "estimated vs actual" at a glance)
+  startDate:          { type: Date, default: null },
+  actualCompletionAt: { type: Date, default: null },
+
+  // ── Escalation bookkeeping ───────────────────────────────────────
+  // escalationLevel rises as the task sits idle:
+  //   0 = quiet
+  //   1 = pinged owner (3 days pending / 1 day overdue)
+  //   2 = pinged reviewer + lead
+  //   3 = pinged admin
+  // Cron stamps these so we never re-fire the same wave.
+  escalationLevel:   { type: Number, default: 0, min: 0, max: 3 },
+  lastEscalatedAt:   { type: Date, default: null },
 }, { timestamps: true });
 
 // Hot path: "tasks assigned to me, not done, sorted by due date" — the

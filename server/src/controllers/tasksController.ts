@@ -50,7 +50,10 @@ export async function createTask(req: AuthRequest, res: Response): Promise<void>
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     // Only allow whitelisted fields. Never spread req.body — would let a
     // malicious client set organizationId, _id, etc.
-    const { title, description, priority, status, dueDate, taskType, projectId, clientWorkflowId, assignedTo } = req.body || {};
+    const {
+      title, description, priority, status, dueDate, taskType, projectId, clientWorkflowId, assignedTo,
+      reviewerId, approverId, requesterId, supportingIds, startDate, dependsOn,
+    } = req.body || {};
     if (!title) { res.status(400).json({ error: 'title required' }); return; }
     // Default assignedTo to the creator. listTasks filters non-admins to
     // `assignedTo: userId` only — without this default, a task someone
@@ -65,6 +68,12 @@ export async function createTask(req: AuthRequest, res: Response): Promise<void>
       assignedTo: finalAssignedTo,
       organizationId: orgId,
       assignedBy: req.user!.id,
+      // Responsibility matrix — defaults to empty; UI prompts for the
+      // reviewer/approver/requester when creating a high-stakes task.
+      reviewerId, approverId, requesterId, supportingIds, startDate, dependsOn,
+      // Requester defaults to the creator when not specified — keeps
+      // the "every task has a requester" invariant true.
+      ...(requesterId ? {} : { requesterId: req.user!.id }),
     });
     // Notify the assignee if it's someone OTHER than the creator.
     if (finalAssignedTo && finalAssignedTo !== req.user!.id) {
@@ -108,15 +117,23 @@ export async function updateTask(req: AuthRequest, res: Response): Promise<void>
     const allowed = [
       'title', 'description', 'priority', 'status', 'dueDate', 'taskType',
       'projectId', 'clientWorkflowId', 'assignedTo', 'completedAt',
-      // Employee-set ETA (May 2026). Anyone with write access on the
-      // task can set these; in practice the UI gates them to the
-      // assignee. estimatedBy + estimatedAt are stamped server-side
-      // here so the client can't spoof "who set this".
+      // Employee-set ETA (May 2026).
       'estimatedHours', 'estimatedCompletionAt',
+      // Responsibility matrix (June 2026 — Mission Control build).
+      'reviewerId', 'approverId', 'requesterId', 'supportingIds',
+      'startDate', 'actualCompletionAt',
+      // Dependencies — accepted as arrays of ObjectId strings.
+      'dependsOn',
     ];
     const patch: Record<string, any> = {};
     for (const k of allowed) if (req.body[k] !== undefined) patch[k] = req.body[k];
-    if (patch.status === 'done' && !patch.completedAt) patch.completedAt = new Date();
+    // Mirror status='done' to BOTH completedAt (legacy) and
+    // actualCompletionAt (new) so consumers reading either field see
+    // the same truth.
+    if (patch.status === 'done') {
+      if (!patch.completedAt)         patch.completedAt = new Date();
+      if (!patch.actualCompletionAt)  patch.actualCompletionAt = patch.completedAt;
+    }
     // Stamp the estimate-setter so the UI can show "Sakshi estimated
     // Thursday" rather than just an anonymous date.
     if (patch.estimatedHours !== undefined || patch.estimatedCompletionAt !== undefined) {

@@ -610,3 +610,12 @@ export const setBrandRecurring    = (workflowId: string, body: { dayOfWeek: numb
 // Daily brief — live-computed for the caller.
 export const getMyBrief           = (kind?: 'morning' | 'evening') =>
   api.get('/brief/me', { params: kind ? { kind } : undefined }).then(r => r.data);
+
+// ── Mission Control (June 2026) ───────────────────────────────────────────────
+// Single endpoint returning KPIs + critical alerts + team accountability +
+// client cards + upcoming meetings in one shot.
+export const getCommandSnapshot   = () =>
+  api.get('/command-center/snapshot').then(r => r.data);
+// AI Copilot — natural-language Q&A.
+export const copilotAsk           = (question: string) =>
+  api.post('/copilot/ask', { question }).then(r => r.data);

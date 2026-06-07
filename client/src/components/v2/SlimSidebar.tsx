@@ -5,7 +5,7 @@ import {
   Building2, BarChart2, CalendarOff, Clock, BarChart3, Calendar,
   Bug, CalendarDays, Workflow, UserPlus, AlertTriangle, KeyRound,
   Sparkles, LogOut, Bird, ChevronsLeft, ChevronsRight, Bell, Settings,
-  TrendingUp,
+  TrendingUp, Compass,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnreadCounts } from '@/contexts/UnreadCountsContext';
@@ -54,11 +54,15 @@ const NAV: NavItem[] = [
   // Dashboard — one entry per role, routed via dashboardForRole. The
   // sidebar dedupes by URL so a user with multiple roles never sees
   // "Dashboard" twice.
-  { to: '/dashboard',         label: 'Dashboard',     icon: LayoutDashboard, section: 'home',      roles: ['employee'] },
-  { to: '/admin',             label: 'Dashboard',     icon: LayoutDashboard, section: 'home',      roles: ['admin'] },
+  // June 2026 Mission Control — first entry for admin + sales, the
+  // agency-wide overview. Admin's actual landing (see ProtectedRoute
+  // .dashboardForRole) is this page.
+  { to: '/command-center',    label: 'Command Center', icon: Compass,         section: 'home',      roles: ['admin', 'sales'] },
+  { to: '/workroom-home',     label: 'Workroom',      icon: LayoutDashboard, section: 'home',      roles: ['admin', 'sales', 'employee', 'workroom'] },
+  { to: '/dashboard',         label: 'Old dashboard', icon: LayoutDashboard, section: 'home',      roles: ['employee'] },
+  { to: '/admin',             label: 'Old admin',     icon: LayoutDashboard, section: 'home',      roles: ['admin'] },
   { to: '/client',            label: 'Dashboard',     icon: LayoutDashboard, section: 'home',      roles: ['client'] },
-  { to: '/sales',             label: 'Dashboard',     icon: LayoutDashboard, section: 'home',      roles: ['sales'] },
-  { to: '/workroom-home',     label: 'Dashboard',     icon: LayoutDashboard, section: 'home',      roles: ['workroom'] },
+  { to: '/sales',             label: 'Old sales',     icon: LayoutDashboard, section: 'home',      roles: ['sales'] },
   { to: '/notifications',     label: 'Notifications', icon: Bell,            section: 'home' },
 
   // ── WORK ────────────────────────────────────────────────────────

@@ -15,12 +15,12 @@ interface Props { children: ReactNode; requiredRole?: string | string[]; }
 export function dashboardForRole(role: string): string {
   switch (role) {
     case 'client':   return '/client';
-    // Owner ask (May 2026): Workroom is now the canonical landing for
-    // ALL internal staff — it's the single page that shows the work
-    // clock, important-items checklist, and the priority Client CRM
-    // shortlist. Admin / sales / employee can still navigate to their
-    // legacy dashboards from the sidebar; they just don't land there.
-    case 'admin':    return '/workroom-home';
+    // June 2026 Mission Control: admin lands on /command-center (the
+    // new agency-wide overview). Sales / employee / workroom keep the
+    // Workroom landing (tuned for IC work, with brief, tasks,
+    // targets). Admin can still reach /workroom-home from the sidebar
+    // to see their personal clock + tasks.
+    case 'admin':    return '/command-center';
     case 'sales':    return '/workroom-home';
     case 'employee': return '/workroom-home';
     case 'workroom': return '/workroom-home';
