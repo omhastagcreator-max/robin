@@ -173,6 +173,26 @@ const ClientWorkflowSchema = new Schema({
   priority: { type: String, enum: ['low', 'medium', 'high', 'urgent'], default: 'medium' },
   tags:     { type: [String], default: [] },
 
+  // Recurring meeting cadence imported from the CRM sheets (May 2026).
+  // The CRM import stores e.g. "Wednesday 11:00 IST" because that's how
+  // the agency owner wrote it in Excel. The meeting-auto-scheduler cron
+  // reads this field, computes the next occurrence, and (a) returns it
+  // from /api/meetings/upcoming so the WorkroomHome can show "Next
+  // brand meeting in 2h", and (b) creates a one-off Meeting row 24h
+  // before each occurrence so it lands on calendars.
+  recurringMeeting: {
+    // 0 = Sunday, 1 = Monday, ... 6 = Saturday. Null if no cadence set.
+    dayOfWeek: { type: Number, min: 0, max: 6, default: null },
+    // HH:MM in IST 24h ("14:30"). Empty = "no specific time".
+    timeIST:   { type: String, default: '' },
+    // Free-text label from the import ("Wednesday call" etc.) — preserved
+    // so we can show the exact phrase the owner originally wrote.
+    label:     { type: String, default: '' },
+    // Whether the cron has materialised the next occurrence yet — guards
+    // against duplicate Meeting docs on every tick.
+    lastMaterialisedFor: { type: Date, default: null },
+  },
+
   createdBy:      { type: String, required: true },
 }, { timestamps: true });
 

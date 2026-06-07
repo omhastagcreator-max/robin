@@ -572,3 +572,36 @@ export const updateReminder    = (id: string, d: Partial<{ title: string; schedu
   api.put(`/reminders/${id}`, d).then(r => r.data);
 export const deleteReminder    = (id: string) =>
   api.delete(`/reminders/${id}`).then(r => r.data);
+
+// ── Agency-OS rebuild (May 2026) ──────────────────────────────────────────────
+// Cross-team task inbox, monthly targets, risk feed, recurring meetings,
+// daily brief. Compact helpers — every endpoint returns plain JSON; the
+// UI does any reshaping it needs locally.
+
+// Task inbox: groups my-assigned + delegated + brand-watch tasks.
+export const taskInbox            = (showDone = false) =>
+  api.get('/tasks/inbox', { params: showDone ? { done: 1 } : undefined }).then(r => r.data);
+export const tasksForWorkflow     = (workflowId: string) =>
+  api.get(`/tasks/workflow/${workflowId}`).then(r => r.data);
+
+// Targets — self read, admin team read, admin upsert.
+export const getMyTargets         = (month?: string) =>
+  api.get('/targets/me', { params: month ? { month } : undefined }).then(r => r.data);
+export const getTeamTargets       = (month?: string) =>
+  api.get('/targets/team', { params: month ? { month } : undefined }).then(r => r.data);
+export const setUserTargets       = (userId: string, body: { targets: any[]; notes?: string }, month?: string) =>
+  api.put(`/targets/user/${userId}`, body, { params: month ? { month } : undefined }).then(r => r.data);
+
+// Risks — top "needs attention" feed for admin/sales.
+export const listRisks            = (limit = 15) =>
+  api.get('/risks', { params: { limit } }).then(r => r.data);
+
+// Recurring meetings + upcoming meetings.
+export const upcomingMeetings     = () =>
+  api.get('/meetings/upcoming').then(r => r.data);
+export const setBrandRecurring    = (workflowId: string, body: { dayOfWeek: number | null; timeIST?: string; label?: string }) =>
+  api.put(`/meetings/recurring/${workflowId}`, body).then(r => r.data);
+
+// Daily brief — live-computed for the caller.
+export const getMyBrief           = (kind?: 'morning' | 'evening') =>
+  api.get('/brief/me', { params: kind ? { kind } : undefined }).then(r => r.data);

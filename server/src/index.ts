@@ -58,6 +58,13 @@ import { grantWorkroomManagerPermissions } from './jobs/grantWorkroomManagerPerm
 import { startMorningBriefCron } from './jobs/morningBriefCron';
 import { startHealthInferenceCron } from './jobs/healthInference';
 import { startIdleAutoCloseJob } from './jobs/idleAutoClose';
+// May 2026 — agency-OS rebuild: targets, risks, recurring meetings, daily brief.
+import targetsRoutes          from './routes/targets';
+import risksRoutes            from './routes/risks';
+import meetingsScheduleRoutes from './routes/meetingsSchedule';
+import briefRoutes            from './routes/brief';
+import { startMeetingScheduler } from './jobs/meetingScheduler';
+import { startDailyBriefCron }   from './jobs/dailyBriefCron';
 
 const app = express();
 const httpServer = createServer(app);
@@ -613,7 +620,16 @@ app.use('/api/ai',              aiRoutes);
 app.use('/api/transcripts',     transcriptsRoutes);
 app.use('/api/ads/meta',        metaAdsRoutes);    // includes /share, /shares (authed)
 app.use('/api/meetings',        meetingsRoutes);
+// Recurring-meeting + upcoming endpoints live under the same /api/meetings
+// prefix. Express resolves more-specific paths first because they're
+// declared before the generic meetingsRoutes router's catch-all. (Both
+// routers mount only specific paths — no overlap.)
+app.use('/api/meetings',        meetingsScheduleRoutes);
 app.use('/api/client-meetings', clientMeetingsRoutes);  // host endpoints
+// May 2026 agency-OS rebuild — targets, risks, daily brief.
+app.use('/api/targets',         targetsRoutes);
+app.use('/api/risks',           risksRoutes);
+app.use('/api/brief',           briefRoutes);
 app.use('/api/seed',            seedRoutes);
 app.use('/api/logs',            errorLogRoutes);
 app.use('/api/integrations',    integrationsRoutes);
@@ -663,6 +679,12 @@ connectDB().then(() => {
     // health enum (healthy / at_risk / delayed / blocked / waiting_client
     // / etc.) every 15 minutes. Drives the StatusPill on every card.
     startHealthInferenceCron();
+
+    // May 2026 agency-OS rebuild — auto-materialise weekly brand meetings
+    // 24h ahead so they show up on every attendee's calendar, AND fire
+    // per-employee morning + evening briefs at 9am / 7pm IST.
+    startMeetingScheduler();
+    startDailyBriefCron();
 
     // Stale-socket sweep — runs every 10 minutes.
     //

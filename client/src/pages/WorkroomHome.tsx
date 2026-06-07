@@ -9,6 +9,10 @@ import { AppLayout }  from '@/components/AppLayout';
 import { useAuth }    from '@/contexts/AuthContext';
 import { useHuddle }  from '@/contexts/HuddleContext';
 import { SessionClockCard } from '@/components/shared/SessionClockCard';
+import { BriefStrip }      from '@/components/workroom/BriefStrip';
+import { UpcomingStrip }   from '@/components/workroom/UpcomingStrip';
+import { MyTasksCard }     from '@/components/workroom/MyTasksCard';
+import { MyTargetsCard }   from '@/components/workroom/MyTargetsCard';
 import * as api from '@/api';
 
 /**
@@ -62,52 +66,63 @@ export default function WorkroomHome() {
 
         <SessionClockCard />
 
-        {/* Action tiles */}
+        {/* Daily brief — single row collapsed; expands into a 4-tile
+            grid on click. Hides itself when empty so quiet days don't
+            see a clutter banner. Internal roles only. */}
+        {role !== 'workroom' && <BriefStrip />}
+
+        {/* Next-up meetings — auto-hides when calendar is clear. */}
+        {role !== 'workroom' && <UpcomingStrip />}
+
+        {/* Action tiles — Workroom + huddle, same as before but tighter. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Link
             to="/workroom"
-            className="group rounded-xl border border-border bg-card p-5 flex flex-col gap-3 hover:border-primary/40 transition-all"
+            className="group rounded-xl border border-border bg-card p-4 flex items-center gap-3 hover:border-primary/40 transition-all"
           >
-            <div className="h-11 w-11 rounded-lg bg-primary/12 text-primary flex items-center justify-center">
-              <Video className="h-5 w-5" />
+            <div className="h-10 w-10 rounded-lg bg-primary/12 text-primary flex items-center justify-center shrink-0">
+              <Video className="h-4.5 w-4.5" />
             </div>
-            <div className="flex-1">
-              <p className="text-[14px] font-bold">Open Workroom</p>
-              <p className="text-[12px] text-muted-foreground mt-1 leading-relaxed">
-                See who's around, share your screen, and join group calls.
-              </p>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13.5px] font-bold">Open Workroom</p>
+              <p className="text-[11.5px] text-muted-foreground leading-snug">See who's around, share screen, join calls.</p>
             </div>
-            <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-primary group-hover:gap-2 transition-all">
-              Enter the room <ArrowRight className="h-3.5 w-3.5" />
-            </span>
+            <ArrowRight className="h-3.5 w-3.5 text-primary group-hover:translate-x-0.5 transition-transform" />
           </Link>
 
           <button
             onClick={joinHuddle}
-            className="group rounded-xl border border-border bg-card p-5 flex flex-col gap-3 text-left hover:border-emerald-500/40 transition-all"
+            className="group rounded-xl border border-border bg-card p-4 flex items-center gap-3 text-left hover:border-emerald-500/40 transition-all"
           >
-            <div className="h-11 w-11 rounded-lg bg-emerald-500/15 text-emerald-700 flex items-center justify-center">
-              <Headphones className="h-5 w-5" />
+            <div className="h-10 w-10 rounded-lg bg-emerald-500/15 text-emerald-700 flex items-center justify-center shrink-0">
+              <Headphones className="h-4.5 w-4.5" />
             </div>
-            <div className="flex-1">
-              <p className="text-[14px] font-bold">Join the huddle</p>
-              <p className="text-[12px] text-muted-foreground mt-1 leading-relaxed">
-                Drop into the agency-wide voice channel — mic-only, no camera.
-              </p>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13.5px] font-bold">Join the huddle</p>
+              <p className="text-[11.5px] text-muted-foreground leading-snug">Drop into the agency-wide voice channel.</p>
             </div>
-            <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-emerald-700 group-hover:gap-2 transition-all">
-              Join now <ArrowRight className="h-3.5 w-3.5" />
-            </span>
+            <ArrowRight className="h-3.5 w-3.5 text-emerald-700 group-hover:translate-x-0.5 transition-transform" />
           </button>
         </div>
 
-        {/* Two-column row: checklist + priority CRM (only for non-
-            workroom roles — the bare 'workroom' role doesn't see the
-            CRM, per existing RBAC). */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Main content grid.
+            - workroom role: 1 col (personal items only)
+            - others: 3 cols on lg (items / tasks / priority brands),
+                      stacks gracefully to 2 then 1 below.
+            Targets live below the row at full width so the bar
+            visualisations have room to breathe. */}
+        {role === 'workroom' ? (
           <ImportantItemsCard userId={user?.id || ''} />
-          {role !== 'workroom' && <PriorityClientsCard onOpen={(id) => navigate(`/clients/pipeline/${id}`)} />}
-        </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <ImportantItemsCard userId={user?.id || ''} />
+              <MyTasksCard />
+              <PriorityClientsCard onOpen={(id) => navigate(`/clients/pipeline/${id}`)} />
+            </div>
+            <MyTargetsCard />
+          </>
+        )}
 
         {role === 'workroom' && (
           <p className="text-[11px] text-muted-foreground text-center">

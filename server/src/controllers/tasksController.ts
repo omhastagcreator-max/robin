@@ -50,7 +50,7 @@ export async function createTask(req: AuthRequest, res: Response): Promise<void>
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     // Only allow whitelisted fields. Never spread req.body — would let a
     // malicious client set organizationId, _id, etc.
-    const { title, description, priority, status, dueDate, taskType, projectId, assignedTo } = req.body || {};
+    const { title, description, priority, status, dueDate, taskType, projectId, clientWorkflowId, assignedTo } = req.body || {};
     if (!title) { res.status(400).json({ error: 'title required' }); return; }
     // Default assignedTo to the creator. listTasks filters non-admins to
     // `assignedTo: userId` only — without this default, a task someone
@@ -61,7 +61,7 @@ export async function createTask(req: AuthRequest, res: Response): Promise<void>
     // wins (e.g. admin/lead assigning to a teammate).
     const finalAssignedTo = assignedTo || req.user!.id;
     const task = await ProjectTask.create({
-      title, description, priority, status, dueDate, taskType, projectId,
+      title, description, priority, status, dueDate, taskType, projectId, clientWorkflowId,
       assignedTo: finalAssignedTo,
       organizationId: orgId,
       assignedBy: req.user!.id,
@@ -105,7 +105,7 @@ export async function updateTask(req: AuthRequest, res: Response): Promise<void>
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     // Whitelist updatable fields — same defense against mass assignment.
-    const allowed = ['title', 'description', 'priority', 'status', 'dueDate', 'taskType', 'projectId', 'assignedTo', 'completedAt'];
+    const allowed = ['title', 'description', 'priority', 'status', 'dueDate', 'taskType', 'projectId', 'clientWorkflowId', 'assignedTo', 'completedAt'];
     const patch: Record<string, any> = {};
     for (const k of allowed) if (req.body[k] !== undefined) patch[k] = req.body[k];
     if (patch.status === 'done' && !patch.completedAt) patch.completedAt = new Date();
@@ -153,6 +153,95 @@ export async function deleteTask(req: AuthRequest, res: Response): Promise<void>
     const result = await ProjectTask.findOneAndDelete({ _id: req.params.id, organizationId: orgId });
     if (!result) { res.status(404).json({ error: 'Task not found' }); return; }
     res.json({ message: 'Task deleted' });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * inbox — the WorkroomHome "My Tasks" feed.
+ *
+ * Returns tasks that touch this user in any of three ways:
+ *   - assignedTo === me   ("things I owe")
+ *   - assignedBy === me   ("things I'm waiting on")
+ *   - clientWorkflowId in {brands where I'm an owner of any service}
+ *     ("things on my brands, even if assigned to someone else")
+ *
+ * Tasks are bucketed in the response so the UI can render them as
+ * grouped lists without a second pass. Done tasks are excluded by
+ * default (the UI has a Show-completed toggle that hits ?done=1).
+ */
+export async function inbox(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const me   = req.user!.id;
+    const orgId = await getOrgId(me);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const showDone = String(req.query.done || '') === '1';
+
+    // Brands I own (so brand-tasks-for-me-by-someone-else still show up).
+    const ClientWorkflow = (await import('../models/ClientWorkflow')).default;
+    const myBrands = await ClientWorkflow.find({
+      organizationId: orgId,
+      $or: [
+        { 'services.assignedTo': me },
+        { currentOwnerId: me },
+        { nextActionOwnerId: me },
+      ],
+    }).select('_id clientName').lean();
+    const brandIds = myBrands.map(b => b._id);
+
+    const baseQ: any = { organizationId: orgId };
+    if (!showDone) baseQ.status = { $ne: 'done' };
+
+    const [mine, delegated, brandTasks] = await Promise.all([
+      // assigned to me
+      ProjectTask.find({ ...baseQ, assignedTo: me }).sort({ priority: -1, dueDate: 1 }).limit(50).lean(),
+      // I delegated to others (assignedBy me, assignedTo someone else)
+      ProjectTask.find({ ...baseQ, assignedBy: me, assignedTo: { $ne: me } }).sort({ priority: -1, dueDate: 1 }).limit(30).lean(),
+      // for brands I touch, but not directly assigned to me (cross-team visibility)
+      brandIds.length
+        ? ProjectTask.find({
+            ...baseQ,
+            clientWorkflowId: { $in: brandIds },
+            assignedTo: { $ne: me },
+            assignedBy: { $ne: me },
+          }).sort({ priority: -1, dueDate: 1 }).limit(30).lean()
+        : Promise.resolve([]),
+    ]);
+
+    // Tiny brand-name map so the UI doesn't have to fan out a second
+    // request per task. Server-side enrichment keeps the inbox response
+    // a single document.
+    const brandIdToName = new Map(myBrands.map(b => [String(b._id), b.clientName || '']));
+    const enrich = (t: any) => ({
+      ...t,
+      clientName: t.clientWorkflowId ? brandIdToName.get(String(t.clientWorkflowId)) || '' : '',
+    });
+
+    res.json({
+      mine:       mine.map(enrich),
+      delegated:  delegated.map(enrich),
+      brandTasks: (brandTasks as any[]).map(enrich),
+      counts: {
+        mine:      mine.length,
+        delegated: delegated.length,
+        brand:     brandTasks.length,
+      },
+    });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * Tasks scoped to one brand workflow — used on ClientWorkspacePage's
+ * tasks row. Org-isolated like everything else.
+ */
+export async function listForWorkflow(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const tasks = await ProjectTask.find({
+      organizationId: orgId,
+      clientWorkflowId: req.params.workflowId,
+    }).sort({ status: 1, priority: -1, dueDate: 1 });
+    res.json(tasks);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 

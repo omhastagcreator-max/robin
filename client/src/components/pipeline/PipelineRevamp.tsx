@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Filter, Flame, AlertTriangle, CheckCircle2, Sparkles, X,
   ChevronDown, ChevronUp, Save, Trash2, Bookmark, Layers, ListChecks,
-  LayoutGrid, Rows3, Loader2, Send, ShieldCheck, MessagesSquare,
-  Workflow, ArrowRight, LayoutDashboard, Search,
+  Loader2, Send, ShieldCheck, MessagesSquare,
+  ArrowRight, LayoutDashboard, Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/api';
@@ -228,24 +228,28 @@ export function PipelineToolbar({
     onSavedViews(savedViews.filter(s => s.id !== id));
   };
 
-  // Owner ask (May 2026, v2): "Multiple options = multiple confusion."
-  // 'focused' is the default search-first view; the multi-brand views
-  // (Dashboard / Board / Flow / Needs attention / List) live behind a
-  // small "Advanced views" disclosure so the default screen is calm.
-  // When the user picks one of the advanced views, the toggle stays
-  // open — flipping back to 'focused' re-collapses it.
-  const [advancedOpen, setAdvancedOpen] = useState(view !== 'focused');
-  useEffect(() => {
-    if (view !== 'focused') setAdvancedOpen(true);
-  }, [view]);
+  // Owner ask (May 2026, v3): the toolbar now only exposes Focused +
+  // Dashboard. Board / Flow / Needs attention / List were removed
+  // outright — they implementations stay in the codebase so we can
+  // bring any back without rewriting, but they aren't reachable from
+  // the toolbar. If a user has a legacy 'kanban' / 'flow' / 'focus' /
+  // 'table' saved in localStorage, the page will still render that
+  // view; the two visible buttons let them switch to either canonical
+  // view in one click. We could migrate the LS key forward — kept it
+  // backward-compatible instead so a future reintroduction is clean.
 
   return (
     <div className="space-y-2">
-      {/* Row 1 — view toggle + saved views + filter button + mine */}
+      {/* Row 1 — view toggle (Focused + Dashboard only) + sort + filter */}
       <div className="flex items-center gap-2 flex-wrap">
-        {/* Focused view is always pinned — it's the canonical resting
-            state. Advanced views are revealed inline when the user
-            opens the disclosure or has previously picked one. */}
+        {/* Owner ask (May 2026, v3): Board / Flow / Needs attention /
+            List were removed from the toolbar — too many ways to do
+            the same thing was creating "multiple options = multiple
+            confusion" again. Only Focused (search-first) and
+            Dashboard (executive overview) remain. The other view
+            implementations still exist in the codebase for now in
+            case we bring any back; they just aren't reachable from
+            the UI. */}
         <div className="inline-flex items-center rounded-lg border border-border bg-card overflow-hidden">
           <button
             onClick={() => onView('focused')}
@@ -255,36 +259,14 @@ export function PipelineToolbar({
           >
             <Search className="h-3 w-3" /> Focused
           </button>
-          {advancedOpen && [
-            { key: 'executive' as const, label: 'Dashboard',        icon: LayoutDashboard },
-            { key: 'kanban'    as const, label: 'Board',            icon: LayoutGrid },
-            { key: 'flow'      as const, label: 'Flow',             icon: Workflow },
-            { key: 'focus'     as const, label: 'Needs attention',  icon: Flame },
-            { key: 'table'     as const, label: 'List',             icon: Rows3 },
-          ].map(o => {
-            const Icon = o.icon;
-            const active = view === o.key;
-            return (
-              <button
-                key={o.key}
-                onClick={() => onView(o.key)}
-                className={`flex items-center gap-1 px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors border-l border-border ${
-                  active ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <Icon className="h-3 w-3" /> {o.label}
-              </button>
-            );
-          })}
-          {!advancedOpen && (
-            <button
-              onClick={() => setAdvancedOpen(true)}
-              className="flex items-center gap-1 px-2.5 py-1.5 text-[11.5px] text-muted-foreground hover:text-foreground border-l border-border"
-              title="Show Dashboard / Board / Flow / List views"
-            >
-              <ChevronDown className="h-3 w-3" /> Advanced
-            </button>
-          )}
+          <button
+            onClick={() => onView('executive')}
+            className={`flex items-center gap-1 px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors border-l border-border ${
+              view === 'executive' ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <LayoutDashboard className="h-3 w-3" /> Dashboard
+          </button>
         </div>
 
         {/* Sort dropdown — only if the caller wired sort + onSort. */}

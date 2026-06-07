@@ -98,6 +98,44 @@ function priorityFromEta(eta: string | null | undefined): 'urgent' | 'high' | 'm
   return 'low';
 }
 
+// ── Heuristic: free-text meeting-day string → recurringMeeting ───────
+// CRM cells say things like "Wednesday", "Thrus", "Tuesday 11am" or
+// "NA". We map to {dayOfWeek 0-6, timeIST "HH:MM"}. Anything we don't
+// recognise returns null (no cadence — cron leaves brand alone).
+function parseMeetingDay(raw: string | undefined | null): { dayOfWeek: number; timeIST: string; label: string } | null {
+  if (!raw) return null;
+  const s = String(raw).trim().toLowerCase();
+  if (!s || s === 'na' || s === 'n/a' || s === '-') return null;
+  const dayMap: Record<string, number> = {
+    sun: 0, sunday: 0,
+    mon: 1, monday: 1,
+    tue: 2, tues: 2, tuesday: 2,
+    wed: 3, wednesday: 3,
+    thu: 4, thur: 4, thurs: 4, thrus: 4, thursday: 4,
+    fri: 5, friday: 5,
+    sat: 6, saturday: 6,
+  };
+  let dow = -1;
+  for (const k of Object.keys(dayMap)) {
+    if (s.includes(k)) { dow = dayMap[k]; break; }
+  }
+  if (dow < 0) return null;
+  // Try to extract a time like "11am" / "11:30" / "2pm".
+  let timeIST = '11:00';
+  const tm = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+  if (tm) {
+    let hh = parseInt(tm[1], 10);
+    const mm = parseInt(tm[2] || '0', 10);
+    const ap = (tm[3] || '').toLowerCase();
+    if (ap === 'pm' && hh < 12) hh += 12;
+    if (ap === 'am' && hh === 12) hh = 0;
+    if (hh >= 0 && hh < 24) {
+      timeIST = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    }
+  }
+  return { dayOfWeek: dow, timeIST, label: raw.trim() };
+}
+
 // ── User lookup with fuzzy name matching ────────────────────────────
 // Owners in the JSON are first-names or "First Last". We try exact
 // case-insensitive match first, then prefix match on the first name.
@@ -204,11 +242,23 @@ async function findUserByName(orgId: any, name: string): Promise<any | null> {
       row.meeting_day && `Meeting: ${row.meeting_day}`,
     ].filter(Boolean).join(' · ');
 
+    // Parse recurring-meeting cadence once — shared by create & update paths.
+    const rm = parseMeetingDay(row.meeting_day);
+
     if (wf) {
       // Refresh fields without wiping existing checklist progress.
       wf.priority    = priority as any;
       wf.eta         = row.eta ? new Date(row.eta) : (wf.eta || null);
       (wf as any).nextAction = row.next_target || row.task || (wf as any).nextAction;
+      if (rm) {
+        (wf as any).recurringMeeting = {
+          dayOfWeek: rm.dayOfWeek,
+          timeIST:   rm.timeIST,
+          label:     rm.label,
+          // Reset materialisation so the cron picks it up on next tick.
+          lastMaterialisedFor: null,
+        };
+      }
       (wf as any).lastUpdate = {
         at: new Date(), detail: lastDetail || (wf as any).lastUpdate?.detail || '',
         actorId: String(sales._id),
@@ -240,6 +290,9 @@ async function findUserByName(orgId: any, name: string): Promise<any | null> {
           action:  'created',
           detail:  `Imported from CRM sheets · priority ${priority}${lastDetail ? ' · ' + lastDetail : ''}`,
         }],
+        ...(rm ? { recurringMeeting: {
+          dayOfWeek: rm.dayOfWeek, timeIST: rm.timeIST, label: rm.label, lastMaterialisedFor: null,
+        } } : {}),
       } as any);
       created++;
       console.log(`  + ${brand}  priority=${priority}  owners=${ownerUsers.map(u=>u.name).join(',') || '(none)'}`);

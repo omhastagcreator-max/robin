@@ -4,6 +4,8 @@ import {
   AlertTriangle, Clock, Inbox, UserCheck, Rocket, CheckCircle2,
   Activity, ArrowUpRight,
 } from 'lucide-react';
+import { ExecutiveRisksStrip }     from './ExecutiveRisksStrip';
+import { ExecutiveTargetsSection } from './ExecutiveTargetsSection';
 
 /**
  * PipelineExecutiveView — agency owner's command-center view.
@@ -274,6 +276,9 @@ export function PipelineExecutiveView({
 
   return (
     <div className="space-y-4">
+      {/* ── Risks strip (auto-hides when no risks) ────────────────── */}
+      <ExecutiveRisksStrip />
+
       {/* ── KPI strip ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         <KpiCard icon={Inbox}          label="Active projects"     value={kpis.total}          hint="all open work" />
@@ -471,6 +476,9 @@ export function PipelineExecutiveView({
           </SidebarCard>
         </aside>
       </div>
+
+      {/* ── Team targets — current-month performance per employee ──── */}
+      <ExecutiveTargetsSection />
     </div>
   );
 }

@@ -410,6 +410,7 @@ export default function ClientWorkspacePage() {
 
           {/* ── 7. TASKS — collapsed counter ────────────────────── */}
           <TasksRow
+            workflowId={wf._id}
             open={tasksOpen}
             onToggle={() => setTasksOpen(o => !o)}
             openCount={openCount}
@@ -900,8 +901,9 @@ function AILines({
 // 7. Tasks counter row + expand
 // ─────────────────────────────────────────────────────────────────────
 function TasksRow({
-  open, onToggle, openCount, doneCount, services,
+  workflowId, open, onToggle, openCount, doneCount, services,
 }: {
+  workflowId: string;
   open: boolean;
   onToggle: () => void;
   openCount: number;
@@ -947,11 +949,124 @@ function TasksRow({
                   )}
                 </div>
               ))}
+
+              {/* Cross-team tasks scoped to THIS brand. Anything created
+                  here also lands on the assignee's WorkroomHome inbox
+                  under the 'Mine' tab — single source of truth. */}
+              <BrandTasksSection workflowId={workflowId} />
             </div>
           </motion.div>
         )}
       </AnimatePresence>
     </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 7b. Brand-scoped task list (cross-team)
+// ─────────────────────────────────────────────────────────────────────
+// Lists ProjectTask docs linked to this clientWorkflowId. Lets anyone
+// on the brand quick-add a task; the assignee defaults to the current
+// user (use the picker to delegate). When marked done the assignee's
+// monthly target progress refreshes on next read.
+function BrandTasksSection({ workflowId }: { workflowId: string }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [draft, setDraft] = useState('');
+  const [team, setTeam] = useState<Array<{ id: string; name: string }>>([]);
+  const [assignee, setAssignee] = useState<string>('');
+
+  const refresh = () => {
+    setLoading(true);
+    api.tasksForWorkflow(workflowId)
+      .then((d: any[]) => setRows(Array.isArray(d) ? d : []))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  };
+  useEffect(refresh, [workflowId]);
+
+  // Lightweight team picker — pull names from /users once. Best-effort.
+  useEffect(() => {
+    api.listUsers()
+      .then((d: any[]) => setTeam((d || []).filter(u => u.role !== 'client').map((u: any) => ({ id: u._id || u.id, name: u.name }))))
+      .catch(() => setTeam([]));
+  }, []);
+
+  const add = async () => {
+    const title = draft.trim();
+    if (!title) return;
+    try {
+      await api.createTask({ title, clientWorkflowId: workflowId, assignedTo: assignee || undefined });
+      setDraft('');
+      refresh();
+    } catch { /* swallow — UI re-tries on next add */ }
+  };
+
+  const toggleDone = async (t: any) => {
+    try {
+      await api.updateTask(t._id, { status: t.status === 'done' ? 'pending' : 'done' });
+      refresh();
+    } catch { /* swallow */ }
+  };
+
+  const visible = rows.slice(0, 8);
+  return (
+    <div className="border-t border-border/60 pt-3 mt-2">
+      <div className="flex items-center justify-between mb-1.5">
+        <p className="text-[11px] font-semibold">Brand tasks <span className="text-muted-foreground/70 font-normal">({rows.length})</span></p>
+        <p className="text-[10px] text-muted-foreground">Shows up on the assignee's Workroom too.</p>
+      </div>
+      <div className="flex items-center gap-1.5 mb-2">
+        <input
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder="Quick task — e.g. send launch deck to client"
+          className="flex-1 px-2 h-7 text-[11.5px] rounded-md border border-input bg-background focus:ring-1 focus:ring-primary"
+        />
+        <select
+          value={assignee}
+          onChange={e => setAssignee(e.target.value)}
+          className="h-7 text-[11px] rounded-md border border-input bg-background max-w-[140px]"
+        >
+          <option value="">Assign to me</option>
+          {team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        <button
+          type="button"
+          onClick={add}
+          disabled={!draft.trim()}
+          className="h-7 px-2.5 rounded-md bg-primary text-primary-foreground text-[11px] font-semibold disabled:opacity-50 hover:bg-primary/90"
+        >Add</button>
+      </div>
+      {loading ? (
+        <p className="text-[11px] text-muted-foreground italic">Loading…</p>
+      ) : visible.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground italic">No brand tasks yet.</p>
+      ) : (
+        <ul className="space-y-1">
+          {visible.map(t => {
+            const isDone = t.status === 'done';
+            const due = t.dueDate ? new Date(t.dueDate).toLocaleDateString() : '';
+            return (
+              <li key={t._id} className="flex items-center gap-2 text-[12px]">
+                <button
+                  type="button"
+                  onClick={() => toggleDone(t)}
+                  className={`h-3.5 w-3.5 rounded flex items-center justify-center shrink-0 ${
+                    isDone ? 'bg-emerald-500 text-white' : 'border border-border hover:border-primary'
+                  }`}
+                >
+                  {isDone && <CheckCircle2 className="h-2 w-2" />}
+                </button>
+                <span className={`flex-1 truncate ${isDone ? 'line-through text-muted-foreground' : ''}`}>{t.title}</span>
+                {due && <span className="text-[10px] text-muted-foreground">{due}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 
