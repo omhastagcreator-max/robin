@@ -14,6 +14,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { ActivityTimeline } from '@/components/panels/ProjectDetailPanel';
 import { CommentRequiredModal } from '@/components/shared/CommentRequiredModal';
 import { WarRoomBanner } from '@/components/workspace/WarRoomBanner';
+import { PipelineNavBar } from '@/components/pipeline/PipelineNavBar';
 import { useAuth } from '@/contexts/AuthContext';
 import * as api from '@/api';
 
@@ -334,6 +335,13 @@ export default function ClientWorkspacePage() {
     <AppLayout>
       <div className="max-w-[1400px] mx-auto p-3 sm:p-4 lg:p-5">
 
+        {/* Sticky search + view toggle — same chrome as the CRM listing
+            so a user can jump to another brand or hop back to the
+            listing's Focused / Dashboard mode without leaving this
+            page first. Owner ask (June 2026): "the search bar +
+            focus | dashboard button should be visible here as well". */}
+        <PipelineNavBar />
+
         <Link to="/clients/pipeline" className="inline-flex items-center gap-1 text-[11.5px] text-muted-foreground hover:text-foreground mb-2">
           <ArrowLeft className="h-3 w-3" /> Back to Client CRM
         </Link>
@@ -386,7 +394,16 @@ export default function ClientWorkspacePage() {
           />
 
           {/* ── 4. PROJECT JOURNEY ──────────────────────────────── */}
-          <JourneyStrip states={journey} currentKey={currentStageKey} />
+          <JourneyStrip
+            states={journey}
+            currentKey={currentStageKey}
+            onClickStage={(key) => {
+              // Only dev / video / meta have a stage workspace page.
+              // Other milestones (discovery / launch / scaling) just
+              // no-op for now — they're visual breadcrumbs.
+              if (key === 'dev' || key === 'video' || key === 'meta') openStage(key);
+            }}
+          />
 
           {/* ── 5. SERVICE OVERVIEW — 3 cards, active elevated.
               Each card click drills into Layer 2 (Stage Workspace) at
@@ -633,38 +650,67 @@ function HeroMeta({ label, icon, children, wide }: { label: string; icon?: React
 // ─────────────────────────────────────────────────────────────────────
 // 4. Project journey strip
 // ─────────────────────────────────────────────────────────────────────
-function JourneyStrip({ states, currentKey }: { states: Record<StageKey, StageState>; currentKey: StageKey }) {
+//
+// Visual + interaction spec (June 2026 redesign):
+//   - DONE          → green     (background + label)
+//   - IN PROGRESS   → yellow    (background + label, with a soft pulse
+//                                so the "live" stage is unmistakable)
+//   - NOT STARTED   → red       (faded background + label)
+//   - BLOCKED       → red       (same as not-started visually; the
+//                                StageWorkspacePage shows the reason
+//                                when you click in)
+//
+// Every stage is clickable. dev / video / meta navigate to their
+// stage workspace. discovery / launch / scaling are presentational
+// milestones — clicking them centers the journey but doesn't navigate
+// (no stage page exists for those yet).
+function JourneyStrip({
+  states, currentKey, onClickStage,
+}: {
+  states: Record<StageKey, StageState>;
+  currentKey: StageKey;
+  onClickStage: (key: StageKey) => void;
+}) {
   return (
     <div className="px-4 py-3 border-b border-border flex items-center gap-1.5 overflow-x-auto">
       {JOURNEY.map((stage, i) => {
         const s = states[stage.key];
         const isCurrent = stage.key === currentKey;
+        // Map state → traffic-light palette per agency-owner spec.
         const dotCls =
           s === 'completed' ? 'bg-emerald-500 text-white' :
-          s === 'current'   ? 'bg-primary text-primary-foreground ring-4 ring-primary/20' :
+          s === 'current'   ? 'bg-amber-400 text-amber-950 ring-4 ring-amber-400/30 animate-pulse' :
           s === 'blocked'   ? 'bg-rose-500 text-white' :
-                              'bg-card text-muted-foreground border border-border';
+                              'bg-rose-500/15 text-rose-700 border border-rose-500/30';
         const labelCls =
-          isCurrent ? 'text-foreground font-bold' :
-          s === 'completed' ? 'text-foreground/70' :
+          isCurrent ? 'text-amber-800 font-bold' :
+          s === 'completed' ? 'text-emerald-800 font-semibold' :
           s === 'blocked'   ? 'text-rose-700 font-semibold' :
-                              'text-muted-foreground';
-        // Owner ask (May 2026): blur future stages that haven't been
-        // reached so the eye lands on done/current/blocked first. We
-        // use a slight blur + 50% opacity instead of full grayscale
-        // so the labels are still readable for a stakeholder asking
-        // "what comes next" — they just don't compete for attention.
-        const futureCls = s === 'future' ? 'opacity-50 blur-[0.5px] grayscale' : '';
+                              'text-rose-700/80';
+        // Whether the click should navigate to a real stage page.
+        // Discovery / Launch / Scaling are milestones, not workspaces.
+        const navigable = stage.key === 'dev' || stage.key === 'video' || stage.key === 'meta';
         return (
-          <div key={stage.key} className={`flex items-center gap-1.5 shrink-0 transition-all ${futureCls}`}>
-            <div className="flex items-center gap-2">
+          <div key={stage.key} className="flex items-center gap-1.5 shrink-0 transition-all">
+            <button
+              type="button"
+              onClick={() => onClickStage(stage.key as StageKey)}
+              className={`flex items-center gap-2 rounded-md hover:bg-muted/40 px-1 py-0.5 transition-colors ${
+                navigable ? 'cursor-pointer' : 'cursor-default'
+              }`}
+              title={navigable ? `Open ${stage.label} workspace` : stage.label}
+            >
               <span className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold ${dotCls}`}>
                 {s === 'completed' ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
               </span>
               <span className={`text-[12px] ${labelCls}`}>{stage.label}</span>
-            </div>
+            </button>
             {i < JOURNEY.length - 1 && (
-              <div className={`h-px w-6 ${s === 'completed' ? 'bg-emerald-500/50' : 'bg-border'}`} />
+              <div className={`h-px w-6 ${
+                s === 'completed' ? 'bg-emerald-500/50' :
+                s === 'current'   ? 'bg-amber-400/50' :
+                                     'bg-rose-500/20'
+              }`} />
             )}
           </div>
         );

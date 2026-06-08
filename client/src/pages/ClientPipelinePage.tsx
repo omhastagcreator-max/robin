@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -100,6 +100,7 @@ interface UserLite { _id: string; name?: string; email?: string; avatarUrl?: str
 export default function ClientPipelinePage() {
   const { role } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   // May 2026 — opened to all internal staff; matches the new server
   // route gate. We keep the variable name `isAdminOrSales` for now to
   // avoid touching every read site; the predicate just got wider.
@@ -114,6 +115,17 @@ export default function ClientPipelinePage() {
   // Pipeline revamp — view toggle (kanban / focus / table), filter chips,
   // saved-views, and bulk selection state. All persisted via usePipelineState().
   const { view, setView, filters, setFilters, sort, setSort, savedViews, setSavedViews } = usePipelineState();
+
+  // Sync ?view=focused|executive URL param → state. Lets the shared
+  // PipelineNavBar (used on ClientWorkspacePage too) navigate users
+  // back here in a specific view. Read once on mount.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const v = params.get('view');
+    if (v === 'focused' || v === 'executive') setView(v as any);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
+
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const toggleSelect = (id: string) =>
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
