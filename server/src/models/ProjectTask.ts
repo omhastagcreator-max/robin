@@ -43,7 +43,20 @@ const ProjectTaskSchema = new Schema({
   title: { type: String, required: true },
   description: String,
   taskType: { type: String, enum: ['dev', 'ads', 'content', 'admin_task', 'personal'] },
-  status: { type: String, default: 'pending', enum: ['pending', 'ongoing', 'done', 'blocked'] },
+  /**
+   * Status lifecycle (June 2026 expansion):
+   *   pending_acceptance — task was assigned to someone other than the
+   *                        creator; awaiting their accept + ETA.
+   *   pending            — task accepted (or self-assigned), not yet started.
+   *   ongoing            — being worked on.
+   *   blocked            — waiting on something.
+   *   done               — complete.
+   *
+   * Re-running the import / migrations doesn't introduce
+   * pending_acceptance on existing records; only new task creation
+   * with cross-user assignment triggers it.
+   */
+  status: { type: String, default: 'pending', enum: ['pending_acceptance', 'pending', 'ongoing', 'done', 'blocked'] },
   priority: { type: String, default: 'medium', enum: ['low', 'medium', 'high', 'urgent'] },
   category: String,
   dueDate: Date,

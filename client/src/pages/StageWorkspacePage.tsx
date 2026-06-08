@@ -166,6 +166,20 @@ export default function StageWorkspacePage() {
     itemText: string;
   } | null>(null);
 
+  // After the LAST checklist item is ticked, we open this follow-up
+  // modal asking the user if they want to send the stage ahead to the
+  // next team. Owner ask (June 2026): every stage close should be a
+  // deliberate handoff, not a silent state change. On confirm we call
+  // cwCompleteService which marks the service done AND triggers the
+  // server-side notify() to the next stage's owner. On cancel: the
+  // checklist stays ticked but the service stays in_progress, so the
+  // user can come back later.
+  const [pendingSendAhead, setPendingSendAhead] = useState<{
+    stageLabel: string;     // e.g. "Website"
+    nextStageLabel: string; // e.g. "Meta team" / "Video team"
+  } | null>(null);
+  const [sendingAhead, setSendingAhead] = useState(false);
+
   const stageDef = stageKey ? STAGE_DEFS[stageKey] : null;
 
   useEffect(() => {
@@ -345,6 +359,24 @@ export default function StageWorkspacePage() {
               setWf(updated as Workflow);
               setActivityRev(r => r + 1);
               toast.success(pendingToggle.nextDone ? 'Task marked complete' : 'Task re-opened');
+
+              // If THIS tick was the last open item and the service
+              // isn't already done, pop the "send ahead" handoff
+              // confirmation. We pull the updated workflow + service
+              // back from the response so we don't race the local
+              // stale copy.
+              if (pendingToggle.nextDone) {
+                const updatedWf  = updated as Workflow;
+                const updatedSvc = updatedWf.services.find(s => String(s._id) === String(svc._id));
+                const allDone = (updatedSvc?.checklist?.length || 0) > 0
+                  && updatedSvc!.checklist.every((c: any) => c.done);
+                if (allDone && updatedSvc?.status !== 'done') {
+                  setPendingSendAhead({
+                    stageLabel:     updatedSvc?.label || 'this stage',
+                    nextStageLabel: nextStageDisplay(updatedSvc?.serviceType || ''),
+                  });
+                }
+              }
             } catch (err: any) {
               toast.error(err?.response?.data?.error || 'Could not update the task');
               throw err;  // keeps the modal open so the user can retry
@@ -353,7 +385,88 @@ export default function StageWorkspacePage() {
           onClose={() => setPendingToggle(null)}
         />
       )}
+
+      {/* Send-ahead confirmation — fires after the user ticks the LAST
+          checklist item on a stage. Confirm here triggers the server's
+          completeService endpoint, which marks the service done AND
+          fires a `workflow.unblocked` notification to the next stage's
+          owner (e.g. Sakshi for Meta when Website wraps). */}
+      {pendingSendAhead && svc && (
+        <SendAheadModal
+          stageLabel={pendingSendAhead.stageLabel}
+          nextStageLabel={pendingSendAhead.nextStageLabel}
+          submitting={sendingAhead}
+          onConfirm={async () => {
+            setSendingAhead(true);
+            try {
+              const updated = await api.cwCompleteService(wf._id, svc._id!, { comment: `${pendingSendAhead.stageLabel} done — handed off to ${pendingSendAhead.nextStageLabel}.` });
+              setWf(updated as Workflow);
+              setActivityRev(r => r + 1);
+              toast.success(`Sent ahead to ${pendingSendAhead.nextStageLabel}. They've been notified.`);
+              setPendingSendAhead(null);
+            } catch (err: any) {
+              toast.error(err?.response?.data?.error || 'Could not send ahead.');
+            } finally { setSendingAhead(false); }
+          }}
+          onCancel={() => setPendingSendAhead(null)}
+        />
+      )}
     </AppLayout>
+  );
+}
+
+/**
+ * Map the source service type to a friendly "next team" label for the
+ * send-ahead modal copy. The downstream service may not exist yet on
+ * the workflow (legacy brands missing stages) — that's fine, we just
+ * pick the canonical next-team for the agency's three-stage flow.
+ */
+function nextStageDisplay(svcType: string): string {
+  if (svcType === 'shopify')    return 'the Meta team';
+  if (svcType === 'influencer') return 'the Meta team';
+  if (svcType === 'meta_ads')   return 'the client';
+  return 'the next team';
+}
+
+/**
+ * SendAheadModal — handoff confirmation that fires once every step on
+ * a stage is ticked. Yes → fires cwCompleteService (which the server
+ * then handles the cross-team notification for). No → user can tick /
+ * untick more items first.
+ */
+function SendAheadModal({ stageLabel, nextStageLabel, submitting, onConfirm, onCancel }: {
+  stageLabel: string;
+  nextStageLabel: string;
+  submitting: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="w-full max-w-sm rounded-2xl bg-card border border-border shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-border">
+          <p className="text-[10.5px] uppercase tracking-[0.14em] font-bold text-emerald-700">All steps complete</p>
+          <h2 className="text-[16px] font-bold mt-1 leading-tight">Send {stageLabel} ahead to {nextStageLabel}?</h2>
+          <p className="text-[12px] text-muted-foreground mt-1.5 leading-relaxed">
+            This marks the stage done and pings the next team automatically. If you want to adjust anything first, hit Not yet.
+          </p>
+        </div>
+        <div className="px-5 py-3 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={submitting}
+            className="h-8 px-3 rounded-md text-[12px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50"
+          >Not yet</button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={submitting}
+            className="h-8 px-3 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold disabled:opacity-50"
+          >{submitting ? 'Sending…' : `Yes — notify ${nextStageLabel}`}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 

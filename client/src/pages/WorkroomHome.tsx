@@ -9,6 +9,7 @@ import {
 import { AppLayout } from '@/components/AppLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useHuddle } from '@/contexts/HuddleContext';
+import { PendingAcceptanceBanner } from '@/components/workroom/PendingAcceptanceBanner';
 import * as api from '@/api';
 
 /**
@@ -112,6 +113,10 @@ export default function WorkroomHome() {
             {/* ── MAIN COLUMN ────────────────────────────────────────── */}
             <div className="space-y-4 min-w-0">
               <Greeting firstName={firstName} onJoinHuddle={() => { try { huddle.join(); } catch { /* */ } }} />
+
+              {/* Pending-acceptance banner — auto-hides when empty. Top
+                  of the page so cross-team handoffs aren't missed. */}
+              <PendingAcceptanceBanner />
 
               {loading && !snap ? (
                 <SkeletonBlock />

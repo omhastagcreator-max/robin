@@ -587,6 +587,11 @@ export const taskGraph            = (taskId: string) =>
   api.get(`/tasks/${taskId}/graph`).then(r => r.data);
 export const setTaskDependencies  = (taskId: string, dependsOn: string[]) =>
   api.put(`/tasks/${taskId}/dependencies`, { dependsOn }).then(r => r.data);
+// Task acceptance flow — assignee accepts (with ETA) or declines.
+export const acceptTask           = (taskId: string, body: { estimatedCompletionAt: string; estimatedHours?: number }) =>
+  api.post(`/tasks/${taskId}/accept`, body).then(r => r.data);
+export const declineTask          = (taskId: string, reason?: string) =>
+  api.post(`/tasks/${taskId}/decline`, { reason }).then(r => r.data);
 
 // Targets — self read, admin team read, admin upsert, self ETA.
 // `period` is 'weekly' | 'monthly' (default monthly when omitted).

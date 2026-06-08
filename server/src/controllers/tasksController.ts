@@ -63,8 +63,17 @@ export async function createTask(req: AuthRequest, res: Response): Promise<void>
     // moment they navigated away. Explicit assignedTo from the form still
     // wins (e.g. admin/lead assigning to a teammate).
     const finalAssignedTo = assignedTo || req.user!.id;
+    // Status defaulting (June 2026 acceptance flow): when the task is
+    // assigned to SOMEONE OTHER than the creator and no explicit
+    // status was provided, set to 'pending_acceptance' so the
+    // assignee gets a notification + must accept with an ETA before
+    // it shows up as active work. Tasks the user creates for
+    // themselves bypass the accept gate and go straight to 'pending'.
+    const isCrossAssignment = finalAssignedTo && finalAssignedTo !== req.user!.id;
+    const finalStatus = status || (isCrossAssignment ? 'pending_acceptance' : 'pending');
+
     const task = await ProjectTask.create({
-      title, description, priority, status, dueDate, taskType, projectId, clientWorkflowId,
+      title, description, priority, status: finalStatus, dueDate, taskType, projectId, clientWorkflowId,
       assignedTo: finalAssignedTo,
       organizationId: orgId,
       assignedBy: req.user!.id,
@@ -75,14 +84,19 @@ export async function createTask(req: AuthRequest, res: Response): Promise<void>
       // the "every task has a requester" invariant true.
       ...(requesterId ? {} : { requesterId: req.user!.id }),
     });
-    // Notify the assignee if it's someone OTHER than the creator.
+    // Notify the assignee if it's someone OTHER than the creator. The
+    // copy + action differ depending on whether this is an acceptance-
+    // required handoff or a self-driven task.
     if (finalAssignedTo && finalAssignedTo !== req.user!.id) {
+      const needsAccept = finalStatus === 'pending_acceptance';
       await notify({
         io: req.app.get('io'), organizationId: orgId, actorId: req.user!.id,
         userId: finalAssignedTo,
-        type: 'task.assigned',
-        title: `New task: ${title}`,
-        body:  priority ? `Priority: ${priority}` : 'Check your task list when you can.',
+        type: needsAccept ? 'task.assigned.pending_acceptance' : 'task.assigned',
+        title: needsAccept ? `New task for you to accept: ${title}` : `New task: ${title}`,
+        body:  needsAccept
+                ? `Open Robin to accept and set your expected completion date${priority ? ' · ' + priority : ''}.`
+                : (priority ? `Priority: ${priority}` : 'Check your task list when you can.'),
         entityId: String(task._id), entityType: 'task',
       });
     }
@@ -222,9 +236,10 @@ export async function inbox(req: AuthRequest, res: Response): Promise<void> {
     const baseQ: any = { organizationId: orgId };
     if (!showDone) baseQ.status = { $ne: 'done' };
 
-    const [mine, delegated, brandTasks] = await Promise.all([
-      // assigned to me
-      ProjectTask.find({ ...baseQ, assignedTo: me }).sort({ priority: -1, dueDate: 1 }).limit(50).lean(),
+    const [mine, delegated, brandTasks, pendingAcceptance] = await Promise.all([
+      // assigned to me (excluding ones still awaiting my accept)
+      ProjectTask.find({ ...baseQ, assignedTo: me, status: { $nin: ['done', 'pending_acceptance'] } })
+        .sort({ priority: -1, dueDate: 1 }).limit(50).lean(),
       // I delegated to others (assignedBy me, assignedTo someone else)
       ProjectTask.find({ ...baseQ, assignedBy: me, assignedTo: { $ne: me } }).sort({ priority: -1, dueDate: 1 }).limit(30).lean(),
       // for brands I touch, but not directly assigned to me (cross-team visibility)
@@ -236,6 +251,10 @@ export async function inbox(req: AuthRequest, res: Response): Promise<void> {
             assignedBy: { $ne: me },
           }).sort({ priority: -1, dueDate: 1 }).limit(30).lean()
         : Promise.resolve([]),
+      // Tasks waiting for ME to accept (separate bucket — show as a
+      // prominent banner so handoffs never get lost).
+      ProjectTask.find({ organizationId: orgId, assignedTo: me, status: 'pending_acceptance' })
+        .sort({ createdAt: -1 }).limit(20).lean(),
     ]);
 
     // Tiny brand-name map so the UI doesn't have to fan out a second
@@ -248,13 +267,15 @@ export async function inbox(req: AuthRequest, res: Response): Promise<void> {
     });
 
     res.json({
-      mine:       mine.map(enrich),
-      delegated:  delegated.map(enrich),
-      brandTasks: (brandTasks as any[]).map(enrich),
+      mine:              mine.map(enrich),
+      delegated:         delegated.map(enrich),
+      brandTasks:        (brandTasks as any[]).map(enrich),
+      pendingAcceptance: (pendingAcceptance as any[]).map(enrich),
       counts: {
-        mine:      mine.length,
-        delegated: delegated.length,
-        brand:     brandTasks.length,
+        mine:              mine.length,
+        delegated:         delegated.length,
+        brand:             brandTasks.length,
+        pendingAcceptance: pendingAcceptance.length,
       },
     });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
@@ -363,6 +384,98 @@ async function hasCycle(orgId: string, depId: string, target: string, visited: S
     if (await hasCycle(orgId, child, target, visited)) return true;
   }
   return false;
+}
+
+/**
+ * acceptTask — POST /api/tasks/:id/accept
+ * Body: { estimatedCompletionAt: string (ISO date), estimatedHours?: number }
+ *
+ * The assignee accepts a pending_acceptance task and stamps their own
+ * expected completion date. Transitions status → 'pending' (or
+ * 'ongoing' if the caller passes that explicitly). Only the assignee
+ * can accept; everyone else (incl. admin) sees 403.
+ *
+ * Notifies the original creator (assignedBy) so they know the work
+ * is committed + when to expect it.
+ */
+export async function acceptTask(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const me = req.user!.id;
+    const orgId = await getOrgId(me);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const task = await ProjectTask.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!task) { res.status(404).json({ error: 'Task not found' }); return; }
+    if (String(task.assignedTo || '') !== me) {
+      res.status(403).json({ error: 'Only the assignee can accept this task' }); return;
+    }
+    if (task.status !== 'pending_acceptance') {
+      res.status(409).json({ error: 'Task is not pending acceptance' }); return;
+    }
+    const { estimatedCompletionAt, estimatedHours } = req.body || {};
+    if (!estimatedCompletionAt) {
+      res.status(400).json({ error: 'estimatedCompletionAt is required to accept' }); return;
+    }
+    task.status = 'pending';
+    task.estimatedCompletionAt = new Date(estimatedCompletionAt);
+    if (estimatedHours !== undefined && estimatedHours !== null) {
+      task.estimatedHours = Math.max(0, Number(estimatedHours) || 0);
+    }
+    task.estimatedBy = me;
+    task.estimatedAt = new Date();
+    await task.save();
+
+    // Ping the creator so they know it's been accepted.
+    if (task.assignedBy && task.assignedBy !== me) {
+      await notify({
+        io: req.app.get('io'), organizationId: orgId, actorId: me,
+        userId: task.assignedBy,
+        type: 'task.accepted',
+        title: `${task.title} accepted`,
+        body:  `Expected by ${new Date(estimatedCompletionAt).toDateString()}${estimatedHours ? ' (~' + estimatedHours + 'h)' : ''}.`,
+        entityId: String(task._id), entityType: 'task',
+      });
+    }
+    res.json(task);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * declineTask — POST /api/tasks/:id/decline
+ * Body: { reason?: string }
+ *
+ * The assignee refuses the task. We bounce it back to the creator
+ * (reassign) and ping them with the reason. Keeps audit history.
+ */
+export async function declineTask(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const me = req.user!.id;
+    const orgId = await getOrgId(me);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const task = await ProjectTask.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!task) { res.status(404).json({ error: 'Task not found' }); return; }
+    if (String(task.assignedTo || '') !== me) {
+      res.status(403).json({ error: 'Only the assignee can decline this task' }); return;
+    }
+    if (task.status !== 'pending_acceptance') {
+      res.status(409).json({ error: 'Task is not pending acceptance' }); return;
+    }
+    const reason = String(req.body?.reason || '').slice(0, 280);
+    const originalCreator = task.assignedBy;
+    task.assignedTo = originalCreator || undefined;
+    task.status = 'pending_acceptance';   // creator must self-reassign OR re-route
+    await task.save();
+    if (originalCreator && originalCreator !== me) {
+      await notify({
+        io: req.app.get('io'), organizationId: orgId, actorId: me,
+        userId: originalCreator,
+        type: 'task.declined',
+        title: `Task declined: ${task.title}`,
+        body:  reason || 'No reason provided. Reassign or close the task.',
+        entityId: String(task._id), entityType: 'task',
+      });
+    }
+    res.json(task);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
 /**

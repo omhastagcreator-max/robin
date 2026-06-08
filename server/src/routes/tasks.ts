@@ -4,7 +4,7 @@ import { requireRole } from '../middleware/roleMiddleware';
 import {
   listTasks, createTask, getTask, updateTask, deleteTask,
   getProjectTasks, addComment, inbox, listForWorkflow,
-  setDependencies, getGraph,
+  setDependencies, getGraph, acceptTask, declineTask,
 } from '../controllers/tasksController';
 
 const router = Router();
@@ -19,6 +19,11 @@ router.get('/project/:projectId', getProjectTasks);
 // Dependency engine — set + traverse the graph.
 router.put('/:id/dependencies', requireRole('admin', 'employee', 'sales'), setDependencies);
 router.get('/:id/graph', getGraph);
+
+// Acceptance flow — assignee accepts (with ETA) or declines a
+// pending-acceptance cross-assignment task.
+router.post('/:id/accept',  requireRole('admin', 'employee', 'sales'), acceptTask);
+router.post('/:id/decline', requireRole('admin', 'employee', 'sales'), declineTask);
 
 router.get('/', listTasks);
 router.post('/', requireRole('admin', 'employee', 'sales'), createTask);

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -99,6 +99,7 @@ interface UserLite { _id: string; name?: string; email?: string; avatarUrl?: str
 
 export default function ClientPipelinePage() {
   const { role } = useAuth();
+  const navigate = useNavigate();
   // May 2026 — opened to all internal staff; matches the new server
   // route gate. We keep the variable name `isAdminOrSales` for now to
   // avoid touching every read site; the predicate just got wider.
@@ -226,7 +227,13 @@ export default function ClientPipelinePage() {
       toast.error('No clients match that search.');
       return;
     }
-    setView('focused');  // PipelineFocusedView matches query and expands
+    // Owner ask (June 2026): Enter opens the brand's full workspace
+    // page directly, not the focused-view drawer. The top match by
+    // current filter order is the destination.
+    const top = filteredList[0];
+    if (top?._id) {
+      navigate(`/clients/pipeline/${top._id}`);
+    }
   };
 
   // Heuristic auto-open. When the typed query looks like a complete
@@ -291,19 +298,21 @@ export default function ClientPipelinePage() {
           </div>
         </div>
 
-        {/* Search — full-width primary affordance. Hidden in the focused
-            view because that view renders its own larger centred search
-            box; showing two would duplicate the same affordance with
-            no benefit. */}
-        {view !== 'focused' && (
+        {/* Sticky search + toolbar — always visible while scrolling so
+            jumping between brands stays one-click no matter how far
+            down the page the user has scrolled. Owner ask (June 2026):
+            search must be visible across both Focused AND Dashboard
+            views. The Focused view's internal search is hidden via the
+            `hideInternalSearch` prop so we don't render two boxes. */}
+        <div className="sticky top-2 z-30 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70 rounded-xl border border-border shadow-sm p-2 space-y-2">
           <div className="relative">
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={handleSearchKeyDown}
-              placeholder="Search by phone, name or email — press Enter to open the top match"
-              className="w-full pl-10 pr-9 py-2.5 bg-card border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              placeholder="Search by phone, name or email — press Enter to open the brand"
+              className="w-full pl-10 pr-9 py-2.5 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             />
             {query && (
               <button onClick={() => setQuery('')}
@@ -312,20 +321,21 @@ export default function ClientPipelinePage() {
               </button>
             )}
           </div>
-        )}
 
-        {/* Pipeline toolbar — view toggle, filters, saved views, bulk-action bar. */}
-        <PipelineToolbar
-          view={view} onView={setView}
-          filters={filters} onFilters={setFilters}
-          sort={sort} onSort={setSort}
-          savedViews={savedViews} onSavedViews={setSavedViews}
-          mineOnly={mineOnly} onMineOnly={setMineOnly}
-          selectedIds={selectedIds} onClearSelected={clearSelected}
-          onBulk={handleBulk}
-          totalCount={list.length} filteredCount={filteredList.length}
-          role={role}
-        />
+          {/* Pipeline toolbar — view toggle (Focused / Dashboard), sort,
+              filters, saved views, bulk-action bar. */}
+          <PipelineToolbar
+            view={view} onView={setView}
+            filters={filters} onFilters={setFilters}
+            sort={sort} onSort={setSort}
+            savedViews={savedViews} onSavedViews={setSavedViews}
+            mineOnly={mineOnly} onMineOnly={setMineOnly}
+            selectedIds={selectedIds} onClearSelected={clearSelected}
+            onBulk={handleBulk}
+            totalCount={list.length} filteredCount={filteredList.length}
+            role={role}
+          />
+        </div>
 
         {/* Overview report — always upfront. Quick scan of where things
             stand BEFORE diving into individual cards. Note: stats are
@@ -333,16 +343,16 @@ export default function ClientPipelinePage() {
             shape, not a slice of it. */}
         {!loading && list.length > 0 && <OverviewReport list={list} />}
 
-        {/* View body — June 2026 redesign: ONE canonical view only.
-            All other views (kanban / flow / focus / table) are kept in
-            the codebase but unreachable from the page. The Focused
-            view is the single client-CRM surface; the agency overview
-            lives at /command-center. */}
+        {/* View body — Focused (single brand at a time, search-first)
+            and Dashboard (executive overview) are both reachable via
+            the toolbar toggle. The other view modes (kanban / flow /
+            focus / table) live in the codebase but aren't shown in
+            the toolbar — they exist for ad-hoc reuse. */}
         {loading && list.length === 0 ? (
           <div className="py-16 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : list.length === 0 ? (
           <EmptyState query={query} isAdminOrSales={isAdminOrSales} onCreate={() => setShowCreate(true)} />
-        ) : true ? (
+        ) : view === 'focused' ? (
           <PipelineFocusedView
             list={filteredList}
             users={users}
