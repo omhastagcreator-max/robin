@@ -300,10 +300,16 @@ export function ActivityTimeline({ workflowId, refreshKey }: { workflowId: strin
   return (
     <>
       {rows.map(a => (
-        <Row key={a._id}>
+        // density='auto' lets the row's height grow with content —
+        // each entry has title + (optional) comment + meta which
+        // overflowed the fixed 36px row height and stacked into the
+        // next entry. The 'auto' density wraps each entry in vertical
+        // padding instead of a fixed height so multi-line content
+        // stays inside its own row.
+        <Row key={a._id} density="auto">
           <Row.Main>
             <Row.Title>{actionLabel(a)}</Row.Title>
-            {a.comment && <p className="text-[11.5px] text-foreground/80 mt-0.5 line-clamp-2">{a.comment}</p>}
+            {a.comment && <p className="text-[11.5px] text-foreground/80 mt-0.5 line-clamp-2 break-words">{a.comment}</p>}
             <Row.Meta>
               {a.actorName ? `${a.actorName} · ` : ''}
               {formatDistanceToNow(new Date(a.createdAt), { addSuffix: true })}

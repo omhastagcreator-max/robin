@@ -26,8 +26,15 @@ interface Props {
   onClick?: () => void;
   /** Coloured accent strip on the left edge for status signaling. */
   accent?: 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'none';
-  /** Style: dense (36px tall, default) | comfy (44px) */
-  density?: 'dense' | 'comfy';
+  /**
+   * Density modes:
+   *   dense  — 36px fixed height (one-line rows; default)
+   *   comfy  — 44px fixed height (one-line rows with a bit more air)
+   *   auto   — height grows with content. Use when the row contains
+   *            a title + comment + meta (3+ lines) so multi-line
+   *            content doesn't overflow into the next row.
+   */
+  density?: 'dense' | 'comfy' | 'auto';
   active?: boolean;
   className?: string;
 }
@@ -42,12 +49,20 @@ const accentMap = {
 };
 
 export function Row({ children, onClick, accent = 'none', density = 'dense', active, className = '' }: Props) {
+  // Height vs. padding: fixed heights pack 36/44px rows tightly. The
+  // 'auto' mode swaps in vertical padding and `items-start` so a
+  // 3-line row (title + comment + meta) grows instead of clipping into
+  // the next row. Single-line rows keep the old fixed-height behaviour.
+  const heightCls =
+    density === 'dense' ? 'h-9 items-center'  :
+    density === 'comfy' ? 'h-11 items-center' :
+                          'py-2.5 items-start min-h-[44px]';
   return (
     <div
       onClick={onClick}
       className={`
-        relative flex items-center gap-2.5 px-3 group
-        ${density === 'dense' ? 'h-9' : 'h-11'}
+        relative flex gap-2.5 px-3 group
+        ${heightCls}
         ${onClick ? 'cursor-pointer hover:bg-primary/[0.03]' : ''}
         ${active ? 'bg-primary/[0.05]' : ''}
         before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-full ${accentMap[accent]}
