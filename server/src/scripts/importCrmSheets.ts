@@ -62,15 +62,22 @@ interface SeedRow {
   sources:       string[];
 }
 
-// ── Heuristic: task text → service type ─────────────────────────────
-function inferServices(allText: string): string[] {
-  const t = (allText || '').toLowerCase();
-  const out: string[] = [];
-  if (/website|web|landing\s*page|\blp\b|shopify|payment|gateway|cart|checkout/i.test(t)) out.push('shopify');
-  if (/video|creative|reel|shoot|edit|influencer|creator|ugc|script/i.test(t))           out.push('influencer');
-  if (/meta|fb\s*ad|ads?|campaign|pixel|whatsapp|audit/i.test(t))                         out.push('meta_ads');
-  if (out.length === 0) out.push('influencer');
-  return out;
+// ── Service catalog — every brand gets all three stages ─────────────
+// Owner ask (June 2026): "for all projects we have 3 stages: website,
+// videos, and meta". So we always materialise all three regardless of
+// what the sheet text mentioned. Uniform ownership too — see
+// reassignByRole.ts and STAGE_OWNERS below.
+const STANDARD_SERVICES: Array<'shopify' | 'influencer' | 'meta_ads'> = ['shopify', 'influencer', 'meta_ads'];
+const STAGE_OWNERS: Record<string, string> = {
+  shopify:    'Om',         // Website
+  influencer: 'Priyanka',   // Videos
+  meta_ads:   'Sakshi',     // Meta
+};
+
+// Kept for future heuristic surfaces — but the import now always
+// uses STANDARD_SERVICES, so this is currently unused.
+function inferServices(_allText: string): string[] {
+  return [...STANDARD_SERVICES];
 }
 
 function priorityFromEta(eta: string | null | undefined): 'urgent' | 'high' | 'medium' | 'low' {
@@ -208,22 +215,26 @@ async function findUserByName(orgId: any, name: string): Promise<any | null> {
       } as any);
     }
 
-    // 3b. Resolve owners → User docs.
-    const ownerUsers = (await Promise.all(row.owners.map(o => findUserByName(orgId, o))))
-      .filter(Boolean) as Array<{ _id: any; name: string }>;
-    skippedOwners += row.owners.length - ownerUsers.length;
-    if (ownerUsers.length === 0) {
-      console.warn(`  ${brand}: no matching staff for owners ${row.owners.join(', ')} — leaving unassigned`);
+    // 3b. Resolve the three fixed owners — Om, Priyanka, Sakshi —
+    // once per brand. The sheet's "owners" column is now only used to
+    // help match tasks; the SERVICE assignees are always the three
+    // canonical specialists per the agency owner's uniform rules.
+    const stageOwnerIds: Record<string, string | undefined> = {};
+    for (const stage of STANDARD_SERVICES) {
+      const ownerName = STAGE_OWNERS[stage];
+      const u = await findUserByName(orgId, ownerName);
+      stageOwnerIds[stage] = u?._id?.toString();
+      if (!u) {
+        console.warn(`  ${brand}: ${ownerName} (stage ${stage}) not found in Robin users`);
+        skippedOwners++;
+      }
     }
 
-    // 3c. Service inference based on combined task text.
-    const allText = [row.tasks.join(' '), row.next_tasks.join(' '), row.brand].join(' ');
-    const services = inferServices(allText);
-    const serviceDocs = services.map((type, i) => {
-      // Pull the default SOP checklist from workflowTemplates so every
-      // imported brand ships with a real per-step playbook instead of
-      // an empty array (which previously surfaced "No checklist
-      // configured for this stage yet" on the Stage Workspace page).
+    // 3c. Always create all three services per brand, with the
+    // canonical owner attached and the default SOP checklist seeded
+    // from workflowTemplates.ts so the Stage Workspace page never
+    // shows "No checklist configured for this stage yet".
+    const serviceDocs = STANDARD_SERVICES.map(type => {
       const tpl = SERVICE_TEMPLATES[type as ServiceType];
       const checklist = (tpl?.checklist || []).map(text => ({ text, done: false }));
       return {
@@ -232,7 +243,7 @@ async function findUserByName(orgId: any, name: string): Promise<any | null> {
                     || (type === 'shopify' ? 'Development' : type === 'meta_ads' ? 'Meta Ads' : 'Video'),
         status:      'in_progress',
         checklist,
-        assignedTo:  ownerUsers[i % Math.max(1, ownerUsers.length)]?._id?.toString(),
+        assignedTo:  stageOwnerIds[type],
         eta:         row.eta ? new Date(row.eta) : undefined,
       };
     });
@@ -272,14 +283,23 @@ async function findUserByName(orgId: any, name: string): Promise<any | null> {
     } as any);
     createdBrands++;
 
-    // 3e. Create ProjectTasks — one per "task" (ongoing) and one per
-    // "next_task" (queued). Owner alternation: round-robin across the
-    // brand's resolved owners. ETA dueDate.
+    // 3e. Create ProjectTasks. Per the uniform rules, each task's
+    // assignee is derived from its text:
+    //   web/site/dev keywords      → Om
+    //   video/reel/script keywords → Priyanka
+    //   ads/meta/campaign keywords → Sakshi
+    // Falls back to Om (website is the default catch-all stage).
     const dueDate = row.eta && !Number.isNaN(new Date(row.eta).getTime()) ? new Date(row.eta) : undefined;
-    let ownerIdx = 0;
+    const inferStage = (text: string): 'shopify' | 'influencer' | 'meta_ads' => {
+      const t = (text || '').toLowerCase();
+      if (/meta|fb\s*ad|ads?|campaign|pixel|catalog/.test(t)) return 'meta_ads';
+      if (/video|creative|reel|shoot|edit|influencer|creator|ugc|script/.test(t)) return 'influencer';
+      return 'shopify';
+    };
     for (const taskText of row.tasks) {
       if (!taskText.trim()) continue;
-      const assignee = ownerUsers[ownerIdx % Math.max(1, ownerUsers.length)]?._id?.toString() || String(sales._id);
+      const stage = inferStage(taskText);
+      const assignee = stageOwnerIds[stage] || String(sales._id);
       await ProjectTask.create({
         organizationId: orgId,
         clientWorkflowId: wf._id,
@@ -295,11 +315,11 @@ async function findUserByName(orgId: any, name: string): Promise<any | null> {
         importedFrom: IMPORT_TAG,
       } as any);
       createdTasks++;
-      ownerIdx++;
     }
     for (const nextText of row.next_tasks) {
       if (!nextText.trim()) continue;
-      const assignee = ownerUsers[ownerIdx % Math.max(1, ownerUsers.length)]?._id?.toString() || String(sales._id);
+      const stage = inferStage(nextText);
+      const assignee = stageOwnerIds[stage] || String(sales._id);
       await ProjectTask.create({
         organizationId: orgId,
         clientWorkflowId: wf._id,
@@ -314,10 +334,10 @@ async function findUserByName(orgId: any, name: string): Promise<any | null> {
         importedFrom: IMPORT_TAG,
       } as any);
       createdTasks++;
-      ownerIdx++;
     }
 
-    console.log(`  + ${brand}  priority=${priority}  tasks=${row.tasks.length}/+${row.next_tasks.length}next  owners=${ownerUsers.map(u=>u.name).join(',') || '(none)'}`);
+    const ownerSummary = STANDARD_SERVICES.map(s => `${s}=${stageOwnerIds[s] ? STAGE_OWNERS[s] : '(none)'}`).join(' ');
+    console.log(`  + ${brand}  priority=${priority}  tasks=${row.tasks.length}/+${row.next_tasks.length}next  ${ownerSummary}`);
   }
 
   console.log(`\nDone. Created ${createdBrands} brands + ${createdTasks} tasks. Unresolved owner refs: ${skippedOwners}.`);

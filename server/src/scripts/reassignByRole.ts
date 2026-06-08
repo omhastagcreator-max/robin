@@ -1,27 +1,17 @@
 /**
  * reassignByRole.ts — overwrites assignments on every brand workflow
- * + every imported task per the agency owner's role rules.
+ * + every imported task per the agency owner's UNIFORM role rules.
  *
- * Rules (June 2026):
+ * Rules (June 2026 — simplified):
  *
- *   - Om       → POC + Web developer for ALL brands
- *                (covers every shopify/website service line and any task
- *                whose text mentions web/site/POC/development.)
+ *   - Om       → Website (shopify service) for ALL brands. No exceptions.
+ *   - Priyanka → Videos (influencer service) for ALL brands. No exceptions.
+ *   - Sakshi   → Meta Ads (meta_ads service) for ALL brands. No exceptions.
  *
- *   - Sakshi   → Meta Ads specialist for ALL brands
- *                (every meta_ads service + ad-related tasks.)
- *
- *   - Priyanka → Video / influencer for ALL brands
- *                (every influencer service + video/reel/script tasks.)
- *
- *   - Bhawna   → ALL services on PurelyFarm + Zapromart
- *                AND influencer/reels work for Hastag only.
- *                Overrides the above rules for those three brands.
- *
- *   - Anyone else previously assigned (e.g. Beant Kaur, Yash, Client
- *     placeholder) is replaced. Beant Kaur is intentionally NOT in the
- *     four-rule list — confirm with the owner whether she should pick
- *     up something specific or be left available.
+ * The agency owner explicitly asked for these to be hard rules with
+ * zero brand-level overrides. Bhawna / Beant Kaur are intentionally
+ * not in the rule set — they retain whatever assignments they had on
+ * non-three-stage work (or get freed up for other duties).
  *
  * The script touches BOTH:
  *   - ClientWorkflow.services[].assignedTo
@@ -58,19 +48,9 @@ const DEFAULT_RULES: Rule[] = [
   { serviceType: 'meta_ads',   ownerName: 'Sakshi' },
   { serviceType: 'influencer', ownerName: 'Priyanka' },
 ];
-
-// Bhawna-exclusive brands — every service on these is Bhawna's, even
-// the web + meta lines that would default to Om / Sakshi.
-const BHAWNA_FULL_BRANDS = ['PURELYFARM', 'ZAPROMART'];
-
-// Mixed brands — defaults apply EXCEPT for the named service which
-// gets reassigned to the overrider. For Hastag: Bhawna owns reels
-// (the influencer/video service), Om/Sakshi keep the rest.
-const MIXED_BRAND_OVERRIDES: Record<string, Array<{ serviceType: Rule['serviceType']; ownerName: string }>> = {
-  HASTAG: [
-    { serviceType: 'influencer', ownerName: 'Bhawna' },
-  ],
-};
+// Brand-level overrides removed June 2026 — the owner wants ONE hard
+// rule per service across every brand. Adding any override here would
+// silently re-introduce inconsistency.
 
 // ── Task-text classifier ───────────────────────────────────────────
 // When we reassign tasks, we need to know which service each task
@@ -121,7 +101,7 @@ function brandKey(name: string): string {
 
   // Resolve named owners once.
   const ownerCache = new Map<string, string>();
-  for (const n of ['Om', 'Sakshi', 'Priyanka', 'Bhawna']) {
+  for (const n of ['Om', 'Sakshi', 'Priyanka']) {
     const u = await findUser(org._id, n);
     if (!u) {
       console.warn(`  ⚠️  Could not find user named "${n}" in this org. Tasks/services that would route to them will be SKIPPED.`);
@@ -131,19 +111,8 @@ function brandKey(name: string): string {
     }
   }
 
-  const ownerForServiceOnBrand = (brand: string, serviceType: Rule['serviceType']): string | null => {
-    const key = brandKey(brand);
-    // Bhawna-full brands: she owns every service line.
-    if (BHAWNA_FULL_BRANDS.includes(key)) {
-      return ownerCache.get('Bhawna') || null;
-    }
-    // Mixed brand override (e.g. Hastag influencer).
-    const overrides = MIXED_BRAND_OVERRIDES[key] || [];
-    const overridden = overrides.find(o => o.serviceType === serviceType);
-    if (overridden) {
-      return ownerCache.get(overridden.ownerName) || null;
-    }
-    // Default by service type.
+  const ownerForServiceOnBrand = (_brand: string, serviceType: Rule['serviceType']): string | null => {
+    // Uniform rule per service type, no brand-level overrides.
     const rule = DEFAULT_RULES.find(r => r.serviceType === serviceType);
     if (rule) return ownerCache.get(rule.ownerName) || null;
     return null;

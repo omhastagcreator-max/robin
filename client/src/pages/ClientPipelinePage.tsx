@@ -333,12 +333,16 @@ export default function ClientPipelinePage() {
             shape, not a slice of it. */}
         {!loading && list.length > 0 && <OverviewReport list={list} />}
 
-        {/* View body — kanban (stage flow), focus (health-grouped), or table. */}
+        {/* View body — June 2026 redesign: ONE canonical view only.
+            All other views (kanban / flow / focus / table) are kept in
+            the codebase but unreachable from the page. The Focused
+            view is the single client-CRM surface; the agency overview
+            lives at /command-center. */}
         {loading && list.length === 0 ? (
           <div className="py-16 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : list.length === 0 ? (
           <EmptyState query={query} isAdminOrSales={isAdminOrSales} onCreate={() => setShowCreate(true)} />
-        ) : view === 'focused' ? (
+        ) : true ? (
           <PipelineFocusedView
             list={filteredList}
             users={users}
@@ -369,10 +373,14 @@ export default function ClientPipelinePage() {
             // page owns the matching logic for both layouts.
             const byStage: Record<string, Workflow[]> = {};
             for (const s of FLOW_STAGES) byStage[s.key] = [];
-            for (const wf of filteredList) {
+            filteredList.forEach(wf => {
               const col = PIPELINE_COLUMNS.find(c => c.matches(wf));
-              if (col && byStage[col.key]) byStage[col.key].push(wf);
-            }
+              if (col) {
+                const k: string = col.key;
+                const bucket = byStage[k];
+                if (bucket) bucket.push(wf);
+              }
+            });
             return (
               <PipelineFlowView<Workflow>
                 stages={FLOW_STAGES}

@@ -792,6 +792,33 @@ function ServiceCard({
             </span>
           </Meta>
         </div>
+
+        {/* Inline checklist preview — surfaces the SOP steps directly
+            on the brand workspace so the team doesn't have to click
+            into the stage page just to see what's left. Shows up to 5
+            items; rest hidden behind "+ N more" which navigates to the
+            stage workspace where everything is interactive. */}
+        {svc && (svc.checklist || []).length > 0 && (
+          <div className="pt-1 border-t border-border/60 -mx-4 px-4 pb-0">
+            <ul className="space-y-0.5 mt-2">
+              {svc.checklist.slice(0, 5).map((c, i) => (
+                <li key={i} className="flex items-center gap-1.5 text-[11px]">
+                  <span className={`h-3 w-3 rounded inline-flex items-center justify-center shrink-0 ${
+                    c.done ? 'bg-emerald-500 text-white' : 'border border-border bg-card'
+                  }`}>
+                    {c.done && <CheckCircle2 className="h-2 w-2" />}
+                  </span>
+                  <span className={`truncate ${c.done ? 'line-through text-muted-foreground' : ''}`}>
+                    {c.text || (c as any).title || `Step ${i + 1}`}
+                  </span>
+                </li>
+              ))}
+              {svc.checklist.length > 5 && (
+                <li className="text-[10px] text-muted-foreground italic pl-4.5">+ {svc.checklist.length - 5} more in the stage workspace</li>
+              )}
+            </ul>
+          </div>
+        )}
       </div>
     </button>
   );

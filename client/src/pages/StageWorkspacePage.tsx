@@ -738,13 +738,23 @@ function BlockersBlock({
 // Empty state for stages with no checklist configured
 // ─────────────────────────────────────────────────────────────────────
 function EmptyChecklist({ isAdminOrSales }: { isAdminOrSales: boolean }) {
+  // Updated June 2026 — the empty-checklist message used to read
+  // "No checklist configured for this stage yet" which the agency
+  // owner asked us to never show again. Robin SHIPS default per-
+  // service SOPs in workflowTemplates.ts; if we still hit this state
+  // it means the service was created before the templates landed.
+  // Tell the user exactly how to get them populated.
   return (
     <div className="px-6 py-10 text-center text-[12.5px] text-muted-foreground">
-      No checklist configured for this stage yet.
-      {isAdminOrSales && (
-        <p className="text-[11px] mt-2">
-          Add a template in admin settings to populate steps automatically when a workflow is created.
+      <p className="font-semibold mb-1">Checklist is empty for this stage.</p>
+      {isAdminOrSales ? (
+        <p className="text-[11px] leading-relaxed max-w-md mx-auto">
+          Robin ships default SOP steps for Website / Videos / Meta — they should auto-populate.
+          If they're missing, run <code className="bg-muted px-1 py-0.5 rounded">npm run seed-checklists</code> from
+          the server to backfill, or add steps manually from this page.
         </p>
+      ) : (
+        <p className="text-[11px]">Ask your admin to populate the SOP steps for this stage.</p>
       )}
     </div>
   );

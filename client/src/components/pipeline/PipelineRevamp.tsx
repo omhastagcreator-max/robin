@@ -240,34 +240,18 @@ export function PipelineToolbar({
 
   return (
     <div className="space-y-2">
-      {/* Row 1 — view toggle (Focused + Dashboard only) + sort + filter */}
+      {/* Row 1 — sort + filter (June 2026 redesign: view toggle removed
+          entirely. The Focused view is the single canonical client-CRM
+          surface. Admin's agency-wide overview lives on the dedicated
+          /command-center page reachable from the sidebar — keeping two
+          surfaces for the same thing was producing tab-noise without
+          adding decision power. The `view` / `onView` props are kept on
+          the toolbar signature so older callers still compile; they're
+          unused at this layer.) */}
       <div className="flex items-center gap-2 flex-wrap">
-        {/* Owner ask (May 2026, v3): Board / Flow / Needs attention /
-            List were removed from the toolbar — too many ways to do
-            the same thing was creating "multiple options = multiple
-            confusion" again. Only Focused (search-first) and
-            Dashboard (executive overview) remain. The other view
-            implementations still exist in the codebase for now in
-            case we bring any back; they just aren't reachable from
-            the UI. */}
-        <div className="inline-flex items-center rounded-lg border border-border bg-card overflow-hidden">
-          <button
-            onClick={() => onView('focused')}
-            className={`flex items-center gap-1 px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors ${
-              view === 'focused' ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <Search className="h-3 w-3" /> Focused
-          </button>
-          <button
-            onClick={() => onView('executive')}
-            className={`flex items-center gap-1 px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors border-l border-border ${
-              view === 'executive' ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <LayoutDashboard className="h-3 w-3" /> Dashboard
-          </button>
-        </div>
+        {/* No-op references so the unused-vars TS rule passes — view +
+            onView are still required by callers that haven't migrated. */}
+        {void view as any}{void onView as any}
 
         {/* Sort dropdown — only if the caller wired sort + onSort. */}
         {sort && onSort && (
