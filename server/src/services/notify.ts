@@ -47,6 +47,23 @@ export interface NotifyInput {
   actorId?: string;             // who triggered the event
 }
 
+/**
+ * notifyDataChanged — emit a lightweight 'data:changed' socket event
+ * so connected clients can refresh their dashboards in near-real-time.
+ *
+ * This is intentionally a fire-and-forget broadcast, NOT a persisted
+ * notification. The bell stays clean. Listeners on the client
+ * (WorkroomHome, CommandCenter) debounce a refresh on receiving it.
+ *
+ * Scoped to one org room.
+ */
+export function notifyDataChanged(io: any, organizationId: string, kind: string, entityId?: string): void {
+  try {
+    if (!io || !organizationId) return;
+    io.to(`org:${organizationId}`).emit('data:changed', { kind, entity: entityId });
+  } catch { /* socket layer hiccup — fine, polling will catch up */ }
+}
+
 export async function notify(input: NotifyInput): Promise<void> {
   try {
     let recipients: string[] = [];

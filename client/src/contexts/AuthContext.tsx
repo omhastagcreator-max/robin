@@ -60,10 +60,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(mapped);
         localStorage.setItem(USER_KEY, JSON.stringify(mapped));
       })
-      .catch(() => {
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(USER_KEY);
-        setUser(null);
+      .catch((err: any) => {
+        // Owner ask (June 2026): "refreshing the screen logs me out".
+        // Root cause: this .catch used to wipe the token on ANY error —
+        // including a transient network blip or a Render cold-start
+        // taking >5s on the first request after idle. Now we ONLY clear
+        // the token when the server explicitly says the token is bad
+        // (401). For everything else we keep the cached user object
+        // (already in localStorage) and let the next API call retry.
+        const status = err?.response?.status;
+        if (status === 401) {
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(USER_KEY);
+          setUser(null);
+        }
+        // Else: leave cached user in place; the existing axios retry +
+        // 401-strike logic will handle real auth failures on the next
+        // request. A cold-start fetch failure (network error, no status)
+        // no longer punts the user to /login.
       })
       .finally(() => setLoading(false));
   }, []);

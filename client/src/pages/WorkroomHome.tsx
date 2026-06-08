@@ -96,8 +96,29 @@ export default function WorkroomHome() {
   useEffect(() => {
     const load = () => api.getWorkroomSnapshot().then(setSnap).catch(() => {}).finally(() => setLoading(false));
     load();
-    const iv = setInterval(load, 60_000);
-    return () => clearInterval(iv);
+    // Polling fallback at 30s (down from 60s) so the dashboard never
+    // goes more than half a minute without a refresh even if the
+    // socket layer is unreachable.
+    const iv = setInterval(load, 30_000);
+
+    // Real-time refresh: server emits 'data:changed' on every mutation
+    // (checklist tick, service complete, task create/update/accept,
+    // workflow create). AppLayout's socket listener re-dispatches it
+    // as 'robin:data-changed' on window so any page can pick it up
+    // without owning its own socket subscription. Debounced to avoid
+    // hammering the API when several mutations land at once.
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    const onDataChanged = () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(load, 800);
+    };
+    window.addEventListener('robin:data-changed', onDataChanged);
+
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener('robin:data-changed', onDataChanged);
+      if (debounce) clearTimeout(debounce);
+    };
   }, []);
 
   const firstName = (user?.name || user?.email || '').split(' ')[0] || 'there';

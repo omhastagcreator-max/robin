@@ -3,7 +3,7 @@ import { AuthRequest } from '../middleware/authMiddleware';
 import User from '../models/User';
 import ProjectTask from '../models/ProjectTask';
 import Project from '../models/Project';
-import { notify } from '../services/notify';
+import { notify, notifyDataChanged } from '../services/notify';
 
 /**
  * Tasks — STRICT org isolation. Every read, update and delete verifies the
@@ -109,6 +109,7 @@ export async function createTask(req: AuthRequest, res: Response): Promise<void>
         { totalTasks: count, completedTasks: done },
       );
     }
+    notifyDataChanged(req.app.get('io'), orgId, 'task.created', String(task._id));
     res.status(201).json(task);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -187,6 +188,7 @@ export async function updateTask(req: AuthRequest, res: Response): Promise<void>
         },
       );
     }
+    notifyDataChanged(req.app.get('io'), orgId, 'task.updated', String(task._id));
     res.json(task);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -435,6 +437,7 @@ export async function acceptTask(req: AuthRequest, res: Response): Promise<void>
         entityId: String(task._id), entityType: 'task',
       });
     }
+    notifyDataChanged(req.app.get('io'), orgId, 'task.accepted', String(task._id));
     res.json(task);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }

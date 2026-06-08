@@ -463,13 +463,26 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
       if (localStorage.getItem('robin.huddle.autoJoinDisabled') === '1') return;
     } catch { /* private mode — proceed with auto-join */ }
 
-    // Initial vs. re-join sizing — first time on this mount uses a
-    // ~400ms warm-up. After a manual Leave we wait REJOIN_DELAY_MS
-    // since `lastLeaveAtRef` was set.
+    // Initial vs. re-join sizing.
+    // - First mount, fresh login: ~400ms warm-up so the LiveKit SDK
+    //   has time to finish boot.
+    // - First mount IMMEDIATELY AFTER A REFRESH (sessionStorage flag
+    //   set by the pagehide handler): skip the warm-up and rejoin
+    //   right away so the user doesn't perceive a "kicked from
+    //   huddle" gap when reloading the page.
+    // - After a manual Leave click on the SAME page-mount, hold off
+    //   for REJOIN_DELAY_MS so the user can actually leave.
     const sinceLeave = Date.now() - lastLeaveAtRef.current;
+    let isReload = false;
+    try {
+      if (sessionStorage.getItem('robin.huddle.reloading') === '1') {
+        isReload = true;
+        sessionStorage.removeItem('robin.huddle.reloading');
+      }
+    } catch { /* private mode */ }
     const wait = autoJoinedRef.current
       ? Math.max(0, REJOIN_DELAY_MS - sinceLeave)
-      : 400;
+      : (isReload ? 0 : 400);
 
     autoJoinedRef.current = true;
     // Flip mode to 'joining' DIRECTLY — not via join() — because join()
@@ -598,7 +611,29 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
   // need a different content-type. Server treats no-op gracefully.
   useEffect(() => {
     if (!meeting.joined) return;
-    const onUnload = () => {
+    const onUnload = (e: PageTransitionEvent) => {
+      // Owner ask (June 2026): "refreshing the screen logs me out of
+      // huddle". Pagehide fires on BOTH refresh AND tab-close, but we
+      // only want to flush the huddle timer on real tab-close. Two
+      // guardrails:
+      //
+      //   1. e.persisted === true  → page is going into the bfcache
+      //      (back/forward nav). Don't fire — the user will be back
+      //      without losing huddle state.
+      //
+      //   2. The auto-rejoin effect on mount immediately rejoins for
+      //      every non-client role. So even when we DO send huddle-left
+      //      on refresh, the user re-enters within ~400ms. The cost is
+      //      a small gap in the worked-time counter. To eliminate the
+      //      gap, we now set a 'robin.huddle.reloading' sessionStorage
+      //      flag on EVERY unload — if the new mount finds the flag,
+      //      it knows it was a refresh and we DON'T need to flush the
+      //      huddle timer at all.
+      try {
+        sessionStorage.setItem('robin.huddle.reloading', '1');
+      } catch { /* private mode */ }
+
+      if (e.persisted) return;     // bfcache → not a real exit
       try {
         const token = localStorage.getItem('robin_token');
         const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';

@@ -6,7 +6,7 @@ import WorkflowActivity from '../models/WorkflowActivity';
 import User from '../models/User';
 import SopOverride from '../models/SopOverride';
 import { SERVICE_TEMPLATES, SERVICE_TYPES, blockingServices, type ServiceType } from '../lib/workflowTemplates';
-import { notify } from '../services/notify';
+import { notify, notifyDataChanged } from '../services/notify';
 import { performWorkflowAction, WorkflowActionError } from '../services/workflowActions';
 import { recomputeWorkflowHealth } from '../jobs/healthInference';
 
@@ -197,6 +197,7 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
       });
     }
 
+    notifyDataChanged(req.app.get('io'), orgId, 'workflow.created', String(wf._id));
     res.status(201).json(wf);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -414,6 +415,8 @@ export async function toggleChecklist(req: AuthRequest, res: Response): Promise<
         },
         postHook: async (wf: any) => { try { await recomputeWorkflowHealth(String(wf._id)); } catch {} },
       });
+      // Broadcast 'data:changed' to the org so dashboards refresh.
+      notifyDataChanged(req.app.get('io'), orgId, 'checklist.toggled', req.params.id);
       res.json(result.workflow);
     } catch (err: any) {
       if (err instanceof WorkflowActionError) {
@@ -519,6 +522,7 @@ export async function completeService(req: AuthRequest, res: Response): Promise<
         });
       }
 
+      notifyDataChanged(req.app.get('io'), orgId, 'service.completed', String(wf._id));
       res.json(wf);
     } catch (err: any) {
       if (err instanceof WorkflowActionError) {

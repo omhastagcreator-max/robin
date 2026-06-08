@@ -82,8 +82,22 @@ export default function CommandCenter() {
   };
   useEffect(() => {
     load();
-    const iv = setInterval(() => load(true), 60_000);
-    return () => clearInterval(iv);
+    // 30s polling fallback + real-time refresh from socket-driven
+    // 'robin:data-changed' DOM events (dispatched by AppLayout when
+    // the server emits 'data:changed' on any mutation). 800ms debounce
+    // so a burst of mutations doesn't fire several snapshot calls.
+    const iv = setInterval(() => load(true), 30_000);
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    const onDataChanged = () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(() => load(true), 800);
+    };
+    window.addEventListener('robin:data-changed', onDataChanged);
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener('robin:data-changed', onDataChanged);
+      if (debounce) clearTimeout(debounce);
+    };
   }, []);
 
   return (

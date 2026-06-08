@@ -161,13 +161,26 @@ function AppLayoutInner({ children }: Props) {
         duration: 4500,
       });
     };
+    // Real-time data refresh signal — server emits 'data:changed'
+    // after any mutation that affects the agency-wide snapshot
+    // (checklist tick, service complete, task create/accept/done,
+    // workflow update). We re-dispatch as a DOM custom event so
+    // pages can listen without each needing a useSocket import.
+    // Coalesced — pages debounce their refresh internally.
+    const onDataChanged = (data: { kind?: string; entity?: string }) => {
+      try {
+        window.dispatchEvent(new CustomEvent('robin:data-changed', { detail: data }));
+      } catch { /* old browser */ }
+    };
     socket.on('notification:new', onNotification);
     socket.on('chat:mention',     onChatMention);
     socket.on('celebrate:fire',   onCelebrate);
+    socket.on('data:changed',     onDataChanged);
     return () => {
       socket.off('notification:new', onNotification);
       socket.off('chat:mention',     onChatMention);
       socket.off('celebrate:fire',   onCelebrate);
+      socket.off('data:changed',     onDataChanged);
     };
   }, [socket, location.pathname]);
 
