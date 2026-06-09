@@ -73,6 +73,7 @@ import searchRoutes             from './routes/search';
 import workroomSnapshotRoutes   from './routes/workroomSnapshot';
 import { startClientHealthScoreCron } from './jobs/clientHealthScoreCron';
 import { startTaskEscalationCron, setEscalationIo } from './jobs/taskEscalationCron';
+import { startTaskNudgeCron, setNudgeIo } from './jobs/taskNudgeCron';
 
 const app = express();
 const httpServer = createServer(app);
@@ -708,6 +709,11 @@ connectDB().then(() => {
     startClientHealthScoreCron();
     setEscalationIo(io);
     startTaskEscalationCron();
+
+    // Every 6h, ping the CREATOR of a task whose assignee is sitting
+    // on it: pending-acceptance >24h, or accepted-but-stale >3 days.
+    setNudgeIo(io);
+    startTaskNudgeCron();
 
     // Stale-socket sweep — runs every 10 minutes.
     //

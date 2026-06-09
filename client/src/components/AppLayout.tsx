@@ -1,4 +1,4 @@
-import { useEffect, createContext, useContext, type ReactNode } from 'react';
+import { useEffect, useState, createContext, useContext, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { MonitorOff } from 'lucide-react';
@@ -20,6 +20,7 @@ import { MeetingQuickFab } from '@/components/shared/MeetingQuickFab';
 import { HelpBubble } from '@/components/shared/HelpBubble';
 import { AiCopilotPanel } from '@/components/shared/AiCopilotPanel';
 import { GlobalSearch } from '@/components/shared/GlobalSearch';
+import { AssignTaskModal } from '@/components/shared/AssignTaskModal';
 import { SlimSidebar }     from '@/components/v2/SlimSidebar';
 import { TopBar }          from '@/components/v2/TopBar';
 import { GlobalShortcuts } from '@/components/v2/GlobalShortcuts';
@@ -80,6 +81,39 @@ function AppLayoutInner({ children }: Props) {
   const location = useLocation();
   const socket = useSocket();
   const { isSharing, stopSharing } = useScreenShare();
+  // Global "assign a task" modal — accessible from a topbar button
+  // (rendered below) AND from the keyboard ('t' shortcut). Anyone on
+  // Robin can open it from anywhere.
+  const [assignTaskOpen, setAssignTaskOpen] = useState(false);
+
+  // 't' keyboard shortcut to open the assign-task modal. We skip the
+  // listener when an input/textarea is focused or a modifier key is
+  // held so it doesn't fire while someone is typing.
+  useEffect(() => {
+    if (!user) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key !== 't' && e.key !== 'T') return;
+      const target = e.target as HTMLElement | null;
+      if (target && /input|textarea|select/i.test(target.tagName)) return;
+      if (target && target.isContentEditable) return;
+      e.preventDefault();
+      setAssignTaskOpen(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [user]);
+
+  // Proactively ask for OS notification permission once per user so
+  // we can fire desktop alerts when a task is assigned and Robin
+  // isn't the focused tab. Best-effort; failure is silent.
+  useEffect(() => {
+    if (!user) return;
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+      try { Notification.requestPermission().catch(() => {}); } catch { /* */ }
+    }
+  }, [user]);
   // Mount the knock receiver once at the shell level so the chime +
   // toast fire wherever the user is in Robin — even on a page that
   // never instantiated a huddle / chat component.
@@ -172,12 +206,35 @@ function AppLayoutInner({ children }: Props) {
         window.dispatchEvent(new CustomEvent('robin:data-changed', { detail: data }));
       } catch { /* old browser */ }
     };
+
+    // Task-assignment promptness: when the bell event type is one of
+    // the task.* types AND the OS notification permission is granted,
+    // fire a desktop notification too. That way the assignee sees
+    // "New task to accept" even when Robin isn't the focused tab.
+    // Falls back silently when permission is 'default' or 'denied'.
+    const onTaskBellNotification = (data: any) => {
+      try {
+        if (!data?.type || !String(data.type).startsWith('task.')) return;
+        if (typeof window === 'undefined' || !('Notification' in window)) return;
+        if (Notification.permission !== 'granted') return;
+        if (document.visibilityState === 'visible') return;     // user is here; toast covers it
+        const n = new Notification(`Robin · ${data.title || 'Task update'}`, {
+          body: data.body || '',
+          icon: '/favicon.ico',
+          tag:  data.entityId ? `task-${data.entityId}` : 'task',
+        });
+        n.onclick = () => { window.focus(); n.close(); };
+      } catch { /* old browser / private mode */ }
+    };
+
     socket.on('notification:new', onNotification);
+    socket.on('notification:new', onTaskBellNotification);
     socket.on('chat:mention',     onChatMention);
     socket.on('celebrate:fire',   onCelebrate);
     socket.on('data:changed',     onDataChanged);
     return () => {
       socket.off('notification:new', onNotification);
+      socket.off('notification:new', onTaskBellNotification);
       socket.off('chat:mention',     onChatMention);
       socket.off('celebrate:fire',   onCelebrate);
       socket.off('data:changed',     onDataChanged);
@@ -255,6 +312,25 @@ function AppLayoutInner({ children }: Props) {
       {user && ['admin', 'sales', 'employee'].includes(role) && <AiCopilotPanel />}
       {/* Cmd-K instant entity search. Cheap; no AI call. */}
       {user && ['admin', 'sales', 'employee'].includes(role) && <GlobalSearch />}
+      {/* Global "Assign a task" — accessible from a fixed pill at the
+          bottom-left of every internal page + via the 't' keyboard
+          shortcut. Internal roles only (clients don't assign tasks). */}
+      {user && ['admin', 'sales', 'employee'].includes(role) && (
+        <>
+          <button
+            type="button"
+            onClick={() => setAssignTaskOpen(true)}
+            className="fixed bottom-5 left-5 z-40 inline-flex items-center gap-1.5 px-3 py-2.5 rounded-full shadow-lg bg-card border border-border text-[12px] font-semibold hover:bg-muted/40 transition-transform hover:scale-[1.03]"
+            title="Assign a task to anyone (press 't' anywhere)"
+            aria-label="Assign a task"
+          >
+            <span className="h-5 w-5 rounded-md inline-flex items-center justify-center text-white text-[12px] font-bold"
+                  style={{ background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 100%)' }}>+</span>
+            Assign task
+          </button>
+          <AssignTaskModal open={assignTaskOpen} onClose={() => setAssignTaskOpen(false)} />
+        </>
+      )}
       <GlobalShortcuts />
     </SlimSidebar>
     </AppLayoutNestedCtx.Provider>

@@ -122,6 +122,15 @@ const ProjectTaskSchema = new Schema({
   escalationLevel:   { type: Number, default: 0, min: 0, max: 3 },
   lastEscalatedAt:   { type: Date, default: null },
 
+  /**
+   * Last time a "chase the assignee" reminder was sent to the
+   * CREATOR (assignedBy). Used by jobs/taskNudgeCron to avoid
+   * re-pinging the creator more than once every 24h on the same
+   * task. Separate from lastEscalatedAt which targets the assignee
+   * chain.
+   */
+  lastCreatorNudgeAt: { type: Date, default: null },
+
   // Bookkeeping for bulk wipe-and-replace imports. The import script
   // tags everything it creates so subsequent re-runs can delete the
   // previous batch cleanly without touching tasks created in-app.
