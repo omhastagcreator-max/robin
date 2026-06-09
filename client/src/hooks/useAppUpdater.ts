@@ -24,8 +24,12 @@ import { toast } from 'sonner';
  * Mount ONCE at the AppLayout level.
  */
 
-const POLL_INTERVAL_MS    = 60_000;          // every minute
-const IDLE_AUTO_RELOAD_MS = 5 * 60_000;      // 5 min with no input → auto reload
+// Owner ask (June 2026): "refresh the login for today for all
+// automatically so that the changes are live". Tightened the polling
+// + auto-reload thresholds so deployments propagate within ~30s
+// across the whole team without anyone having to manually refresh.
+const POLL_INTERVAL_MS    = 30_000;          // every 30s (was 60s)
+const IDLE_AUTO_RELOAD_MS = 30_000;          // 30s idle → auto reload (was 5 min)
 
 export function useAppUpdater() {
   // Track when the user last did anything; we use this to decide whether
@@ -97,14 +101,18 @@ export function useAppUpdater() {
     };
 
     const maybeAutoReload = () => {
-      // Wait until the user has been idle for at least IDLE_AUTO_RELOAD_MS
-      // before we kick the page out from under them. If they're typing
-      // in chat right now, the toast stays and they reload on their own.
+      // Aggressive policy (June 2026): if the tab is hidden, reload
+      // immediately — the user isn't looking, so a silent swap is
+      // strictly better than waiting them to come back to an old
+      // bundle. If the tab IS visible, we still respect a 30-second
+      // idle window so we don't yank a half-typed message out from
+      // under someone.
+      if (document.visibilityState === 'hidden') {
+        window.location.reload();
+        return;
+      }
       const idleFor = Date.now() - lastActivityRef.current;
       if (idleFor < IDLE_AUTO_RELOAD_MS) return;
-      // Tab not visible? Even safer — they're not looking. Reload now.
-      // If they ARE visible but idle (e.g. reading), the reload is a
-      // 200ms flicker; preferred over leaving them on an old build.
       window.location.reload();
     };
 

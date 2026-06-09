@@ -581,6 +581,11 @@ export const deleteReminder    = (id: string) =>
 // Task inbox: groups my-assigned + delegated + brand-watch tasks.
 export const taskInbox            = (showDone = false) =>
   api.get('/tasks/inbox', { params: showDone ? { done: 1 } : undefined }).then(r => r.data);
+// Permanent audit history of every assigned task. Filters mirror the
+// server endpoint: direction, status, brand, assignee, sender,
+// since/until, q (title text), limit.
+export const taskLedger           = (params?: Record<string, string | number | undefined>) =>
+  api.get('/tasks/ledger', { params }).then(r => r.data);
 export const tasksForWorkflow     = (workflowId: string) =>
   api.get(`/tasks/workflow/${workflowId}`).then(r => r.data);
 export const taskGraph            = (taskId: string) =>

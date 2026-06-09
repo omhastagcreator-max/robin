@@ -284,6 +284,131 @@ export async function inbox(req: AuthRequest, res: Response): Promise<void> {
 }
 
 /**
+ * ledger — GET /api/tasks/ledger
+ *
+ * Permanent audit history of every assigned task in the org with
+ * rich filters. Unlike `inbox` (which is the "live" working view
+ * limited to status != done), the ledger returns every status —
+ * pending_acceptance, pending, ongoing, blocked, done — so users
+ * can look back at what they assigned, what they received, and what
+ * eventually shipped.
+ *
+ * Query params:
+ *   direction = sent | received | both | all
+ *     - sent     : tasks where assignedBy === me
+ *     - received : tasks where assignedTo === me
+ *     - both     : either side (default)
+ *     - all      : every task in the org (admin / sales only)
+ *   status     = pending_acceptance | pending | ongoing | done | blocked
+ *   brand      = clientWorkflowId
+ *   assignee   = userId  (filter by assignedTo)
+ *   sender     = userId  (filter by assignedBy)
+ *   since      = ISO date — createdAt >= since
+ *   until      = ISO date — createdAt <= until
+ *   q          = free-text search on title
+ *   limit      = default 100, max 500
+ *
+ * Enriched with brand name + sender/owner names so the UI doesn't
+ * need a second user lookup.
+ */
+export async function ledger(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const me   = req.user!.id;
+    const role = req.user!.role;
+    const orgId = await getOrgId(me);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    const direction = String(req.query.direction || 'both');
+    const status    = String(req.query.status || '');
+    const brand     = String(req.query.brand || '');
+    const assignee  = String(req.query.assignee || '');
+    const sender    = String(req.query.sender || '');
+    const since     = String(req.query.since || '');
+    const until     = String(req.query.until || '');
+    const q         = String(req.query.q || '').slice(0, 100);
+    const limit     = Math.min(500, Math.max(1, parseInt(String(req.query.limit || '100'), 10)));
+
+    const filter: any = { organizationId: orgId };
+
+    // Direction guards — non-admin/sales can't pull all-org records.
+    if (direction === 'sent')     filter.assignedBy = me;
+    else if (direction === 'received') filter.assignedTo = me;
+    else if (direction === 'both' || direction === '')
+      filter.$or = [{ assignedBy: me }, { assignedTo: me }];
+    else if (direction === 'all') {
+      if (role !== 'admin' && role !== 'sales') {
+        res.status(403).json({ error: 'Only admin / sales can query the org-wide ledger' });
+        return;
+      }
+      // no scope filter beyond org
+    }
+
+    if (status)   filter.status = status;
+    if (brand)    filter.clientWorkflowId = brand;
+    if (assignee) filter.assignedTo = assignee;
+    if (sender)   filter.assignedBy = sender;
+    if (since || until) {
+      filter.createdAt = {};
+      if (since) filter.createdAt.$gte = new Date(since);
+      if (until) filter.createdAt.$lte = new Date(until);
+    }
+    if (q) {
+      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.title = { $regex: escaped, $options: 'i' };
+    }
+
+    const tasks = await ProjectTask.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    // Bulk-resolve brand + user names so the UI doesn't fan out.
+    const ClientWorkflow = (await import('../models/ClientWorkflow')).default;
+    const User           = (await import('../models/User')).default;
+    const brandIds = Array.from(new Set(tasks.map(t => String(t.clientWorkflowId || '')).filter(Boolean)));
+    const userIds  = Array.from(new Set(
+      tasks.flatMap(t => [String(t.assignedTo || ''), String(t.assignedBy || '')]).filter(Boolean),
+    ));
+    const [brands, users] = await Promise.all([
+      brandIds.length ? ClientWorkflow.find({ _id: { $in: brandIds } }).select('_id clientName').lean() : Promise.resolve([]),
+      userIds.length  ? User.find({ _id: { $in: userIds } }).select('_id name email avatarUrl').lean() : Promise.resolve([]),
+    ]);
+    const brandById = new Map(brands.map(b => [String(b._id), b.clientName || '']));
+    const userById  = new Map(users.map(u => [String(u._id), u]));
+
+    const rows = tasks.map(t => ({
+      _id: String(t._id),
+      title: t.title,
+      description: t.description || '',
+      status: t.status,
+      priority: t.priority,
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
+      dueDate: t.dueDate || null,
+      completedAt: t.completedAt || null,
+      estimatedCompletionAt: t.estimatedCompletionAt || null,
+      estimatedHours: t.estimatedHours || null,
+      assignedTo: t.assignedTo || '',
+      assignedToName: t.assignedTo ? (userById.get(String(t.assignedTo))?.name || '') : '',
+      assignedToAvatar: t.assignedTo ? userById.get(String(t.assignedTo))?.avatarUrl : undefined,
+      assignedBy: t.assignedBy || '',
+      assignedByName: t.assignedBy ? (userById.get(String(t.assignedBy))?.name || '') : '',
+      clientWorkflowId: t.clientWorkflowId ? String(t.clientWorkflowId) : '',
+      clientName: t.clientWorkflowId ? brandById.get(String(t.clientWorkflowId)) || '' : '',
+    }));
+
+    res.json({
+      rows,
+      counts: {
+        total: rows.length,
+        byStatus: rows.reduce((m: Record<string, number>, r) => { m[r.status as any] = (m[r.status as any] || 0) + 1; return m; }, {}),
+      },
+      filter: { direction, status, brand, assignee, sender, since, until, q, limit },
+    });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
  * Tasks scoped to one brand workflow — used on ClientWorkspacePage's
  * tasks row. Org-isolated like everything else.
  */

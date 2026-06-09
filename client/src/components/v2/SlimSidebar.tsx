@@ -5,7 +5,7 @@ import {
   Building2, BarChart2, CalendarOff, Clock, BarChart3, Calendar,
   Bug, CalendarDays, Workflow, UserPlus, AlertTriangle, KeyRound,
   Sparkles, LogOut, Bird, ChevronsLeft, ChevronsRight, Bell, Settings,
-  TrendingUp, Compass,
+  TrendingUp, Compass, Archive,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnreadCounts } from '@/contexts/UnreadCountsContext';
@@ -67,6 +67,7 @@ const NAV: NavItem[] = [
 
   // ── WORK ────────────────────────────────────────────────────────
   { to: '/tasks',             label: 'Tasks',         icon: ListTodo,        section: 'work',      roles: ['employee', 'admin', 'sales'] },
+  { to: '/tasks/ledger',      label: 'Task ledger',   icon: Archive,         section: 'work',      roles: ['employee', 'admin', 'sales'] },
   { to: '/clients/pipeline',  label: 'Client CRM',    icon: Workflow,        section: 'work',      roles: ['admin', 'employee', 'sales'] },
   { to: '/admin/clients',     label: 'Clients',       icon: Building2,       section: 'work',      roles: ['admin'] },
   { to: '/admin/projects',    label: 'Projects',      icon: Briefcase,       section: 'work',      roles: ['admin'] },

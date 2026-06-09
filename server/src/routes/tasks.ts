@@ -4,7 +4,7 @@ import { requireRole } from '../middleware/roleMiddleware';
 import {
   listTasks, createTask, getTask, updateTask, deleteTask,
   getProjectTasks, addComment, inbox, listForWorkflow,
-  setDependencies, getGraph, acceptTask, declineTask,
+  setDependencies, getGraph, acceptTask, declineTask, ledger,
 } from '../controllers/tasksController';
 
 const router = Router();
@@ -13,6 +13,7 @@ router.use(authMiddleware);
 // IMPORTANT — define specific routes BEFORE /:id so Express doesn't
 // treat 'inbox' or 'workflow' as an id and 404 with "Task not found".
 router.get('/inbox', inbox);
+router.get('/ledger', ledger);
 router.get('/workflow/:workflowId', listForWorkflow);
 router.get('/project/:projectId', getProjectTasks);
 
