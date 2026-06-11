@@ -639,3 +639,14 @@ export const globalSearch         = (q: string) =>
 // New Workroom dashboard — user-scoped agency snapshot.
 export const getWorkroomSnapshot  = () =>
   api.get('/workroom/snapshot').then(r => r.data);
+
+// Weekly day-plan — admin-curated round-robin schedule of which
+// brands an employee handles each day + tasks + weekly target.
+export const getMyDayPlan         = (week?: string) =>
+  api.get('/day-plan/me', { params: week ? { week } : undefined }).then(r => r.data);
+export const getUserDayPlan       = (userId: string, week?: string) =>
+  api.get(`/day-plan/user/${userId}`, { params: week ? { week } : undefined }).then(r => r.data);
+export const setUserDayPlan       = (userId: string, body: { entries: any[]; weeklyTarget?: string; notes?: string }, week?: string) =>
+  api.put(`/day-plan/user/${userId}`, body, { params: week ? { week } : undefined }).then(r => r.data);
+export const autoDistributeDayPlan = (userId: string, replace = false, week?: string) =>
+  api.post(`/day-plan/user/${userId}/auto-distribute`, {}, { params: { ...(week ? { week } : {}), ...(replace ? { replace: 1 } : {}) } }).then(r => r.data);

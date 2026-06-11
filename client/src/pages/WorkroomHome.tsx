@@ -10,6 +10,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { PendingAcceptanceBanner } from '@/components/workroom/PendingAcceptanceBanner';
+import { DayPlanTable } from '@/components/workroom/DayPlanTable';
 import * as api from '@/api';
 
 /**
@@ -138,6 +139,14 @@ export default function WorkroomHome() {
               {/* Pending-acceptance banner — auto-hides when empty. Top
                   of the page so cross-team handoffs aren't missed. */}
               <PendingAcceptanceBanner />
+
+              {/* Weekly day-plan table — admin-curated round-robin
+                  schedule. Pinned at the very top of the working area
+                  (above the dashboard widgets and the huddle area
+                  further down the page) so it's the first thing each
+                  employee sees when they sit down. Auto-hides when no
+                  plan has been set for the current week. */}
+              <DayPlanTable />
 
               {loading && !snap ? (
                 <SkeletonBlock />

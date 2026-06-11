@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 
 import { AppLayout } from '@/components/AppLayout';
+import { DayPlanEditorSection } from '@/components/command/DayPlanEditorSection';
 import * as api from '@/api';
 
 /**
@@ -133,6 +134,12 @@ export default function CommandCenter() {
             {/* 6. Team Performance. */}
             <SectionHeader title="Team Performance" subtitle="Color-coded by capacity." />
             <TeamPerformance rows={snap.accountability} />
+
+            {/* 6b. Day plan editor — admin sets each teammate's weekday
+                schedule + weekly target. Employees see this live on
+                their Workroom. */}
+            <SectionHeader title="Day Plan" subtitle="Round-robin client schedule + weekly target per teammate." />
+            <DayPlanEditorSection />
 
             {/* 7. Upcoming Events. */}
             <SectionHeader title="Upcoming Events" />

@@ -9,6 +9,7 @@ import { EmptyState }  from '@/components/ui/EmptyState';
 import { PeopleGrid, type PeopleGridItem } from '@/components/ui/PeopleGrid';
 import { HuddleStage } from '@/components/shared/HuddleStage';
 import { KnockButton } from '@/components/shared/KnockButton';
+import { DayPlanTable } from '@/components/workroom/DayPlanTable';
 import { useAuth }     from '@/contexts/AuthContext';
 import { useUnifiedPresence } from '@/hooks/useUnifiedPresence';
 
@@ -43,6 +44,12 @@ export default function WorkRoom() {
             </p>
           </div>
         </div>
+
+        {/* Day plan — pinned ABOVE the huddle so each teammate's
+            assigned brands + tasks + weekly target are the first
+            thing visible when they walk into the workroom. Auto-
+            hides when no plan is set. */}
+        {isInternal && <DayPlanTable />}
 
         {/* Banners */}
         {onBreak.length > 0 && (
