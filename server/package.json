@@ -11,7 +11,8 @@
     "import-crm": "npx ts-node src/scripts/importCrmSheets.ts",
     "reassign-roles": "npx ts-node src/scripts/reassignByRole.ts",
     "seed-checklists": "npx ts-node src/scripts/seedChecklists.ts",
-    "ensure-stages":   "npx ts-node src/scripts/ensureAllStages.ts"
+    "ensure-stages":   "npx ts-node src/scripts/ensureAllStages.ts",
+    "add-bhawna":      "node_modules/.bin/ts-node src/scripts/addBhawna.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

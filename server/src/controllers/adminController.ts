@@ -59,32 +59,106 @@ export async function getActivityLog(req: AuthRequest, res: Response): Promise<v
 }
 
 // POST /api/admin/invite  (creates user directly)
+//
+// June 2026 — fixed three compounding bugs that surfaced as "unable
+// to create new team member from admin side":
+//
+//   1. The duplicate check was GLOBAL (any org), not org-scoped.
+//      Re-using an email that ever existed (incl. another tenant)
+//      returned 409 "User already exists" and admin couldn't add a
+//      new teammate even though the email was free in their agency.
+//
+//   2. A user that was previously DEACTIVATED (soft-delete sets
+//      isActive=false but keeps the row) still triggered the dup
+//      check, so re-adding a teammate who left and came back was
+//      impossible. Now: detect a deactivated match in THIS org and
+//      reactivate it instead of failing.
+//
+//   3. The Mongo email-unique index throws E11000 if you slip past
+//      the explicit check (e.g. race between two admin invites).
+//      We now catch that distinct error code and translate to a
+//      clear, actionable 409 instead of a 500 with raw Mongo guts.
 export async function inviteUser(req: AuthRequest, res: Response): Promise<void> {
   try {
     const { email, role = 'employee', name = '', team = '', password = 'Robin2024!' } = req.body;
     if (!email) { res.status(400).json({ error: 'Email required' }); return; }
+    const normalized = String(email).trim().toLowerCase();
 
-    const existing = await User.findOne({ email: email.toLowerCase() });
-    if (existing) { res.status(409).json({ error: 'User already exists' }); return; }
-
-    let org = await Organization.findOne();
+    // Resolve the inviting admin's org. Falls back to first org if the
+    // admin's record somehow has none (legacy seed accounts).
+    let org;
+    const actor = await User.findById(req.user!.id).select('organizationId').lean();
+    if (actor?.organizationId) {
+      org = await Organization.findById(actor.organizationId);
+    }
+    if (!org) org = await Organization.findOne();
     if (!org) org = await Organization.create({ name: 'Robin Agency', plan: 'pro' });
 
-    const user = await User.create({
-      email: email.toLowerCase(),
-      passwordHash: password,
-      name: name || email.split('@')[0],
-      role,
-      team,
+    // Same-org duplicate check FIRST.
+    const sameOrgMatch = await User.findOne({
+      email: normalized,
       organizationId: org._id,
     });
+    if (sameOrgMatch) {
+      if (sameOrgMatch.isActive === false) {
+        // Deactivated teammate coming back — reactivate + (optionally)
+        // reset role + password instead of throwing.
+        sameOrgMatch.isActive = true;
+        if (role)  sameOrgMatch.role  = role;
+        if (team)  sameOrgMatch.team  = team;
+        sameOrgMatch.passwordHash = password;     // pre-save hook bcrypts
+        await sameOrgMatch.save();
+        res.status(200).json({
+          message: `Reactivated existing teammate: ${normalized}`,
+          credentials: { email: normalized, password, role: sameOrgMatch.role },
+          userId: String(sameOrgMatch._id),
+          reactivated: true,
+        });
+        return;
+      }
+      res.status(409).json({ error: `${normalized} is already a teammate in this agency.` });
+      return;
+    }
 
-    res.status(201).json({ 
-      message: `User created: ${email}`,
-      credentials: { email, password, role },
-      userId: String(user._id),
-    });
-  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+    // Cross-org collision: the email exists in ANOTHER tenant. The
+    // global unique index on User.email would throw E11000 below if
+    // we proceed. Surface a clear error so admin knows it's not
+    // their copy of the email that's the problem.
+    const crossOrgMatch = await User.findOne({ email: normalized });
+    if (crossOrgMatch) {
+      res.status(409).json({
+        error: `${normalized} is registered in another Robin workspace. Use a different email.`,
+      });
+      return;
+    }
+
+    try {
+      const user = await User.create({
+        email: normalized,
+        passwordHash: password,
+        name: name || normalized.split('@')[0],
+        role,
+        team,
+        organizationId: org._id,
+      });
+      res.status(201).json({
+        message: `User created: ${normalized}`,
+        credentials: { email: normalized, password, role },
+        userId: String(user._id),
+      });
+    } catch (createErr: any) {
+      // E11000 = duplicate key on the unique email index. Translate
+      // to a clean 409 instead of leaking Mongo internals.
+      if (createErr?.code === 11000) {
+        res.status(409).json({ error: `${normalized} is already registered. Use a different email.` });
+        return;
+      }
+      throw createErr;
+    }
+  } catch (err) {
+    console.error('[adminInvite] failed:', (err as Error).message);
+    res.status(500).json({ error: (err as Error).message || 'Could not create user' });
+  }
 }
 
 // PUT /api/admin/users/:id/role

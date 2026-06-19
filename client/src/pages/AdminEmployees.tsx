@@ -85,12 +85,22 @@ export default function AdminEmployees() {
     setInviting(true);
     try {
       const resp = await api.adminInvite({ email: inviteEmail, role: inviteRole });
-      toast.success(`${resp.credentials?.email} created. Password: ${resp.credentials?.password}`, { duration: 8000 });
+      const verb = resp?.reactivated ? 'Reactivated' : 'Created';
+      toast.success(
+        `${verb} ${resp.credentials?.email}. Password: ${resp.credentials?.password}`,
+        { duration: 10000 },
+      );
       setInviteEmail('');
       setShowInvite(false);
       load();
-    } catch {
-      toast.error('Failed to create user');
+    } catch (err: any) {
+      // Surface the real server error instead of a swallowing 'Failed
+      // to create user' so the admin can fix it (e.g. email already
+      // exists, malformed input, server down).
+      const msg = err?.response?.data?.error
+        || err?.message
+        || 'Could not create the teammate. Try again.';
+      toast.error(msg, { duration: 7000 });
     } finally { setInviting(false); }
   };
 

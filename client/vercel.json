@@ -3,7 +3,7 @@
   "name": "robin-client",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "installCommand": "npm install",
+  "installCommand": "rm -rf node_modules package-lock.json && npm install --include=optional",
   "framework": "vite",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
