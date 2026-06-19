@@ -406,16 +406,24 @@ function PeerTile({ peer, presenceStatus, onCall, deafened, hasMutedYou, inMeeti
             <Monitor className="h-2.5 w-2.5" />
           </span>
         )}
-        {/* Remote-mute button — only shown when the peer's mic is
-            live. Click sends a 'huddle:mute-request' through the
-            server which then pings the target with our name. */}
-        {peer.audioOn && onRequestMute && (
+        {/* Remote-mute button — always visible so the control is
+            discoverable. Disabled (dim) when the peer is already
+            muted instead of vanishing, so the affordance never
+            mysteriously disappears between actions. Click sends a
+            'huddle:mute-request' through the server which pings the
+            target with our name. */}
+        {onRequestMute && (
           <button
             type="button"
             onClick={onRequestMute}
-            title={`Mute ${peer.name || 'this teammate'}`}
+            disabled={!peer.audioOn}
+            title={peer.audioOn ? `Mute ${peer.name || 'this teammate'}` : `${peer.name || 'They'} are already muted`}
             aria-label="Remote mute"
-            className="h-5 w-5 rounded-full bg-rose-500/12 text-rose-600 hover:bg-rose-500/25 flex items-center justify-center"
+            className={`h-5 w-5 rounded-full flex items-center justify-center transition-colors ${
+              peer.audioOn
+                ? 'bg-rose-500/15 text-rose-600 hover:bg-rose-500/30'
+                : 'bg-muted text-muted-foreground/40 cursor-not-allowed'
+            }`}
           >
             <VolumeX className="h-2.5 w-2.5" />
           </button>

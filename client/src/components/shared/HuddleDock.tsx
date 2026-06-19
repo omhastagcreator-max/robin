@@ -331,16 +331,23 @@ function ParticipantTile({
         </p>
       </div>
 
-      {/* Remote-mute button — only on peer tiles where mic is live.
-          Hidden by default; shows on tile-hover. Click fires a socket
-          event that mutes the peer's mic and toasts them with our name. */}
-      {!isSelf && onRequestMute && showAudioOn && (
+      {/* Remote-mute button — always visible on every peer tile so the
+          control is discoverable without hovering. Disabled (visibly
+          dim) when the peer is already muted instead of vanishing, so
+          users know the affordance exists. Click fires a socket event
+          that mutes the peer's mic and toasts them with our name. */}
+      {!isSelf && onRequestMute && (
         <button
           type="button"
           onClick={onRequestMute}
-          title={`Mute ${name}`}
+          disabled={!showAudioOn}
+          title={showAudioOn ? `Mute ${name}` : `${name} is already muted`}
           aria-label={`Mute ${name}`}
-          className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 rounded-full bg-rose-500/12 text-rose-600 hover:bg-rose-500/25 flex items-center justify-center shrink-0"
+          className={`h-6 w-6 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+            showAudioOn
+              ? 'bg-rose-500/15 text-rose-600 hover:bg-rose-500/30'
+              : 'bg-muted text-muted-foreground/40 cursor-not-allowed'
+          }`}
         >
           <VolumeX className="h-3 w-3" />
         </button>
