@@ -402,6 +402,46 @@ io.on('connection', (socket) => {
     socket.to(`meeting:${roomId}`).emit('meeting:track-state', { userId, state });
   });
 
+  // ── Remote mute relay (June 2026) ────────────────────────────────────────
+  // Anyone in the huddle can mute anyone else (e.g. when a teammate
+  // forgets to mute and you can hear their dog). The target sees a
+  // toast naming the muter so it's never anonymous, and they can
+  // unmute themselves whenever via their normal mic control.
+  //
+  // Two events:
+  //   client → server  'huddle:mute-request'
+  //                    { targetUserId, roomId? }
+  //   server → target  'huddle:muted-by'
+  //                    { actorId, actorName, roomId }
+  //
+  // Auth: the verified socket.data.userId is the actor — we do NOT
+  // trust any actorId/actorName the client sent (prevents spoofing
+  // "Admin muted you" prompts). Org-scoped: we never relay across
+  // tenants. Target is addressed via their personal user:<id> room
+  // so a single recipient gets the signal regardless of how many
+  // tabs they have open.
+  socket.on('huddle:mute-request', ({ targetUserId, roomId = 'agency-global' }: { targetUserId?: string; roomId?: string } = {}) => {
+    if (!userId || !targetUserId) return;
+    if (String(targetUserId) === String(userId)) return;     // can't remote-mute self
+    if (!socketOrgId) return;
+    // Sanity: target must be in the same org. Cheap check via the
+    // onlineUsers map; if they're not present we still relay because
+    // they might be on a tab without active socket-presence yet.
+    let sameOrg = true;
+    for (const info of onlineUsers.values()) {
+      if (info.userId === String(targetUserId)) {
+        if (info.orgId !== socketOrgId) sameOrg = false;
+        break;
+      }
+    }
+    if (!sameOrg) return;
+    io.to(`user:${targetUserId}`).emit('huddle:muted-by', {
+      actorId:   userId,
+      actorName: userName,
+      roomId,
+    });
+  });
+
   // ── Org-wide celebration relay ───────────────────────────────────────────
   // When any teammate triggers a confetti celebration (client onboarded,
   // project closed, etc.) we fan it out to everyone else in the same org

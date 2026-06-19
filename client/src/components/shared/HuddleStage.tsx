@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSocket } from '@/hooks/useSocket';
+import { toast } from 'sonner';
 import type { PeerView } from '@/hooks/useMeetingRoom';
 import { useTeamPresence, type PresenceStatus } from '@/hooks/useTeamPresence';
 import { RemoteAudio, useAudioLevel } from '@/components/shared/RemoteAudio';
@@ -30,6 +32,31 @@ export function HuddleStage() {
   const meeting = useHuddle();
   const { mode, join, leave } = meeting;
   const presence = useTeamPresence();
+  const socket = useSocket();
+
+  // Remote-mute receive-side handler. Server relays mute-requests
+  // to our user room; we kill our local mic and toast the actor's
+  // name so the muted person always knows who did it.
+  useEffect(() => {
+    if (!socket) return;
+    const onMuted = (data: { actorId?: string; actorName?: string }) => {
+      if (meeting.audioOn) { try { meeting.toggleAudio(); } catch { /* */ } }
+      const who = data?.actorName || 'A teammate';
+      toast(`${who} muted you`, {
+        description: 'Tap the mic button to talk again.',
+        icon: '🤫',
+        duration: 6000,
+      });
+    };
+    socket.on('huddle:muted-by', onMuted);
+    return () => { socket.off('huddle:muted-by', onMuted); };
+  }, [socket, meeting]);
+
+  const requestMute = (targetUserId: string) => {
+    if (!socket || !targetUserId) return;
+    socket.emit('huddle:mute-request', { targetUserId });
+    toast.success('Mute request sent.');
+  };
 
   // Pin state — which screen-share is currently maximised. `'self'` for the
   // user's own share; otherwise a peer userId. null = grid view.
@@ -206,6 +233,7 @@ export function HuddleStage() {
                   deafened={meeting.deafened}
                   hasMutedYou={presence.isDeafened(p.userId)}
                   inMeetingUntil={presence.meetingEndsAt(p.userId)}
+                  onRequestMute={() => requestMute(p.userId)}
                 />
               ))}
               {meeting.peers.length === 0 && (
@@ -321,7 +349,7 @@ function SelfTile({
   );
 }
 
-function PeerTile({ peer, presenceStatus, onCall, deafened, hasMutedYou, inMeetingUntil }: { peer: PeerView; presenceStatus: PresenceStatus; onCall?: boolean; deafened?: boolean; hasMutedYou?: boolean; inMeetingUntil?: Date | null }) {
+function PeerTile({ peer, presenceStatus, onCall, deafened, hasMutedYou, inMeetingUntil, onRequestMute }: { peer: PeerView; presenceStatus: PresenceStatus; onCall?: boolean; deafened?: boolean; hasMutedYou?: boolean; inMeetingUntil?: Date | null; onRequestMute?: () => void }) {
   const level = useAudioLevel(peer.audioOn ? peer.stream : null);
   const initial = (peer.name || '?')[0].toUpperCase();
   const meetingTimeStr = inMeetingUntil
@@ -377,6 +405,20 @@ function PeerTile({ peer, presenceStatus, onCall, deafened, hasMutedYou, inMeeti
           <span className="h-5 w-5 rounded-full bg-primary/15 text-primary flex items-center justify-center">
             <Monitor className="h-2.5 w-2.5" />
           </span>
+        )}
+        {/* Remote-mute button — only shown when the peer's mic is
+            live. Click sends a 'huddle:mute-request' through the
+            server which then pings the target with our name. */}
+        {peer.audioOn && onRequestMute && (
+          <button
+            type="button"
+            onClick={onRequestMute}
+            title={`Mute ${peer.name || 'this teammate'}`}
+            aria-label="Remote mute"
+            className="h-5 w-5 rounded-full bg-rose-500/12 text-rose-600 hover:bg-rose-500/25 flex items-center justify-center"
+          >
+            <VolumeX className="h-2.5 w-2.5" />
+          </button>
         )}
         {/* Knock — single shared button. Bypasses deafen, fires chime
             + toast on the recipient wherever they are in Robin. */}

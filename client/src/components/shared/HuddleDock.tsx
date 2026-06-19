@@ -3,9 +3,12 @@ import { useLocation } from 'react-router-dom';
 import {
   Headphones, ChevronDown, ChevronUp, PhoneCall, PhoneOff,
   Mic, MicOff, Monitor, MonitorOff, AlertTriangle, Users, PictureInPicture2,
+  VolumeX,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSocket } from '@/hooks/useSocket';
 import type { PeerView } from '@/hooks/useMeetingRoom';
 import { RemoteAudio } from '@/components/shared/RemoteAudio';
 
@@ -44,6 +47,37 @@ export function HuddleDock() {
   // ALL huddle state comes from the single context-owned useMeetingRoom.
   const huddle = useHuddle();
   const { mode, join, leave, collapse, expand, participantCount } = huddle;
+
+  // Remote-mute relay (June 2026). Anyone in the huddle can request
+  // that anyone else be muted. We send through Socket.IO (server-side
+  // relay in /server/src/index.ts) so we don't have to bolt anything
+  // onto the LiveKit room. The receive-side handler fires when WE get
+  // muted by someone — we kill our local mic and toast who did it.
+  const socket = useSocket();
+  useEffect(() => {
+    if (!socket) return;
+    const onMuted = (data: { actorId?: string; actorName?: string }) => {
+      // Already muted? No-op — still surface the toast so the user
+      // knows a teammate flagged them.
+      if (huddle.audioOn) {
+        try { huddle.toggleAudio(); } catch { /* */ }
+      }
+      const who = data?.actorName || 'A teammate';
+      toast(`${who} muted you`, {
+        description: 'Tap the mic button to talk again.',
+        icon: '🤫',
+        duration: 6000,
+      });
+    };
+    socket.on('huddle:muted-by', onMuted);
+    return () => { socket.off('huddle:muted-by', onMuted); };
+  }, [socket, huddle]);
+
+  const requestMute = (targetUserId: string) => {
+    if (!socket || !targetUserId) return;
+    socket.emit('huddle:mute-request', { targetUserId });
+    toast.success('Mute request sent.');
+  };
 
   if (isPublicRoute) return null;
   if (!internal) return null;
@@ -214,6 +248,7 @@ export function HuddleDock() {
                       key={p.userId}
                       peer={p}
                       name={p.name || 'Teammate'}
+                      onRequestMute={() => requestMute(p.userId)}
                     />
                   ))}
                 </div>
@@ -252,7 +287,7 @@ export function HuddleDock() {
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 function ParticipantTile({
-  name, audioOn, screenOn, isSelf, peer, avatarUrl,
+  name, audioOn, screenOn, isSelf, peer, avatarUrl, onRequestMute,
 }: {
   name: string;
   audioOn?: boolean;
@@ -263,6 +298,10 @@ function ParticipantTile({
   /** Self-tile avatar URL (peers pick it up from peer.avatarUrl below).
    *  Owner ask (May 2026): show the profile pic everywhere a name shows. */
   avatarUrl?: string;
+  /** Click handler for the remote-mute button. Shown only on peer
+   *  tiles AND only when their mic is currently live (no point muting
+   *  someone who's already muted). */
+  onRequestMute?: () => void;
 }) {
   const initial = (name || '?')[0].toUpperCase();
   const showAudioOn = isSelf ? audioOn : peer?.audioOn;
@@ -271,7 +310,7 @@ function ParticipantTile({
   const effectiveAvatar = isSelf ? avatarUrl : peer?.avatarUrl;
 
   return (
-    <div className="relative flex items-center gap-2 px-2 py-1.5 rounded-xl bg-muted/30 border border-border/40">
+    <div className="group relative flex items-center gap-2 px-2 py-1.5 rounded-xl bg-muted/30 border border-border/40">
       {peer && <RemoteAudio stream={peer.stream} />}
       <div className="h-8 w-8 rounded-lg overflow-hidden bg-primary/15 flex items-center justify-center text-xs font-bold text-primary shrink-0">
         {effectiveAvatar ? (
@@ -291,6 +330,22 @@ function ParticipantTile({
           {showScreenOn ? ' · sharing screen' : ''}
         </p>
       </div>
+
+      {/* Remote-mute button — only on peer tiles where mic is live.
+          Hidden by default; shows on tile-hover. Click fires a socket
+          event that mutes the peer's mic and toasts them with our name. */}
+      {!isSelf && onRequestMute && showAudioOn && (
+        <button
+          type="button"
+          onClick={onRequestMute}
+          title={`Mute ${name}`}
+          aria-label={`Mute ${name}`}
+          className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 rounded-full bg-rose-500/12 text-rose-600 hover:bg-rose-500/25 flex items-center justify-center shrink-0"
+        >
+          <VolumeX className="h-3 w-3" />
+        </button>
+      )}
+
       <span className={`h-6 w-6 rounded-full flex items-center justify-center shrink-0 ${
         showAudioOn ? 'bg-emerald-500/15 text-emerald-600' : 'bg-rose-500/15 text-rose-600'
       }`}>

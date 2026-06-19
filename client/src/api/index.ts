@@ -555,13 +555,32 @@ export const clientMeetingsGuestToken = (slug: string, name: string) =>
   api.post(`/meet/${slug}/guest-token`, { name }).then(r => r.data);
 
 // ── Huddle (LiveKit) ──────────────────────────────────────────────────────────
-// Explicit 8s timeout: axios's default is no-timeout, so when the Render API
-// is mid-deploy / paused / OOM-killed, this call would hang for ~minutes and
-// the user would sit at "Connecting…" with no signal. 8s is plenty for a
-// healthy server (the controller just signs a JWT) and short enough that the
-// user gets a real error if things are wrong.
-export const getHuddleToken    = () =>
-  api.post('/huddle/token', {}, { timeout: 8_000 }).then(r => r.data);
+// Cold-start tolerance (June 2026): Render's free tier spins the API
+// down after 15 min idle, and the first request that wakes it up can
+// take 25-35s. The previous 8s timeout was bailing during cold start
+// and leaving the user with "API didn't respond — wait 30s and retry"
+// even though they were the wake-up request. Now:
+//   - 30s per attempt timeout (enough to ride out a cold spin-up).
+//   - Up to 2 transparent retries with 1s+2s backoff so a single
+//     transient blip doesn't bounce the user.
+//   - Once the first attempt completes, subsequent attempts are cheap
+//     because the dyno is warm.
+export const getHuddleToken    = async () => {
+  let lastErr: any;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const r = await api.post('/huddle/token', {}, { timeout: 30_000 });
+      return r.data;
+    } catch (err: any) {
+      lastErr = err;
+      const status = err?.response?.status;
+      // 4xx that aren't 408/429 are real errors — don't retry.
+      if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) throw err;
+      if (attempt < 2) await new Promise(res => setTimeout(res, 1000 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+};
 
 // ── Reminders / Weekly Planner ────────────────────────────────────────────────
 export const listMyReminders   = (params?: { from?: string; to?: string }) =>

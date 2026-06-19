@@ -262,20 +262,34 @@ export async function callGemini(systemPrompt: string, userPayload: string, maxO
     } catch (err) {
       lastErr = err as Error;
       const msg = lastErr.message || '';
-      // 404 = "model not found" → try the next one. Same for 400 with a
-      // model-not-supported body. Other errors (403 = bad key, 429 =
-      // rate limit) shouldn't trigger a fallback — they'd fail on every
-      // model.
-      const shouldFallback =
+      // 404 = "model not found" → try the next one. Same for 400 with
+      // a model-not-supported body. 503 = model overloaded (Google's
+      // gemini-2.5-flash spikes are common around peak hours) — also
+      // try the next model; the smaller flash variants are often free
+      // when the headline one isn't.
+      // 5xx (other) = transient — fall back too.
+      // 403 = bad key, 429 = rate limit on OUR key — those WOULD fail
+      // on every model so don't bother.
+      const isOverloaded     = msg.includes('gemini_http_503') || msg.toLowerCase().includes('unavailable');
+      const isTransient5xx   = /gemini_http_5\d\d/.test(msg);
+      const isModelNotFound  =
         msg.includes('gemini_http_404') ||
         msg.includes('gemini_http_400') ||
         msg.includes('not found') ||
         msg.toLowerCase().includes('not supported');
+      const shouldFallback = isOverloaded || isTransient5xx || isModelNotFound;
       if (!shouldFallback) {
         console.error('[aiTriage] hard error, not falling back:', msg);
         throw lastErr;
       }
-      console.warn('[aiTriage] model failed, trying next:', msg);
+      // Demote 503/5xx logs from error → warn so they don't bury real
+      // issues in the log stream. They happen often and are not our
+      // bug — Google's flash model just spikes around peak hours.
+      if (isOverloaded || isTransient5xx) {
+        console.warn(`[aiTriage] ${model} overloaded (${msg.match(/gemini_http_\d+/)?.[0] || 'http_5xx'}), trying next model`);
+      } else {
+        console.warn('[aiTriage] model failed, trying next:', msg);
+      }
       // Reset sticky model so a permanently-dead one doesn't stay pinned.
       if (stickyModel === model) stickyModel = null;
     }
@@ -462,8 +476,26 @@ export async function generateMorningBrief(snapshot: {
     const text = await callGemini(BRIEF_SYSTEM, JSON.stringify(snapshot), 600);
     return { text: text.trim(), aiUsed: true };
   } catch (err) {
-    console.error('[morningBrief] failed:', (err as Error).message);
-    return { text: 'Brief generation failed; see admin dashboard for raw counts.', aiUsed: false };
+    const msg = (err as Error).message || '';
+    // 503 = Google flash model overloaded — common around peak hours
+    // and NOT our bug. Demote to warn so it doesn't bury real issues
+    // in log scrape. We still return the deterministic fallback brief
+    // below so the cron stays useful.
+    if (msg.includes('gemini_http_503') || msg.toLowerCase().includes('unavailable')) {
+      console.warn('[morningBrief] Gemini overloaded, using deterministic fallback');
+    } else {
+      console.error('[morningBrief] failed:', msg);
+    }
+    // Deterministic fallback — same shape as the no-key branch above so
+    // the brief is always actionable even when AI is unreachable.
+    const parts: string[] = [];
+    parts.push(`• ${snapshot.leadsCreated} new lead${snapshot.leadsCreated === 1 ? '' : 's'} yesterday`);
+    if (snapshot.hotLeads.length) parts.push(`• ${snapshot.hotLeads.length} HOT lead${snapshot.hotLeads.length === 1 ? '' : 's'} to call today`);
+    if (snapshot.blockedWorkflows.length) parts.push(`• ${snapshot.blockedWorkflows.length} client workflow${snapshot.blockedWorkflows.length === 1 ? '' : 's'} stuck`);
+    if (snapshot.openIssues.length) parts.push(`• ${snapshot.openIssues.length} open issue${snapshot.openIssues.length === 1 ? '' : 's'}`);
+    parts.push(`• ${snapshot.tasksCompletedYesterday} tasks completed yesterday`);
+    if (snapshot.dealsClosed) parts.push(`• ${snapshot.dealsClosed} deal${snapshot.dealsClosed === 1 ? '' : 's'} closed`);
+    return { text: parts.join('\n'), aiUsed: false };
   }
 }
 
