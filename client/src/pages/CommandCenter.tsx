@@ -10,6 +10,7 @@ import {
 
 import { AppLayout } from '@/components/AppLayout';
 import { DayPlanEditorSection } from '@/components/command/DayPlanEditorSection';
+import { TodayActivityTable } from '@/components/command/TodayActivityTable';
 import * as api from '@/api';
 
 /**
@@ -134,6 +135,12 @@ export default function CommandCenter() {
             {/* 6. Team Performance. */}
             <SectionHeader title="Team Performance" subtitle="Color-coded by capacity." />
             <TeamPerformance rows={snap.accountability} />
+
+            {/* 6a. Today's activity — fresh, IST-day counts per teammate.
+                Live-updates on any data change. Derived from existing
+                audit trail; nothing to reset. */}
+            <SectionHeader title="Today's activity" subtitle="Counts since 00:00 IST. Updates live." />
+            <TodayActivityTable />
 
             {/* 6b. Day plan editor — admin sets each teammate's weekday
                 schedule + weekly target. Employees see this live on

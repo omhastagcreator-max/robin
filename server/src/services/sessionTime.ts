@@ -16,7 +16,12 @@
  * branch only matters for historical rows.
  */
 
-const GRACE_MS = 90_000; // 90 seconds — covers network blips between pings
+// 120 seconds (was 90s, June 2026). The client heartbeat fires every
+// 30s, so this gives ~90s of headroom — covers a slow ping, a server
+// cold-start, or a brief network hiccup without freezing the user's
+// visible work timer. Must stay in lockstep with the client clamp in
+// client/src/hooks/useSession.ts.
+const GRACE_MS = 120_000;
 
 /**
  * STANDARD_BREAK_MS — the break allowance everyone gets for free as part

@@ -112,9 +112,14 @@ export function useSession() {
       }).catch(() => {});
     }, 60_000);
 
-    // Fire once immediately, then every 60s.
+    // Fire once immediately, then every 30s (was 60s — June 2026
+    // bug-fix: the heartbeat clamp window of +90s gave only 30s of
+    // headroom between pings. A single slow ping (server cold-start,
+    // CDN hiccup) tripped the clamp and visibly froze the work timer
+    // until the next successful ping. 30s pings + 120s clamp window
+    // = 90s of headroom which is enough to absorb any normal blip.
     ping();
-    const i = setInterval(ping, 60_000);
+    const i = setInterval(ping, 30_000);
 
     return () => {
       cancelled = true;
@@ -214,7 +219,11 @@ export function useSession() {
     let upper = now;
     if (session.lastHeartbeatAt) {
       const hb = new Date(session.lastHeartbeatAt).getTime();
-      upper = Math.min(now, hb + 90_000);
+      // 120s clamp (was 90s). Combined with the new 30s heartbeat
+      // cadence above, the visible timer stays smooth through any
+      // single network blip and only freezes if the tab has been
+      // genuinely closed / idle for >2min.
+      upper = Math.min(now, hb + 120_000);
     }
     const breakPenaltyMs = Math.max(0, totalBreakMs - STANDARD_BREAK_MS);
     return Math.max(0, (upper - start) - breakPenaltyMs - (session.awayMs || 0));

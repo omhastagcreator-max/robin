@@ -669,3 +669,7 @@ export const setUserDayPlan       = (userId: string, body: { entries: any[]; wee
   api.put(`/day-plan/user/${userId}`, body, { params: week ? { week } : undefined }).then(r => r.data);
 export const autoDistributeDayPlan = (userId: string, replace = false, week?: string) =>
   api.post(`/day-plan/user/${userId}/auto-distribute`, {}, { params: { ...(week ? { week } : {}), ...(replace ? { replace: 1 } : {}) } }).then(r => r.data);
+
+// Per-employee daily activity rollup for the Command Center.
+export const getTodayStats        = () =>
+  api.get('/team-stats/today').then(r => r.data);
