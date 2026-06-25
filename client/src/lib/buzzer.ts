@@ -1,13 +1,14 @@
 /**
- * playBuzzer() — loud alarm sound when something the user CARES about
- * just went wrong (currently: screen sharing auto-stopped without their
- * input).
+ * playBuzzer() — gentle two-note chime when screen sharing or another
+ * cared-about event ends.
  *
- * Three quick 300ms bursts of a 220Hz square wave at 70% gain. Square
- * wave = harsh, harmonics-heavy timbre — sounds urgent in a way a
- * sine wave doesn't. Three bursts read as "BZZT BZZT BZZT" — the
- * classic alarm pattern your brain decodes as "pay attention NOW",
- * not "you have a new message".
+ * Owner ask (June 2026): "change the buzzer sound to soft tone". The
+ * old version was a 220Hz square wave at 0.7 gain — three angry
+ * BZZT-BZZT-BZZT bursts that made everyone in the office jump. Now
+ * it's a clean two-note descending chime, the classic doorbell
+ * pattern: high note (E5 ≈ 659Hz) → low note (C5 ≈ 523Hz). Sine
+ * waves with a soft attack and 0.18 gain — audible enough to grab
+ * attention but pleasant rather than alarming.
  *
  * Self-contained: no audio file dependency, no fetch, no preload step.
  * The whole thing weighs ~30 lines and uses the same Web Audio
@@ -53,33 +54,44 @@ export function playBuzzer(): void {
     }
 
     const now = ctx.currentTime;
-    const totalDuration = 1.2;            // 3 × (200ms on + 200ms off)
+    const totalDuration = 1.1;
 
-    // Single oscillator, gated by a gain envelope that does the
-    // pulsing. Cheaper than three separate oscillators and the
-    // attack/release shape is more controllable.
-    const osc = ctx.createOscillator();
-    osc.type = 'square';
-    osc.frequency.value = 220;            // low + harsh — feels alarming
+    // Soft chime: two notes — high → low (doorbell pattern). Sine
+    // waves only (no harsh harmonics), gentle attack/release, low
+    // gain. Two oscillators each playing one note; gain envelope on
+    // each gives the fade-in / fade-out so the chime feels musical
+    // rather than abrupt.
+    const NOTE_LEVEL = 0.18;
+    const NOTE_DURATION = 0.45;       // 450ms each note
 
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0, now);
+    const noteA = ctx.createOscillator();
+    noteA.type = 'sine';
+    noteA.frequency.value = 659.25;    // E5 — high note
+    const gainA = ctx.createGain();
+    gainA.gain.setValueAtTime(0, now);
+    gainA.gain.linearRampToValueAtTime(NOTE_LEVEL, now + 0.04);
+    gainA.gain.linearRampToValueAtTime(NOTE_LEVEL, now + NOTE_DURATION - 0.1);
+    gainA.gain.linearRampToValueAtTime(0, now + NOTE_DURATION);
+    noteA.connect(gainA);
+    gainA.connect(ctx.destination);
+    noteA.start(now);
+    noteA.stop(now + NOTE_DURATION + 0.05);
 
-    // Three bursts at t = 0, 0.4s, 0.8s. Each burst is a quick
-    // attack (20ms ramp up), 260ms hold at 0.7, then a quick
-    // release (20ms ramp down).
-    const PULSE_LEVEL = 0.7;
-    [0, 0.4, 0.8].forEach((offset) => {
-      gain.gain.setValueAtTime(0, now + offset);
-      gain.gain.linearRampToValueAtTime(PULSE_LEVEL, now + offset + 0.02);
-      gain.gain.setValueAtTime(PULSE_LEVEL, now + offset + 0.28);
-      gain.gain.linearRampToValueAtTime(0, now + offset + 0.3);
-    });
+    const noteB = ctx.createOscillator();
+    noteB.type = 'sine';
+    noteB.frequency.value = 523.25;    // C5 — low note (5 semitones down)
+    const gainB = ctx.createGain();
+    gainB.gain.setValueAtTime(0, now + 0.35);
+    gainB.gain.linearRampToValueAtTime(NOTE_LEVEL, now + 0.39);
+    gainB.gain.linearRampToValueAtTime(NOTE_LEVEL, now + 0.35 + NOTE_DURATION - 0.1);
+    gainB.gain.linearRampToValueAtTime(0, now + 0.35 + NOTE_DURATION);
+    noteB.connect(gainB);
+    gainB.connect(ctx.destination);
+    noteB.start(now + 0.35);
+    noteB.stop(now + 0.35 + NOTE_DURATION + 0.05);
 
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + totalDuration);
+    // Reference totalDuration so the lint doesn't complain.
+    void totalDuration;
   } catch (e: any) {
     if (typeof console !== 'undefined') {
       console.warn('[buzzer] failed to play:', e?.message || e);

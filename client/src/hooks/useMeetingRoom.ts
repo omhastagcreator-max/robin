@@ -87,6 +87,15 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
   // capture the value-at-join, which is always false.
   const screenOnRef = useRef(false);
   useEffect(() => { screenOnRef.current = screenOn; }, [screenOn]);
+
+  // Debounce timer for the "screen share unexpectedly stopped" alarm.
+  // LiveKit sometimes momentarily drops the screen pub during a
+  // reconnect or ICE renegotiation and republishes within ~1 second.
+  // Firing the alarm + chime + toast on every such hiccup was the
+  // owner complaint "screen sharing stops on its own" — half the time
+  // the share was actually fine. We now wait 2.5 seconds before
+  // alarming; if the pub comes back within that window we suppress.
+  const screenStopDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Set TRUE when toggleScreen is invoked by the user (start OR stop).
   // syncLocal checks + resets it to distinguish a user-initiated change
   // from an UNEXPECTED screen-track unpublish (Chrome stop-pill, source
@@ -318,37 +327,48 @@ export function useMeetingRoom(_opts: UseMeetingRoomOptions) {
         // events in the same tick) misclassified a legitimate stop as
         // an "unexpected" one and triggered a runaway auto-retry loop.
         screenOnRef.current = nowOn;
+
+        // If the screen pub came BACK in this syncLocal pass, cancel
+        // any pending "stopped" alarm — it was a transient hiccup
+        // (typical: LiveKit reconnect republished within 1s).
+        if (nowOn && screenStopDebounceRef.current) {
+          clearTimeout(screenStopDebounceRef.current);
+          screenStopDebounceRef.current = null;
+          logShareEvent('note', 'transient drop recovered — alarm suppressed');
+        }
+
         if (previouslyOn && !nowOn && !userToggledScreenRef.current) {
           logShareEvent('error', 'livekit screen pub disappeared unexpectedly', {
             reason: 'no toggleScreen call; probably Chrome stop-pill / source closed / display sleep',
           });
-          // Triple-channel alert: Web-Audio buzzer for users on another
-          // tab + OS desktop notification for users with a sleeping
-          // display + the existing in-tab toast for users on a Robin
-          // page. See lib/buzzer.ts for the audio + Notification API
-          // details. Wrapped in try/catch so a failure in any one
-          // channel doesn't suppress the others.
-          try {
-            fireShareStoppedAlarm(
-              'Most likely Chrome\'s "Stop sharing" pill, the source window closing, or display sleep.',
+
+          // Debounced alarm. Wait 2.5s — if the pub republishes (via
+          // LiveKit reconnect at line ~280 or any other mechanism)
+          // the cancellation above will suppress this. Eliminates
+          // the user complaint "screen sharing stops on its own"
+          // when in reality it just blinked.
+          if (screenStopDebounceRef.current) clearTimeout(screenStopDebounceRef.current);
+          screenStopDebounceRef.current = setTimeout(() => {
+            screenStopDebounceRef.current = null;
+            // Re-check: if by now the share is back on, do nothing.
+            if (screenOnRef.current) return;
+            try {
+              fireShareStoppedAlarm(
+                'Most likely Chrome\'s "Stop sharing" pill, the source window closing, or display sleep.',
+              );
+            } catch { /* swallow — toast still surfaces */ }
+            toast.error(
+              'Screen sharing stopped. Click the screen icon to share again.',
+              { duration: 9000, action: { label: 'Share again', onClick: () => { void toggleScreenRef.current?.(); } } },
             );
-          } catch { /* swallow — toast still surfaces */ }
-          toast.error(
-            'Screen sharing stopped. Most likely: you clicked Chrome\'s "Stop sharing" pill, the source window closed, or your Mac display slept. Click the screen icon to share again.',
-            { duration: 9000, action: { label: 'Share again', onClick: () => { void toggleScreenRef.current?.(); } } },
-          );
+          }, 2500);
 
           // ── Auto-retry REMOVED (May 2026, v3) ───────────────────────
-          // The 5s/20s/60s backoff sequence here was the second-biggest
-          // cause of "screen sharing auto-stops for all roles." Each
-          // retry programmatically called toggleScreen(), which
-          // unconditionally pops Chrome's screen picker — even after a
-          // legitimate stop. Worse, retries racing with the
-          // screenShareManager's own getDisplayMedia caused Chrome to
-          // alternately kill each capture, producing the user-visible
-          // pattern of "share works for a few seconds, then dies, then
-          // works again, then dies." Users now have a single explicit
-          // "Share again" action in the toast above; no implicit retry.
+          // Previous implementation had a 5s/20s/60s programmatic
+          // toggleScreen retry sequence which kept popping Chrome's
+          // picker AND racing with screenShareManager's getDisplayMedia.
+          // Single explicit "Share again" action in the toast is the
+          // replacement.
         }
         userToggledScreenRef.current = false;  // arm for the next event
 
