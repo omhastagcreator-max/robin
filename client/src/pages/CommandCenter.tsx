@@ -11,6 +11,7 @@ import {
 import { AppLayout } from '@/components/AppLayout';
 import { DayPlanEditorSection } from '@/components/command/DayPlanEditorSection';
 import { TodayActivityTable } from '@/components/command/TodayActivityTable';
+import { useNetworkAware } from '@/hooks/useNetworkAware';
 import * as api from '@/api';
 
 /**
@@ -82,13 +83,16 @@ export default function CommandCenter() {
       .catch(() => {})
       .finally(() => { setLoading(false); setRefreshing(false); });
   };
+  // Network-aware polling: see WorkroomHome for the same pattern.
+  const network = useNetworkAware();
   useEffect(() => {
     load();
-    // 30s polling fallback + real-time refresh from socket-driven
-    // 'robin:data-changed' DOM events (dispatched by AppLayout when
-    // the server emits 'data:changed' on any mutation). 800ms debounce
-    // so a burst of mutations doesn't fire several snapshot calls.
-    const iv = setInterval(() => load(true), 30_000);
+    const baseMs = 30_000;
+    const ms = Number.isFinite(network.intervalMultiplier) ? baseMs * network.intervalMultiplier : 86_400_000;
+    const iv = setInterval(() => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      load(true);
+    }, ms);
     let debounce: ReturnType<typeof setTimeout> | null = null;
     const onDataChanged = () => {
       if (debounce) clearTimeout(debounce);
@@ -100,7 +104,8 @@ export default function CommandCenter() {
       window.removeEventListener('robin:data-changed', onDataChanged);
       if (debounce) clearTimeout(debounce);
     };
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [network.intervalMultiplier]);
 
   return (
     <AppLayout>

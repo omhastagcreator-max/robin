@@ -32,6 +32,11 @@ export function useVisiblePoll(
     const tick = () => {
       // Don't tick while hidden — saves CPU/battery on backgrounded tabs.
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      // Don't tick while offline — there's no point hammering an
+      // unreachable server, and on flaky mobile data each failed
+      // request burns more battery than a tick does. The 'online'
+      // listener below catches us up the moment connectivity returns.
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
       try { fnRef.current(); } catch { /* poll failures are fn's problem */ }
     };
     const start = () => {
@@ -46,6 +51,9 @@ export function useVisiblePoll(
       if (document.visibilityState === 'hidden') stop();
       else if (mounted) start();
     };
+    // 'online' fires when the browser transitions from offline → online.
+    // We catch up with a single tick and let the interval take over.
+    const onOnline = () => { if (mounted) tick(); };
 
     // Initial: only start if visible. If hidden on mount we'll start on
     // visibilitychange.
@@ -53,11 +61,13 @@ export function useVisiblePoll(
       start();
     }
     document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('online', onOnline);
 
     return () => {
       mounted = false;
       stop();
       document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('online', onOnline);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [intervalMs, ...deps]);

@@ -9,6 +9,7 @@ import {
 import { AppLayout } from '@/components/AppLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useHuddle } from '@/contexts/HuddleContext';
+import { useNetworkAware } from '@/hooks/useNetworkAware';
 import { PendingAcceptanceBanner } from '@/components/workroom/PendingAcceptanceBanner';
 import { DayPlanTable } from '@/components/workroom/DayPlanTable';
 import * as api from '@/api';
@@ -94,13 +95,24 @@ export default function WorkroomHome() {
   const [snap, setSnap]       = useState<Snap | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Network-aware polling: multiplier 1 on good connections, 2 on 3G,
+  // 4 on 2G/slow-2G, Infinity when offline (which makes setInterval
+  // a no-op below). Polls automatically slow down on bad connections
+  // to save bandwidth + speed up the browser; speed up the moment
+  // connectivity improves.
+  const network = useNetworkAware();
   useEffect(() => {
-    const load = () => api.getWorkroomSnapshot().then(setSnap).catch(() => {}).finally(() => setLoading(false));
+    const load = () => {
+      // Don't fire while offline — no point, will resume on 'online'.
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      api.getWorkroomSnapshot().then(setSnap).catch(() => {}).finally(() => setLoading(false));
+    };
     load();
-    // Polling fallback at 30s (down from 60s) so the dashboard never
-    // goes more than half a minute without a refresh even if the
-    // socket layer is unreachable.
-    const iv = setInterval(load, 30_000);
+    // Base 30s × network multiplier. Clamped to Number.MAX_SAFE_INTEGER
+    // when offline so setInterval doesn't reject the Infinity.
+    const baseMs = 30_000;
+    const ms = Number.isFinite(network.intervalMultiplier) ? baseMs * network.intervalMultiplier : 86_400_000;
+    const iv = setInterval(load, ms);
 
     // Real-time refresh: server emits 'data:changed' on every mutation
     // (checklist tick, service complete, task create/update/accept,
@@ -120,7 +132,10 @@ export default function WorkroomHome() {
       window.removeEventListener('robin:data-changed', onDataChanged);
       if (debounce) clearTimeout(debounce);
     };
-  }, []);
+  // Re-create the interval when the network multiplier changes (e.g.
+  // 4G → 2G → 4G) so the polling cadence retunes itself.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [network.intervalMultiplier]);
 
   const firstName = (user?.name || user?.email || '').split(' ')[0] || 'there';
 

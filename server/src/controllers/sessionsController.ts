@@ -30,19 +30,50 @@ async function broadcastPresence(req: AuthRequest, status: 'active' | 'on_break'
   });
 }
 
+// Sessions that haven't had a heartbeat in 4h are stale — left open
+// because the user closed their browser without clicking Log Out OR
+// the auto-close cron didn't run before they came back. Reusing them
+// is what produced the bug "WORKING shows 00:00:00 even after I just
+// logged in" — the existing session has hours of accumulated awayMs,
+// the worked-time formula deducts it all, you get zero.
+const STALE_SESSION_MS = 4 * 60 * 60 * 1000;
+
 export async function startSession(req: AuthRequest, res: Response): Promise<void> {
   try {
     const userId = req.user!.id;
     const orgId = await getOrgId(userId);
     const existing = await Session.findOne({ userId, status: { $in: ['active', 'on_break'] } });
-    if (existing) { res.json(existing); return; }
     const now = new Date();
+
+    if (existing) {
+      const lastBeat = existing.lastHeartbeatAt ? new Date(existing.lastHeartbeatAt).getTime() : 0;
+      const stale = !lastBeat || (now.getTime() - lastBeat) > STALE_SESSION_MS;
+
+      if (!stale) {
+        // Same-day, recently-heartbeated session — reuse silently.
+        res.json(existing);
+        return;
+      }
+
+      // Stale (overnight / long gap) — close it cleanly, then fall
+      // through to create a fresh session below.
+      try {
+        existing.status = 'ended';
+        existing.endTime = lastBeat ? new Date(lastBeat) : now;  // end at last known activity, not now
+        await existing.save();
+      } catch { /* best-effort; we still want to create the new one */ }
+    }
+
     const session = await Session.create({
       userId,
       organizationId: orgId,
       startTime: now,
       status: 'active',
       lastHeartbeatAt: now,         // first heartbeat = creation time
+      awayMs: 0,                    // explicit reset so the live timer starts at zero
+      huddleMs: 0,
+      breakMs: 0,
+      breakEvents: [],
     });
     await broadcastPresence(req, 'active');
     res.json(session);

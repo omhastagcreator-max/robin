@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { WifiOff, Wifi } from 'lucide-react';
+import { WifiOff, Wifi, Signal } from 'lucide-react';
+import { useNetworkAware } from '@/hooks/useNetworkAware';
 
 /**
  * NetworkStatus — top-of-screen banner that appears when the browser
@@ -37,6 +38,14 @@ export function NetworkStatus() {
     };
   }, []);
 
+  // Slow-connection signal — separate from online/offline. Driven by
+  // the Network Information API (Chrome/Edge support it; Safari
+  // doesn't). When effectiveType is 2g/slow-2g we surface a thin
+  // banner so users on bad mobile data understand why things feel
+  // sluggish AND know Robin's polls are auto-throttled to save
+  // bandwidth (the useVisiblePoll + useNetworkAware path).
+  const { slow, effectiveType } = useNetworkAware();
+
   if (!online) {
     return (
       <div className="fixed top-0 left-0 right-0 z-[200] bg-amber-500 text-white text-center text-xs font-semibold py-2 px-4 shadow-lg flex items-center justify-center gap-2 animate-pulse">
@@ -51,6 +60,18 @@ export function NetworkStatus() {
       <div className="fixed top-0 left-0 right-0 z-[200] bg-green-600 text-white text-center text-xs font-semibold py-2 px-4 shadow-lg flex items-center justify-center gap-2">
         <Wifi className="h-3.5 w-3.5" />
         <span>Back online — syncing…</span>
+      </div>
+    );
+  }
+
+  if (slow) {
+    return (
+      <div className="fixed top-0 left-0 right-0 z-[200] bg-orange-500/95 text-white text-center text-[11px] font-semibold py-1 px-4 shadow-lg flex items-center justify-center gap-2">
+        <Signal className="h-3 w-3" />
+        <span>
+          Slow connection ({effectiveType?.toUpperCase()}) — Robin is conserving bandwidth.
+          Some live updates may lag.
+        </span>
       </div>
     );
   }
