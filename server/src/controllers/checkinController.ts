@@ -110,6 +110,8 @@ interface MorningPayload {
     title: string;
     clientWorkflowId?: string | null;
     priority?: 'low' | 'medium' | 'high' | 'urgent';
+    kind?: 'task' | 'meeting';
+    meetingAt?: string | null;        // ISO datetime
   }>;
 }
 
@@ -153,11 +155,21 @@ export async function submitMorning(req: AuthRequest, res: Response): Promise<vo
     const tasks = rawTasks
       .filter(t => t && typeof t.title === 'string' && t.title.trim().length > 0)
       .slice(0, 20)
-      .map(t => ({
-        title: t.title.trim().slice(0, 200),
-        clientWorkflowId: t.clientWorkflowId ? new mongoose.Types.ObjectId(String(t.clientWorkflowId)) : null,
-        priority: (['low', 'medium', 'high', 'urgent'] as const).includes(t.priority as any) ? t.priority! : 'medium',
-      }));
+      .map(t => {
+        const kind: 'task' | 'meeting' = t.kind === 'meeting' ? 'meeting' : 'task';
+        let meetingAt: Date | null = null;
+        if (kind === 'meeting' && t.meetingAt) {
+          const d = new Date(t.meetingAt);
+          if (!Number.isNaN(d.getTime())) meetingAt = d;
+        }
+        return {
+          title: t.title.trim().slice(0, 200),
+          clientWorkflowId: t.clientWorkflowId ? new mongoose.Types.ObjectId(String(t.clientWorkflowId)) : null,
+          priority: (['low', 'medium', 'high', 'urgent'] as const).includes(t.priority as any) ? t.priority! : 'medium',
+          kind,
+          meetingAt,
+        };
+      });
 
     // Upsert checkin doc.
     const importTag = `daily-checkin:morning:${dateIST}:${userId}`;
@@ -186,6 +198,12 @@ export async function submitMorning(req: AuthRequest, res: Response): Promise<vo
           clientWorkflowId: t.clientWorkflowId,
           priority: t.priority,
           status: 'pending',
+          // Meetings flow into the same ProjectTask collection so the
+          // workroom inbox + ledger surface them too. We stamp
+          // category='meeting' + dueDate=meetingAt so existing views
+          // can render a calendar icon without any extra plumbing.
+          category: t.kind === 'meeting' ? 'meeting' : undefined,
+          dueDate:  t.kind === 'meeting' && t.meetingAt ? t.meetingAt : undefined,
           importedFrom: importTag,
         });
         projectTaskId = created._id as any;
@@ -413,6 +431,114 @@ export async function submitEvening(req: AuthRequest, res: Response): Promise<vo
   }
 }
 
+/* ─────────────────── Task autocomplete suggestions ─────────────────────── */
+
+/**
+ * Returns typeahead suggestions for the morning popup's task input.
+ * Three sources, deduped + capped:
+ *
+ *   1. Recent task titles by this user (last 14 days, latest first)
+ *      — the cheapest "what do I usually do?" signal.
+ *   2. Open checklist items across brands this user is assigned to
+ *      — surfaces real work that's already planned but not done.
+ *      Each item is suggested as a task titled "<item> · <brand>".
+ *   3. Common templates (client meeting, weekly report, etc.) so
+ *      brand-new accounts have something to pick from.
+ *
+ * Total payload capped at ~30 items so the dropdown stays fast.
+ */
+export async function getCheckinSuggestions(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const userId = req.user!.id;
+    const orgId  = await getOrg(userId);
+    if (!orgId) { res.json({ ok: true, suggestions: [] }); return; }
+
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000);
+
+    const [recentTasks, brands] = await Promise.all([
+      ProjectTask.find({
+        organizationId: orgId,
+        assignedTo: userId,
+        createdAt: { $gte: fourteenDaysAgo },
+      })
+        .select('title clientWorkflowId')
+        .sort({ createdAt: -1 })
+        .limit(40)
+        .lean(),
+      ClientWorkflow.find({
+        organizationId: orgId,
+        'services.assignedTo': userId,
+      }).select('clientName services._id services.assignedTo services.label services.checklist').lean(),
+    ]);
+
+    const seen = new Set<string>();
+    const suggestions: Array<{ title: string; source: string; clientWorkflowId?: string; clientName?: string }> = [];
+
+    // 1. Recent tasks (dedupe by lowercase title).
+    for (const t of recentTasks) {
+      const key = String(t.title || '').trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      suggestions.push({
+        title: String(t.title),
+        source: 'recent',
+        clientWorkflowId: t.clientWorkflowId ? String(t.clientWorkflowId) : undefined,
+      });
+      if (suggestions.length >= 15) break;
+    }
+
+    // 2. Open checklist items on this user's services. We surface
+    //    "<item text> · <brand>" so the user sees the connection.
+    for (const wf of brands) {
+      const clientName = String((wf as any).clientName || 'Brand');
+      const services = ((wf as any).services || []).filter((s: any) => String(s.assignedTo) === String(userId));
+      for (const svc of services) {
+        for (const ci of (svc.checklist || []) as any[]) {
+          if (ci.done) continue;
+          const text = String(ci.text || ci.title || '').trim();
+          if (!text) continue;
+          const title = `${text} · ${clientName}`;
+          const key = title.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          suggestions.push({
+            title,
+            source: 'checklist',
+            clientWorkflowId: String((wf as any)._id),
+            clientName,
+          });
+          if (suggestions.length >= 25) break;
+        }
+        if (suggestions.length >= 25) break;
+      }
+      if (suggestions.length >= 25) break;
+    }
+
+    // 3. Templates (only if we have spare room).
+    const templates = [
+      'Daily Meta report',
+      'Review creatives',
+      'Client meeting',
+      'Weekly performance report',
+      'Reply to client messages',
+      'Optimise running campaigns',
+      'Send invoice',
+    ];
+    for (const t of templates) {
+      const key = t.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      suggestions.push({ title: t, source: 'template' });
+      if (suggestions.length >= 30) break;
+    }
+
+    res.json({ ok: true, suggestions });
+  } catch (err: any) {
+    console.error('[checkin] getCheckinSuggestions error', err);
+    res.status(500).json({ error: err.message || 'Failed to load suggestions' });
+  }
+}
+
 /* ────────────────────── Admin: today's checkin report ─────────────────────── */
 
 /**
@@ -462,6 +588,8 @@ export async function getAdminCheckinReport(req: AuthRequest, res: Response): Pr
         tasks:        tasks.map((t: any) => ({
           title:        t.title,
           priority:     t.priority,
+          kind:         t.kind || 'task',
+          meetingAt:    t.meetingAt || null,
           middayStatus: t.middayStatus || '',
           eveningStatus: t.eveningStatus || '',
           eveningReason: t.eveningReason || '',

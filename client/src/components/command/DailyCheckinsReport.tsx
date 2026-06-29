@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Sunrise, CloudSun, Moon, CheckCircle2, Circle, Clock, AlertCircle, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { Sunrise, CloudSun, Moon, CheckCircle2, Circle, Clock, AlertCircle, ChevronDown, ChevronRight, RefreshCw, Calendar } from 'lucide-react';
 import * as api from '@/api';
 
 /**
@@ -28,6 +28,8 @@ interface Row {
   tasks: Array<{
     title: string;
     priority: string;
+    kind?: 'task' | 'meeting';
+    meetingAt?: string | null;
     middayStatus: string;
     eveningStatus: string;
     eveningReason: string;
@@ -200,22 +202,38 @@ function ExpandedDetail({ row }: { row: Row }) {
         <div>
           <p className="text-[10.5px] uppercase tracking-wider font-bold text-muted-foreground mb-1">Today's tasks</p>
           <div className="space-y-1">
-            {row.tasks.map((t, i) => (
-              <div key={i} className="flex items-start gap-2 bg-background border border-border rounded px-2 py-1.5">
-                <TaskStatusIcon status={t.eveningStatus || t.middayStatus} />
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold truncate">{t.title}</p>
-                  {t.eveningReason && <p className="text-rose-700/90 text-[11px] italic">↳ {t.eveningReason}</p>}
+            {row.tasks.map((t, i) => {
+              const isMeeting = t.kind === 'meeting';
+              const timeStr = t.meetingAt
+                ? new Date(t.meetingAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+                : '';
+              return (
+                <div key={i} className={
+                  'flex items-start gap-2 rounded px-2 py-1.5 border ' +
+                  (isMeeting ? 'bg-indigo-500/5 border-indigo-500/25' : 'bg-background border-border')
+                }>
+                  {isMeeting
+                    ? <Calendar className="h-3.5 w-3.5 mt-0.5 text-indigo-600 shrink-0" />
+                    : <TaskStatusIcon status={t.eveningStatus || t.middayStatus} />}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold truncate">{t.title}</p>
+                    {t.eveningReason && <p className="text-rose-700/90 text-[11px] italic">↳ {t.eveningReason}</p>}
+                  </div>
+                  {isMeeting && timeStr && (
+                    <span className="h-4 px-1.5 rounded text-[9.5px] uppercase font-bold bg-indigo-500/15 text-indigo-700">
+                      {timeStr}
+                    </span>
+                  )}
+                  <span className={
+                    'h-4 px-1.5 rounded text-[9.5px] uppercase font-bold ' +
+                    (t.priority === 'urgent' ? 'bg-rose-500 text-white' :
+                     t.priority === 'high'   ? 'bg-orange-500 text-white' :
+                     t.priority === 'medium' ? 'bg-blue-500 text-white' :
+                                               'bg-muted text-muted-foreground')
+                  }>{t.priority}</span>
                 </div>
-                <span className={
-                  'h-4 px-1.5 rounded text-[9.5px] uppercase font-bold ' +
-                  (t.priority === 'urgent' ? 'bg-rose-500 text-white' :
-                   t.priority === 'high'   ? 'bg-orange-500 text-white' :
-                   t.priority === 'medium' ? 'bg-blue-500 text-white' :
-                                             'bg-muted text-muted-foreground')
-                }>{t.priority}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

@@ -35,6 +35,8 @@ export interface MorningTask {
   title: string;
   clientWorkflowId?: string | null;
   priority?: string;
+  kind?: 'task' | 'meeting';
+  meetingAt?: string | null;
   middayStatus?: string;
   middayNote?: string;
   eveningStatus?: string;

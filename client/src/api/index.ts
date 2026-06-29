@@ -93,9 +93,16 @@ export const rejectUpdate  = (id: string, feedback: string)           => api.put
 // upserts the same DailyCheckin doc and (for morning tasks) creates
 // ProjectTask mirrors so the rest of Robin stays in sync.
 export const getCheckinToday    = () => api.get('/checkin/today').then(r => r.data);
+export const getCheckinSuggestions = () => api.get('/checkin/suggestions').then(r => r.data);
 export const submitMorningCheckin = (body: {
   brands: Array<{ clientWorkflowId: string; clientName?: string; metaStatus?: string; note?: string }>;
-  tasks:  Array<{ title: string; clientWorkflowId?: string | null; priority?: string }>;
+  tasks:  Array<{
+    title: string;
+    clientWorkflowId?: string | null;
+    priority?: string;
+    kind?: 'task' | 'meeting';
+    meetingAt?: string | null;       // ISO datetime when kind === 'meeting'
+  }>;
 }) => api.post('/checkin/morning', body).then(r => r.data);
 export const submitMiddayCheckin  = (body: {
   taskUpdates: Array<{ taskId: string; status: string; note?: string }>;

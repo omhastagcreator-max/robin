@@ -1,18 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { CloudSun, CheckCircle2, Clock, AlertTriangle, Circle, Loader2 } from 'lucide-react';
+import { CloudSun, CheckCircle2, Clock, AlertTriangle, Circle, Loader2, Calendar } from 'lucide-react';
 import * as api from '@/api';
 import { useCheckin, type MorningTask } from '@/contexts/CheckinContext';
 
 /**
  * MiddayCheckinModal — 1pm-2pm pulse.
  *
- * Shows the morning's tasks as one-tap status cards. Done / In-progress
- * / Blocked / Not started. Plus one optional "blockers" line if anything
- * external is in the way. Total time to fill: ~15 seconds.
+ * One-tap status cards (Done / In progress / Blocked / Not started) per
+ * morning task, plus optional blockers line. Meetings render with a
+ * calendar icon + time badge so the user can grade them the same way
+ * (the "Done" pill means "happened on time"; "Blocked" = postponed
+ * etc.). Total fill time: ~15 seconds.
  *
- * Dismissible (not as hard a gate as morning/evening) but a banner
- * keeps surfacing until done, so it's still effectively required.
+ * Polished header to match Morning modal — orb glow, gradient pill,
+ * progress meter that fills as the user grades each task.
  */
 export function MiddayCheckinModal() {
   const { status, openKind, close, refresh } = useCheckin();
@@ -22,15 +24,13 @@ export function MiddayCheckinModal() {
   const [blockers, setBlockers] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Seed from any midday data already saved (allows partial re-edits if
-  // the modal re-opens after submit — though usually it doesn't).
   useEffect(() => {
     if (!visible || !status) return;
     const seed: Record<string, { status: string; note: string }> = {};
     for (const t of status.morning.tasks) {
       if (!t.taskId) continue;
       seed[t.taskId] = {
-        status: t.middayStatus || (status.morning.tasks.length ? 'in_progress' : 'in_progress'),
+        status: t.middayStatus || 'in_progress',
         note:   t.middayNote   || '',
       };
     }
@@ -38,8 +38,18 @@ export function MiddayCheckinModal() {
     setBlockers(status.midday.blockers || '');
   }, [visible, status]);
 
+  const tasks = useMemo(
+    () => (status?.morning?.tasks || []).filter((t: MorningTask) => !!t.taskId),
+    [status],
+  );
+
+  const gradedCount = useMemo(
+    () => tasks.filter(t => updates[t.taskId!]?.status && updates[t.taskId!].status !== '').length,
+    [tasks, updates],
+  );
+  const pct = tasks.length === 0 ? 100 : Math.round((gradedCount / tasks.length) * 100);
+
   if (!visible || !status) return null;
-  const tasks = status.morning.tasks.filter((t: MorningTask) => !!t.taskId);
 
   const submit = async () => {
     if (submitting) return;
@@ -64,27 +74,35 @@ export function MiddayCheckinModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-[150] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-card text-card-foreground rounded-2xl shadow-2xl w-full max-w-2xl border border-border max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="px-6 pt-5 pb-4 bg-gradient-to-br from-sky-400/15 via-cyan-400/10 to-emerald-400/15 border-b border-border/40">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-sky-500/20 border border-sky-500/40 flex items-center justify-center">
-              <CloudSun className="h-5 w-5 text-sky-700" />
+    <div className="fixed inset-0 z-[150] bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+      <div className="bg-card text-card-foreground rounded-3xl shadow-2xl w-full max-w-2xl border border-border max-h-[94vh] flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-2 duration-300">
+        {/* Header */}
+        <div className="relative px-6 pt-6 pb-5 bg-gradient-to-br from-sky-400/20 via-cyan-400/15 to-emerald-400/15 border-b border-border/40 overflow-hidden">
+          <div className="absolute -top-12 -right-12 h-40 w-40 rounded-full bg-sky-300/30 blur-3xl pointer-events-none" />
+          <div className="relative flex items-start gap-3">
+            <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-sky-400 to-cyan-500 text-white flex items-center justify-center shadow-lg shadow-sky-500/30">
+              <CloudSun className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="text-base sm:text-lg font-bold leading-tight">Halfway check-in</h2>
-              <p className="text-[12px] text-muted-foreground">
-                Tap a status for each task. ~15 seconds.
+              <h2 className="text-lg sm:text-xl font-bold leading-tight">Halfway check-in</h2>
+              <p className="text-[12.5px] text-muted-foreground leading-snug mt-0.5">
+                Tap a status per task. ~15 seconds.
               </p>
             </div>
+            <span className="hidden sm:inline-flex h-7 px-2.5 rounded-full bg-sky-500/15 text-sky-800 text-[10.5px] font-bold tracking-wider items-center gap-1 border border-sky-500/30">
+              {gradedCount} / {tasks.length} graded
+            </span>
+          </div>
+          <div className="mt-4 relative h-1.5 rounded-full bg-sky-100/60 overflow-hidden">
+            <div className="absolute inset-y-0 left-0 bg-gradient-to-r from-sky-500 to-cyan-500 transition-all duration-500" style={{ width: `${pct}%` }} />
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-3">
           {tasks.length === 0 && (
-            <div className="rounded-xl bg-muted/40 border border-border p-5 text-center">
+            <div className="rounded-2xl bg-muted/30 border border-dashed border-border p-6 text-center">
               <p className="text-sm font-semibold">No morning tasks to update.</p>
-              <p className="text-[12px] text-muted-foreground mt-1">Add a blocker below if anything's in your way, then continue.</p>
+              <p className="text-[12px] text-muted-foreground mt-1">Drop a blocker below if anything's in your way, then continue.</p>
             </div>
           )}
 
@@ -105,17 +123,17 @@ export function MiddayCheckinModal() {
               value={blockers}
               onChange={e => setBlockers(e.target.value.slice(0, 600))}
               placeholder="(Optional) e.g. waiting on creatives from client"
-              className="mt-1 w-full min-h-[60px] px-3 py-2 rounded-lg bg-background border border-border text-sm focus:outline-none focus:ring-2 focus:ring-sky-400/30 resize-y"
+              className="mt-1.5 w-full min-h-[64px] px-3 py-2 rounded-xl bg-background border border-border text-sm focus:outline-none focus:ring-2 focus:ring-sky-400/30 focus:border-sky-400/40 resize-y"
             />
           </div>
         </div>
 
-        <div className="border-t border-border px-6 py-3 flex items-center justify-between gap-3 bg-card/60">
-          <p className="text-[11px] text-muted-foreground">Quick pulse — you can keep working straight after.</p>
+        <div className="border-t border-border px-6 py-3.5 flex items-center justify-between gap-3 bg-card/80 backdrop-blur-sm">
+          <p className="text-[11.5px] text-muted-foreground">Quick pulse — keep working straight after.</p>
           <button
             onClick={submit}
             disabled={submitting}
-            className="h-9 px-4 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-sm font-semibold inline-flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+            className="h-9 px-4 rounded-xl bg-gradient-to-br from-sky-500 to-cyan-500 hover:from-sky-600 hover:to-cyan-600 text-white text-sm font-semibold inline-flex items-center gap-1.5 shadow-md shadow-sky-500/30 hover:shadow-lg hover:shadow-sky-500/40 transition-all disabled:opacity-50 disabled:shadow-none"
           >
             {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
             {submitting ? 'Saving…' : 'Save & continue'}
@@ -133,15 +151,36 @@ function TaskRow({
   value: { status: string; note: string };
   onChange: (v: { status: string; note: string }) => void;
 }) {
-  const opts: Array<{ k: string; label: string; cls: string; Icon: any }> = [
-    { k: 'done',         label: 'Done',        cls: 'bg-emerald-500 text-white', Icon: CheckCircle2 },
-    { k: 'in_progress',  label: 'In progress', cls: 'bg-blue-500 text-white',     Icon: Clock },
-    { k: 'blocked',      label: 'Blocked',     cls: 'bg-rose-500 text-white',     Icon: AlertTriangle },
-    { k: 'not_started',  label: 'Not started', cls: 'bg-muted text-foreground',   Icon: Circle },
-  ];
+  const isMeeting = task.kind === 'meeting';
+  const time = task.meetingAt ? new Date(task.meetingAt) : null;
+  const timeStr = time ? time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '';
+  const opts: Array<{ k: string; label: string; cls: string; Icon: any }> = isMeeting
+    ? [
+        { k: 'done',         label: 'Happened',     cls: 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white', Icon: CheckCircle2 },
+        { k: 'in_progress',  label: 'On now',       cls: 'bg-gradient-to-br from-blue-500 to-indigo-500 text-white',  Icon: Clock },
+        { k: 'blocked',      label: 'Postponed',    cls: 'bg-gradient-to-br from-rose-500 to-red-500 text-white',     Icon: AlertTriangle },
+        { k: 'not_started',  label: 'Not yet',      cls: 'bg-muted text-foreground',                                    Icon: Circle },
+      ]
+    : [
+        { k: 'done',         label: 'Done',         cls: 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white', Icon: CheckCircle2 },
+        { k: 'in_progress',  label: 'In progress',  cls: 'bg-gradient-to-br from-blue-500 to-indigo-500 text-white',  Icon: Clock },
+        { k: 'blocked',      label: 'Blocked',      cls: 'bg-gradient-to-br from-rose-500 to-red-500 text-white',     Icon: AlertTriangle },
+        { k: 'not_started',  label: 'Not started',  cls: 'bg-muted text-foreground',                                    Icon: Circle },
+      ];
   return (
-    <div className="rounded-xl border border-border bg-background p-3">
-      <p className="text-sm font-semibold mb-2 truncate">{task.title}</p>
+    <div className={
+      'rounded-2xl border p-3 transition-all ' +
+      (isMeeting ? 'bg-indigo-500/5 border-indigo-500/25' : 'bg-background border-border hover:shadow-sm')
+    }>
+      <div className="flex items-center gap-2 mb-2">
+        {isMeeting && <Calendar className="h-3.5 w-3.5 text-indigo-600 shrink-0" />}
+        <p className="text-sm font-semibold truncate">{task.title}</p>
+        {isMeeting && timeStr && (
+          <span className="text-[10.5px] font-bold bg-indigo-500/15 text-indigo-700 px-1.5 py-0.5 rounded">
+            {timeStr}
+          </span>
+        )}
+      </div>
       <div className="flex items-center gap-1.5 flex-wrap">
         {opts.map(o => {
           const active = value.status === o.k;
@@ -152,7 +191,7 @@ function TaskRow({
               onClick={() => onChange({ ...value, status: o.k })}
               className={
                 'h-7 px-2.5 rounded-full text-[11px] font-semibold inline-flex items-center gap-1 transition-all ' +
-                (active ? `${o.cls} scale-105 shadow-sm` : 'bg-muted/60 text-muted-foreground hover:bg-muted')
+                (active ? `${o.cls} scale-105 shadow-md` : 'bg-muted/60 text-muted-foreground hover:bg-muted')
               }
             >
               <o.Icon className="h-3 w-3" /> {o.label}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Moon, CheckCircle2, RefreshCw, Circle, XCircle, Loader2 } from 'lucide-react';
+import { Moon, CheckCircle2, RefreshCw, Circle, XCircle, Loader2, Calendar } from 'lucide-react';
 import * as api from '@/api';
 import { useCheckin, type MorningTask } from '@/contexts/CheckinContext';
 import { celebrate } from '@/lib/celebrate';
@@ -8,15 +8,11 @@ import { celebrate } from '@/lib/celebrate';
 /**
  * EndOfDayCheckinModal — mandatory before logout.
  *
- * For every morning task: pick Done / Still in progress / Rolled over /
- * Dropped. If it's NOT Done, a one-line reason is required — that's the
- * "why" the owner explicitly asked for. (Done = no reason needed.)
+ * Done / Still on it / Carry over / Dropped per task. If NOT done a
+ * one-line reason is required (red ring until filled). Optional
+ * tomorrow-plan textarea pre-fills next morning's popup.
  *
- * One additional field: tomorrow's plan (optional, pre-fills tomorrow's
- * morning popup so recurring items don't need re-typing).
- *
- * Modal is non-dismissible — only close = submit success. The orchestrator
- * also gates logout on its completion.
+ * Polished header + progress meter + meeting badges + gradient CTA.
  */
 export function EndOfDayCheckinModal() {
   const { status, openKind, close, refresh } = useCheckin();
@@ -31,8 +27,6 @@ export function EndOfDayCheckinModal() {
     const seed: Record<string, { status: string; reason: string }> = {};
     for (const t of status.morning.tasks) {
       if (!t.taskId) continue;
-      // Smart default: if midday said done, evening = done. Else
-      // in_progress so the user only has to flip the changed ones.
       const def =
         t.eveningStatus ||
         (t.middayStatus === 'done' ? 'done' : 'in_progress');
@@ -66,6 +60,10 @@ export function EndOfDayCheckinModal() {
     return c;
   }, [tasks, updates]);
 
+  const pct = tasks.length === 0
+    ? 100
+    : Math.round(((counts.done + counts.in_progress + counts.rolled_over + counts.dropped) / tasks.length) * 100);
+
   if (!visible || !status) return null;
 
   const submit = async () => {
@@ -96,24 +94,26 @@ export function EndOfDayCheckinModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-[150] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-card text-card-foreground rounded-2xl shadow-2xl w-full max-w-2xl border border-border max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="px-6 pt-5 pb-4 bg-gradient-to-br from-indigo-500/15 via-violet-500/10 to-rose-500/15 border-b border-border/40">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center">
-              <Moon className="h-5 w-5 text-indigo-700" />
+    <div className="fixed inset-0 z-[150] bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+      <div className="bg-card text-card-foreground rounded-3xl shadow-2xl w-full max-w-2xl border border-border max-h-[94vh] flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-2 duration-300">
+        {/* Header */}
+        <div className="relative px-6 pt-6 pb-5 bg-gradient-to-br from-indigo-500/20 via-violet-500/15 to-rose-500/15 border-b border-border/40 overflow-hidden">
+          <div className="absolute -top-12 -right-12 h-40 w-40 rounded-full bg-violet-400/30 blur-3xl pointer-events-none" />
+          <div className="relative flex items-start gap-3">
+            <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/30">
+              <Moon className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="text-base sm:text-lg font-bold leading-tight">Wrap the day</h2>
-              <p className="text-[12px] text-muted-foreground">
-                Where each task landed + why. ~20 seconds. Then you can log out.
+              <h2 className="text-lg sm:text-xl font-bold leading-tight">Wrap the day</h2>
+              <p className="text-[12.5px] text-muted-foreground leading-snug mt-0.5">
+                Where each task landed + why. ~20 seconds.
               </p>
             </div>
             {tasks.length > 0 && (
-              <div className="flex items-center gap-2 text-[11px] font-semibold">
-                <Pill cls="bg-emerald-500/15 text-emerald-700 border-emerald-500/30">{counts.done} done</Pill>
-                {counts.in_progress + counts.rolled_over > 0 && (
-                  <Pill cls="bg-blue-500/15 text-blue-700 border-blue-500/30">{counts.in_progress + counts.rolled_over} carry-over</Pill>
+              <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-semibold">
+                {counts.done > 0 && <Pill cls="bg-emerald-500/15 text-emerald-700 border-emerald-500/30">{counts.done} done</Pill>}
+                {(counts.in_progress + counts.rolled_over) > 0 && (
+                  <Pill cls="bg-blue-500/15 text-blue-700 border-blue-500/30">{counts.in_progress + counts.rolled_over} carry</Pill>
                 )}
                 {counts.dropped > 0 && (
                   <Pill cls="bg-rose-500/15 text-rose-700 border-rose-500/30">{counts.dropped} dropped</Pill>
@@ -121,11 +121,14 @@ export function EndOfDayCheckinModal() {
               </div>
             )}
           </div>
+          <div className="mt-4 relative h-1.5 rounded-full bg-indigo-100/60 overflow-hidden">
+            <div className="absolute inset-y-0 left-0 bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-3">
           {tasks.length === 0 && (
-            <div className="rounded-xl bg-muted/40 border border-border p-5 text-center">
+            <div className="rounded-2xl bg-muted/30 border border-dashed border-border p-6 text-center">
               <p className="text-sm font-semibold">Nothing on your plate today.</p>
               <p className="text-[12px] text-muted-foreground mt-1">Drop a tomorrow-plan note below and you're done.</p>
             </div>
@@ -148,19 +151,19 @@ export function EndOfDayCheckinModal() {
               value={tomorrowPlan}
               onChange={e => setTomorrowPlan(e.target.value.slice(0, 600))}
               placeholder="One line per task. Use bullets, commas or new lines."
-              className="mt-1 w-full min-h-[70px] px-3 py-2 rounded-lg bg-background border border-border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 resize-y"
+              className="mt-1.5 w-full min-h-[72px] px-3 py-2 rounded-xl bg-background border border-border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400/40 resize-y"
             />
           </div>
         </div>
 
-        <div className="border-t border-border px-6 py-3 flex items-center justify-between gap-3 bg-card/60">
-          <p className={'text-[11px] ' + (allHaveReasons ? 'text-emerald-700' : 'text-rose-600')}>
+        <div className="border-t border-border px-6 py-3.5 flex items-center justify-between gap-3 bg-card/80 backdrop-blur-sm">
+          <p className={'text-[11.5px] ' + (allHaveReasons ? 'text-emerald-700' : 'text-rose-600')}>
             {allHaveReasons ? 'Looks good — ready to wrap.' : 'Add a reason for every task not marked Done.'}
           </p>
           <button
             onClick={submit}
             disabled={submitting || !allHaveReasons}
-            className="h-9 px-4 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold inline-flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+            className="h-9 px-4 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white text-sm font-semibold inline-flex items-center gap-1.5 shadow-md shadow-indigo-500/30 hover:shadow-lg hover:shadow-indigo-500/40 transition-all disabled:opacity-50 disabled:shadow-none"
           >
             {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
             {submitting ? 'Saving…' : 'Wrap & log out'}
@@ -172,7 +175,7 @@ export function EndOfDayCheckinModal() {
 }
 
 function Pill({ cls, children }: { cls: string; children: any }) {
-  return <span className={'h-5 px-2 rounded-full border text-[10px] inline-flex items-center ' + cls}>{children}</span>;
+  return <span className={'h-5 px-2 rounded-full border text-[10px] inline-flex items-center font-semibold ' + cls}>{children}</span>;
 }
 
 function TaskRow({
@@ -182,16 +185,37 @@ function TaskRow({
   value: { status: string; reason: string };
   onChange: (v: { status: string; reason: string }) => void;
 }) {
-  const opts: Array<{ k: string; label: string; cls: string; Icon: any }> = [
-    { k: 'done',         label: 'Done',           cls: 'bg-emerald-500 text-white', Icon: CheckCircle2 },
-    { k: 'in_progress',  label: 'Still on it',    cls: 'bg-blue-500 text-white',     Icon: Circle },
-    { k: 'rolled_over',  label: 'Carry over',     cls: 'bg-amber-500 text-white',    Icon: RefreshCw },
-    { k: 'dropped',      label: 'Dropped',        cls: 'bg-rose-500 text-white',     Icon: XCircle },
-  ];
+  const isMeeting = task.kind === 'meeting';
+  const time = task.meetingAt ? new Date(task.meetingAt) : null;
+  const timeStr = time ? time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '';
+  const opts: Array<{ k: string; label: string; cls: string; Icon: any }> = isMeeting
+    ? [
+        { k: 'done',         label: 'Happened',  cls: 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white', Icon: CheckCircle2 },
+        { k: 'in_progress',  label: 'Ran late',  cls: 'bg-gradient-to-br from-blue-500 to-indigo-500 text-white',  Icon: Circle },
+        { k: 'rolled_over',  label: 'Reschedule',cls: 'bg-gradient-to-br from-amber-500 to-orange-500 text-white', Icon: RefreshCw },
+        { k: 'dropped',      label: 'Cancelled', cls: 'bg-gradient-to-br from-rose-500 to-red-500 text-white',     Icon: XCircle },
+      ]
+    : [
+        { k: 'done',         label: 'Done',         cls: 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white', Icon: CheckCircle2 },
+        { k: 'in_progress',  label: 'Still on it',  cls: 'bg-gradient-to-br from-blue-500 to-indigo-500 text-white',  Icon: Circle },
+        { k: 'rolled_over',  label: 'Carry over',   cls: 'bg-gradient-to-br from-amber-500 to-orange-500 text-white', Icon: RefreshCw },
+        { k: 'dropped',      label: 'Dropped',      cls: 'bg-gradient-to-br from-rose-500 to-red-500 text-white',     Icon: XCircle },
+      ];
   const needsReason = value.status !== 'done';
   return (
-    <div className="rounded-xl border border-border bg-background p-3">
-      <p className="text-sm font-semibold mb-2 truncate">{task.title}</p>
+    <div className={
+      'rounded-2xl border p-3 transition-all ' +
+      (isMeeting ? 'bg-indigo-500/5 border-indigo-500/25' : 'bg-background border-border hover:shadow-sm')
+    }>
+      <div className="flex items-center gap-2 mb-2">
+        {isMeeting && <Calendar className="h-3.5 w-3.5 text-indigo-600 shrink-0" />}
+        <p className="text-sm font-semibold truncate">{task.title}</p>
+        {isMeeting && timeStr && (
+          <span className="text-[10.5px] font-bold bg-indigo-500/15 text-indigo-700 px-1.5 py-0.5 rounded">
+            {timeStr}
+          </span>
+        )}
+      </div>
       <div className="flex items-center gap-1.5 flex-wrap">
         {opts.map(o => {
           const active = value.status === o.k;
@@ -202,7 +226,7 @@ function TaskRow({
               onClick={() => onChange({ ...value, status: o.k })}
               className={
                 'h-7 px-2.5 rounded-full text-[11px] font-semibold inline-flex items-center gap-1 transition-all ' +
-                (active ? `${o.cls} scale-105 shadow-sm` : 'bg-muted/60 text-muted-foreground hover:bg-muted')
+                (active ? `${o.cls} scale-105 shadow-md` : 'bg-muted/60 text-muted-foreground hover:bg-muted')
               }
             >
               <o.Icon className="h-3 w-3" /> {o.label}
@@ -214,10 +238,10 @@ function TaskRow({
         <input
           value={value.reason}
           onChange={e => onChange({ ...value, reason: e.target.value.slice(0, 280) })}
-          placeholder="Why? (required) e.g. waiting on client creatives"
+          placeholder={isMeeting ? 'Why? (required) e.g. client moved to tomorrow' : 'Why? (required) e.g. waiting on client creatives'}
           className={
-            'mt-2 w-full h-8 px-2.5 rounded-lg text-[12px] focus:outline-none focus:ring-2 focus:ring-indigo-400/30 ' +
-            (value.reason.trim() ? 'bg-muted/30 border border-border' : 'bg-rose-500/10 border border-rose-500/40')
+            'mt-2 w-full h-8 px-2.5 rounded-lg text-[12px] focus:outline-none focus:ring-2 focus:ring-indigo-400/30 transition-all ' +
+            (value.reason.trim() ? 'bg-muted/30 border border-border' : 'bg-rose-500/10 border border-rose-500/40 focus:ring-rose-400/30')
           }
         />
       )}

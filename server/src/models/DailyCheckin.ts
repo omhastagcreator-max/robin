@@ -36,6 +36,16 @@ const MorningTaskSchema = new Schema({
   clientWorkflowId: { type: Types.ObjectId, ref: 'ClientWorkflow', default: null },
   clientWorkflowName: { type: String, default: '' },
   priority: { type: String, enum: ['low', 'medium', 'high', 'urgent'], default: 'medium' },
+  // Kind — 'task' is the default; 'meeting' means this row is a client
+  // meeting and should carry a scheduled time. The midday/evening
+  // popups render meetings with a calendar icon and the time pill so
+  // teammates can see at a glance which item is a call vs. a task.
+  kind: { type: String, enum: ['task', 'meeting'], default: 'task' },
+  // ISO datetime for 'meeting' kind; null otherwise. We deliberately
+  // store the full datetime (not just HH:MM) so admin reports can show
+  // "ran late — meeting was 4:00pm, evening checkin filled at 4:35pm"
+  // without any timezone re-derivation.
+  meetingAt: { type: Date, default: null },
   // Status WITHIN THIS CHECKIN — separate from ProjectTask.status which
   // is the global source of truth. Mirrors the lifecycle so we can show
   // the morning→midday→evening trajectory on the admin report.
