@@ -543,16 +543,22 @@ export async function getCheckinSuggestions(req: AuthRequest, res: Response): Pr
 
 /**
  * One row per teammate showing whether they've done morning / midday /
- * evening today, plus the count of morning tasks + how many are still
- * outstanding. Admin / sales only — but the existing route gate enforces
- * that, so this controller just builds the list.
+ * evening for the requested day, plus the count of morning tasks and
+ * how many are still outstanding. Admin / sales / Om-style managers
+ * (canManageWorkroom) only — the route gate enforces access.
+ *
+ * Accepts an optional ?date=YYYY-MM-DD query so the new TeamPulsePage
+ * can browse historical days without a separate endpoint. Date is
+ * interpreted as IST calendar date — same format we already store on
+ * the DailyCheckin doc.
  */
 export async function getAdminCheckinReport(req: AuthRequest, res: Response): Promise<void> {
   try {
     const me = req.user!.id;
     const orgId = await getOrg(me);
     if (!orgId) { res.json({ ok: true, rows: [] }); return; }
-    const dateIST = istDayKey();
+    const rawDate = String((req.query.date as string) || '').trim();
+    const dateIST = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : istDayKey();
 
     const [users, checkins] = await Promise.all([
       User.find({

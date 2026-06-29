@@ -5,7 +5,7 @@ import {
   Building2, BarChart2, CalendarOff, Clock, BarChart3, Calendar,
   Bug, CalendarDays, Workflow, UserPlus, AlertTriangle, KeyRound,
   Sparkles, LogOut, Bird, ChevronsLeft, ChevronsRight, Bell, Settings,
-  TrendingUp, Compass, Archive,
+  TrendingUp, Compass, Archive, Activity,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnreadCounts } from '@/contexts/UnreadCountsContext';
@@ -68,6 +68,11 @@ const NAV: NavItem[] = [
   // ── WORK ────────────────────────────────────────────────────────
   { to: '/tasks',             label: 'Tasks',         icon: ListTodo,        section: 'work',      roles: ['employee', 'admin', 'sales'] },
   { to: '/tasks/ledger',      label: 'Task ledger',   icon: Archive,         section: 'work',      roles: ['employee', 'admin', 'sales'] },
+  // Team Pulse — admin + sales see it by role; non-admin "workroom
+  // managers" (Om's canManageWorkroom flag) see it via the requiresFlag
+  // path, same pattern we use for the workroom-onboard link below.
+  { to: '/team-pulse',        label: 'Team Pulse',    icon: Activity,        section: 'work',      roles: ['admin', 'sales'] },
+  { to: '/team-pulse',        label: 'Team Pulse',    icon: Activity,        section: 'work',      roles: ['employee'], requiresFlag: 'canManageWorkroom' },
   { to: '/clients/pipeline',  label: 'Client CRM',    icon: Workflow,        section: 'work',      roles: ['admin', 'employee', 'sales'] },
   { to: '/admin/clients',     label: 'Clients',       icon: Building2,       section: 'work',      roles: ['admin'] },
   { to: '/admin/projects',    label: 'Projects',      icon: Briefcase,       section: 'work',      roles: ['admin'] },

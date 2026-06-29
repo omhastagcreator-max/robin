@@ -113,6 +113,10 @@ export const submitEndCheckin     = (body: {
   tomorrowPlan?: string;
 }) => api.post('/checkin/end', body).then(r => r.data);
 export const getAdminCheckinToday = () => api.get('/checkin/admin/today').then(r => r.data);
+// TeamPulsePage variant — accepts an IST date for historical browsing.
+// Default (no date) returns today, same as getAdminCheckinToday.
+export const getTeamPulseReport   = (date?: string) =>
+  api.get('/checkin/admin/report', { params: date ? { date } : {} }).then(r => r.data);
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
 export const startSession      = () => api.post('/sessions/start', {}).then(r => r.data);

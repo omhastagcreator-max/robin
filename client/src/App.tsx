@@ -45,6 +45,7 @@ const AdminIssues       = lazy(() => import('@/pages/AdminIssues'));
 // June 2026 Mission Control build.
 const CommandCenter     = lazy(() => import('@/pages/CommandCenter'));
 const TaskLedgerPage    = lazy(() => import('@/pages/TaskLedgerPage'));
+const TeamPulsePage     = lazy(() => import('@/pages/TeamPulsePage'));
 
 /**
  * BlankRoot — the public root (robin.hastagcreator.com/) renders nothing.
@@ -156,6 +157,12 @@ function AppRoutes() {
           {/* Task ledger — permanent searchable history of every
               assigned task. Internal roles. */}
           <Route path="/tasks/ledger"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TaskLedgerPage /></E></ProtectedRoute>} />
+          {/* Team Pulse — Om + admin dashboard of every teammate's
+              morning / midday / evening checkin. Route gate allows
+              admin + sales + employee; the server route further checks
+              canManageWorkroom so plain employees who hit the URL get
+              a 403 from the API (page renders an empty list). */}
+          <Route path="/team-pulse"       element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TeamPulsePage /></E></ProtectedRoute>} />
           {/* Onboard a workroom teammate — admin OR any user the admin
               has flagged with canManageWorkroom (e.g. Om). The page itself
               re-checks the flag and bounces if accessed directly. */}
