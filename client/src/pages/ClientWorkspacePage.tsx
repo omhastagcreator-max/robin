@@ -15,6 +15,7 @@ import { ActivityTimeline } from '@/components/panels/ProjectDetailPanel';
 import { CommentRequiredModal } from '@/components/shared/CommentRequiredModal';
 import { WarRoomBanner } from '@/components/workspace/WarRoomBanner';
 import { PipelineNavBar } from '@/components/pipeline/PipelineNavBar';
+import { BrandPipelinePie } from '@/components/clients/BrandPipelinePie';
 import { useAuth } from '@/contexts/AuthContext';
 import * as api from '@/api';
 
@@ -404,6 +405,20 @@ export default function ClientWorkspacePage() {
               if (key === 'dev' || key === 'video' || key === 'meta') openStage(key);
             }}
           />
+
+          {/* ── 4b. PIPELINE PIE — "what's done vs. remaining at a glance"
+              Owner ask (June 2026): a pie with Meta in Meta-blue, Shopify
+              in Shopify-green, Video in a unique color. Each slice is
+              clickable for the per-service drilldown. A toggle on the
+              top-right of the card switches to a "by teammate" view so
+              admins can see who owns what without clicking each service. */}
+          <div className="px-3 sm:px-4 lg:px-6 pt-3">
+            <BrandPipelinePie
+              services={wf.services}
+              users={Object.values(users).map(u => ({ _id: u._id, name: u.name }))}
+              onLeaveIds={Array.from(onLeaveIds)}
+            />
+          </div>
 
           {/* ── 5. SERVICE OVERVIEW — 3 cards, active elevated.
               Each card click drills into Layer 2 (Stage Workspace) at

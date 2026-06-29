@@ -41,28 +41,68 @@ export function MorningCheckinModal() {
   // Pre-seed brand defaults: 'na' for no-Meta brands, '' for Meta brands
   // (forces the user to actively pick). Pre-fill tomorrow plan items as
   // task suggestions when applicable.
+  //
+  // Also load any draft saved during a previous session today — if Robin
+  // crashed / browser closed mid-fill we don't make the user re-type
+  // everything. localStorage key is keyed on today's IST date so
+  // yesterday's draft never bleeds in.
   useEffect(() => {
     if (!visible || !status) return;
+    const draftKey = `robin.checkin.morning.draft.${status.dateIST}`;
+    let draftBrands: typeof brandEntries | null = null;
+    let draftTasks: typeof tasks | null = null;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.brands && typeof parsed.brands === 'object') draftBrands = parsed.brands;
+          if (Array.isArray(parsed.tasks)) draftTasks = parsed.tasks;
+        }
+      }
+    } catch { /* corrupted draft — ignore */ }
+
     const init: Record<string, { metaStatus: string; note: string }> = {};
     for (const b of status.brandsForMorning) {
-      init[b.clientWorkflowId] = { metaStatus: b.hasMeta ? '' : 'na', note: '' };
+      const d = draftBrands?.[b.clientWorkflowId];
+      init[b.clientWorkflowId] = {
+        metaStatus: d?.metaStatus ?? (b.hasMeta ? '' : 'na'),
+        note: d?.note ?? '',
+      };
     }
     setBrandEntries(init);
-    setStep(1);
+    // No-brand users skip step 1 entirely — straight to tasks.
+    setStep(status.brandsForMorning.length === 0 ? 2 : 1);
 
-    // Pre-fill suggestions from yesterday's tomorrowPlan (one bullet per line).
-    const plan = status.yesterdayTomorrowPlan || '';
-    const lines = plan
-      .split(/[\n,•]+/g)
-      .map(l => l.trim().replace(/^[-*]\s*/, ''))
-      .filter(l => l.length > 0 && l.length <= 200)
-      .slice(0, 6);
-    if (lines.length > 0) {
-      setTasks(lines.map(l => ({ title: l, clientWorkflowId: null, priority: 'medium' })));
+    if (draftTasks && draftTasks.length > 0) {
+      setTasks(draftTasks);
     } else {
-      setTasks([]);
+      // Pre-fill suggestions from yesterday's tomorrowPlan (one bullet per line).
+      const plan = status.yesterdayTomorrowPlan || '';
+      const lines = plan
+        .split(/[\n,•]+/g)
+        .map(l => l.trim().replace(/^[-*]\s*/, ''))
+        .filter(l => l.length > 0 && l.length <= 200)
+        .slice(0, 6);
+      if (lines.length > 0) {
+        setTasks(lines.map(l => ({ title: l, clientWorkflowId: null, priority: 'medium' })));
+      } else {
+        setTasks([]);
+      }
     }
   }, [visible, status]);
+
+  // Persist draft on every change so a refresh / crash doesn't lose work.
+  // Cleared on successful submit (see submit()) so the next day starts fresh.
+  useEffect(() => {
+    if (!visible || !status) return;
+    try {
+      localStorage.setItem(
+        `robin.checkin.morning.draft.${status.dateIST}`,
+        JSON.stringify({ brands: brandEntries, tasks }),
+      );
+    } catch { /* quota / private mode */ }
+  }, [visible, status, brandEntries, tasks]);
 
   // Autofocus the task input when step 2 opens.
   useEffect(() => {
@@ -116,6 +156,8 @@ export function MorningCheckinModal() {
         tasks,
       };
       await api.submitMorningCheckin(payload);
+      // Wipe the draft now that the submit succeeded.
+      try { localStorage.removeItem(`robin.checkin.morning.draft.${status.dateIST}`); } catch { /* */ }
       await refresh();
       celebrate();
       toast.success("Morning checkin done! Now let's get into the huddle.", { duration: 4000 });
@@ -135,6 +177,15 @@ export function MorningCheckinModal() {
     }
     setStep(2);
   };
+
+  // Safety net — if the modal somehow opens with morning already submitted
+  // (server-side state out of sync), close ourselves and refresh. Prevents
+  // a re-submit from creating duplicate ProjectTask docs.
+  useEffect(() => {
+    if (visible && status?.morning?.done) {
+      close();
+    }
+  }, [visible, status?.morning?.done, close]);
 
   return (
     <div className="fixed inset-0 z-[150] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
