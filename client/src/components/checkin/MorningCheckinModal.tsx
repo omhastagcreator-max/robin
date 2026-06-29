@@ -111,6 +111,18 @@ export function MorningCheckinModal() {
     }
   }, [visible, step]);
 
+  // Safety net — if the modal somehow opens with morning already submitted
+  // (server-side state out of sync between tabs), close ourselves so we
+  // don't create duplicate ProjectTask docs on a stale re-submit. Must
+  // live ABOVE the early returns below; adding hooks AFTER an early
+  // return is the React error #310 "rendered more hooks than the
+  // previous render" mismatch this useEffect originally caused.
+  useEffect(() => {
+    if (visible && status?.morning?.done) {
+      close();
+    }
+  }, [visible, status?.morning?.done, close]);
+
   if (!visible) return null;
   if (!status) return null;
 
@@ -177,15 +189,6 @@ export function MorningCheckinModal() {
     }
     setStep(2);
   };
-
-  // Safety net — if the modal somehow opens with morning already submitted
-  // (server-side state out of sync), close ourselves and refresh. Prevents
-  // a re-submit from creating duplicate ProjectTask docs.
-  useEffect(() => {
-    if (visible && status?.morning?.done) {
-      close();
-    }
-  }, [visible, status?.morning?.done, close]);
 
   return (
     <div className="fixed inset-0 z-[150] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">

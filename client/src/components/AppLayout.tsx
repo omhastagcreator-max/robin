@@ -25,6 +25,7 @@ import { SlimSidebar }     from '@/components/v2/SlimSidebar';
 import { TopBar }          from '@/components/v2/TopBar';
 import { GlobalShortcuts } from '@/components/v2/GlobalShortcuts';
 import { CheckinOrchestrator } from '@/components/checkin/CheckinOrchestrator';
+import { PageErrorBoundary } from '@/components/shared/PageErrorBoundary';
 import { useKnock }        from '@/hooks/useKnock';
 import { useAppUpdater }   from '@/hooks/useAppUpdater';
 import { celebrate }       from '@/lib/celebrate';
@@ -258,8 +259,16 @@ function AppLayoutInner({ children }: Props) {
             "checkin required" banner. Mounted here so it sits sticky
             right under the session strip — same visual lane as the
             huddle-required + screen-share-required banners. The
-            CheckinProvider higher up the tree owns state. */}
-        <CheckinOrchestrator />
+            CheckinProvider higher up the tree owns state.
+
+            Wrapped in PageErrorBoundary so a future modal crash (a
+            cascade of React #310-style hook bugs, an axios shape
+            change, a missing icon import) can't take down the whole
+            app shell. The orchestrator just disappears; sidebar +
+            topbar + page content keep working. */}
+        <PageErrorBoundary fallback={null}>
+          <CheckinOrchestrator />
+        </PageErrorBoundary>
 
         {/* Sticky "huddle required" banner. Visible whenever a clocked-in
             teammate (any non-client role) is NOT currently in the huddle.
