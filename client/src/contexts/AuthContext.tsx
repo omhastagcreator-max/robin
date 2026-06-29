@@ -119,7 +119,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(mapped);
   };
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    // Owner ask (June 2026): "before logging out for the day they
+    // will get a popup … make sure after filling this only then only
+    // someone can log out." If the evening check-in is pending we ask
+    // the CheckinContext to open the evening modal AND wait for it
+    // to be submitted before continuing the logout. We read morning-
+    // and evening-done state from window flags mirrored by
+    // CheckinProvider so this hook doesn't have to import the context
+    // (which would create a circular dep — CheckinContext reads useAuth).
+    try {
+      const isStaff = ['admin', 'employee', 'sales', 'workroom'].includes(
+        (JSON.parse(localStorage.getItem(USER_KEY) || 'null') as any)?.role || '',
+      );
+      const morningDone = (window as any).__robinMorningDone === true;
+      const eveningDone = (window as any).__robinEveningDone === true;
+      const opener     = (window as any).__robinOpenCheckin as ((k: 'morning' | 'midday' | 'evening') => Promise<void>) | undefined;
+      // Only block logout when the user actually had a workday today
+      // — morning had to be done first. If they never did morning,
+      // there's nothing meaningful to wrap up, so we let logout pass.
+      if (isStaff && morningDone && !eveningDone && opener) {
+        await opener('evening');
+        // After the modal closes via successful submit, the window flag
+        // will have flipped. If the user somehow closed without submit
+        // (shouldn't be possible — the modal isn't dismissible), we
+        // still bail so they can't bypass via DevTools.
+        if ((window as any).__robinEveningDone !== true) {
+          return;
+        }
+      }
+    } catch { /* never block logout on a check-in flow hiccup */ }
+
     // Auto-clock-out. Owner ask (May 2026): "when I log out then stop
     // the timer". Fire endSession BEFORE we clear the token so the
     // request is still authenticated. Fire-and-forget — we never want

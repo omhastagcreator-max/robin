@@ -87,6 +87,26 @@ export const createUpdate  = (d: Record<string, unknown>)             => api.pos
 export const approveUpdate = (id: string)                             => api.put(`/updates/${id}/approve`, {}).then(r => r.data);
 export const rejectUpdate  = (id: string, feedback: string)           => api.put(`/updates/${id}/reject`, { feedback }).then(r => r.data);
 
+// ── Daily Check-ins (morning / midday / evening popups) ─────────────────────
+// Owner ask (June 2026): 3 mandatory pulses a day. Morning blocks huddle
+// join, evening blocks logout, midday auto-fires 1-2pm IST. Each submit
+// upserts the same DailyCheckin doc and (for morning tasks) creates
+// ProjectTask mirrors so the rest of Robin stays in sync.
+export const getCheckinToday    = () => api.get('/checkin/today').then(r => r.data);
+export const submitMorningCheckin = (body: {
+  brands: Array<{ clientWorkflowId: string; clientName?: string; metaStatus?: string; note?: string }>;
+  tasks:  Array<{ title: string; clientWorkflowId?: string | null; priority?: string }>;
+}) => api.post('/checkin/morning', body).then(r => r.data);
+export const submitMiddayCheckin  = (body: {
+  taskUpdates: Array<{ taskId: string; status: string; note?: string }>;
+  blockers?: string;
+}) => api.post('/checkin/midday', body).then(r => r.data);
+export const submitEndCheckin     = (body: {
+  taskUpdates: Array<{ taskId: string; status: string; reason?: string }>;
+  tomorrowPlan?: string;
+}) => api.post('/checkin/end', body).then(r => r.data);
+export const getAdminCheckinToday = () => api.get('/checkin/admin/today').then(r => r.data);
+
 // ── Sessions ──────────────────────────────────────────────────────────────────
 export const startSession      = () => api.post('/sessions/start', {}).then(r => r.data);
 export const startBreak        = () => api.post('/sessions/break', {}).then(r => r.data);

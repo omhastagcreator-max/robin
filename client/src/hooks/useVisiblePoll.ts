@@ -37,6 +37,12 @@ export function useVisiblePoll(
       // request burns more battery than a tick does. The 'online'
       // listener below catches us up the moment connectivity returns.
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      // Huddle-only mode (June 2026 owner ask): "when the internet is
+      // low make sure three things work properly — huddle, voice,
+      // screen sharing. Rest can be stopped." A global window flag
+      // set by useNetworkAware's banner+listener combination tells
+      // every poll site to STAND DOWN so LiveKit gets the bandwidth.
+      if (typeof window !== 'undefined' && (window as any).__robinHuddleOnly) return;
       try { fnRef.current(); } catch { /* poll failures are fn's problem */ }
     };
     const start = () => {

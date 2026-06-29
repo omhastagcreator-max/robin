@@ -11,6 +11,7 @@ import {
 import { AppLayout } from '@/components/AppLayout';
 import { DayPlanEditorSection } from '@/components/command/DayPlanEditorSection';
 import { TodayActivityTable } from '@/components/command/TodayActivityTable';
+import { DailyCheckinsReport } from '@/components/command/DailyCheckinsReport';
 import { useNetworkAware } from '@/hooks/useNetworkAware';
 import * as api from '@/api';
 
@@ -76,6 +77,12 @@ export default function CommandCenter() {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = (silent = false) => {
+    // Guard: skip when offline or in huddle-only mode so socket-
+    // driven refreshes inherit the same pause as the timer-driven
+    // ones. Re-running load() on connectivity recovery is handled
+    // by the visibilitychange / online listeners.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    if (typeof window !== 'undefined' && (window as any).__robinHuddleOnly) return;
     if (!silent) setLoading(true);
     setRefreshing(true);
     api.getCommandSnapshot()
@@ -91,6 +98,9 @@ export default function CommandCenter() {
     const ms = Number.isFinite(network.intervalMultiplier) ? baseMs * network.intervalMultiplier : 86_400_000;
     const iv = setInterval(() => {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      // Huddle-only mode skips the snapshot to free bandwidth for the
+      // live call. Resumes automatically when connection improves.
+      if (typeof window !== 'undefined' && (window as any).__robinHuddleOnly) return;
       load(true);
     }, ms);
     let debounce: ReturnType<typeof setTimeout> | null = null;
@@ -146,6 +156,12 @@ export default function CommandCenter() {
                 audit trail; nothing to reset. */}
             <SectionHeader title="Today's activity" subtitle="Counts since 00:00 IST. Updates live." />
             <TodayActivityTable />
+
+            {/* Daily check-ins — morning/midday/evening pulse per teammate.
+                Drilldown view: morning's tasks + brand Meta pulse + the
+                end-of-day reason for anything not done. */}
+            <SectionHeader title="Daily check-ins" subtitle="Morning · midday · evening pulse per teammate. Updates live." />
+            <DailyCheckinsReport />
 
             {/* 6b. Day plan editor — admin sets each teammate's weekday
                 schedule + weekly target. Employees see this live on

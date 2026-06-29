@@ -37,6 +37,19 @@ interface NetworkAware {
   downlinkMbps?: number;
   intervalMultiplier: number;
   slow: boolean;
+  /**
+   * huddleOnlyMode = true when the connection is bad enough that we
+   * should ONLY spend bandwidth on the things the agency owner
+   * flagged as critical — huddle / voice / screen-share. Every other
+   * poll (workroom snapshot, command center, today's activity,
+   * notification badge, etc.) pauses entirely so it doesn't fight
+   * with the realtime media for the trickle of available bytes.
+   *
+   * Triggers: offline OR effectiveType === 'slow-2g' / '2g'.
+   * 3G stays in adaptive mode (multiplier 2) — fast enough that
+   * a polling snapshot doesn't meaningfully tax the call.
+   */
+  huddleOnlyMode: boolean;
 }
 
 function readConnection(): { effectiveType: EffectiveType; downlinkMbps?: number } {
@@ -80,11 +93,17 @@ export function useNetworkAware(): NetworkAware {
     };
   }, []);
 
+  const huddleOnlyMode =
+    !online ||
+    conn.effectiveType === 'slow-2g' ||
+    conn.effectiveType === '2g';
+
   return {
     online,
     effectiveType: conn.effectiveType,
     downlinkMbps:  conn.downlinkMbps,
     intervalMultiplier: multiplierFor(online, conn.effectiveType),
     slow:          conn.effectiveType === 'slow-2g' || conn.effectiveType === '2g' || conn.effectiveType === '3g',
+    huddleOnlyMode,
   };
 }

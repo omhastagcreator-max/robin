@@ -105,6 +105,10 @@ export default function WorkroomHome() {
     const load = () => {
       // Don't fire while offline — no point, will resume on 'online'.
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      // Don't fire in huddle-only mode (2G / slow-2G) — every byte
+      // matters for keeping the LiveKit call alive. The banner at the
+      // top tells the user dashboards are paused.
+      if (typeof window !== 'undefined' && (window as any).__robinHuddleOnly) return;
       api.getWorkroomSnapshot().then(setSnap).catch(() => {}).finally(() => setLoading(false));
     };
     load();

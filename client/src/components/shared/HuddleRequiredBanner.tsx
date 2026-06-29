@@ -1,7 +1,9 @@
-import { Users, ArrowRight, Loader2 } from 'lucide-react';
+import { Users, ArrowRight, Loader2, Sunrise } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSession } from '@/hooks/useSession';
 import { useHuddle } from '@/contexts/HuddleContext';
+import { useCheckin } from '@/contexts/CheckinContext';
+import { toast } from 'sonner';
 
 /**
  * HuddleRequiredBanner — sticky red strip that appears whenever a
@@ -37,6 +39,7 @@ export function HuddleRequiredBanner() {
   const { role }    = useAuth();
   const { session } = useSession();
   const huddle      = useHuddle();
+  const { morningDone, open } = useCheckin();
 
   // Cheap gates first so we render null quickly on most pages.
   if (role === 'client' || !role) return null;
@@ -44,6 +47,50 @@ export function HuddleRequiredBanner() {
   if (session.status !== 'active') return null; // break / ended is sanctioned
   if (huddle.joined) return null;                // already in
   if (huddle.joining) return null;               // mid-connect — don't nag
+
+  // Owner ask (June 2026): no one joins the huddle without finishing
+  // the morning check-in first. When the check-in is pending we render
+  // the SAME banner but with copy that points them to the check-in
+  // instead of joining, and the Join button is replaced by a Check-in
+  // button. The CheckinBanner already nudges from the lane above, but
+  // we override here so the click target is consistent — one big
+  // primary action instead of two competing CTAs.
+  if (!morningDone) {
+    return (
+      <div className="sticky top-[44px] z-30 border-b border-rose-500/40 bg-rose-500/10 backdrop-blur-md">
+        <div className="px-4 sm:px-6 lg:px-8 py-2 flex items-center gap-3 flex-wrap">
+          <div className="h-7 w-7 rounded-full bg-rose-500/15 border border-rose-500/40 flex items-center justify-center shrink-0">
+            <Users className="h-3.5 w-3.5 text-rose-700" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[12.5px] font-semibold text-rose-800 leading-tight">
+              Huddle locked — finish your morning check-in first
+            </p>
+            <p className="text-[11px] text-rose-700/85 leading-snug">
+              Pehle brand pulse + aaj ke tasks bhar do. ~30 sec. Then huddle opens up.
+            </p>
+          </div>
+          <button
+            onClick={() => open('morning')}
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 shadow-sm shrink-0"
+          >
+            <Sunrise className="h-3 w-3" />
+            Start check-in
+            <ArrowRight className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const onJoinClick = () => {
+    if (!morningDone) {
+      toast.error('Finish your morning check-in first.');
+      open('morning');
+      return;
+    }
+    huddle.join();
+  };
 
   return (
     <div className="sticky top-[44px] z-30 border-b border-rose-500/40 bg-rose-500/10 backdrop-blur-md">
@@ -60,7 +107,7 @@ export function HuddleRequiredBanner() {
           </p>
         </div>
         <button
-          onClick={huddle.join}
+          onClick={onJoinClick}
           disabled={huddle.joining}
           className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-rose-500 text-white text-xs font-semibold hover:bg-rose-600 shadow-sm shrink-0 disabled:opacity-60"
         >

@@ -372,6 +372,18 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     // LiveKit's own mic acquisition and stalled connections at
     // "connecting…" for everyone. Removed. Safari mic prompt is now
     // handled by joinMeeting() itself; see useMeetingRoom.ts.
+    //
+    // Owner ask (June 2026): "without filling [morning check-in] they
+    // can't join the huddle." A window flag set by CheckinContext
+    // mirrors morning-done state — read it here so every entry point
+    // (banner click, auto-join effect, dock button) hits the same
+    // gate without each having to import CheckinContext. Defaults to
+    // `true` so non-staff users + the first render before checkin
+    // status loads aren't accidentally blocked.
+    if (typeof window !== 'undefined' && (window as any).__robinMorningDone === false) {
+      // The banner copy explains why this happens; we just bail.
+      return;
+    }
     setMode(m => (m === 'idle' ? 'joining' : m));
     if (pipAutoEnabled && pipSupported && !pipWindowRef.current) {
       // Fire-and-forget; the click activation flows into requestWindow.

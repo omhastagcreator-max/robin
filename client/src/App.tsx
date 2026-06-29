@@ -207,6 +207,7 @@ import { ScreenShareProvider } from '@/contexts/ScreenShareContext';
 import { HuddleProvider } from '@/contexts/HuddleContext';
 import { ClientMeetingProvider } from '@/contexts/ClientMeetingContext';
 import { UnreadCountsProvider } from '@/contexts/UnreadCountsContext';
+import { CheckinProvider } from '@/contexts/CheckinContext';
 import { BreakOverlay } from '@/components/shared/BreakOverlay';
 import { NetworkStatus } from '@/components/shared/NetworkStatus';
 import { RightDrawerProvider } from '@/components/ui/RightDrawer';
@@ -229,6 +230,7 @@ export default function App() {
     <BrowserRouter>
       <NetworkStatus />
       <AuthProvider>
+        <CheckinProvider>
         <ScreenShareProvider>
           <HuddleProvider>
             {/* Client-meeting room state lives here so navigation between
@@ -248,6 +250,7 @@ export default function App() {
             </ClientMeetingProvider>
           </HuddleProvider>
         </ScreenShareProvider>
+        </CheckinProvider>
       </AuthProvider>
     </BrowserRouter>
   );

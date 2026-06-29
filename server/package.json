@@ -14,7 +14,8 @@
     "ensure-stages":   "npx ts-node src/scripts/ensureAllStages.ts",
     "add-bhawna":      "ts-node src/scripts/addBhawna.ts",
     "cap-om-breaks":   "ts-node src/scripts/capOmBreaks.ts",
-    "close-stale-sessions": "ts-node src/scripts/closeStaleSessions.ts"
+    "close-stale-sessions": "ts-node src/scripts/closeStaleSessions.ts",
+    "wipe-imported":   "ts-node src/scripts/wipeImported.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
