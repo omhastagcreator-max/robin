@@ -128,6 +128,29 @@ export function MorningCheckinModal() {
     if (visible && status?.morning?.done) close();
   }, [visible, status?.morning?.done, close]);
 
+  /* ───────── Modal lock: no Escape, no body scroll, no global shortcuts ─
+   * Owner rule (June 2026): "make sure no popup is removable." We:
+   *   1. Block Escape key during capture phase so nothing else handles it.
+   *   2. Lock body scroll so the page underneath doesn't reachable.
+   *   3. Stop propagation on backdrop click — no accidental dismiss.
+   * Side note: there's no close (X) button anywhere in the modal; the
+   * only exits are a successful submit (which calls close internally)
+   * or the safety net above when the server has already recorded
+   * morning.done = true. */
+  useEffect(() => {
+    if (!visible) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [visible]);
+
   /* ───────── Filtered suggestions for typeahead ───────── */
   const filteredSuggestions = useMemo(() => {
     const q = taskInput.trim().toLowerCase();

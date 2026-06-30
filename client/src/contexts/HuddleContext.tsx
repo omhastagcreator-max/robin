@@ -502,7 +502,17 @@ export function HuddleProvider({ children }: { children: ReactNode }) {
     // we don't have here. The single-shot effect downstream fires the
     // real meeting.joinMeeting() either way, and the PiP auto-reopen
     // listener catches the user's very next click.
+    //
+    // Owner rule (June 2026): "no one can join the huddle without
+    // the morning check-in." The flag is mirrored by CheckinContext —
+    // false = morning is pending. We check it inside the setTimeout
+    // so a race where the flag flips between effect-fire and timeout
+    // is honoured.
     const t = setTimeout(() => {
+      if (typeof window !== 'undefined' && (window as any).__robinMorningDone === false) {
+        autoJoinedRef.current = false;   // allow re-attempt once morning is done
+        return;
+      }
       setMode(m => (m === 'idle' ? 'joining' : m));
     }, wait);
     return () => clearTimeout(t);

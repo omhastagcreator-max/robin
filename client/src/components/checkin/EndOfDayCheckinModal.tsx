@@ -44,6 +44,23 @@ export function EndOfDayCheckinModal() {
     [status],
   );
 
+  // Modal lock — block Escape + lock body scroll. Same pattern as the
+  // other two check-in modals. Owner rule (June 2026): no popup is
+  // removable, exit only via successful submit.
+  useEffect(() => {
+    if (!visible) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [visible]);
+
   const allHaveReasons = tasks.every(t => {
     const u = updates[t.taskId!];
     if (!u) return false;

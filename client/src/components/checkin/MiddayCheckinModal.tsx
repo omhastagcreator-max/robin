@@ -43,6 +43,22 @@ export function MiddayCheckinModal() {
     [status],
   );
 
+  // Modal lock — block Escape + lock body scroll. Same pattern as morning
+  // modal; see those comments for why. Owner rule: no popup is removable.
+  useEffect(() => {
+    if (!visible) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [visible]);
+
   const gradedCount = useMemo(
     () => tasks.filter(t => updates[t.taskId!]?.status && updates[t.taskId!].status !== '').length,
     [tasks, updates],
