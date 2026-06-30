@@ -174,24 +174,81 @@ export function useSession() {
   };
 
   // ── Derived live timers ──────────────────────────────────────────────────
+  //
+  // The "253h on break today" bug (June 2026):
+  //   When a user clicked Break, closed the laptop, and reopened Robin the
+  //   next day, the open break event was never closed server-side. The
+  //   client then computed (now − startedAt) and displayed days of break
+  //   time. Two guards now prevent that:
+  //
+  //     1. UPPER CLAMP — same as workedMs: never count past
+  //        lastHeartbeatAt + 120s grace. A break that was open when the
+  //        laptop closed effectively ended at the last heartbeat.
+  //
+  //     2. PER-EVENT CAP (4h) — no legitimate break runs more than 4
+  //        hours. Anything longer is broken-data drift; cap it so the
+  //        UI never reports nonsense even if the server hasn't been
+  //        cleaned up yet.
+  //
+  //     3. TODAY-WINDOW CLAMP (totalBreakMs only) — the strip says
+  //        "today: X" so we anchor to IST midnight. Yesterday's breaks
+  //        on a cross-day session no longer leak into today's total.
+  //
+  // Together these make the UI self-healing — even if a session has bad
+  // breakEvents data on the server, the user sees correct numbers.
+  const MAX_SINGLE_BREAK_MS = 4 * 60 * 60 * 1000;   // 4h hard cap per event
+
+  // IST midnight (start of today) in unix ms — used to clip cross-day
+  // break events to today's slice only.
+  const todayIstStartMs = useMemo(() => {
+    const istNow = new Date(now + 330 * 60_000);
+    const utcMid = Date.UTC(
+      istNow.getUTCFullYear(),
+      istNow.getUTCMonth(),
+      istNow.getUTCDate(),
+      0, 0, 0,
+    );
+    return utcMid - 330 * 60_000;   // back to UTC ms
+  }, [now]);
+
+  // Upper bound — clamp at lastHeartbeatAt + grace when present so the
+  // counter freezes inside ~2min of going offline.
+  const upperBoundMs = useMemo(() => {
+    if (!session) return now;
+    if (!session.lastHeartbeatAt) return now;
+    const hb = new Date(session.lastHeartbeatAt).getTime();
+    return Math.min(now, hb + 120_000);
+  }, [session, now]);
+
   const currentBreakMs = useMemo(() => {
     if (!session || session.status !== 'on_break') return 0;
     const last = session.breakEvents?.[session.breakEvents.length - 1];
     if (!last?.startedAt || last.endedAt) return 0;
-    return Math.max(0, now - new Date(last.startedAt).getTime());
-  }, [session, now]);
+    const start = new Date(last.startedAt).getTime();
+    const elapsed = Math.max(0, upperBoundMs - start);
+    // Hard cap so a stale session with a months-old open break can't
+    // display 253h. The cleanup script + server-side auto-close will
+    // bring the data back into line; this is the UI safety net.
+    return Math.min(elapsed, MAX_SINGLE_BREAK_MS);
+  }, [session, upperBoundMs]);
 
   const totalBreakMs = useMemo(() => {
     if (!session) return 0;
     return (session.breakEvents || []).reduce((sum, b) => {
       if (!b.startedAt) return sum;
-      const start = new Date(b.startedAt).getTime();
-      const end = b.endedAt
+      let start = new Date(b.startedAt).getTime();
+      let end = b.endedAt
         ? new Date(b.endedAt).getTime()
-        : (session.status === 'on_break' ? now : start);
-      return sum + Math.max(0, end - start);
+        : (session.status === 'on_break' ? upperBoundMs : start);
+      // Clamp to today AND to the heartbeat window.
+      start = Math.max(start, todayIstStartMs);
+      end   = Math.min(end,   upperBoundMs);
+      if (end <= start) return sum;
+      // Per-event cap so one broken row can't blow up the total.
+      const dur = Math.min(end - start, MAX_SINGLE_BREAK_MS);
+      return sum + dur;
     }, 0);
-  }, [session, now]);
+  }, [session, upperBoundMs, todayIstStartMs]);
 
   // STANDARD_BREAK_MS — the break allowance built into a working day.
   // Mirrors server/src/services/sessionTime.ts. Up to this much break is

@@ -144,13 +144,21 @@ const AWAY_THRESHOLD_MS = 90_000;
  * subtract that time from "worked." Pauses the timer within one heartbeat
  * cycle of the user closing their tab — no need to wait for the 8pm cron.
  */
+// A single break this long is by definition broken data — the user
+// almost certainly closed the laptop without clicking End Break.
+// When the heartbeat handler detects an open break event older than
+// this, it auto-closes the break at the previous heartbeat moment
+// and flips the session back to 'active'. Same threshold the cleanup
+// script + startSession recovery use.
+const LONG_OPEN_BREAK_MS = 4 * 60 * 60 * 1000;
+
 export async function heartbeat(req: AuthRequest, res: Response): Promise<void> {
   try {
     const now = new Date();
     // Read current state first so we can compute the gap before $set.
     const current = await Session.findOne(
       { userId: req.user!.id, status: { $in: ['active', 'on_break'] } },
-      { lastHeartbeatAt: 1, awayMs: 1, status: 1 },
+      { lastHeartbeatAt: 1, awayMs: 1, status: 1, breakEvents: 1 },
     ).lean();
     if (!current) { res.status(404).json({ error: 'No active session' }); return; }
 
@@ -168,13 +176,46 @@ export async function heartbeat(req: AuthRequest, res: Response): Promise<void> 
       }
     }
 
+    // ── Auto-heal a runaway open break ────────────────────────────────
+    // Owner ask (June 2026): the topbar showed "today: 253:06" on break
+    // even though the user hadn't actually been on break that long. Root
+    // cause: a break event from a previous day was still "open" (no
+    // endedAt) and the UI counted (now − startedAt). Server now closes
+    // any open break event whose startedAt is older than 4h at the LAST
+    // heartbeat moment (not now — otherwise the gap counts as break
+    // time, which is exactly the bug we're fixing). After closing we
+    // flip status back to 'active' so the user resumes working.
+    if (current.status === 'on_break' && Array.isArray((current as any).breakEvents)) {
+      const events = (current as any).breakEvents as Array<{ startedAt?: Date; endedAt?: Date }>;
+      const open = events[events.length - 1];
+      if (open && open.startedAt && !open.endedAt) {
+        const breakStart = new Date(open.startedAt).getTime();
+        if ((now.getTime() - breakStart) > LONG_OPEN_BREAK_MS) {
+          // Mutate via a separate save to keep the breakEvents array
+          // mutation isolated from the $set/$inc combo above.
+          const full = await Session.findById((current as any)._id);
+          if (full) {
+            const lastBreak = full.breakEvents?.[full.breakEvents.length - 1];
+            if (lastBreak && !lastBreak.endedAt) {
+              lastBreak.endedAt = last ? new Date(last) : new Date(now.getTime() - 60_000);
+            }
+            full.status = 'active';
+            try { await full.save(); } catch { /* best effort */ }
+          }
+          // Mirror onto the update so the response below also reports
+          // status=active without a second roundtrip.
+          update.$set.status = 'active';
+        }
+      }
+    }
+
     const session = await Session.findOneAndUpdate(
       { userId: req.user!.id, status: { $in: ['active', 'on_break'] } },
       update,
       { new: true },
     );
     if (!session) { res.status(404).json({ error: 'No active session' }); return; }
-    res.json({ ok: true, lastHeartbeatAt: session.lastHeartbeatAt, awayMs: session.awayMs });
+    res.json({ ok: true, lastHeartbeatAt: session.lastHeartbeatAt, awayMs: session.awayMs, status: session.status });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 

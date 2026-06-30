@@ -28,20 +28,30 @@ export function CheckinOrchestrator() {
 
   const isStaff = !!user && ['admin', 'employee', 'sales', 'workroom'].includes(role);
 
-  // Morning: open as soon as status is loaded + morning not done +
-  // there's an active session (we want them clocked in first so we
-  // know they're starting work, not just glancing).
+  // Morning: open as soon as status is loaded + morning not done.
+  //
+  // EARLIER version required session.status === 'active' || 'on_break'.
+  // That meant when the auto-clock-in raced and the session wasn't yet
+  // created (or had ended via the 4h stale-session sweep), today's
+  // popup silently never appeared — the "I logged in and got nothing"
+  // bug. The popup is for STAFF, gated by isStaff, and the morning
+  // submit endpoint enforces its own org-scoped auth, so it's safe
+  // to surface even without an active session. The user fills the
+  // popup, hits submit, and the next heartbeat / nav creates a fresh
+  // session naturally.
   useEffect(() => {
     if (!isStaff) return;
     if (!status) return;
     if (autoMorningShown) return;
     if (morningDone) return;
-    if (!session) return;
-    if (session.status !== 'active' && session.status !== 'on_break') return;
     setAutoMorningShown(true);
     // Defer one tick so the layout finishes mounting.
     setTimeout(() => { open('morning'); }, 200);
-  }, [isStaff, status, morningDone, session, autoMorningShown, open]);
+  }, [isStaff, status, morningDone, autoMorningShown, open]);
+  // session is intentionally unused in the auto-open gate above —
+  // referenced here only to silence noUnusedLocals if a future edit
+  // re-introduces it. The session is still consumed by CheckinBanner.
+  void session;
 
   // Midday: only after morning is done, only between 1pm-2:30pm IST,
   // only once per day (status.dateIST tracked via state). Re-check every

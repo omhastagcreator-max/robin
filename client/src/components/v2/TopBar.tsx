@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLocation, Link, useNavigate } from 'react-router-dom';
-import { Search, Bell, Plus, Sparkles, ChevronDown } from 'lucide-react';
+import { Search, Bell, Plus, Sparkles, ChevronDown, Sunrise, CloudSun, Moon, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnreadCounts } from '@/contexts/UnreadCountsContext';
 import { useRobinCopilot } from '@/components/ai/RobinCopilot';
 import { HuddleQuickPill } from '@/components/shared/HuddleQuickPill';
+import { useCheckin, type CheckinKind } from '@/contexts/CheckinContext';
 
 /**
  * Robin v2 topbar — 44 px tall, sticky, dense.
@@ -131,6 +132,14 @@ export function TopBar() {
             </div>
           )}
 
+          {/* Daily check-in quick pill — owner ask (June 2026): when the
+              auto-popup silently skips (timing race, status load failure,
+              tab reopened mid-day), this gives every teammate a permanent
+              one-click way to open whichever check-in is pending. Pulses
+              when something needs filling so it's impossible to miss; goes
+              quiet (just a green tick) when the whole day's been logged. */}
+          {role !== 'client' && <CheckinQuickPill />}
+
           {/* Quick create */}
           {hasCreate && (
             <div className="relative" ref={createRef}>
@@ -203,5 +212,85 @@ export function TopBar() {
         <span className="sm:hidden text-[11px] text-muted-foreground truncate">{user?.name || ''}</span>
       </div>
     </header>
+  );
+}
+
+/* ────────────────────── CheckinQuickPill ──────────────────────────── */
+
+/**
+ * Topbar pill that opens the next pending check-in (morning → midday →
+ * evening). Always visible for internal roles so users never have to
+ * wonder "where did the popup go" when the auto-open silently skips.
+ *
+ * States:
+ *   - morning pending → amber pulse, label "Morning check-in"
+ *   - midday  pending (and after 1pm IST) → sky pulse, "Midday check-in"
+ *   - evening pending (and morning done)   → indigo pulse, "Wrap day"
+ *   - all done → green tick, "All check-ins done"
+ *
+ * The pulse animation is critical — without it, the button blends into
+ * the row of icons and gets ignored. With it, eyes track straight to it.
+ */
+function CheckinQuickPill() {
+  const { status, morningDone, middayDone, eveningDone, open } = useCheckin();
+
+  if (!status) return null;          // not loaded yet — render nothing
+  // Decide which check-in to point at first.
+  let kind: CheckinKind | null = null;
+  let label = '';
+  let pulse = '';
+  let bg    = '';
+  let Icon  = Sunrise;
+
+  if (!morningDone) {
+    kind = 'morning';
+    label = 'Morning check-in';
+    pulse = 'animate-pulse';
+    bg    = 'bg-amber-500/15 text-amber-800 hover:bg-amber-500/25 border-amber-500/40';
+    Icon  = Sunrise;
+  } else {
+    // Midday is "due" only after 1pm IST.
+    const ist = new Date(Date.now() + 330 * 60_000);
+    const istHour = ist.getUTCHours();
+    if (!middayDone && istHour >= 13) {
+      kind = 'midday';
+      label = 'Midday check-in';
+      pulse = 'animate-pulse';
+      bg    = 'bg-sky-500/15 text-sky-800 hover:bg-sky-500/25 border-sky-500/40';
+      Icon  = CloudSun;
+    } else if (!eveningDone) {
+      // Evening is always offerable once morning is done.
+      kind = 'evening';
+      label = 'Wrap day';
+      pulse = istHour >= 18 ? 'animate-pulse' : '';
+      bg    = 'bg-indigo-500/15 text-indigo-800 hover:bg-indigo-500/25 border-indigo-500/40';
+      Icon  = Moon;
+    } else {
+      // All three done — render a quiet acknowledgement instead of nothing
+      // so the user has feedback that the system is tracking them.
+      return (
+        <span
+          className="hidden md:inline-flex h-7 px-2 items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 text-[11.5px] font-semibold"
+          title="All three check-ins done today"
+        >
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          <span className="hidden lg:inline">Day logged</span>
+        </span>
+      );
+    }
+  }
+
+  if (!kind) return null;
+
+  return (
+    <button
+      onClick={() => open(kind!)}
+      className={`hidden md:inline-flex h-7 px-2.5 items-center gap-1.5 rounded-md border text-[11.5px] font-semibold transition-colors ${bg}`}
+      title={`Open ${label.toLowerCase()} — required`}
+    >
+      <span className={`relative inline-flex h-2 w-2 rounded-full bg-current ${pulse}`} />
+      <Icon className="h-3.5 w-3.5" />
+      <span className="hidden lg:inline">{label}</span>
+    </button>
   );
 }

@@ -15,7 +15,8 @@
     "add-bhawna":      "ts-node src/scripts/addBhawna.ts",
     "cap-om-breaks":   "ts-node src/scripts/capOmBreaks.ts",
     "close-stale-sessions": "ts-node src/scripts/closeStaleSessions.ts",
-    "wipe-imported":   "ts-node src/scripts/wipeImported.ts"
+    "wipe-imported":   "ts-node src/scripts/wipeImported.ts",
+    "fix-open-breaks": "ts-node src/scripts/fixOpenBreaks.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
