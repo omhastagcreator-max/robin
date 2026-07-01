@@ -16,7 +16,8 @@
     "cap-om-breaks":   "ts-node src/scripts/capOmBreaks.ts",
     "close-stale-sessions": "ts-node src/scripts/closeStaleSessions.ts",
     "wipe-imported":   "ts-node src/scripts/wipeImported.ts",
-    "fix-open-breaks": "ts-node src/scripts/fixOpenBreaks.ts"
+    "fix-open-breaks": "ts-node src/scripts/fixOpenBreaks.ts",
+    "wipe-non-sales":  "ts-node src/scripts/wipeNonSales.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
