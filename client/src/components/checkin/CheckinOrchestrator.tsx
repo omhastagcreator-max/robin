@@ -1,5 +1,4 @@
-import { useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
 import { useCheckin } from '@/contexts/CheckinContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSession } from '@/hooks/useSession';
@@ -9,146 +8,141 @@ import { EndOfDayCheckinModal } from './EndOfDayCheckinModal';
 import { CheckinBanner } from './CheckinBanner';
 
 /**
- * CheckinOrchestrator — the single mount that decides WHEN each
- * check-in popup auto-opens.
+ * CheckinOrchestrator — decides WHEN each check-in popup auto-opens.
  *
- * Owner ask (June 2026): "I want it to appear daily when I log in,
- * half day, log out." Earlier iteration showed the morning popup
- * once on mount and silently never again if the user dismissed it
- * or the effect's session-gate raced. This version is RELIABLE:
+ * Owner journey (June 2026):
+ *   1st ask: "make it mandatory"                 → aggressive re-fires
+ *   2nd ask: "popup coming every hour" (annoying) → back to ONCE per event
  *
- *   ─ Morning (LOGIN)
- *     Auto-opens whenever the user is in the app AND morning isn't
- *     done AND we haven't shown it in the last 60s. Re-fires on
- *     every page navigation so dismissing it just buys you one
- *     navigation worth of grace.
+ * Final policy — fire ONCE per (kind, IST day), full stop:
  *
- *   ─ Midday (HALF DAY, 13:00-14:30 IST)
- *     Polls every 30s. Inside the 13:00-14:30 window, re-prompts
- *     every 5 minutes if midday is still undone (this is the half-
- *     day half-hour the owner asked for). After 14:30, drops to a
- *     30-min cadence so it nudges without nagging.
+ *   Morning  → fires on first mount after login if morning is undone.
+ *              If the user dismisses (via successful submit only —
+ *              modals are locked), no re-fire. Missed / left open:
+ *              the always-visible topbar pill + sticky CheckinBanner
+ *              nag them until submitted. That's THREE independent
+ *              surfaces (pop, pill, banner) which is plenty.
  *
- *   ─ Evening (LOG OUT, 19:00 IST trigger + tab-close guard)
- *     Polls every 60s. Auto-fires at the first poll past 19:00 IST,
- *     re-prompts every 15 min until filled. ALSO installs a
- *     beforeunload listener so any attempt to close the tab after
- *     morning-done-but-evening-pending opens the modal AND shows
- *     the browser's "leave page?" confirmation. AuthContext.logout
- *     already awaits the evening modal — this is for users who
- *     close the tab without clicking sign-out.
+ *   Midday   → fires ONCE at the first tick where IST time is inside
+ *              the 13:00-14:30 window AND midday is undone. After
+ *              that, banner + pill only.
  *
- * Per-kind cooldowns live in a ref so reopening doesn't re-render
- * the orchestrator. Cooldowns are reset on IST day rollover so a
- * "last shown yesterday at 6pm" stamp doesn't suppress today's
- * morning popup.
+ *   Evening  → fires ONCE at the first tick past 19:00 IST when
+ *              evening is undone. Also fires on the logout flow
+ *              (handled inside AuthContext.logout, not here).
+ *
+ * The per-kind latch is stored in localStorage keyed by today's IST
+ * date so a tab-refresh doesn't re-fire what a previous mount already
+ * showed. The latch resets on day rollover.
  */
 export function CheckinOrchestrator() {
   const { user, role } = useAuth();
   const { session } = useSession();
-  const location = useLocation();
   const { status, morningDone, middayDone, eveningDone, open } = useCheckin();
 
   const isStaff = !!user && ['admin', 'employee', 'sales', 'workroom'].includes(role);
 
-  // Cooldown tracker — last time each kind was auto-opened, ms since epoch.
-  // 0 = never shown today.
-  const lastShownRef = useRef<{ morning: number; midday: number; evening: number; dateIST: string }>({
-    morning: 0, midday: 0, evening: 0, dateIST: '',
+  // Latch state — has THIS BROWSER TAB shown this kind's popup today?
+  // Backed by localStorage so a page reload doesn't re-fire.
+  const [autoShown, setAutoShown] = useState<{ morning: boolean; midday: boolean; evening: boolean; dateIST: string }>({
+    morning: false, midday: false, evening: false, dateIST: '',
   });
 
-  // Reset cooldowns on IST day rollover so yesterday's stamps don't suppress
-  // today's popups.
+  // Sync latch with today's date + any localStorage record.
   useEffect(() => {
     if (!status?.dateIST) return;
-    if (lastShownRef.current.dateIST !== status.dateIST) {
-      lastShownRef.current = { morning: 0, midday: 0, evening: 0, dateIST: status.dateIST };
+    const key = `robin.checkin.autoshown.${status.dateIST}`;
+    try {
+      const raw = localStorage.getItem(key);
+      const cached = raw ? JSON.parse(raw) : {};
+      setAutoShown({
+        morning: !!cached.morning,
+        midday:  !!cached.midday,
+        evening: !!cached.evening,
+        dateIST: status.dateIST,
+      });
+    } catch {
+      setAutoShown({ morning: false, midday: false, evening: false, dateIST: status.dateIST });
     }
   }, [status?.dateIST]);
 
-  /* ───────────── MORNING — fires on login + every nav until done ───────── */
+  // Persist any change to localStorage.
+  useEffect(() => {
+    if (!autoShown.dateIST) return;
+    try {
+      localStorage.setItem(
+        `robin.checkin.autoshown.${autoShown.dateIST}`,
+        JSON.stringify({
+          morning: autoShown.morning,
+          midday:  autoShown.midday,
+          evening: autoShown.evening,
+        }),
+      );
+    } catch { /* quota / private mode */ }
+  }, [autoShown]);
+
+  /* ─────────────────── MORNING — once on arrival ────────────────────── */
   useEffect(() => {
     if (!isStaff || !status || morningDone) return;
-    // 60s cooldown between auto-opens (route changes during fill won't
-    // re-pop; dismissing buys you one navigation of grace).
-    const now = Date.now();
-    if (now - lastShownRef.current.morning < 60_000) return;
-    lastShownRef.current.morning = now;
-    // Slight defer so layout settles before the modal mounts.
-    const t = window.setTimeout(() => { open('morning'); }, 200);
+    if (autoShown.morning) return;
+    setAutoShown(prev => ({ ...prev, morning: true }));
+    const t = window.setTimeout(() => { open('morning'); }, 250);
     return () => window.clearTimeout(t);
-  }, [isStaff, status, morningDone, location.pathname, open]);
+  }, [isStaff, status, morningDone, autoShown.morning, open]);
 
-  /* ───────── MIDDAY — actively polled 13:00-14:30 IST window ──────────── */
+  /* ───────────────── MIDDAY — once at 13:00-14:30 IST ──────────────── */
   useEffect(() => {
     if (!isStaff || !status) return;
     if (!morningDone || middayDone) return;
+    if (autoShown.midday) return;
 
     const tick = () => {
       const ist = new Date(Date.now() + 330 * 60_000);
       const mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
-      const inWindow  = mins >= 13 * 60 && mins < 14 * 60 + 30;
-      const pastWindow = mins >= 14 * 60 + 30;
-      const cool = Date.now() - lastShownRef.current.midday;
-
-      if (inWindow && cool >= 5 * 60_000) {
-        lastShownRef.current.midday = Date.now();
-        open('midday');
-      } else if (pastWindow && cool >= 30 * 60_000) {
-        // Still pending well past window — nudge every 30 min until end of day.
-        lastShownRef.current.midday = Date.now();
+      const inWindow = mins >= 13 * 60 && mins < 14 * 60 + 30;
+      if (inWindow) {
+        setAutoShown(prev => ({ ...prev, midday: true }));
         open('midday');
       }
     };
 
-    // Fire immediately on mount + on every page nav, then every 30s.
+    // Check immediately in case user opens Robin already inside the window.
     tick();
-    const id = window.setInterval(tick, 30_000);
+    // Poll every minute but the latch above ensures we only actually
+    // fire once — subsequent ticks bail because autoShown.midday is now true.
+    const id = window.setInterval(tick, 60_000);
     return () => window.clearInterval(id);
-  }, [isStaff, status, morningDone, middayDone, location.pathname, open]);
+  }, [isStaff, status, morningDone, middayDone, autoShown.midday, open]);
 
-  /* ─────── EVENING — fires at 19:00 IST + beforeunload guard ─────────── */
+  /* ─────────────── EVENING — once at 19:00 IST ─────────────────────── */
   useEffect(() => {
     if (!isStaff || !status) return;
     if (!morningDone || eveningDone) return;
+    if (autoShown.evening) return;
 
     const tick = () => {
       const ist = new Date(Date.now() + 330 * 60_000);
       const mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
       if (mins >= 19 * 60) {
-        const cool = Date.now() - lastShownRef.current.evening;
-        if (cool >= 15 * 60_000) {
-          lastShownRef.current.evening = Date.now();
-          open('evening');
-        }
+        setAutoShown(prev => ({ ...prev, evening: true }));
+        open('evening');
       }
     };
-
     tick();
     const id = window.setInterval(tick, 60_000);
     return () => window.clearInterval(id);
-  }, [isStaff, status, morningDone, eveningDone, location.pathname, open]);
+  }, [isStaff, status, morningDone, eveningDone, autoShown.evening, open]);
 
-  /* ─── beforeunload — block tab close if evening is owed ──────────────── */
-  useEffect(() => {
-    if (!isStaff) return;
-    if (!morningDone || eveningDone) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      // Open the modal so when the user cancels the close they see it.
-      try { open('evening'); } catch { /* */ }
-      // Modern browsers ignore the custom message string but the presence
-      // of returnValue triggers the native "Leave site?" confirmation.
-      e.preventDefault();
-      e.returnValue =
-        "You haven't wrapped your day yet. Fill the evening check-in before leaving?";
-      return e.returnValue;
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [isStaff, morningDone, eveningDone, open]);
+  // The evening popup is also fired by AuthContext.logout — that's the
+  // enforcement gate for "no logout without wrapping". We deliberately
+  // do NOT install a beforeunload prompt here anymore — it interacted
+  // badly with normal in-app navigations and contributed to the
+  // "popup coming every hour" feel. Users who close the tab without
+  // wrapping simply get prompted on their next login (evening remains
+  // undone → next-day morning wraps yesterday's mess as part of its
+  // own flow).
 
-  // session intentionally unused in the gates above — kept in deps in case
-  // a future revision wants to re-gate. Referenced here for noUnusedLocals.
+  // session unused in the gates above; referenced to satisfy noUnusedLocals.
   void session;
 
   return (
