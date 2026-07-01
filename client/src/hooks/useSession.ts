@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -256,34 +256,74 @@ export function useSession() {
   // lockstep with the server (1 hour today).
   const STANDARD_BREAK_MS = 60 * 60 * 1000;
 
+  // ── Monotonic ratchet ────────────────────────────────────────────────
+  // The working-hours display must NEVER go backwards during a session.
+  // Server pushes (getActiveSession refetches, heartbeat responses) can
+  // occasionally deliver an awayMs jump / breakMs jump that would make
+  // the raw computation dip. We remember the highest value we've shown
+  // for THIS session ID and never render below it. Reset on new session.
+  const ratchetRef = useRef<{ sessionId: string; workedMs: number }>({ sessionId: '', workedMs: 0 });
+  useEffect(() => {
+    if (!session) { ratchetRef.current = { sessionId: '', workedMs: 0 }; return; }
+    if (ratchetRef.current.sessionId !== session._id) {
+      ratchetRef.current = { sessionId: session._id, workedMs: 0 };
+    }
+  }, [session?._id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const workedMs = useMemo(() => {
     if (!session) return 0;
     const start = new Date(session.startTime).getTime();
-    // Working time with break-credit:
-    //   gross elapsed - max(0, breakMs - 1h) - awayMs
+    const elapsed = Math.max(0, now - start);
+
+    // ── Heartbeat freshness ──────────────────────────────────────────
+    // Bumped from 2min to 3min stale threshold (June 2026) so the timer
+    // stays smooth through longer hiccups — Render cold-starts, a slow
+    // cellular ping, a 4G handoff. Only freezes when the tab has been
+    // genuinely closed / idle for >3min, which is well past any real
+    // network blip.
     //
-    // i.e. up to 1h of break is "free" (built into the working day).
-    // Take 30min → no penalty; take 90min → 30min comes off. Matches the
-    // server's sessionTotals() so the live ticker and the daily report
-    // never disagree.
-    //
-    // Three other pause sources still apply:
-    //   1. Breaks ABOVE the standard allowance (the credit math above)
-    //   2. Away time (session.awayMs) — gaps between heartbeats > 90s
-    //   3. Heartbeat clamp — once the tab is closed, the upper bound
-    //      stops at lastHeartbeatAt + 90s grace so the live counter
-    //      freezes within ~90s of going offline.
-    let upper = now;
+    // While hb is fresh (or missing), we use the raw `now - start`
+    // elapsed number so the display ticks second-by-second regardless
+    // of when the last heartbeat succeeded. Only when hb is truly
+    // stale do we clamp the visible upper bound to hb, freezing the
+    // display until connectivity resumes.
+    const STALE_HB_MS = 180_000;
+    let upper = elapsed;
     if (session.lastHeartbeatAt) {
       const hb = new Date(session.lastHeartbeatAt).getTime();
-      // 120s clamp (was 90s). Combined with the new 30s heartbeat
-      // cadence above, the visible timer stays smooth through any
-      // single network blip and only freezes if the tab has been
-      // genuinely closed / idle for >2min.
-      upper = Math.min(now, hb + 120_000);
+      const staleness = now - hb;
+      if (staleness > STALE_HB_MS) {
+        upper = Math.max(0, hb - start);
+      }
     }
-    const breakPenaltyMs = Math.max(0, totalBreakMs - STANDARD_BREAK_MS);
-    return Math.max(0, (upper - start) - breakPenaltyMs - (session.awayMs || 0));
+
+    // ── Break credit ─────────────────────────────────────────────────
+    // Up to STANDARD_BREAK_MS (1h) is free; only minutes beyond count
+    // as a deduction. Sanity: penalty can never exceed what we've
+    // elapsed — otherwise a corrupt totalBreakMs (see the earlier 253h
+    // break bug) could drive workedMs to 0 or negative.
+    const rawPenalty = Math.max(0, totalBreakMs - STANDARD_BREAK_MS);
+    const breakPenaltyMs = Math.min(rawPenalty, upper);
+
+    // ── Away time ────────────────────────────────────────────────────
+    // Server-tracked gaps between heartbeats > 2min. Sanity-capped to
+    // half of elapsed so a runaway awayMs value can't zero out worked
+    // time. If awayMs is bigger than elapsed / 2, treat that as a data
+    // bug rather than an accurate signal — the user will still see
+    // sensible worked hours while the underlying data is repaired.
+    const rawAway = session.awayMs || 0;
+    const cappedAway = Math.min(rawAway, Math.floor(upper / 2));
+
+    const raw = Math.max(0, upper - breakPenaltyMs - cappedAway);
+
+    // ── Monotonic ratchet ────────────────────────────────────────────
+    // Never render below the highest value we've shown for this session.
+    // Guarantees the timer never appears to run backwards.
+    const ratcheted = Math.max(ratchetRef.current.workedMs, raw);
+    if (ratcheted !== ratchetRef.current.workedMs && session._id === ratchetRef.current.sessionId) {
+      ratchetRef.current.workedMs = ratcheted;
+    }
+    return ratcheted;
   }, [session, now, totalBreakMs]);
 
   // Bonus surfaced for the UI hint chip — "+30m credited for short break".

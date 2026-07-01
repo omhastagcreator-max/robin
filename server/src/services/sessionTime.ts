@@ -16,12 +16,15 @@
  * branch only matters for historical rows.
  */
 
-// 120 seconds (was 90s, June 2026). The client heartbeat fires every
-// 30s, so this gives ~90s of headroom — covers a slow ping, a server
-// cold-start, or a brief network hiccup without freezing the user's
-// visible work timer. Must stay in lockstep with the client clamp in
-// client/src/hooks/useSession.ts.
-const GRACE_MS = 120_000;
+// 180 seconds (was 120s, then 90s originally). The client heartbeat
+// fires every 30s and only clamps its own display when hb is >3min
+// stale — this server grace must match so admin reports don't disagree
+// with what the user saw on the live ticker. A 3min window covers even
+// a slow cold-start + one retry cycle without visibly freezing the
+// worked-hours display; anything longer than that = the tab is
+// genuinely closed and the counter should stop.
+// Kept in lockstep with STALE_HB_MS in client/src/hooks/useSession.ts.
+const GRACE_MS = 180_000;
 
 /**
  * STANDARD_BREAK_MS — the break allowance everyone gets for free as part
@@ -129,8 +132,18 @@ export function sessionTotals(
   // lunch keeps their full clocked-in time as worked hours; someone who
   // took 90min loses 30min. Reverses the older "every minute of break is
   // a minute deducted" rule that was penalising healthy behaviour.
-  const breakPenaltyMs = Math.max(0, breakMs - STANDARD_BREAK_MS);
-  const activeMs       = Math.max(0, workedMs - breakPenaltyMs - awayInWindowMs);
+  //
+  // Sanity caps (June 2026 — matches the client's useSession
+  // computation): breakPenaltyMs is bounded by workedMs so a corrupt
+  // break event array (see the 253h open-break bug) can't drive activeMs
+  // to zero. awayInWindowMs is bounded by half of workedMs so a runaway
+  // heartbeat-gap accumulation can't do the same. Together these keep
+  // the reported worked hours believable even while the underlying data
+  // is being repaired by the cleanup scripts.
+  const rawPenalty     = Math.max(0, breakMs - STANDARD_BREAK_MS);
+  const breakPenaltyMs = Math.min(rawPenalty, workedMs);
+  const cappedAwayMs   = Math.min(awayInWindowMs, Math.floor(workedMs / 2));
+  const activeMs       = Math.max(0, workedMs - breakPenaltyMs - cappedAwayMs);
 
   return {
     workedMs,                    // gross clocked-in time inside the window

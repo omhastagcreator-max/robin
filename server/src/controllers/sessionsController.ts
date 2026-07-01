@@ -170,8 +170,14 @@ export async function heartbeat(req: AuthRequest, res: Response): Promise<void> 
       // normal heartbeat cadence (60s) from the gap so we only count the
       // EXTRA time, not the full interval. Don't accumulate away time
       // while the user is on break — break time is its own bucket.
+      //
+      // Cap any single gap at 15 min (June 2026). Longer than that and
+      // the session was almost certainly reused after a real absence —
+      // the stale-session sweep or the auto-close cron owns that case,
+      // not the away-time accumulator. Bounding here means a rogue
+      // 12-hour gap can't add 12 hours to awayMs and zero-out worked.
       if (gap > AWAY_THRESHOLD_MS && current.status !== 'on_break') {
-        const awayThisGap = gap - 60_000;
+        const awayThisGap = Math.min(gap - 60_000, 15 * 60_000);
         update.$inc = { awayMs: awayThisGap };
       }
     }
