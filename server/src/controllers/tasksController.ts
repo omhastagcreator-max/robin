@@ -22,11 +22,24 @@ export async function listTasks(req: AuthRequest, res: Response): Promise<void> 
     const role   = req.user!.role;
     const orgId  = await getOrgId(userId);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
-    // Admins see every task in the org; non-admins only see tasks assigned to them.
-    // Both queries are org-scoped — no leak even for an admin.
+    // Admins see every task in the org; non-admins see tasks where they're
+    // EITHER the assignee OR the creator/assigner. Owner feedback (June 2026):
+    // "I can't update old tasks" — tasks the user had delegated to teammates
+    // were invisible on their own dashboard, so re-opening or bulk-editing
+    // was impossible. Both queries are org-scoped — no leak even for an
+    // admin — so widening the non-admin filter here doesn't break isolation.
     const query: Record<string, unknown> = role === 'admin'
       ? { organizationId: orgId }
-      : { organizationId: orgId, assignedTo: userId };
+      : {
+          organizationId: orgId,
+          $or: [
+            { assignedTo: userId },
+            { assignedBy: userId },
+            { requesterId: userId },
+            { reviewerId:  userId },
+            { approverId:  userId },
+          ],
+        };
     const tasks = await ProjectTask.find(query).sort({ dueDate: 1, priority: -1 });
     res.json(tasks);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }

@@ -19,8 +19,20 @@
  */
 
 // ── TASKS ───────────────────────────────────────────────────────────────
-export const TASK_STATUSES = ['pending', 'ongoing', 'done'] as const;
+// Full set that the server accepts. Earlier version had only three
+// (pending/ongoing/done) which meant blocked + pending_acceptance
+// tasks got silently coerced to 'pending' by the client cycle toggle,
+// so the user couldn't actually mark anything Blocked, and cross-assigned
+// tasks stuck in pending_acceptance never got unstuck without a special
+// accept flow. Keep aligned with server/src/models/ProjectTask.ts.
+export const TASK_STATUSES = ['pending_acceptance', 'pending', 'ongoing', 'blocked', 'done'] as const;
 export type  TaskStatus    = typeof TASK_STATUSES[number];
+
+// The set exposed in the everyday status picker on TasksPage — omits
+// pending_acceptance (that's a system-set state driven by the assignment
+// flow, not a manual pick). Keep this narrower list for UI dropdowns.
+export const TASK_STATUS_PICKABLE = ['pending', 'ongoing', 'blocked', 'done'] as const;
+export type  TaskStatusPickable   = typeof TASK_STATUS_PICKABLE[number];
 
 export const TASK_TYPES    = ['dev', 'ads', 'content', 'admin_task', 'personal'] as const;
 export type  TaskType      = typeof TASK_TYPES[number];
@@ -30,9 +42,11 @@ export type  TaskPriority    = typeof TASK_PRIORITIES[number];
 
 // Friendly labels for UI dropdowns
 export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
-  pending: 'Not started',
-  ongoing: 'In progress',
-  done:    'Done',
+  pending_acceptance: 'Awaiting accept',
+  pending:            'Not started',
+  ongoing:            'In progress',
+  blocked:            'Blocked',
+  done:               'Done',
 };
 export const TASK_TYPE_LABEL: Record<TaskType, string> = {
   dev:        'Development',
@@ -47,11 +61,18 @@ export const TASK_PRIORITY_LABEL: Record<TaskPriority, string> = {
 
 /**
  * Cycle a task status forward. Used by the one-tap status toggle on
- * task cards. Pending → Ongoing → Done → Pending (loops).
+ * task cards. Cycles through the PICKABLE set only — skips
+ * pending_acceptance (system-set) so a stray click can't accidentally
+ * put a task into a state the assignment flow controls.
+ * Pending → Ongoing → Blocked → Done → Pending (loops).
+ * Any current status not in the pickable set (e.g. pending_acceptance)
+ * is treated as pending for cycling purposes — the click implicitly
+ * accepts + advances.
  */
 export function nextTaskStatus(current: TaskStatus): TaskStatus {
-  const i = TASK_STATUSES.indexOf(current);
-  return TASK_STATUSES[(i + 1) % TASK_STATUSES.length];
+  const idx = TASK_STATUS_PICKABLE.indexOf(current as TaskStatusPickable);
+  const start = idx === -1 ? 0 : idx;
+  return TASK_STATUS_PICKABLE[(start + 1) % TASK_STATUS_PICKABLE.length];
 }
 
 // ── LEADS ───────────────────────────────────────────────────────────────

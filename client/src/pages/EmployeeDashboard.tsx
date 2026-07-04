@@ -72,9 +72,11 @@ function PriorityChip({ p }: { p: TaskPriority }) {
 }
 
 const statusTone: Record<TaskStatus, string> = {
-  pending: 'bg-muted          text-muted-foreground border-border',
-  ongoing: 'bg-blue-500/12    text-blue-700         border-blue-500/25',
-  done:    'bg-emerald-500/12 text-emerald-700      border-emerald-500/25',
+  pending_acceptance: 'bg-amber-500/12  text-amber-700   border-amber-500/25',
+  pending:            'bg-muted         text-muted-foreground border-border',
+  ongoing:            'bg-blue-500/12   text-blue-700    border-blue-500/25',
+  blocked:            'bg-rose-500/12   text-rose-700    border-rose-500/25',
+  done:               'bg-emerald-500/12 text-emerald-700 border-emerald-500/25',
 };
 
 export default function EmployeeDashboard() {

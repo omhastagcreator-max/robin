@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Calendar as CalIcon, List, CheckCircle2, Circle, Clock,
-  Trash2, Loader2, X, ChevronDown, AlignJustify, Rows3,
+  Trash2, Loader2, X, ChevronDown, AlignJustify, Rows3, AlertTriangle, HelpCircle,
 } from 'lucide-react';
 import { format, isToday, isBefore, startOfDay } from 'date-fns';
 import { toast } from 'sonner';
@@ -14,8 +14,8 @@ import { TaskFocusCard } from '@/components/ai/TaskFocusCard';
 import { useTasks }      from '@/hooks/useTasks';
 import { useAuth }       from '@/contexts/AuthContext';
 import {
-  TASK_STATUSES, TASK_TYPES, TASK_PRIORITIES,
-  TASK_STATUS_LABEL, TASK_TYPE_LABEL, nextTaskStatus,
+  TASK_STATUSES, TASK_TYPES, TASK_PRIORITIES, TASK_STATUS_PICKABLE,
+  TASK_STATUS_LABEL, TASK_TYPE_LABEL,
   type TaskStatus, type TaskType, type TaskPriority,
 } from '@/lib/enums';
 
@@ -59,9 +59,11 @@ function PriorityChip({ priority }: { priority: TaskPriority }) {
 
 // ─── Status chip — uses StatusPill-aligned tokens ──────────────────────────
 const statusTone: Record<TaskStatus, string> = {
-  pending: 'bg-muted          text-muted-foreground border-border',
-  ongoing: 'bg-blue-500/12    text-blue-700         border-blue-500/25',
-  done:    'bg-emerald-500/12 text-emerald-700      border-emerald-500/25',
+  pending_acceptance: 'bg-amber-500/12  text-amber-700   border-amber-500/25',
+  pending:            'bg-muted         text-muted-foreground border-border',
+  ongoing:            'bg-blue-500/12   text-blue-700    border-blue-500/25',
+  blocked:            'bg-rose-500/12   text-rose-700    border-rose-500/25',
+  done:               'bg-emerald-500/12 text-emerald-700 border-emerald-500/25',
 };
 
 function StatusChip({ status }: { status: TaskStatus }) {
@@ -69,6 +71,66 @@ function StatusChip({ status }: { status: TaskStatus }) {
     <span className={`inline-flex items-center text-[10px] uppercase tracking-wider font-bold px-1.5 h-[18px] rounded border ${statusTone[status]}`}>
       {TASK_STATUS_LABEL[status]}
     </span>
+  );
+}
+
+// ─── Status picker — button that opens a small menu with all pickable
+//     statuses. Replaces the earlier cycle-only toggle so employees can
+//     jump directly to any status (including Blocked) on any task,
+//     including past tasks. Auto-accepts pending_acceptance tasks by
+//     first switching to Pending. ─────────────────────────────────────
+function StatusPicker({
+  status, onChange,
+}: {
+  status: TaskStatus;
+  onChange: (next: TaskStatus) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
+        className="shrink-0 h-6 w-6 rounded flex items-center justify-center hover:bg-muted/50 transition-colors"
+        title={`Status: ${TASK_STATUS_LABEL[status] || 'Unknown'} — click to change`}
+      >
+        {status === 'done'                ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+        : status === 'ongoing'            ? <Clock        className="h-4 w-4 text-blue-600" />
+        : status === 'blocked'            ? <AlertTriangle className="h-4 w-4 text-rose-600" />
+        : status === 'pending_acceptance' ? <HelpCircle   className="h-4 w-4 text-amber-600" />
+        :                                    <Circle       className="h-4 w-4 text-muted-foreground" />}
+      </button>
+      {open && (
+        <>
+          {/* Backdrop closes on any outside click. z-30 so it sits above
+              other task rows but below the app-level modals. */}
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute z-40 top-full left-0 mt-1 w-40 rounded-lg border border-border bg-card shadow-xl overflow-hidden">
+            <p className="text-[9.5px] uppercase tracking-widest font-bold text-muted-foreground px-2.5 pt-1.5 pb-1">
+              Set status
+            </p>
+            {TASK_STATUS_PICKABLE.map(s => {
+              const active = s === status;
+              return (
+                <button
+                  key={s}
+                  onClick={(e) => { e.stopPropagation(); onChange(s); setOpen(false); }}
+                  className={
+                    'w-full text-left px-2.5 py-1.5 text-[12px] flex items-center gap-2 hover:bg-muted/50 transition-colors ' +
+                    (active ? 'bg-muted/40 font-semibold' : '')
+                  }
+                >
+                  {s === 'done'    ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  : s === 'ongoing' ? <Clock        className="h-3.5 w-3.5 text-blue-600" />
+                  : s === 'blocked' ? <AlertTriangle className="h-3.5 w-3.5 text-rose-600" />
+                  :                    <Circle       className="h-3.5 w-3.5 text-muted-foreground" />}
+                  <span>{TASK_STATUS_LABEL[s]}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -125,9 +187,14 @@ export default function TasksPage() {
     finally { setSaving(false); }
   };
 
-  const toggle = async (id: string, status: string) => {
-    const current = (TASK_STATUSES as readonly string[]).includes(status) ? status as TaskStatus : 'pending';
-    const next = nextTaskStatus(current);
+  // Set a task to a specific status. Replaces the earlier "cycle" toggle
+  // that couldn't reach Blocked and silently coerced legacy statuses to
+  // pending. Works on any task the current user can see — including old
+  // tasks they delegated to teammates (widened listTasks filter). If a
+  // task is in the system-set 'pending_acceptance' state, moving it to
+  // any other status implicitly accepts it, which is the natural read
+  // of the user's intent.
+  const setStatus = async (id: string, next: TaskStatus) => {
     try { await updateTask(id, { status: next }); }
     catch { /* interceptor toasts */ }
   };
@@ -284,13 +351,7 @@ export default function TasksPage() {
                   initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
                   className={`flex items-center gap-2 px-3 h-8 group transition-colors hover:bg-primary/[0.03] ${i > 0 ? 'border-t border-border' : ''}`}
                 >
-                  <button onClick={() => toggle(t._id, t.status)} className="shrink-0" title="Cycle status">
-                    {t.status === 'done'
-                      ? <CheckCircle2 className="h-[14px] w-[14px] text-emerald-600" />
-                      : t.status === 'ongoing'
-                        ? <CheckCircle2 className="h-[14px] w-[14px] text-blue-600/60 hover:text-blue-600" />
-                        : <Circle className="h-[14px] w-[14px] text-muted-foreground/40 hover:text-emerald-600" />}
-                  </button>
+                  <StatusPicker status={t.status} onChange={(next) => setStatus(t._id, next)} />
                   <p className={`text-[12.5px] font-medium flex-1 min-w-0 truncate ${t.status === 'done' ? 'line-through text-muted-foreground' : ''}`}>
                     {t.title}
                   </p>
@@ -322,13 +383,9 @@ export default function TasksPage() {
                   initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
                   className={`flex items-start gap-3 px-3 py-2.5 group transition-colors hover:bg-primary/[0.03] ${i > 0 ? 'border-t border-border' : ''}`}
                 >
-                  <button onClick={() => toggle(t._id, t.status)} className="mt-0.5 shrink-0" title="Cycle status">
-                    {t.status === 'done'
-                      ? <CheckCircle2 className="h-[18px] w-[18px] text-emerald-600" />
-                      : t.status === 'ongoing'
-                        ? <CheckCircle2 className="h-[18px] w-[18px] text-blue-600/60 hover:text-blue-600" />
-                        : <Circle className="h-[18px] w-[18px] text-muted-foreground/40 hover:text-emerald-600" />}
-                  </button>
+                  <div className="mt-0.5">
+                    <StatusPicker status={t.status} onChange={(next) => setStatus(t._id, next)} />
+                  </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-[13.5px] font-medium leading-snug ${t.status === 'done' ? 'line-through text-muted-foreground' : ''}`}>
                       {t.title}
