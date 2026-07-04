@@ -18,7 +18,8 @@
     "wipe-imported":   "ts-node src/scripts/wipeImported.ts",
     "fix-open-breaks": "ts-node src/scripts/fixOpenBreaks.ts",
     "wipe-non-sales":  "ts-node src/scripts/wipeNonSales.ts",
-    "remove-jhanvi":   "ts-node src/scripts/removeJhanvi.ts"
+    "remove-jhanvi":   "ts-node src/scripts/removeJhanvi.ts",
+    "reset-password":  "ts-node src/scripts/resetPassword.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
