@@ -40,10 +40,16 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 import User from '../models/User';
 import Organization from '../models/Organization';
 
+// Owner correction (June 2026): "onboarded Bhawna not employee".
+// Role flipped from 'employee' → 'workroom' — the bare-minimum staff
+// role used for floor / support teammates who join the huddle but
+// don't manage tasks, projects, or brand pipelines. She still gets
+// the Meta team tag so admins can see her lane; role determines the
+// permission surface, teams are informational.
 const DETAILS = {
   email:      'bhawnahastagcreator@gmail.com',
   name:       'Bhawna',
-  role:       'employee' as const,
+  role:       'workroom' as const,
   team:       'meta',
   teams:      ['meta'],
   department: 'Meta Ads',
