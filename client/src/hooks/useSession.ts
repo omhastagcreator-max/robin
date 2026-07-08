@@ -89,11 +89,16 @@ export function useSession() {
         // ping detected the gap and bumped awayMs). Also pick up huddleMs/
         // huddleJoinedAt periodically so the timer reconciles with what
         // the server thinks (e.g. another tab joined the huddle).
-        if (r && (r.awayMs !== undefined || r.lastHeartbeatAt !== undefined)) {
+        if (r && (r.awayMs !== undefined || r.lastHeartbeatAt !== undefined || r.status)) {
           setSession(prev => prev ? {
             ...prev,
             awayMs: r.awayMs !== undefined ? r.awayMs : prev.awayMs,
             lastHeartbeatAt: r.lastHeartbeatAt || prev.lastHeartbeatAt,
+            // Server can auto-heal a runaway break (flip on_break → active).
+            // Without mirroring status here the client stays stuck showing
+            // "On break" while the server says "Not on break" — which made
+            // the Resume button 404 forever. (July 2026 fix.)
+            status: r.status || prev.status,
           } : prev);
         }
       } catch { /* swallow — next interval will retry */ }
@@ -108,7 +113,20 @@ export function useSession() {
       if (cancelled || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
       api.getActiveSession().then((s: SessionData | null) => {
         if (cancelled || !s) return;
-        setSession(prev => prev ? { ...prev, huddleMs: s.huddleMs, huddleJoinedAt: s.huddleJoinedAt } : s);
+        // Merge the authoritative server state — status and breakEvents
+        // included, not just huddle fields. Previously this dropped
+        // status, so a server-side break auto-close never reached the
+        // UI and the topbar stayed on "On break" with a dead Resume
+        // button until a full page refresh. (July 2026 fix.)
+        setSession(prev => prev ? {
+          ...prev,
+          status: s.status,
+          breakEvents: s.breakEvents,
+          awayMs: s.awayMs,
+          lastHeartbeatAt: s.lastHeartbeatAt,
+          huddleMs: s.huddleMs,
+          huddleJoinedAt: s.huddleJoinedAt,
+        } : s);
       }).catch(() => {});
     }, 60_000);
 
@@ -148,8 +166,16 @@ export function useSession() {
 
   const endBreak = async () => {
     if (!session || session.status !== 'on_break') return;
-    const updated = await api.endBreak();
-    setSession(updated);
+    try {
+      const updated = await api.endBreak();
+      setSession(updated);
+    } catch (e: any) {
+      // 404 "Not on break" = the server already ended the break (auto-heal
+      // or another tab) and the client is stale. Resync instead of leaving
+      // the user stuck on a Resume button that can never succeed.
+      if (e?.response?.status === 404) { await fetchActiveSession(); return; }
+      throw e;
+    }
   };
 
   const endSession = async () => {
@@ -234,12 +260,18 @@ export function useSession() {
 
   const totalBreakMs = useMemo(() => {
     if (!session) return 0;
-    return (session.breakEvents || []).reduce((sum, b) => {
+    return (session.breakEvents || []).reduce((sum, b, i, arr) => {
       if (!b.startedAt) return sum;
       let start = new Date(b.startedAt).getTime();
+      // Only the LAST event can legitimately be "still running". An earlier
+      // event with no endedAt is broken data (endBreak never landed) — if we
+      // treated it as ongoing it would count from midnight→now and inflate
+      // "today" by hours ("took a 15-min break, topbar says 185:35" — July
+      // 2026). Count broken rows as zero; the server cleanup repairs them.
+      const isOngoing = i === arr.length - 1 && session.status === 'on_break';
       let end = b.endedAt
         ? new Date(b.endedAt).getTime()
-        : (session.status === 'on_break' ? upperBoundMs : start);
+        : (isOngoing ? upperBoundMs : start);
       // Clamp to today AND to the heartbeat window.
       start = Math.max(start, todayIstStartMs);
       end   = Math.min(end,   upperBoundMs);

@@ -225,12 +225,47 @@ export async function heartbeat(req: AuthRequest, res: Response): Promise<void> 
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
+/**
+ * Close any stale open break events on a session, optionally sparing the
+ * last one (the break that's legitimately in progress). A non-last open
+ * event is broken data by definition — you can't start a second break
+ * while one is open — and it's what inflated "today: 185:35" for a user
+ * who took a 15-minute break (July 2026). Fair end time mirrors
+ * fixOpenBreaks.ts: lastHeartbeatAt if it's after the start, capped at
+ * start + 4h, never in the future. Returns true if anything was closed.
+ */
+function closeStaleOpenBreaks(session: any, spareLast: boolean): boolean {
+  const events: Array<{ startedAt?: Date; endedAt?: Date }> = session.breakEvents || [];
+  const lastHb = session.lastHeartbeatAt ? new Date(session.lastHeartbeatAt).getTime() : 0;
+  const nowMs = Date.now();
+  const MAX_BREAK_MS = 4 * 60 * 60 * 1000;
+  let touched = false;
+  const lastIdx = events.length - 1;
+  events.forEach((b, i) => {
+    if (!b.startedAt || b.endedAt) return;
+    if (spareLast && i === lastIdx) return;
+    const start = new Date(b.startedAt).getTime();
+    const fairEnd = Math.min(
+      Math.max(start + 1, lastHb || (start + MAX_BREAK_MS)),
+      start + MAX_BREAK_MS,
+      nowMs,
+    );
+    b.endedAt = new Date(fairEnd);
+    touched = true;
+  });
+  return touched;
+}
+
 export async function startBreak(req: AuthRequest, res: Response): Promise<void> {
   try {
     const session = await Session.findOne({ userId: req.user!.id, status: 'active' });
     if (!session) { res.status(404).json({ error: 'No active session' }); return; }
     session.status = 'on_break';
     session.breakEvents = session.breakEvents || [];
+    // Self-heal: an 'active' session must have zero open break events.
+    // Close any stragglers before opening the new one so the client's
+    // "ongoing = last event" assumption always holds.
+    closeStaleOpenBreaks(session, false);
     session.breakEvents.push({ startedAt: new Date() } as any);
     await session.save();
     await broadcastPresence(req, 'on_break');
@@ -245,6 +280,9 @@ export async function endBreak(req: AuthRequest, res: Response): Promise<void> {
     session.status = 'active';
     const last = session.breakEvents?.[session.breakEvents.length - 1];
     if (last && !last.endedAt) last.endedAt = new Date();
+    // Also close any earlier stragglers (broken data from a lost endBreak)
+    // so reports and the live "today" total stop counting them as ongoing.
+    closeStaleOpenBreaks(session, false);
     await session.save();
     await broadcastPresence(req, 'active');
     res.json(session);
