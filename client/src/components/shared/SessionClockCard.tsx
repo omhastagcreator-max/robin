@@ -25,7 +25,7 @@ const TOTAL_BREAK_WARN_MS  = 60 * 60 * 1000;
 export function SessionClockCard({ dayLocked = false, dayLockReason, onLockedAttempt }: Props) {
   const {
     session, loading, startSession, startBreak, endBreak, endSession,
-    workedMs, currentBreakMs, totalBreakMs,
+    workedMs, currentBreakMs, totalBreakMs, breakAllowanceMs, dayComplete,
   } = useSession();
   const huddle = useHuddle();
 
@@ -93,7 +93,16 @@ export function SessionClockCard({ dayLocked = false, dayLockReason, onLockedAtt
             <p className="text-xs text-muted-foreground">Log in to start tracking your time</p>
           )}
           {isActive && (
-            <p className="text-2xl font-mono font-bold tabular-nums">{fmtHMS(workedMs)}</p>
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <p className="text-2xl font-mono font-bold tabular-nums">{fmtHMS(workedMs)}</p>
+              {/* 8h work + 1h break day model — completion badge only,
+                  no remaining-time countdown (owner ask, July 2026). */}
+              {dayComplete && (
+                <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-500/15 border border-emerald-500/30 rounded-full px-2 py-0.5">
+                  8h done — day complete
+                </span>
+              )}
+            </div>
           )}
           {isOnBreak && (
             <div className="flex items-baseline gap-3 flex-wrap">
@@ -105,7 +114,7 @@ export function SessionClockCard({ dayLocked = false, dayLockReason, onLockedAtt
                     previous code did `workedMs - totalBreakMs` as a manual
                     workaround for the hook bug — fixed there now, so just
                     render workedMs directly. */}
-                worked <span className="font-mono">{fmtHMS(workedMs)}</span> · breaks today <span className="font-mono">{fmtMS(totalBreakMs)}</span>
+                worked <span className="font-mono">{fmtHMS(workedMs)}</span> · breaks today <span className="font-mono">{fmtMS(totalBreakMs)} / {fmtMS(breakAllowanceMs)}</span>
               </p>
             </div>
           )}

@@ -288,6 +288,12 @@ export function useSession() {
   // lockstep with the server (1 hour today).
   const STANDARD_BREAK_MS = 60 * 60 * 1000;
 
+  // WORKDAY_MS — the working-day target (owner ask, July 2026): a full
+  // day is 8h of net work + the 1h break allowance above (9h door-to-door).
+  // The UI shows only elapsed worked time (no countdown / remaining) and
+  // flips to a "Day complete" state once net work crosses this target.
+  const WORKDAY_MS = 8 * 60 * 60 * 1000;
+
   // ── Monotonic ratchet ────────────────────────────────────────────────
   // The working-hours display must NEVER go backwards during a session.
   // Server pushes (getActiveSession refetches, heartbeat responses) can
@@ -386,5 +392,8 @@ export function useSession() {
     workedMs,
     breakCreditMs,
     breakAllowanceMs: STANDARD_BREAK_MS,
+    // 8h + 1h day model
+    workdayMs: WORKDAY_MS,
+    dayComplete: workedMs >= WORKDAY_MS,
   };
 }

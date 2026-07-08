@@ -50,7 +50,7 @@ export function SessionTopBar() {
   const { role } = useAuth();
   const {
     session, loading, startSession, startBreak, endBreak, endSession,
-    workedMs, currentBreakMs, totalBreakMs,
+    workedMs, currentBreakMs, totalBreakMs, breakAllowanceMs, dayComplete,
   } = useSession();
   const { isOnCall, toggle: toggleOnCall } = useOnCall();
   const huddle = useHuddle();
@@ -176,8 +176,18 @@ export function SessionTopBar() {
           </span>
 
           {isActive && (
-            <span className="font-mono font-bold tabular-nums text-sm sm:text-base text-foreground ml-1">
-              {fmtHMS(workedMs)}
+            <span className="flex items-center gap-2 ml-1">
+              <span className="font-mono font-bold tabular-nums text-sm sm:text-base text-foreground">
+                {fmtHMS(workedMs)}
+              </span>
+              {/* Day model: 8h work + 1h break. No countdown / remaining
+                  time (owner ask, July 2026) — just a quiet completion
+                  badge once the 8h net-work target is crossed. */}
+              {dayComplete && (
+                <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-500/15 border border-emerald-500/30 rounded-full px-2 py-0.5 hidden sm:inline">
+                  8h done — day complete
+                </span>
+              )}
             </span>
           )}
 
@@ -187,8 +197,10 @@ export function SessionTopBar() {
               <span className={`font-mono font-bold tabular-nums text-sm sm:text-base ${breakOverLimit ? 'text-rose-600' : 'text-amber-700'}`}>
                 {fmtMS(currentBreakMs)}
               </span>
+              {/* Break shown against the 1h daily allowance so people can
+                  see how much of the free hour is left at a glance. */}
               <span className="text-[10px] text-muted-foreground hidden md:inline tabular-nums">
-                today: {fmtMS(totalBreakMs)}
+                today: {fmtMS(totalBreakMs)} / {fmtMS(breakAllowanceMs)}
               </span>
               {breakOverLimit && (
                 <span className="text-[10px] text-rose-600 flex items-center gap-1 hidden md:flex">
