@@ -19,7 +19,8 @@
     "fix-open-breaks": "ts-node src/scripts/fixOpenBreaks.ts",
     "wipe-non-sales":  "ts-node src/scripts/wipeNonSales.ts",
     "remove-jhanvi":   "ts-node src/scripts/removeJhanvi.ts",
-    "reset-password":  "ts-node src/scripts/resetPassword.ts"
+    "reset-password":  "ts-node src/scripts/resetPassword.ts",
+    "backdate-session": "ts-node src/scripts/backdateSessionStart.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

@@ -225,6 +225,23 @@ export function MorningCheckinModal() {
         tasks,
       });
       try { localStorage.removeItem(`robin.checkin.morning.draft.${status.dateIST}`); } catch { /* */ }
+
+      // The button says "Start my day" — so actually start it. (July 2026:
+      // a user filled the morning check-in, never clicked Log In, and lost
+      // a morning of tracked time.) startSession is idempotent server-side
+      // (reuses a fresh existing session), so this is safe even if the
+      // user already logged in. The window event tells every mounted
+      // useSession instance (topbar, clock card) to refetch — they have no
+      // shared store. Non-fatal on failure: check-in still succeeded.
+      try {
+        const active = await api.getActiveSession();
+        if (!active) {
+          await api.startSession();
+          window.dispatchEvent(new Event('robin:session-refresh'));
+          toast("You're on the clock — work timer started.", { duration: 4000 });
+        }
+      } catch { /* the Log In button still works as before */ }
+
       await refresh();
       celebrate();
       toast.success("Morning checkin done! Let's get to it.", { duration: 4000 });

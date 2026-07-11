@@ -53,6 +53,18 @@ export function useSession() {
 
   useEffect(() => { fetchActiveSession(); }, [fetchActiveSession]);
 
+  // External session changes — e.g. the morning check-in auto-starting the
+  // day (July 2026: "I filled the morning check-in but forgot Log In and
+  // the timer never started"). Any code that starts/changes the session
+  // outside this hook dispatches 'robin:session-refresh' and every mounted
+  // useSession instance refetches. Needed because each component gets its
+  // own hook instance — there's no shared store.
+  useEffect(() => {
+    const onExternal = () => fetchActiveSession();
+    window.addEventListener('robin:session-refresh', onExternal);
+    return () => window.removeEventListener('robin:session-refresh', onExternal);
+  }, [fetchActiveSession]);
+
   // Auto-start was reverted (owner request, May 2026): the team prefers
   // explicit Log In / Log Out buttons over a magic auto-clock-in. See
   // SessionTopBar / SessionClockCard for the buttons.
