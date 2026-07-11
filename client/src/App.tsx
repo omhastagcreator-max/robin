@@ -46,6 +46,7 @@ const AdminIssues       = lazy(() => import('@/pages/AdminIssues'));
 const CommandCenter     = lazy(() => import('@/pages/CommandCenter'));
 const TaskLedgerPage    = lazy(() => import('@/pages/TaskLedgerPage'));
 const TeamPulsePage     = lazy(() => import('@/pages/TeamPulsePage'));
+const TeamProgressPage  = lazy(() => import('@/pages/TeamProgressPage'));
 
 /**
  * BlankRoot — the public root (robin.hastagcreator.com/) renders nothing.
@@ -163,6 +164,10 @@ function AppRoutes() {
               canManageWorkroom so plain employees who hit the URL get
               a 403 from the API (page renders an empty list). */}
           <Route path="/team-pulse"       element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TeamPulsePage /></E></ProtectedRoute>} />
+          {/* Weekly employee scorecards — same loose-route/strict-API
+              pattern as Team Pulse: the server 403s anyone who isn't
+              admin/sales/canManageWorkroom. */}
+          <Route path="/team-progress"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TeamProgressPage /></E></ProtectedRoute>} />
           {/* Onboard a workroom teammate — admin OR any user the admin
               has flagged with canManageWorkroom (e.g. Om). The page itself
               re-checks the flag and bounces if accessed directly. */}

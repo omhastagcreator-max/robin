@@ -74,6 +74,10 @@ import workroomSnapshotRoutes   from './routes/workroomSnapshot';
 import dayPlanRoutes            from './routes/dayPlan';
 import teamStatsRoutes          from './routes/teamStats';
 import checkinRoutes            from './routes/checkin';
+import progressRoutes           from './routes/progress';
+import { startProgressCron }    from './jobs/progressCron';
+import brandPulseRoutes         from './routes/brandPulse';
+import { startBrandPulseCron }  from './jobs/brandPulseCron';
 import { startClientHealthScoreCron } from './jobs/clientHealthScoreCron';
 import { startTaskEscalationCron, setEscalationIo } from './jobs/taskEscalationCron';
 import { startTaskNudgeCron, setNudgeIo } from './jobs/taskNudgeCron';
@@ -690,6 +694,8 @@ app.use('/api/workroom',        workroomSnapshotRoutes);
 app.use('/api/day-plan',        dayPlanRoutes);
 app.use('/api/team-stats',      teamStatsRoutes);
 app.use('/api/checkin',         checkinRoutes);
+app.use('/api/progress',        progressRoutes);          // weekly employee scorecards (admin/sales/Om)
+app.use('/api/brand-pulse',     brandPulseRoutes);        // random blocking brand questions + report
 app.use('/api/seed',            seedRoutes);
 app.use('/api/logs',            errorLogRoutes);
 app.use('/api/integrations',    integrationsRoutes);
@@ -734,6 +740,15 @@ connectDB().then(() => {
     // Daily 8 AM IST morning brief — Gemini-generated executive summary
     // of yesterday's activity per organization.
     startMorningBriefCron();
+
+    // Weekly employee progress snapshots — Mondays 00:30 IST freezes the
+    // just-ended week's scorecard per staff member (see services/progressReport).
+    startProgressCron();
+
+    // Random brand-accountability questions — fires blocking questions at
+    // clocked-in staff during IST work hours (see jobs/brandPulseCron for
+    // the owner's brand→people routing table).
+    startBrandPulseCron();
 
     // Pipeline 2.0 health inference — recomputes every active workflow's
     // health enum (healthy / at_risk / delayed / blocked / waiting_client

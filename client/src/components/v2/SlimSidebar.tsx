@@ -73,6 +73,10 @@ const NAV: NavItem[] = [
   // path, same pattern we use for the workroom-onboard link below.
   { to: '/team-pulse',        label: 'Team Pulse',    icon: Activity,        section: 'work',      roles: ['admin', 'sales'] },
   { to: '/team-pulse',        label: 'Team Pulse',    icon: Activity,        section: 'work',      roles: ['employee'], requiresFlag: 'canManageWorkroom' },
+  // Weekly employee scorecards — same visibility as Team Pulse
+  // (admin/sales by role, Om via canManageWorkroom). July 2026.
+  { to: '/team-progress',     label: 'Progress',      icon: TrendingUp,      section: 'work',      roles: ['admin', 'sales'] },
+  { to: '/team-progress',     label: 'Progress',      icon: TrendingUp,      section: 'work',      roles: ['employee'], requiresFlag: 'canManageWorkroom' },
   { to: '/clients/pipeline',  label: 'Client CRM',    icon: Workflow,        section: 'work',      roles: ['admin', 'employee', 'sales'] },
   { to: '/admin/clients',     label: 'Clients',       icon: Building2,       section: 'work',      roles: ['admin'] },
   { to: '/admin/projects',    label: 'Projects',      icon: Briefcase,       section: 'work',      roles: ['admin'] },

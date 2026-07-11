@@ -118,6 +118,21 @@ export const getAdminCheckinToday = () => api.get('/checkin/admin/today').then(r
 export const getTeamPulseReport   = (date?: string) =>
   api.get('/checkin/admin/report', { params: date ? { date } : {} }).then(r => r.data);
 
+// ── Employee progress (weekly scorecards — admin/sales/Om) ──────────────────
+export const getTeamProgress   = (weeks = 8) =>
+  api.get('/progress/team', { params: { weeks } }).then(r => r.data);
+export const recomputeProgress = (week?: string) =>
+  api.post('/progress/recompute', {}, { params: week ? { week } : {} }).then(r => r.data);
+
+// ── Brand Pulse (random blocking brand questions) ───────────────────────────
+export const getMyBrandPulse    = () => api.get('/brand-pulse/pending').then(r => r.data);
+export const answerBrandPulse   = (id: string, answer: string) =>
+  api.post(`/brand-pulse/${id}/answer`, { answer }).then(r => r.data);
+export const redirectBrandPulse = (id: string, toUserId: string) =>
+  api.post(`/brand-pulse/${id}/redirect`, { toUserId }).then(r => r.data);
+export const getBrandPulseReport = (days = 14) =>
+  api.get('/brand-pulse/admin/report', { params: { days } }).then(r => r.data);
+
 // ── Sessions ──────────────────────────────────────────────────────────────────
 export const startSession      = () => api.post('/sessions/start', {}).then(r => r.data);
 export const startBreak        = () => api.post('/sessions/break', {}).then(r => r.data);

@@ -47,7 +47,15 @@ A `Session` doc tracks a work day: `status: active | on_break | ended`, `startTi
 - Cleanup script for corrupted break data: `cd server && npm run fix-open-breaks -- --apply` (dry-run without `--apply`).
 - History of bugs here: "253h break", "timer stuck at 0", "timer runs backwards", "can't end break". Every guard in `useSession.ts` / `sessionsController.ts` has a comment explaining which bug it prevents — **don't remove guards without reading the comments.**
 
-## Last done (July 8, 2026, later) — 8h + 1h day model
+## Last done (July 2026) — Brand Pulse random questions
+
+Random blocking brand-accountability questions (owner ask): during work hours (10:30–18:30 IST, Mon–Sat) a cron (`jobs/brandPulseCron.ts`, 15-min ticks, 35% fire chance) asks one clocked-in staff member one question about one brand — sales achieved, target status, next plan, Meta ads, blockers, client update, engagement, script/content. Blocking modal (`client/src/components/shared/BrandPulseModal.tsx`, mounted in AppLayout, polls `/api/brand-pulse/pending` every 60s) — answer ≥10 chars or "I don't manage this brand" → pick who does → question redirects to them (max 2 hops). Limits: 1 pending/user, 2 asks/user/day, 4h brand cooldown. **Owner's brand→people routing table lives in `BRAND_ROUTING` in brandPulseCron.ts** (name-regex matched; Darpan is engagement-only: Shakshi=ads/engagement, Priyanka=script, Om=overall-no-sales — edit that table when brand ownership changes). Report on `/team-progress`: per-employee answer rate/response time + per-brand Q&A feed (`/api/brand-pulse/admin/report`). Progress page also got a color-coded team bar chart + Excellent/Good/Needs-attention labels.
+
+## Earlier (July 2026) — weekly employee progress system
+
+Per-employee weekly scorecard (Mon–Sun IST), 0–100 from four pillars: Reliability /25 (attendance, punctuality), Focus /25 (hours vs 8h, breaks vs 1h allowance, away ratio), Delivery /30 (morning-planned vs evening-done tasks, on-time ProjectTask completions), Discipline /20 (3-pulse check-in rate). Formulas in `server/src/services/progressReport.ts`. Snapshots stored in `EmployeeProgress` model, frozen by `jobs/progressCron.ts` Mondays 00:30 IST; current week recomputed live on read. API `/api/progress/team` + `/api/progress/recompute` (gate: admin/sales/canManageWorkroom — same as Team Pulse; employees do NOT see it, owner decision). UI: `client/src/pages/TeamProgressPage.tsx` at `/team-progress` ("Progress" sidebar link) — score ring, pillar bars, 8-week trend line = the improvement graph. Also: morning check-in now auto-starts the work session if the user forgot Log In (`MorningCheckinModal` + `robin:session-refresh` event), and `npm run backdate-session` (server) credits missed time.
+
+## Earlier (July 8, 2026) — 8h + 1h day model
 
 Owner defined the working day as **8h net work + 1h break allowance** (9h total). No countdown/remaining-time is shown (explicit owner ask). `useSession` now exports `workdayMs` (8h) and `dayComplete`; `SessionTopBar` + `SessionClockCard` show an "8h done — day complete" badge once net work crosses 8h, and break totals render against the allowance ("today: 15:00 / 60:00"). Break allowance logic itself was already 1h (`STANDARD_BREAK_MS`, mirrored in `server/src/services/sessionTime.ts`).
 

@@ -25,6 +25,7 @@ import { SlimSidebar }     from '@/components/v2/SlimSidebar';
 import { TopBar }          from '@/components/v2/TopBar';
 import { GlobalShortcuts } from '@/components/v2/GlobalShortcuts';
 import { CheckinOrchestrator } from '@/components/checkin/CheckinOrchestrator';
+import { BrandPulseModal } from '@/components/shared/BrandPulseModal';
 import { PageErrorBoundary } from '@/components/shared/PageErrorBoundary';
 import { useKnock }        from '@/hooks/useKnock';
 import { useAppUpdater }   from '@/hooks/useAppUpdater';
@@ -268,6 +269,13 @@ function AppLayoutInner({ children }: Props) {
             topbar + page content keep working. */}
         <PageErrorBoundary fallback={null}>
           <CheckinOrchestrator />
+        </PageErrorBoundary>
+
+        {/* Random brand-accountability question (July 2026). Blocking,
+            undismissable — answer or redirect to whoever manages the
+            brand. Staff-only; same crash-isolation as the check-ins. */}
+        <PageErrorBoundary fallback={null}>
+          <BrandPulseModal />
         </PageErrorBoundary>
 
         {/* Sticky "huddle required" banner. Visible whenever a clocked-in
