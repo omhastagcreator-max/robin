@@ -194,6 +194,13 @@ export async function computeWeekForUser(userId: string, orgId: any, wkStart: nu
 
   const huddleRatio = grossMs > 0 ? huddleMs / grossMs : 0;
 
+  // Per-day series for the UI's daily-hours bar chart — all 7 dates of
+  // the week, zero-filled, so the chart always shows Mon→Sun.
+  const dayDetail = weekDates.map(date => {
+    const b = days.get(date);
+    return { date, activeMs: Math.round(b?.activeMs || 0), breakMs: Math.round(b?.breakMs || 0) };
+  });
+
   return {
     metrics: {
       daysWorked, expectedDays, leaveDays, targetHitDays, avgStartMins,
@@ -204,6 +211,7 @@ export async function computeWeekForUser(userId: string, orgId: any, wkStart: nu
       tasksPlanned, tasksDelivered, tasksDropped, promiseRate,
       projTasksDone, onTimeRate,
       checkinsDone, checkinRate: Math.round(checkinRate * 1000) / 1000,
+      dayDetail,
     },
     breakdown,
     score,

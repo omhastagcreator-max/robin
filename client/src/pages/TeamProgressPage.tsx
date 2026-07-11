@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-  BarChart, Bar, Cell,
+  BarChart, Bar, Cell, PieChart, Pie, ReferenceLine, Legend,
 } from 'recharts';
 import { toast } from 'sonner';
 import * as api from '@/api';
@@ -32,7 +32,7 @@ interface Row {
   current: null | {
     weekStartIST: string; score: number;
     breakdown: { reliability: number; focus: number; delivery: number; discipline: number };
-    metrics: Record<string, number | null>;
+    metrics: Record<string, any>;
   };
   delta: number | null;
   history: WeekPoint[];
@@ -357,33 +357,43 @@ function EmployeeCard({ row, open, onToggle }: { row: Row; open: boolean; onTogg
       </button>
 
       {open && (
-        <div className="border-t border-border px-4 py-4 grid gap-5 lg:grid-cols-2">
-          {/* Trend chart — this line IS the improvement */}
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Score trend (8 weeks)</p>
-            {chart.length >= 2 ? (
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chart} margin={{ top: 4, right: 8, bottom: 0, left: -22 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                    <XAxis dataKey="week" tick={{ fontSize: 10 }} />
-                    <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
-                    <Tooltip formatter={(v: any) => [`${v}/100`, 'Score']} />
-                    <Line type="monotone" dataKey="score" stroke="hsl(178 65% 26%)" strokeWidth={2} dot={{ r: 3 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground rounded-xl border border-dashed border-border p-4">
-                Trend appears after two weeks of snapshots — first freeze runs Monday 00:30 IST.
-              </p>
-            )}
+        <div className="border-t border-border px-4 py-4 space-y-5">
+          {/* Row 1 — trend + daily hours */}
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Score trend (8 weeks)</p>
+              {chart.length >= 2 ? (
+                <div className="h-40">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chart} margin={{ top: 4, right: 8, bottom: 0, left: -22 }}>
+                      <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                      <XAxis dataKey="week" tick={{ fontSize: 10 }} />
+                      <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+                      <Tooltip formatter={(v: any) => [`${v}/100`, 'Score']} />
+                      <Line type="monotone" dataKey="score" stroke="hsl(178 65% 26%)" strokeWidth={2} dot={{ r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground rounded-xl border border-dashed border-border p-4">
+                  Trend appears after two weeks of snapshots — first freeze runs Monday 00:30 IST.
+                </p>
+              )}
+            </div>
+            <DailyHoursChart dayDetail={m.dayDetail || []} />
           </div>
 
-          {/* Metric detail */}
+          {/* Row 2 — the pies: where the score comes from, tasks, time */}
+          <div className="grid gap-4 sm:grid-cols-3">
+            <PillarDonut breakdown={cur?.breakdown} />
+            <TaskOutcomePie metrics={m} />
+            <TimeSplitPie metrics={m} />
+          </div>
+
+          {/* Row 3 — raw numbers */}
           <div>
             <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2">This week's numbers</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
               <Metric label="Days worked" value={`${m.daysWorked ?? 0}/${m.expectedDays ?? 0}`} />
               <Metric label="8h-target days" value={String(m.targetHitDays ?? 0)} />
               <Metric label="Avg start (IST)" value={fmtStart(m.avgStartMins as number | null)} />
@@ -398,6 +408,138 @@ function EmployeeCard({ row, open, onToggle }: { row: Row; open: boolean; onTogg
               <Metric label="Leave days" value={String(m.leaveDays ?? 0)} />
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Per-employee visual widgets ─────────────────────────────────────── */
+
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Daily worked hours, Mon–Sun, coloured by whether the 8h target was hit. */
+function DailyHoursChart({ dayDetail }: { dayDetail: Array<{ date: string; activeMs: number; breakMs: number }> }) {
+  const data = (dayDetail || []).map(d => ({
+    day: DOW[new Date(`${d.date}T00:00:00+05:30`).getDay()] || d.date.slice(5),
+    hours: Math.round((d.activeMs / 3_600_000) * 10) / 10,
+    breakH: Math.round((d.breakMs / 3_600_000) * 10) / 10,
+  }));
+  return (
+    <div>
+      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
+        Daily hours vs 8h target
+      </p>
+      <div className="h-40">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -22 }}>
+            <CartesianGrid strokeDasharray="3 3" className="opacity-30" vertical={false} />
+            <XAxis dataKey="day" tick={{ fontSize: 10 }} />
+            <YAxis domain={[0, 10]} tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(v: any, n: any) => [`${v}h`, n === 'hours' ? 'Worked' : 'Break']} />
+            <ReferenceLine y={8} stroke="#0d9488" strokeDasharray="4 4"
+              label={{ value: '8h', fontSize: 10, fill: '#0d9488', position: 'right' }} />
+            <Bar dataKey="hours" radius={[4, 4, 0, 0]}>
+              {data.map((d, i) => (
+                <Cell key={i} fill={d.hours >= 8 ? '#10b981' : d.hours > 0 ? '#f59e0b' : '#e2e8f0'} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+const PIE_TOOLTIP = { fontSize: 11 };
+
+/** Donut of the four score pillars — where this week's points came from. */
+function PillarDonut({ breakdown }: { breakdown?: { reliability: number; focus: number; delivery: number; discipline: number } }) {
+  const b = breakdown || { reliability: 0, focus: 0, delivery: 0, discipline: 0 };
+  const data = [
+    { name: 'Reliability', value: b.reliability, max: 25, fill: '#0d9488' },
+    { name: 'Focus',       value: b.focus,       max: 25, fill: '#6366f1' },
+    { name: 'Delivery',    value: b.delivery,    max: 30, fill: '#f59e0b' },
+    { name: 'Discipline',  value: b.discipline,  max: 20, fill: '#ec4899' },
+    // Grey slice = points left on the table this week.
+    { name: 'Missed', value: Math.max(0, 100 - b.reliability - b.focus - b.delivery - b.discipline), max: 0, fill: '#e2e8f0' },
+  ].filter(d => d.value > 0.01);
+  return (
+    <PieCard title="Score make-up" empty={data.length === 0}>
+      <PieChart>
+        <Pie data={data} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="85%" paddingAngle={2} strokeWidth={0}>
+          {data.map((d, i) => <Cell key={i} fill={d.fill} />)}
+        </Pie>
+        <Tooltip contentStyle={PIE_TOOLTIP} formatter={(v: any, n: any, p: any) =>
+          [p?.payload?.max ? `${v} / ${p.payload.max} pts` : `${v} pts missed`, n]} />
+        <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
+      </PieChart>
+    </PieCard>
+  );
+}
+
+/** Pie of what happened to the tasks promised in morning check-ins. */
+function TaskOutcomePie({ metrics }: { metrics: Record<string, any> }) {
+  const planned = metrics.tasksPlanned || 0;
+  const delivered = metrics.tasksDelivered || 0;
+  const dropped = metrics.tasksDropped || 0;
+  const other = Math.max(0, planned - delivered - dropped);
+  const data = [
+    { name: 'Delivered', value: delivered, fill: '#10b981' },
+    { name: 'Dropped',   value: dropped,   fill: '#f43f5e' },
+    { name: 'Not done',  value: other,     fill: '#e2e8f0' },
+  ].filter(d => d.value > 0);
+  return (
+    <PieCard title={`Planned tasks (${planned})`} empty={planned === 0} emptyText="No tasks planned this week">
+      <PieChart>
+        <Pie data={data} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="85%" paddingAngle={2} strokeWidth={0}>
+          {data.map((d, i) => <Cell key={i} fill={d.fill} />)}
+        </Pie>
+        <Tooltip contentStyle={PIE_TOOLTIP} formatter={(v: any, n: any) => [`${v} tasks`, n]} />
+        <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
+      </PieChart>
+    </PieCard>
+  );
+}
+
+/** Pie of the clocked week: working vs break vs away. */
+function TimeSplitPie({ metrics }: { metrics: Record<string, any> }) {
+  const active = metrics.totalActiveMs || 0;
+  const brk = metrics.totalBreakMs || 0;
+  // awayRatio is over gross — approximate away ms from it for the visual.
+  const gross = active + brk;
+  const away = Math.round((metrics.awayRatio || 0) * gross);
+  const data = [
+    { name: 'Working', value: Math.round(active / 3_600_000 * 10) / 10, fill: '#10b981' },
+    { name: 'Break',   value: Math.round(brk / 3_600_000 * 10) / 10,    fill: '#f59e0b' },
+    { name: 'Away',    value: Math.round(away / 3_600_000 * 10) / 10,   fill: '#94a3b8' },
+  ].filter(d => d.value > 0);
+  return (
+    <PieCard title="Week time split" empty={data.length === 0} emptyText="No clocked time this week">
+      <PieChart>
+        <Pie data={data} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="85%" paddingAngle={2} strokeWidth={0}>
+          {data.map((d, i) => <Cell key={i} fill={d.fill} />)}
+        </Pie>
+        <Tooltip contentStyle={PIE_TOOLTIP} formatter={(v: any, n: any) => [`${v}h`, n]} />
+        <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
+      </PieChart>
+    </PieCard>
+  );
+}
+
+function PieCard({ title, empty, emptyText, children }: {
+  title: string; empty?: boolean; emptyText?: string; children: React.ReactElement;
+}) {
+  return (
+    <div className="rounded-2xl border border-border bg-muted/20 p-3">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">{title}</p>
+      {empty ? (
+        <div className="h-36 flex items-center justify-center text-[11px] text-muted-foreground">
+          {emptyText || 'No data yet'}
+        </div>
+      ) : (
+        <div className="h-36">
+          <ResponsiveContainer width="100%" height="100%">{children}</ResponsiveContainer>
         </div>
       )}
     </div>

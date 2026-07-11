@@ -35,6 +35,15 @@ const MetricsSchema = new Schema({
   // Discipline
   checkinsDone:    { type: Number, default: 0 },   // morning+midday+evening pulses submitted
   checkinRate:     { type: Number, default: 0 },   // done / (3 × daysWorked)
+  // Per-day detail for the UI's daily-hours bar chart (7 entries, Mon–Sun).
+  dayDetail: {
+    type: [new Schema({
+      date:     { type: String, default: '' },      // YYYY-MM-DD (IST)
+      activeMs: { type: Number, default: 0 },
+      breakMs:  { type: Number, default: 0 },
+    }, { _id: false })],
+    default: [],
+  },
 }, { _id: false });
 
 const BreakdownSchema = new Schema({
