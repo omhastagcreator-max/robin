@@ -20,7 +20,8 @@
     "wipe-non-sales":  "ts-node src/scripts/wipeNonSales.ts",
     "remove-jhanvi":   "ts-node src/scripts/removeJhanvi.ts",
     "reset-password":  "ts-node src/scripts/resetPassword.ts",
-    "backdate-session": "ts-node src/scripts/backdateSessionStart.ts"
+    "backdate-session": "ts-node src/scripts/backdateSessionStart.ts",
+    "inspect-session": "ts-node src/scripts/inspectSession.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

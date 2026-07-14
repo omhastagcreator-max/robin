@@ -121,15 +121,22 @@ export async function setOnCall(req: AuthRequest, res: Response): Promise<void> 
 }
 
 /**
- * Heartbeats arrive every 60s while the tab is open. If we see one MORE
+ * Heartbeats arrive every 30s while the tab is open. If we see one MORE
  * than this many ms after the previous one, the gap was the user being
  * offline / having Robin closed — that gap is "away time" and gets added
  * to awayMs so it isn't counted as worked time.
  *
- * 90s = normal 60s cadence + 30s slack for slow networks. Any gap bigger
- * than this is a real absence, not network jitter.
+ * Raised 90s → 5min (July 2026). Root cause of "logged in at 9:29, took
+ * 1h break, timer shows 5:05": Chrome throttles timers in BACKGROUND
+ * tabs — with Robin behind VS Code / another tab all day, pings slip to
+ * 60–120s+, and at a 90s threshold every slipped ping logged a false
+ * "away" gap. Hundreds of tiny false gaps summed to hours of phantom
+ * away-time that got deducted from worked hours. 5min tolerates the
+ * worst throttling (Chrome's intensive mode aligns timers to ~1/min)
+ * while still catching real absences: closing the laptop for 6+ minutes
+ * counts as away, exactly as intended.
  */
-const AWAY_THRESHOLD_MS = 90_000;
+const AWAY_THRESHOLD_MS = 5 * 60_000;
 
 /**
  * POST /api/sessions/heartbeat

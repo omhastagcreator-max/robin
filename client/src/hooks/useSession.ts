@@ -151,10 +151,20 @@ export function useSession() {
     ping();
     const i = setInterval(ping, 30_000);
 
+    // Fire a ping the moment the tab becomes visible again (July 2026).
+    // Chrome throttles background-tab timers, so pings can slip while the
+    // user works in another app — this closes any pending gap immediately
+    // on return instead of waiting for the next throttled interval.
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') ping();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
     return () => {
       cancelled = true;
       clearInterval(i);
       clearInterval(reconcile);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [session?.status, session?._id]);
 
