@@ -30,6 +30,7 @@ import User from '../models/User';
 import ClientWorkflow from '../models/ClientWorkflow';
 import BrandPulse from '../models/BrandPulse';
 import Organization from '../models/Organization';
+import { callGemini } from '../services/aiTriage';
 
 const IST_OFFSET_MS = 330 * 60_000;
 const FIRE_CHANCE = 0.35;              // per org per 15-min tick within work hours
@@ -90,6 +91,64 @@ export const BRAND_ROUTING: BrandRoute[] = [
 ];
 
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+const KIND_FOCUS: Record<PulseKind, string> = {
+  sales_achieved: 'sales / revenue / leads actually achieved recently — demand concrete numbers',
+  target_status:  'progress against the target — ahead / on track / behind, and by how much',
+  next_plan:      'the concrete next moves shipping in the coming 2–3 days',
+  ad_performance: 'Meta ads performance — spend, CPL / ROAS, what needs changing',
+  blockers:       'what is blocking faster growth and what they need to unblock it',
+  client_update:  'client communication — last update sent, what was said, next touchpoint',
+  engagement:     'engagement — reach, interactions, follower growth, what content is working',
+  content_script: 'script / content pipeline — what is written, pending, and going out next',
+};
+
+/**
+ * AI-written question (owner ask, July 2026: "stop asking the stupid
+ * repeated questions — use AI"). Gemini writes ONE fresh question using
+ * real context: the person's recent answers about this brand (so it can
+ * follow up — "last time you said X, did it happen?") and the last few
+ * questions asked (so it never repeats). Falls back to the static
+ * template bank whenever the AI is unavailable — pulses must fire
+ * either way.
+ */
+async function generateQuestion(
+  orgId: any, userId: string, brandId: any, brandName: string, kind: PulseKind,
+): Promise<string> {
+  try {
+    const [lastAnswers, lastQuestions] = await Promise.all([
+      BrandPulse.find({ organizationId: orgId, clientWorkflowId: brandId, status: 'answered' })
+        .sort({ answeredAt: -1 }).limit(3).select('question answer userId answeredAt').lean(),
+      BrandPulse.find({ organizationId: orgId, clientWorkflowId: brandId })
+        .sort({ askedAt: -1 }).limit(5).select('question').lean(),
+    ]);
+
+    const answersCtx = lastAnswers.map(a =>
+      `Q: ${a.question}\nA (${a.userId === userId ? 'THIS person' : 'a teammate'}, ${new Date(a.answeredAt || 0).toDateString()}): ${a.answer}`,
+    ).join('\n---\n') || 'None yet.';
+    const recentQs = lastQuestions.map(q => `- ${q.question}`).join('\n') || 'None yet.';
+
+    const system =
+      `You write ONE sharp spot-check question for a digital-marketing-agency teammate about a client brand. ` +
+      `Rules: output ONLY the question text (1–2 sentences, max 220 chars), no preamble, no quotes. ` +
+      `Be specific and direct — a question a good manager would ask in person. Ask for numbers where relevant. ` +
+      `NEVER repeat or closely paraphrase any recent question listed. ` +
+      `If a previous answer mentioned a plan or a number, FOLLOW UP on it (did it happen? did it move?).`;
+
+    const payload =
+      `Brand: ${brandName}\n` +
+      `Focus area for this question: ${KIND_FOCUS[kind]}\n\n` +
+      `Recent answers about this brand:\n${answersCtx}\n\n` +
+      `Recent questions already asked (do NOT repeat these):\n${recentQs}`;
+
+    const text = (await callGemini(system, payload, 200)).trim()
+      .replace(/^["'`]+|["'`]+$/g, '').slice(0, 300);
+    if (text.length >= 15) return text;
+    throw new Error('too_short');
+  } catch {
+    return QUESTION_BANK[kind](brandName);   // graceful degrade — Robin convention
+  }
+}
 
 export async function fireRandomPulse(orgId: any): Promise<boolean> {
   // 1. Clocked-in staff (active, fresh heartbeat, not on break).
@@ -166,13 +225,14 @@ export async function fireRandomPulse(orgId: any): Promise<boolean> {
   const chosen = pick(pairs);
   const kind = pick(chosen.kinds);
   const brandName = (chosen.brand as any).clientName || 'this brand';
+  const question = await generateQuestion(orgId, chosen.userId, chosen.brand._id, brandName, kind);
   await BrandPulse.create({
     organizationId: orgId,
     userId: chosen.userId,
     clientWorkflowId: chosen.brand._id,
     clientName: brandName,
     questionKind: kind,
-    question: QUESTION_BANK[kind](brandName),
+    question,
     status: 'pending',
     hop: 0,
   });
