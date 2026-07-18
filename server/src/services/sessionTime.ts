@@ -27,20 +27,17 @@
 const GRACE_MS = 180_000;
 
 /**
- * STANDARD_BREAK_MS — the break allowance everyone gets for free as part
- * of a normal working day. Take 30 minutes off, no penalty. Only the
- * MINUTES BEYOND this allowance get deducted from effective working time.
+ * STANDARD_BREAK_MS — the daily break BUDGET (1h) in the 8h-work + 1h-break
+ * day model.
  *
- * Why: the team complained that a colleague who took 30min for lunch was
- * showing fewer "worked hours" than someone who didn't break at all —
- * which penalised the healthy behaviour. Now the allowance is built in:
- * take 30min → still credited the full clocked-in window; take 1h 15min
- * → only the extra 15min counts against worked hours.
+ * History: this used to be a free credit (breaks ≤ 1h didn't reduce worked
+ * hours). Owner reversed that in July 2026 — "if break is on, pause the
+ * working-hour counting" — so now EVERY break minute pauses the clock and
+ * this constant only drives the long-break warnings (30min single / 1h
+ * total) and the breakOkDays metric in progress reports.
  *
- * Example: clocked in 9:00, out 5:20, took 30min break.
- *   gross elapsed = 8h 20min
- *   break = 30min  (≤ 60min allowance → penalty = 0)
- *   effective working = 8h 20min   (not 7h 50min)
+ * Example: clocked in 9:00, out 6:00, took 1h break.
+ *   gross elapsed = 9h · break = 1h → effective working = 8h  ✓ full day
  */
 export const STANDARD_BREAK_MS = 60 * 60 * 1000; // 1 hour
 
@@ -140,7 +137,13 @@ export function sessionTotals(
   // heartbeat-gap accumulation can't do the same. Together these keep
   // the reported worked hours believable even while the underlying data
   // is being repaired by the cleanup scripts.
-  const rawPenalty     = Math.max(0, breakMs - STANDARD_BREAK_MS);
+  // July 2026 (owner): breaks PAUSE the clock — every break minute is
+  // deducted from worked time, not just minutes beyond the allowance.
+  // The 8h+1h day model still holds (clock 9h with 1h break = 8h
+  // worked); STANDARD_BREAK_MS now only powers the long-break warnings
+  // and the breakOkDays progress metric. Kept in lockstep with the
+  // identical change in client/src/hooks/useSession.ts.
+  const rawPenalty     = breakMs;
   const breakPenaltyMs = Math.min(rawPenalty, workedMs);
   const cappedAwayMs   = Math.min(awayInWindowMs, Math.floor(workedMs / 2));
   const activeMs       = Math.max(0, workedMs - breakPenaltyMs - cappedAwayMs);

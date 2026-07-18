@@ -357,12 +357,16 @@ export function useSession() {
       }
     }
 
-    // ── Break credit ─────────────────────────────────────────────────
-    // Up to STANDARD_BREAK_MS (1h) is free; only minutes beyond count
-    // as a deduction. Sanity: penalty can never exceed what we've
-    // elapsed — otherwise a corrupt totalBreakMs (see the earlier 253h
-    // break bug) could drive workedMs to 0 or negative.
-    const rawPenalty = Math.max(0, totalBreakMs - STANDARD_BREAK_MS);
+    // ── Breaks pause the clock ───────────────────────────────────────
+    // Owner ask (July 2026): "if break is on, pause the working-hour
+    // counting." EVERY break minute is excluded from worked time, so
+    // the timer visibly freezes the moment Break is clicked and resumes
+    // on Resume. The 8h+1h day still holds: clock 9h with a 1h break →
+    // 8h worked. STANDARD_BREAK_MS remains only as the WARNING budget
+    // (long-break flags), not a work credit. Sanity: penalty can never
+    // exceed elapsed — a corrupt totalBreakMs (the old 253h open-break
+    // bug) must not drive workedMs to 0 or negative.
+    const rawPenalty = totalBreakMs;
     const breakPenaltyMs = Math.min(rawPenalty, upper);
 
     // ── Away time ────────────────────────────────────────────────────
