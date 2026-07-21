@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
-import { startSession, startBreak, endBreak, endSession, getActiveSession, getSessionHistory, getPerformance, getTeamSessionStatus, heartbeat, setOnCall, huddleJoined, huddleLeft } from '../controllers/sessionsController';
+import { startSession, startBreak, endBreak, endSession, getActiveSession, getSessionHistory, getPerformance, getTeamSessionStatus, heartbeat, setOnCall, huddleJoined, huddleLeft, getMyHours } from '../controllers/sessionsController';
 
 const router = Router();
 router.use(authMiddleware);
@@ -17,6 +17,8 @@ router.post('/huddle-joined', requireRole('admin', 'employee', 'sales', 'workroo
 router.post('/huddle-left',   requireRole('admin', 'employee', 'sales', 'workroom'), huddleLeft);
 router.get('/active',     requireRole('admin', 'employee', 'sales', 'workroom'), getActiveSession);
 router.get('/history',    requireRole('admin', 'employee', 'sales', 'workroom'), getSessionHistory);
+// Own weekly hours ledger + catch-up deficit — powers MyHoursCard.
+router.get('/my-hours',   requireRole('admin', 'employee', 'sales', 'workroom'), getMyHours);
 router.get('/performance', requireRole('admin'),                     getPerformance);
 // Live "who's on break right now" view — accessible to all internal staff
 router.get('/team-status', requireRole('admin', 'employee', 'sales', 'workroom'), getTeamSessionStatus);

@@ -139,6 +139,7 @@ export const startBreak        = () => api.post('/sessions/break', {}).then(r =>
 export const endBreak          = () => api.post('/sessions/break/end', {}).then(r => r.data);
 export const endSession        = () => api.post('/sessions/end', {}).then(r => r.data);
 export const getActiveSession  = () => api.get('/sessions/active').then(r => r.data);
+export const getMyHours        = () => api.get('/sessions/my-hours').then(r => r.data);
 export const getSessionHistory = (params?: Record<string, unknown>) => api.get('/sessions/history', { params }).then(r => r.data);
 export const getPerformance    = (params?: Record<string, unknown>) => api.get('/sessions/performance', { params }).then(r => r.data);
 export const getTeamSessionStatus = () => api.get('/sessions/team-status').then(r => r.data);

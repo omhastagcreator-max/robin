@@ -30,6 +30,7 @@ import { ActiveClientMeetingsCard } from '@/components/dashboard/ActiveClientMee
 import { ScheduleMeetingsSection } from '@/components/dashboard/ScheduleMeetingsSection';
 import { TodayClientsCard }      from '@/components/dashboard/TodayClientsCard';
 import { MyAssignedServicesCard } from '@/components/dashboard/MyAssignedServicesCard';
+import { MyHoursCard }           from '@/components/shared/MyHoursCard';
 
 import {
   TASK_STATUSES, TASK_TYPES, nextTaskStatus,
@@ -201,7 +202,8 @@ export default function EmployeeDashboard() {
           <Stat block value={stuckTasks.length}    label="Stuck"     tone={stuckTasks.length ? 'warning' : 'muted'} />
         </div>
 
-        {/* ── Today + assigned services ──────────────────────────── */}
+        {/* ── My hours + today + assigned services ─────────────────── */}
+        <MyHoursCard />
         <div className="grid lg:grid-cols-2 gap-4">
           <TodayClientsCard />
           <MyAssignedServicesCard />

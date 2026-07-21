@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { useNetworkAware } from '@/hooks/useNetworkAware';
 import { PendingAcceptanceBanner } from '@/components/workroom/PendingAcceptanceBanner';
+import { MyHoursCard } from '@/components/shared/MyHoursCard';
 import { DayPlanTable } from '@/components/workroom/DayPlanTable';
 import * as api from '@/api';
 
@@ -158,6 +159,10 @@ export default function WorkroomHome() {
               {/* Pending-acceptance banner — auto-hides when empty. Top
                   of the page so cross-team handoffs aren't missed. */}
               <PendingAcceptanceBanner />
+
+              {/* My hours — worked time this week + catch-up deficit
+                  (owner ask, July 2026). */}
+              <MyHoursCard />
 
               {/* Weekly day-plan table — admin-curated round-robin
                   schedule. Pinned at the very top of the working area

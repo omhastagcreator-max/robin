@@ -14,6 +14,7 @@ import * as api from '@/api';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { SessionClockCard } from '@/components/shared/SessionClockCard';
+import { MyHoursCard } from '@/components/shared/MyHoursCard';
 import { SheetConnectCard } from '@/components/dashboard/SheetConnectCard';
 import { LiveSheetSection } from '@/components/dashboard/LiveSheetSection';
 import { TodayClientsCard } from '@/components/dashboard/TodayClientsCard';
@@ -744,6 +745,7 @@ export default function SalesDashboard() {
 
         {/* Clock-in (Start Day / Break / End Day) */}
         <SessionClockCard />
+        <MyHoursCard />
 
         {/* Today's clients — sales reps' own scheduled clients with quick
             mark-done. Hidden when nothing's scheduled. */}

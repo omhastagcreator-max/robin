@@ -389,6 +389,85 @@ export async function getActiveSession(req: AuthRequest, res: Response): Promise
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
+/**
+ * GET /api/sessions/my-hours
+ *
+ * The employee's own hours ledger for the current IST week (Mon→today):
+ * per-day worked/break vs the 8h daily target, and the cumulative
+ * deficit ("laggings") = expected − worked. Powers the MyHoursCard on
+ * every staff dashboard so each person can see exactly how much more
+ * they need to work to be square. Approved leave days and Sundays carry
+ * zero expectation. Uses the same sessionTotals() single-source-of-truth
+ * math as the live timer and every admin report.
+ */
+export async function getMyHours(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const { sessionTotals } = await import('../services/sessionTime');
+    const IST = 330 * 60_000;
+    const DAY = 24 * 60 * 60 * 1000;
+    const TARGET = 8 * 60 * 60 * 1000;
+    const userId = req.user!.id;
+    const now = Date.now();
+
+    // IST Monday 00:00 of this week → UTC ms.
+    const istNow = new Date(now + IST);
+    const daysSinceMon = (istNow.getUTCDay() + 6) % 7;
+    const weekStart = Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate()) - daysSinceMon * DAY - IST;
+
+    const sessions = await Session.find({
+      userId,
+      startTime: { $lt: new Date(now) },
+      $or: [
+        { endTime: { $gte: new Date(weekStart) } },
+        { endTime: null },
+        { endTime: { $exists: false } },
+      ],
+    }).lean();
+
+    const leaves = await LeaveApplication.find({
+      userId, status: 'approved',
+      'days.date': { $gte: new Date(weekStart - DAY), $lt: new Date(weekStart + 8 * DAY) },
+    }).lean();
+    const leaveSet = new Set<string>();
+    for (const l of leaves) for (const d of (l as any).days || []) {
+      leaveSet.add(new Date(new Date(d.date).getTime() + IST).toISOString().slice(0, 10));
+    }
+
+    const days: any[] = [];
+    let totalWorked = 0, totalExpected = 0, todayWorked = 0;
+    for (let d = weekStart; d <= now; d += DAY) {
+      const dayEnd = Math.min(d + DAY, now);
+      const dateIST = new Date(d + IST).toISOString().slice(0, 10);
+      const dow = new Date(d + IST).getUTCDay();
+      const isToday = d + DAY > now;
+      const onLeave = leaveSet.has(dateIST);
+
+      let workedMs = 0, breakMs = 0;
+      for (const s of sessions) {
+        const t = sessionTotals(s as any, d, dayEnd);
+        workedMs += t.activeMs;
+        breakMs += t.breakMs;
+      }
+      const expectedMs = (dow === 0 || onLeave) ? 0 : TARGET;   // Sundays + leaves free
+      totalWorked += workedMs;
+      totalExpected += expectedMs;
+      if (isToday) todayWorked = workedMs;
+      days.push({ date: dateIST, dow, workedMs, breakMs, expectedMs, onLeave, isToday });
+    }
+
+    res.json({
+      days,
+      totalWorkedMs: totalWorked,
+      totalExpectedMs: totalExpected,
+      // Positive = behind ("laggings" to cover); negative = ahead.
+      deficitMs: totalExpected - totalWorked,
+      todayWorkedMs: todayWorked,
+      todayRemainingMs: Math.max(0, TARGET - todayWorked),
+      targetPerDayMs: TARGET,
+    });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
 export async function getSessionHistory(req: AuthRequest, res: Response): Promise<void> {
   try {
     const { page = 1, limit = 30 } = req.query;
