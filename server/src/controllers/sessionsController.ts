@@ -455,12 +455,25 @@ export async function getMyHours(req: AuthRequest, res: Response): Promise<void>
       days.push({ date: dateIST, dow, workedMs, breakMs, expectedMs, onLeave, isToday });
     }
 
+    // Lag should only count COMPLETED days (July 2026 UX fix): telling
+    // someone at 2pm they're "4h behind" because today isn't finished
+    // yet is demotivating and wrong. Today's remaining time is its own
+    // number; the carried lag is yesterday-and-earlier only.
+    let completedExpected = 0, completedWorked = 0;
+    for (const d of days) {
+      if (d.isToday) continue;
+      completedExpected += d.expectedMs;
+      completedWorked += d.workedMs;
+    }
+
     res.json({
       days,
       totalWorkedMs: totalWorked,
       totalExpectedMs: totalExpected,
-      // Positive = behind ("laggings" to cover); negative = ahead.
+      // Positive = behind; negative = ahead. Full-week version (legacy).
       deficitMs: totalExpected - totalWorked,
+      // Carried lag from completed days only — what the card shows.
+      carriedLagMs: completedExpected - completedWorked,
       todayWorkedMs: todayWorked,
       todayRemainingMs: Math.max(0, TARGET - todayWorked),
       targetPerDayMs: TARGET,
