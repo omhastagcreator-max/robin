@@ -172,6 +172,7 @@ export function useSession() {
     if (session) return;
     const data = await api.startSession();
     setSession(data);
+    window.dispatchEvent(new Event('robin:session-refresh'));
   };
 
   const startBreak = async () => {
@@ -184,6 +185,8 @@ export function useSession() {
       const events = [...(prev.breakEvents || []), { startedAt: new Date().toISOString() }];
       return { ...prev, status: 'on_break', breakEvents: events };
     });
+    // Nudge listeners (MyHoursCard timeline) to refetch.
+    window.dispatchEvent(new Event('robin:session-refresh'));
   };
 
   const endBreak = async () => {
@@ -191,6 +194,7 @@ export function useSession() {
     try {
       const updated = await api.endBreak();
       setSession(updated);
+      window.dispatchEvent(new Event('robin:session-refresh'));
     } catch (e: any) {
       // 404 "Not on break" = the server already ended the break (auto-heal
       // or another tab) and the client is stale. Resync instead of leaving
@@ -205,6 +209,7 @@ export function useSession() {
     if (session.status === 'on_break') await endBreak();
     await api.endSession();
     setSession(null);
+    window.dispatchEvent(new Event('robin:session-refresh'));
   };
 
   // Toggle On Call. Optimistic update so the UI flips instantly; server

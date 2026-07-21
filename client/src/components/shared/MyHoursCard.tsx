@@ -18,14 +18,18 @@ import * as api from '@/api';
  */
 
 interface DayRow { date: string; dow: number; workedMs: number; breakMs: number; expectedMs: number; onLeave: boolean; isToday: boolean }
+interface TodayEvent { kind: 'login' | 'logout' | 'break'; at: string; endAt?: string | null }
 interface MyHours {
   days: DayRow[];
   totalWorkedMs: number; totalExpectedMs: number;
   deficitMs: number; carriedLagMs?: number;
   todayWorkedMs: number; todayRemainingMs: number; targetPerDayMs: number;
+  todayEvents?: TodayEvent[];
 }
 
 const DOW = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+const fmtT = (d: string) =>
+  new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
 const fmtHM = (ms: number) => {
   const mins = Math.round(Math.abs(ms) / 60_000);
   const h = Math.floor(mins / 60), m = mins % 60;
@@ -117,6 +121,27 @@ export function MyHoursCard() {
           )}
         </div>
       </div>
+
+      {/* Today's timeline — login / breaks / logout, so people can
+          self-track their exact times (owner ask, July 2026). */}
+      {(data.todayEvents?.length ?? 0) > 0 && (
+        <div className="mt-2 pt-2 border-t border-border/50 flex items-center gap-1.5 flex-wrap text-[11px] text-muted-foreground">
+          {data.todayEvents!.map((e, i) => (
+            <span key={i} className={
+              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 border ' +
+              (e.kind === 'login'  ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-700' :
+               e.kind === 'logout' ? 'bg-rose-500/10 border-rose-500/25 text-rose-700' :
+                                     'bg-amber-500/10 border-amber-500/25 text-amber-700')
+            }>
+              {e.kind === 'login' && <>in {fmtT(e.at)}</>}
+              {e.kind === 'logout' && <>out {fmtT(e.at)}</>}
+              {e.kind === 'break' && (
+                <>break {fmtT(e.at)}{e.endAt ? `–${fmtT(e.endAt)}` : ' (ongoing)'}</>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

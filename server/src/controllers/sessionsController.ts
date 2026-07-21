@@ -466,6 +466,26 @@ export async function getMyHours(req: AuthRequest, res: Response): Promise<void>
       completedWorked += d.workedMs;
     }
 
+    // Today's raw timeline — when they logged in, every break, logout.
+    // Owner ask (July 2026): employees should SEE their own login/break
+    // times so they can self-track, not just the totals.
+    const todayStart = Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate()) - IST;
+    const todayEvents: Array<{ kind: 'login' | 'logout' | 'break'; at: Date; endAt?: Date | null }> = [];
+    for (const s of sessions) {
+      const st = new Date(s.startTime).getTime();
+      const en = s.endTime ? new Date(s.endTime).getTime() : null;
+      if (en !== null && en < todayStart) continue;            // ended before today
+      if (st >= todayStart) todayEvents.push({ kind: 'login', at: new Date(st) });
+      for (const b of (s as any).breakEvents || []) {
+        if (!b.startedAt) continue;
+        const bs = new Date(b.startedAt).getTime();
+        if (bs < todayStart) continue;
+        todayEvents.push({ kind: 'break', at: new Date(bs), endAt: b.endedAt ? new Date(b.endedAt) : null });
+      }
+      if (en !== null && en >= todayStart) todayEvents.push({ kind: 'logout', at: new Date(en) });
+    }
+    todayEvents.sort((a, b) => a.at.getTime() - b.at.getTime());
+
     res.json({
       days,
       totalWorkedMs: totalWorked,
@@ -477,6 +497,7 @@ export async function getMyHours(req: AuthRequest, res: Response): Promise<void>
       todayWorkedMs: todayWorked,
       todayRemainingMs: Math.max(0, TARGET - todayWorked),
       targetPerDayMs: TARGET,
+      todayEvents,
     });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
