@@ -47,7 +47,11 @@ A `Session` doc tracks a work day: `status: active | on_break | ended`, `startTi
 - Cleanup script for corrupted break data: `cd server && npm run fix-open-breaks -- --apply` (dry-run without `--apply`).
 - History of bugs here: "253h break", "timer stuck at 0", "timer runs backwards", "can't end break". Every guard in `useSession.ts` / `sessionsController.ts` has a comment explaining which bug it prevents — **don't remove guards without reading the comments.**
 
-## Last done (July 2026) — breaks now PAUSE the clock
+## Last done (July 2026) — Attendance: Monthly / Calendar / Date-range + AI
+
+`client/src/pages/AdminAttendance.tsx` now has 4 tabs: Daily (original), Monthly (per-day org rollup table), Calendar (color-coded month grid per employee — click through employees via dropdown), Range (custom from/to + "Generate AI summary" button that has Gemini write an executive read of attendance for that window, graceful fallback to a computed summary if AI is down). Server: shared `buildAttendanceMatrix()` helper in `adminController.ts` powers all three new views (`/admin/attendance/monthly`, `/admin/attendance/range`, `/admin/attendance/range/summary`) — same `sessionTotals()` math as everywhere else. Day status: present (≥6h), partial, absent, leave, off (Sunday). Also fixed a real bug while in there: the Daily view's header "Active total" was recomputed as `totalWorked − totalBreak` (dropping away-time deduction), which could disagree with the sum of the expanded session rows below it — now sums each session's own `activeMs`.
+
+## Earlier (July 2026) — breaks now PAUSE the clock
 
 Owner reversed the break-credit rule: every break minute is deducted from worked time (timer visibly freezes on Break, resumes on Resume). Clock 9h with 1h break = 8h worked — consistent with the 8h+1h day. `STANDARD_BREAK_MS` (1h) is now only the warning budget + breakOkDays metric, NOT a work credit. Changed in both `client/src/hooks/useSession.ts` (workedMs) and `server/src/services/sessionTime.ts` (sessionTotals) — keep them in lockstep. Also: away-threshold raised 90s→5min (background-tab throttling caused phantom awayMs — see `npm run inspect-session` to diagnose/repair), and Brand Pulse questions are AI-generated via Gemini with follow-up context (fallback to templates).
 

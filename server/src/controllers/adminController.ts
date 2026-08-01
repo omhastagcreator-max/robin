@@ -7,8 +7,10 @@ import ProjectTask from '../models/ProjectTask';
 import ActivityLog from '../models/ActivityLog';
 import bcrypt from 'bcryptjs';
 import Organization from '../models/Organization';
+import LeaveApplication from '../models/LeaveApplication';
 import { sessionTotals, effectiveEndMs } from '../services/sessionTime';
 import * as meta from '../services/metaAdsService';
+import { callGemini } from '../services/aiTriage';
 
 // GET /api/admin/employees
 export async function listEmployees(req: AuthRequest, res: Response): Promise<void> {
@@ -365,7 +367,12 @@ export async function getAttendance(req: AuthRequest, res: Response): Promise<vo
           activeMs: t.activeMs,
         };
       });
-      const totalActiveMs = Math.max(0, totalWorkedMs - totalBreakMs);
+      // Sum each session's OWN activeMs (already net of break + away) —
+      // do NOT recompute as totalWorkedMs − totalBreakMs, which silently
+      // drops the away-time deduction and made this header total drift
+      // from the sum of the expanded session rows below it. (July 2026
+      // fix — this was part of the "time calculation is off" reports.)
+      const totalActiveMs = sessionRows.reduce((sum, s) => sum + s.activeMs, 0);
 
       // Friendly aggregates for the row.
       const firstClockIn = userSessions.length ? userSessions[0].startTime : null;
@@ -400,6 +407,259 @@ export async function getAttendance(req: AuthRequest, res: Response): Promise<vo
       windowEnd:   dayEndIstUtc,
       rows: byUser,
     });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * buildAttendanceMatrix — shared engine behind the Monthly, Calendar, and
+ * date-Range attendance views (owner ask, July 2026: "let me pick a date
+ * range too, and have AI summarise it"). Given an org and an arbitrary
+ * [rangeStartUtc, rangeEndUtc) window, walks every day in the window and
+ * returns, per staff member, a day → {firstClockIn, lastClockOut,
+ * activeMs, breakMs, status} map plus rollup totals.
+ *
+ * One function, three callers (getMonthlyAttendance / getRangeAttendance
+ * / getRangeAttendanceSummary) — so all attendance surfaces always agree
+ * with each other and with the live timer (same sessionTotals() math).
+ *
+ * Status: 'leave' (approved leave beats everything), 'off' (Sunday),
+ * 'present' (≥6h net work), 'partial' (worked some, under 6h), 'absent'
+ * (expected, zero worked). Days beyond "now" are simply not included.
+ */
+async function buildAttendanceMatrix(orgId: any, rangeStartUtc: number, rangeEndUtc: number) {
+  const IST = 330 * 60_000;
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const effectiveEnd = Math.min(rangeEndUtc, now);
+  const totalDays = Math.max(0, Math.round((rangeEndUtc - rangeStartUtc) / DAY));
+
+  const staff = await User.find({
+    organizationId: orgId,
+    role: { $in: ['admin', 'employee', 'sales', 'workroom'] },
+    isActive: true,
+  }).select('_id name email role team avatarUrl').sort({ name: 1 }).lean();
+
+  const sessions = await Session.find({
+    organizationId: orgId,
+    startTime: { $lt: new Date(rangeEndUtc) },
+    $or: [
+      { endTime: { $gte: new Date(rangeStartUtc) } },
+      { endTime: null },
+      { endTime: { $exists: false } },
+    ],
+  }).lean();
+
+  const leaves = await LeaveApplication.find({
+    organizationId: orgId, status: 'approved',
+    'days.date': { $gte: new Date(rangeStartUtc - DAY), $lt: new Date(rangeEndUtc + DAY) },
+  }).lean();
+  const leaveByUser = new Map<string, Set<string>>();
+  for (const l of leaves) {
+    const uid = String((l as any).userId);
+    const set = leaveByUser.get(uid) || new Set<string>();
+    for (const d of (l as any).days || []) {
+      const dateIST = new Date(new Date(d.date).getTime() + IST).toISOString().slice(0, 10);
+      set.add(dateIST);
+    }
+    leaveByUser.set(uid, set);
+  }
+
+  const FULL_DAY_MS = 6 * 60 * 60 * 1000;   // ≥6h net = counted as a full present day
+
+  const employees = staff.map((u: any) => {
+    const uid = String(u._id);
+    const userSessions = sessions.filter(s => String(s.userId) === uid);
+    const leaveSet = leaveByUser.get(uid) || new Set<string>();
+    const days: Record<string, any> = {};
+    let daysPresent = 0, daysPartial = 0, daysAbsent = 0, daysLeave = 0;
+    let totalActiveMs = 0, totalBreakMs = 0;
+    const startMinsSample: number[] = [];
+
+    for (let i = 0; i < totalDays; i++) {
+      const dStart = rangeStartUtc + i * DAY;
+      if (dStart >= now) break;   // future — omit entirely
+      const dEnd = Math.min(dStart + DAY, effectiveEnd);
+      const dateIST = new Date(dStart + IST).toISOString().slice(0, 10);
+      const dow = new Date(dStart + IST).getUTCDay();
+      const onLeave = leaveSet.has(dateIST);
+
+      let activeMs = 0, breakMs = 0, firstClockIn: string | null = null, lastClockOut: string | null = null;
+      for (const s of userSessions) {
+        const t = sessionTotals(s as any, dStart, dEnd);
+        if (t.workedMs <= 0) continue;
+        activeMs += t.activeMs;
+        breakMs += t.breakMs;
+        const st = new Date(s.startTime).getTime();
+        if (st >= dStart && st < dEnd && (!firstClockIn || st < new Date(firstClockIn).getTime())) {
+          firstClockIn = new Date(st).toISOString();
+        }
+        if (s.endTime) {
+          const en = new Date(s.endTime).getTime();
+          if (en >= dStart && en < dEnd) lastClockOut = new Date(en).toISOString();
+        }
+      }
+
+      let status: 'leave' | 'off' | 'present' | 'partial' | 'absent';
+      if (onLeave) { status = 'leave'; daysLeave++; }
+      else if (dow === 0) { status = 'off'; }
+      else if (activeMs >= FULL_DAY_MS) { status = 'present'; daysPresent++; }
+      else if (activeMs > 0) { status = 'partial'; daysPartial++; }
+      else { status = 'absent'; daysAbsent++; }
+
+      if (firstClockIn) {
+        const istMins = Math.floor(((new Date(firstClockIn).getTime() + IST) % DAY) / 60_000);
+        startMinsSample.push(istMins);
+      }
+      totalActiveMs += activeMs;
+      totalBreakMs += breakMs;
+      days[dateIST] = { firstClockIn, lastClockOut, activeMs: Math.round(activeMs), breakMs: Math.round(breakMs), status };
+    }
+
+    const avgStartMins = startMinsSample.length
+      ? Math.round(startMinsSample.reduce((a, b) => a + b, 0) / startMinsSample.length)
+      : null;
+
+    return {
+      user: { _id: u._id, name: u.name, email: u.email, role: u.role, team: u.team, avatarUrl: u.avatarUrl },
+      days,
+      totals: { daysPresent, daysPartial, daysAbsent, daysLeave, totalActiveMs, totalBreakMs, avgStartMins },
+    };
+  });
+
+  return { employees, totalDays };
+}
+
+/**
+ * GET /api/admin/attendance/monthly?month=YYYY-MM
+ *
+ * Powers BOTH the Monthly rollup table and the Calendar grid (owner ask,
+ * July 2026: "monthly, daily and calendar report of attendance and log
+ * in/out — currently only a single date works").
+ */
+export async function getMonthlyAttendance(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const adminUser = await User.findById(req.user!.id).select('organizationId');
+    const orgId = adminUser?.organizationId;
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    const monthStr = (req.query.month as string) || (() => {
+      const ist = new Date(Date.now() + 330 * 60_000);
+      return ist.toISOString().slice(0, 7);
+    })();
+    const m = monthStr.match(/^(\d{4})-(\d{2})$/);
+    if (!m) { res.status(400).json({ error: 'Invalid month — use YYYY-MM' }); return; }
+    const [, yStr, moStr] = m;
+    const year = Number(yStr), month = Number(moStr);
+    const IST = 330 * 60_000;
+    const monthStartUtc = Date.UTC(year, month - 1, 1) - IST;
+    const monthEndUtc = Date.UTC(year, month, 1) - IST;
+
+    const { employees, totalDays } = await buildAttendanceMatrix(orgId, monthStartUtc, monthEndUtc);
+    res.json({ month: monthStr, daysInMonth: totalDays, employees });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/** Parses & validates a from/to query pair shared by the range endpoints. */
+function parseRangeQuery(req: AuthRequest): { from: string; to: string; fromUtc: number; toUtc: number } | null {
+  const from = req.query.from as string;
+  const to = req.query.to as string;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return null;
+  const IST = 330 * 60_000;
+  const DAY = 24 * 60 * 60 * 1000;
+  const [fy, fm, fd] = from.split('-').map(Number);
+  const [ty, tm, td] = to.split('-').map(Number);
+  const fromUtc = Date.UTC(fy, fm - 1, fd) - IST;
+  const toUtc = Date.UTC(ty, tm - 1, td) - IST + DAY;   // inclusive end date
+  if (toUtc <= fromUtc) return null;
+  // Cap at ~1 year to keep the per-day loop bounded.
+  if (toUtc - fromUtc > 370 * DAY) return null;
+  return { from, to, fromUtc, toUtc };
+}
+
+/**
+ * GET /api/admin/attendance/range?from=YYYY-MM-DD&to=YYYY-MM-DD
+ *
+ * Arbitrary custom-range attendance matrix — same shape as /monthly, so
+ * the client's range table reuses the same rendering logic.
+ */
+export async function getRangeAttendance(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const adminUser = await User.findById(req.user!.id).select('organizationId');
+    const orgId = adminUser?.organizationId;
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    const range = parseRangeQuery(req);
+    if (!range) { res.status(400).json({ error: 'Provide from & to as YYYY-MM-DD, to ≥ from, within 1 year.' }); return; }
+
+    const { employees, totalDays } = await buildAttendanceMatrix(orgId, range.fromUtc, range.toUtc);
+    res.json({ from: range.from, to: range.to, totalDays, employees });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * POST /api/admin/attendance/range/summary   { from, to }
+ *
+ * AI-generated executive summary of attendance for the chosen range
+ * (owner ask, July 2026). Feeds Gemini the per-employee rollup (not raw
+ * session dumps — keeps the prompt small) and asks for a punchy read:
+ * who's reliable, who's slipping, punctuality, notable absences. Same
+ * graceful-degrade convention as the rest of Robin's AI — if Gemini is
+ * unavailable, returns a deterministic plain-text summary instead of
+ * failing the request.
+ */
+export async function getRangeAttendanceSummary(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const adminUser = await User.findById(req.user!.id).select('organizationId');
+    const orgId = adminUser?.organizationId;
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    const from = String(req.body?.from || '');
+    const to = String(req.body?.to || '');
+    const fakeReq = { query: { from, to } } as unknown as AuthRequest;
+    const range = parseRangeQuery(fakeReq);
+    if (!range) { res.status(400).json({ error: 'Provide from & to as YYYY-MM-DD, to ≥ from, within 1 year.' }); return; }
+
+    const { employees, totalDays } = await buildAttendanceMatrix(orgId, range.fromUtc, range.toUtc);
+    const expectedDays = employees[0]
+      ? Object.values(employees[0].days).filter((d: any) => d.status !== 'off').length
+      : totalDays;
+
+    const rows = employees.map(e => {
+      const t = e.totals;
+      const attendanceRate = expectedDays > 0 ? Math.round(((t.daysPresent + t.daysPartial) / expectedDays) * 100) : 0;
+      const avgHours = (t.daysPresent + t.daysPartial) > 0
+        ? (t.totalActiveMs / ((t.daysPresent + t.daysPartial) * 3_600_000)).toFixed(1)
+        : '0';
+      const avgStart = t.avgStartMins != null
+        ? `${String(Math.floor(t.avgStartMins / 60)).padStart(2, '0')}:${String(t.avgStartMins % 60).padStart(2, '0')} IST`
+        : 'n/a';
+      return `${e.user.name || e.user.email} (${e.user.role}): attendance ${attendanceRate}%, ` +
+        `full days ${t.daysPresent}, partial ${t.daysPartial}, absent ${t.daysAbsent}, leave ${t.daysLeave}, ` +
+        `avg start ${avgStart}, avg hours/day worked ${avgHours}h, total break ${(t.totalBreakMs / 3_600_000).toFixed(1)}h`;
+    }).join('\n');
+
+    let summary: string;
+    try {
+      const system =
+        'You are an operations analyst for a small digital marketing agency. Write a short, punchy executive ' +
+        'summary of team attendance for the given date range, using ONLY the data provided. ' +
+        'Cover: overall attendance health, who is most reliable/punctual, who is slipping (low attendance, late ' +
+        'starts, high absence) and by how much, and any notable pattern (e.g. frequent partial days, heavy break ' +
+        'usage). Be specific with names and numbers. 120-180 words. Plain prose, no headers, no bullet points.';
+      const payload = `Date range: ${range.from} to ${range.to}\n\nPer-employee attendance data:\n${rows}`;
+      summary = (await callGemini(system, payload, 400)).trim();
+    } catch {
+      // Deterministic fallback — still useful, just less prose.
+      const sorted = [...employees].sort((a, b) => b.totals.daysPresent - a.totals.daysPresent);
+      const best = sorted[0], worst = sorted[sorted.length - 1];
+      summary = `Attendance summary ${range.from} → ${range.to} (${employees.length} staff): ` +
+        `${best?.user.name || '—'} led with ${best?.totals.daysPresent || 0} full days; ` +
+        `${worst?.user.name || '—'} had the most gaps (${worst?.totals.daysAbsent || 0} absent, ${worst?.totals.daysPartial || 0} partial). ` +
+        `Total logged break time across the team: ${employees.reduce((s, e) => s + e.totals.totalBreakMs, 0) / 3_600_000 | 0}h. ` +
+        `(AI summary unavailable — showing computed highlights instead.)`;
+    }
+
+    res.json({ from: range.from, to: range.to, summary });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 

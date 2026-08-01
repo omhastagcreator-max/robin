@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
 import {
-  listEmployees, listClients, getActivityLog, inviteUser, updateUserRole, resetUserPassword, getEmployeeReport, deactivateUser, getAttendance, bulkCreateMetaClients, setCanManageWorkroom
+  listEmployees, listClients, getActivityLog, inviteUser, updateUserRole, resetUserPassword, getEmployeeReport, deactivateUser, getAttendance, getMonthlyAttendance, getRangeAttendance, getRangeAttendanceSummary, bulkCreateMetaClients, setCanManageWorkroom
 } from '../controllers/adminController';
 
 const router = Router();
@@ -12,6 +12,9 @@ const adminOnly = [authMiddleware, requireRole('admin')];
 router.get('/employees',                ...adminOnly, listEmployees);
 router.get('/employees/:id/report',     ...adminOnly, getEmployeeReport);
 router.get('/attendance',               ...adminOnly, getAttendance);
+router.get('/attendance/monthly',       ...adminOnly, getMonthlyAttendance);
+router.get('/attendance/range',         ...adminOnly, getRangeAttendance);
+router.post('/attendance/range/summary', ...adminOnly, getRangeAttendanceSummary);
 router.post('/meta/clients/bulk',       ...adminOnly, bulkCreateMetaClients);
 router.get('/clients',                  ...adminOnly, listClients);
 router.get('/activity',                 ...adminOnly, getActivityLog);

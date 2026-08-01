@@ -540,6 +540,9 @@ export const setWorkingDespiteLeave = (workingType: 'full' | 'first_half' | 'sec
   api.put('/leaves/mine-today/working', { workingType }).then(r => r.data);
 export const adminLeavesSummary = () => api.get('/leaves/admin/summary').then(r => r.data);
 export const adminAttendance    = (date?: string) => api.get('/admin/attendance', { params: date ? { date } : {} }).then(r => r.data);
+export const adminAttendanceMonthly = (month?: string) => api.get('/admin/attendance/monthly', { params: month ? { month } : {} }).then(r => r.data);
+export const adminAttendanceRange   = (from: string, to: string) => api.get('/admin/attendance/range', { params: { from, to } }).then(r => r.data);
+export const adminAttendanceRangeSummary = (from: string, to: string) => api.post('/admin/attendance/range/summary', { from, to }).then(r => r.data);
 
 // ── Meta Ads ──────────────────────────────────────────────────────────────────
 export const metaAdsAccounts        = () => api.get('/ads/meta/accounts').then(r => r.data);
