@@ -591,21 +591,32 @@ export async function getRangeAttendance(req: AuthRequest, res: Response): Promi
     const range = parseRangeQuery(req);
     if (!range) { res.status(400).json({ error: 'Provide from & to as YYYY-MM-DD, to ≥ from, within 1 year.' }); return; }
 
-    const { employees, totalDays } = await buildAttendanceMatrix(orgId, range.fromUtc, range.toUtc);
+    let { employees, totalDays } = await buildAttendanceMatrix(orgId, range.fromUtc, range.toUtc);
+    // Optional single-employee filter (owner ask, July 2026 — payroll
+    // processing: "how was Om's attendance last month" for one person,
+    // not the whole team dumped together).
+    const userId = req.query.userId as string | undefined;
+    if (userId) employees = employees.filter(e => String(e.user._id) === userId);
+
     res.json({ from: range.from, to: range.to, totalDays, employees });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
 /**
- * POST /api/admin/attendance/range/summary   { from, to }
+ * POST /api/admin/attendance/range/summary   { from, to, userId? }
  *
  * AI-generated executive summary of attendance for the chosen range
  * (owner ask, July 2026). Feeds Gemini the per-employee rollup (not raw
- * session dumps — keeps the prompt small) and asks for a punchy read:
- * who's reliable, who's slipping, punctuality, notable absences. Same
- * graceful-degrade convention as the rest of Robin's AI — if Gemini is
- * unavailable, returns a deterministic plain-text summary instead of
- * failing the request.
+ * session dumps — keeps the prompt small) — EXACTLY the same numbers the
+ * table on screen shows, so the AI narrative and the visible data can
+ * never disagree. Same graceful-degrade convention as the rest of
+ * Robin's AI — if Gemini is unavailable, returns a deterministic
+ * plain-text summary instead of failing the request.
+ *
+ * With `userId` set, scopes to ONE person and switches to a payroll-
+ * framed prompt (attendance rate, hours, absences, punctuality, and an
+ * explicit flag on anything that needs manual review before processing
+ * salary) instead of the team-wide "who's slipping" framing.
  */
 export async function getRangeAttendanceSummary(req: AuthRequest, res: Response): Promise<void> {
   try {
@@ -615,11 +626,16 @@ export async function getRangeAttendanceSummary(req: AuthRequest, res: Response)
 
     const from = String(req.body?.from || '');
     const to = String(req.body?.to || '');
+    const userId = req.body?.userId ? String(req.body.userId) : undefined;
     const fakeReq = { query: { from, to } } as unknown as AuthRequest;
     const range = parseRangeQuery(fakeReq);
     if (!range) { res.status(400).json({ error: 'Provide from & to as YYYY-MM-DD, to ≥ from, within 1 year.' }); return; }
 
-    const { employees, totalDays } = await buildAttendanceMatrix(orgId, range.fromUtc, range.toUtc);
+    let { employees, totalDays } = await buildAttendanceMatrix(orgId, range.fromUtc, range.toUtc);
+    if (userId) {
+      employees = employees.filter(e => String(e.user._id) === userId);
+      if (employees.length === 0) { res.status(404).json({ error: 'Employee not found' }); return; }
+    }
     const expectedDays = employees[0]
       ? Object.values(employees[0].days).filter((d: any) => d.status !== 'off').length
       : totalDays;
@@ -640,34 +656,49 @@ export async function getRangeAttendanceSummary(req: AuthRequest, res: Response)
 
     let summary: string;
     try {
-      const system =
-        'You are an operations analyst for a small digital marketing agency. Write a short, punchy executive ' +
-        'summary of team attendance for the given date range, using ONLY the data provided. ' +
-        'Cover: overall attendance health, who is most reliable/punctual, who is slipping (low attendance, late ' +
-        'starts, high absence) and by how much, and any notable pattern (e.g. frequent partial days, heavy break ' +
-        'usage). Be specific with names and numbers. 120-180 words. Plain prose, no headers, no bullet points.';
-      const payload = `Date range: ${range.from} to ${range.to}\n\nPer-employee attendance data:\n${rows}`;
+      const system = userId
+        ? 'You are a payroll/HR assistant for a small digital marketing agency. Write a short summary of ONE ' +
+          'employee\'s attendance for the given date range, using ONLY the data provided, in plain prose (no ' +
+          'headers, no bullets). Cover: overall attendance rate, full vs partial vs absent vs leave day counts, ' +
+          'punctuality (average start time), average hours worked per day, and break usage. End with one explicit ' +
+          'sentence flagging whether anything here needs manual review before processing salary (e.g. unexplained ' +
+          'absences, chronic lateness, low hours) or stating it looks clean. 100-150 words.'
+        : 'You are an operations analyst for a small digital marketing agency. Write a short, punchy executive ' +
+          'summary of team attendance for the given date range, using ONLY the data provided. ' +
+          'Cover: overall attendance health, who is most reliable/punctual, who is slipping (low attendance, late ' +
+          'starts, high absence) and by how much, and any notable pattern (e.g. frequent partial days, heavy break ' +
+          'usage). Be specific with names and numbers. 120-180 words. Plain prose, no headers, no bullet points.';
+      const payload = `Date range: ${range.from} to ${range.to}\n\n` +
+        `${userId ? 'Employee' : 'Per-employee'} attendance data:\n${rows}`;
       summary = (await callGemini(system, payload, 400)).trim();
     } catch {
       // Deterministic fallback — still useful, just less prose.
-      const sorted = [...employees].sort((a, b) => b.totals.daysPresent - a.totals.daysPresent);
-      const best = sorted[0], worst = sorted[sorted.length - 1];
-      summary = `Attendance summary ${range.from} → ${range.to} (${employees.length} staff): ` +
-        `${best?.user.name || '—'} led with ${best?.totals.daysPresent || 0} full days; ` +
-        `${worst?.user.name || '—'} had the most gaps (${worst?.totals.daysAbsent || 0} absent, ${worst?.totals.daysPartial || 0} partial). ` +
-        `Total logged break time across the team: ${employees.reduce((s, e) => s + e.totals.totalBreakMs, 0) / 3_600_000 | 0}h. ` +
-        `(AI summary unavailable — showing computed highlights instead.)`;
+      if (userId && employees[0]) {
+        const t = employees[0].totals;
+        summary = `Attendance ${range.from} → ${range.to} for ${employees[0].user.name || employees[0].user.email}: ` +
+          `${t.daysPresent} full days, ${t.daysPartial} partial, ${t.daysAbsent} absent, ${t.daysLeave} on leave. ` +
+          `Total active time ${(t.totalActiveMs / 3_600_000).toFixed(1)}h, break ${(t.totalBreakMs / 3_600_000).toFixed(1)}h. ` +
+          `(AI summary unavailable — showing computed highlights instead.)`;
+      } else {
+        const sorted = [...employees].sort((a, b) => b.totals.daysPresent - a.totals.daysPresent);
+        const best = sorted[0], worst = sorted[sorted.length - 1];
+        summary = `Attendance summary ${range.from} → ${range.to} (${employees.length} staff): ` +
+          `${best?.user.name || '—'} led with ${best?.totals.daysPresent || 0} full days; ` +
+          `${worst?.user.name || '—'} had the most gaps (${worst?.totals.daysAbsent || 0} absent, ${worst?.totals.daysPartial || 0} partial). ` +
+          `Total logged break time across the team: ${employees.reduce((s, e) => s + e.totals.totalBreakMs, 0) / 3_600_000 | 0}h. ` +
+          `(AI summary unavailable — showing computed highlights instead.)`;
+      }
     }
 
     res.json({ from: range.from, to: range.to, summary });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
-// GET /api/admin/employees/:id/report?period=daily|weekly|monthly
+// GET /api/admin/employees/:id/report?period=daily|weekly|monthly|custom&from=YYYY-MM-DD&to=YYYY-MM-DD
 export async function getEmployeeReport(req: AuthRequest, res: Response): Promise<void> {
   try {
     const { id } = req.params;
-    const period = (req.query.period as string) || 'daily';
+    let period = (req.query.period as string) || 'daily';
 
     // Compute startDate based on server time
     const startDate = new Date();
@@ -681,19 +712,51 @@ export async function getEmployeeReport(req: AuthRequest, res: Response): Promis
       startDate.setDate(1); // first of the month
     }
 
+    // Custom date range (owner ask, July 2026 — "let me pick a custom
+    // range for one employee, e.g. to process salary"). IST-anchored:
+    // `from` maps to IST midnight, `to` maps to the END of that IST day.
+    // Falls back to the preset behaviour above if from/to are missing
+    // or malformed, so existing Daily/Weekly/Monthly callers are unaffected.
+    const IST = 330 * 60_000;
+    const fromStr = req.query.from as string | undefined;
+    const toStr = req.query.to as string | undefined;
+    let endDate: Date | null = null;
+    if (fromStr && toStr && /^\d{4}-\d{2}-\d{2}$/.test(fromStr) && /^\d{4}-\d{2}-\d{2}$/.test(toStr)) {
+      const [fy, fm, fd] = fromStr.split('-').map(Number);
+      const [ty, tm, td] = toStr.split('-').map(Number);
+      const fromUtc = Date.UTC(fy, fm - 1, fd) - IST;
+      const toUtc = Date.UTC(ty, tm - 1, td) - IST + 24 * 60 * 60 * 1000; // end of that IST day
+      if (toUtc > fromUtc) {
+        startDate.setTime(fromUtc);
+        endDate = new Date(toUtc);
+        period = 'custom';
+      }
+    }
+    // effectiveNow is what every "up to now" computation below is bounded
+    // by — real now for the preset periods, or the custom range's end for
+    // a custom (possibly historical) window.
+    const effectiveNow = endDate ? Math.min(Date.now(), endDate.getTime()) : Date.now();
+
     // Verify employee exists
     const employee = await User.findById(id).select('-passwordHash').lean();
     if (!employee) { res.status(404).json({ error: 'Employee not found' }); return; }
 
     // Activity log for the timeframe
-    const activities = await ActivityLog.find({ userId: id, createdAt: { $gte: startDate } })
+    const activities = await ActivityLog.find({
+      userId: id,
+      createdAt: endDate ? { $gte: startDate, $lte: endDate } : { $gte: startDate },
+    })
       .sort({ createdAt: -1 })
       .lean();
 
     // Tasks assigned to user that were touched (created/updated/completed) within the timeframe
     const tasksTouchedInPeriod = await ProjectTask.find({
       assignedTo: id,
-      $or: [
+      $or: endDate ? [
+        { createdAt:   { $gte: startDate, $lte: endDate } },
+        { updatedAt:   { $gte: startDate, $lte: endDate } },
+        { completedAt: { $gte: startDate, $lte: endDate } },
+      ] : [
         { createdAt:   { $gte: startDate } },
         { updatedAt:   { $gte: startDate } },
         { completedAt: { $gte: startDate } },
@@ -704,7 +767,7 @@ export async function getEmployeeReport(req: AuthRequest, res: Response): Promis
     const completedTasks = await ProjectTask.find({
       assignedTo: id,
       status: 'done',
-      completedAt: { $gte: startDate },
+      completedAt: endDate ? { $gte: startDate, $lte: endDate } : { $gte: startDate },
     }).populate('projectId', 'name').sort({ completedAt: -1 }).lean();
 
     // Tasks currently ongoing (not bounded by period — overall pipeline)
@@ -716,19 +779,19 @@ export async function getEmployeeReport(req: AuthRequest, res: Response): Promis
     // Tasks newly assigned to user inside the period
     const totalTasksAssignedInPeriod = await ProjectTask.countDocuments({
       assignedTo: id,
-      createdAt: { $gte: startDate },
+      createdAt: endDate ? { $gte: startDate, $lte: endDate } : { $gte: startDate },
     });
 
     // ── Session time aggregation (working / active / break hours) ──────────
     // Pull every session that overlaps the period: it either started inside
     // the window, or it's still open (no endTime) and was started before.
-    const now = Date.now();
+    const now = effectiveNow;
     const sessions = await Session.find({
       userId: id,
       $or: [
-        { startTime: { $gte: startDate } },                                // started in period
-        { endTime:   { $gte: startDate } },                                // ended in period
-        { status:    { $in: ['active', 'on_break'] } },                    // still running
+        { startTime: endDate ? { $gte: startDate, $lte: endDate } : { $gte: startDate } },  // started in period
+        { endTime:   endDate ? { $gte: startDate, $lte: endDate } : { $gte: startDate } },  // ended in period
+        { startTime: { $lt: startDate }, status: { $in: ['active', 'on_break'] } },         // still running from before
       ],
     }).lean();
 
@@ -814,7 +877,7 @@ export async function getEmployeeReport(req: AuthRequest, res: Response): Promis
     const thirtyDaysAgo = new Date(now - 30 * 86400_000);
     const recentClosed = await Session.find({
       userId: id,
-      startTime: { $gte: thirtyDaysAgo },
+      startTime: endDate ? { $gte: thirtyDaysAgo, $lte: endDate } : { $gte: thirtyDaysAgo },
     }).select('startTime endTime').lean();
 
     const minutesIst = (d: Date) => {
@@ -855,6 +918,7 @@ export async function getEmployeeReport(req: AuthRequest, res: Response): Promis
     res.json({
       period,
       startDate,
+      endDate,
       employee,
       stats: {
         // Tasks

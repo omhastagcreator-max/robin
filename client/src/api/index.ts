@@ -478,8 +478,8 @@ export const aiLeadFollowup         = (id: string, body: { channel?: 'whatsapp' 
 export const aiOrgMorningBrief      = ()           => api.get('/ai-automation/morning-brief').then(r => r.data);
 export const aiRegenerateOrgBrief   = ()           => api.post('/ai-automation/morning-brief', {}).then(r => r.data);
 export const adminRemoveUser = (id: string)                              => api.delete(`/admin/users/${id}`).then(r => r.data);
-export const adminEmployeeReport = (employeeId: string, period: 'daily' | 'weekly' | 'monthly' = 'daily') =>
-  api.get(`/admin/employees/${employeeId}/report`, { params: { period } }).then(r => r.data);
+export const adminEmployeeReport = (employeeId: string, period: 'daily' | 'weekly' | 'monthly' | 'custom' = 'daily', range?: { from: string; to: string }) =>
+  api.get(`/admin/employees/${employeeId}/report`, { params: { period, ...(period === 'custom' && range ? { from: range.from, to: range.to } : {}) } }).then(r => r.data);
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 export const getChatHistory = (params?: Record<string, unknown>) => api.get('/chat/history', { params }).then(r => r.data);
@@ -541,8 +541,10 @@ export const setWorkingDespiteLeave = (workingType: 'full' | 'first_half' | 'sec
 export const adminLeavesSummary = () => api.get('/leaves/admin/summary').then(r => r.data);
 export const adminAttendance    = (date?: string) => api.get('/admin/attendance', { params: date ? { date } : {} }).then(r => r.data);
 export const adminAttendanceMonthly = (month?: string) => api.get('/admin/attendance/monthly', { params: month ? { month } : {} }).then(r => r.data);
-export const adminAttendanceRange   = (from: string, to: string) => api.get('/admin/attendance/range', { params: { from, to } }).then(r => r.data);
-export const adminAttendanceRangeSummary = (from: string, to: string) => api.post('/admin/attendance/range/summary', { from, to }).then(r => r.data);
+export const adminAttendanceRange   = (from: string, to: string, userId?: string) =>
+  api.get('/admin/attendance/range', { params: { from, to, ...(userId ? { userId } : {}) } }).then(r => r.data);
+export const adminAttendanceRangeSummary = (from: string, to: string, userId?: string) =>
+  api.post('/admin/attendance/range/summary', { from, to, ...(userId ? { userId } : {}) }).then(r => r.data);
 
 // ── Meta Ads ──────────────────────────────────────────────────────────────────
 export const metaAdsAccounts        = () => api.get('/ads/meta/accounts').then(r => r.data);

@@ -8,7 +8,10 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 import * as api from '@/api';
 
-type Period = 'daily' | 'weekly' | 'monthly';
+type Period = 'daily' | 'weekly' | 'monthly' | 'custom';
+
+const todayKey = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+const daysAgoKey = (n: number) => new Date(Date.now() + 330 * 60_000 - n * 86400_000).toISOString().slice(0, 10);
 
 interface Props {
   open: boolean;
@@ -19,6 +22,7 @@ interface Props {
 interface ReportPayload {
   period: Period;
   startDate: string;
+  endDate?: string | null;
   employee: any;
   stats: {
     totalTasksDoneInPeriod: number;
@@ -86,7 +90,7 @@ interface TimelineItem {
   meta?: string;
 }
 
-const PERIOD_LABEL: Record<Period, string> = { daily: 'Today', weekly: 'This Week', monthly: 'This Month' };
+const PERIOD_LABEL: Record<Period, string> = { daily: 'Today', weekly: 'This Week', monthly: 'This Month', custom: 'Custom range' };
 
 function buildTimeline(report: ReportPayload): TimelineItem[] {
   const items: TimelineItem[] = [];
@@ -273,6 +277,12 @@ export function EmployeeReportModal({ open, employee, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
 
+  // Custom date range (owner ask, July 2026 — "let me pick a custom
+  // range for one employee, e.g. to process salary"). Defaults to the
+  // last 30 days; only used/sent when period === 'custom'.
+  const [customFrom, setCustomFrom] = useState(daysAgoKey(29));
+  const [customTo, setCustomTo]     = useState(todayKey());
+
   // AI summary state — admin one-click "how is this person doing?"
   // Lazy by default (we don't burn a Gemini call on every modal open);
   // user clicks the AI button when they want the narrative.
@@ -286,19 +296,33 @@ export function EmployeeReportModal({ open, employee, onClose }: Props) {
     if (open) {
       setPeriod('daily'); setReport(null); setError(null);
       setAiText(null); setAiSnap(null); setAiUsed(false);
+      setCustomFrom(daysAgoKey(29)); setCustomTo(todayKey());
     }
   }, [open, employee?._id]);
 
   const generateAi = async () => {
     if (!employee?._id || aiLoading) return;
-    // AI uses a calendar-day window; map our period to a sensible N.
-    const periodDays = period === 'monthly' ? 30 : period === 'weekly' ? 7 : 7;
     setAiLoading(true);
     try {
-      const data = await (await import('@/api')).aiEmployeeReport(employee._id, periodDays);
-      setAiText(data.text);
-      setAiUsed(data.aiUsed);
-      setAiSnap(data.snapshot);
+      if (period === 'custom') {
+        // Custom range uses the SAME attendance-matrix engine + Gemini
+        // prompt as the admin Attendance page's range summary — scoped
+        // to just this employee, so the AI reads EXACTLY the numbers
+        // shown on screen (owner ask: "make sure Robin AI is fed the
+        // same data"). Payroll-framed prompt (flags anything needing
+        // manual review before processing salary).
+        const data = await (await import('@/api')).adminAttendanceRangeSummary(customFrom, customTo, employee._id);
+        setAiText(data.summary);
+        setAiUsed(true);
+        setAiSnap(null);
+      } else {
+        // Preset periods keep the existing task/session-snapshot AI report.
+        const periodDays = period === 'monthly' ? 30 : period === 'weekly' ? 7 : 7;
+        const data = await (await import('@/api')).aiEmployeeReport(employee._id, periodDays);
+        setAiText(data.text);
+        setAiUsed(data.aiUsed);
+        setAiSnap(data.snapshot);
+      }
     } catch (e: any) {
       const status = e?.response?.status;
       if (status === 429)      setAiText('AI is rate-limited right now. Try again in a moment.');
@@ -310,18 +334,19 @@ export function EmployeeReportModal({ open, employee, onClose }: Props) {
     }
   };
 
-  // Fetch report when employee/period changes
+  // Fetch report when employee/period/custom-range changes
   useEffect(() => {
     if (!open || !employee?._id) return;
+    if (period === 'custom' && (!customFrom || !customTo || customTo < customFrom)) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
-    api.adminEmployeeReport(employee._id, period)
+    api.adminEmployeeReport(employee._id, period, period === 'custom' ? { from: customFrom, to: customTo } : undefined)
       .then((data: ReportPayload) => { if (!cancelled) setReport(data); })
       .catch((e: any) => { if (!cancelled) setError(e?.response?.data?.error || e?.message || 'Failed to load report'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [open, employee?._id, period]);
+  }, [open, employee?._id, period, customFrom, customTo]);
 
   // Close on Escape
   useEffect(() => {
@@ -376,7 +401,7 @@ export function EmployeeReportModal({ open, employee, onClose }: Props) {
             {/* Period toggles */}
             <div className="px-5 py-4 border-b border-border">
               <div className="inline-flex bg-muted/40 border border-border rounded-full p-1">
-                {(['daily', 'weekly', 'monthly'] as Period[]).map(p => (
+                {(['daily', 'weekly', 'monthly', 'custom'] as Period[]).map(p => (
                   <button
                     key={p}
                     onClick={() => setPeriod(p)}
@@ -390,10 +415,37 @@ export function EmployeeReportModal({ open, employee, onClose }: Props) {
                   </button>
                 ))}
               </div>
+
+              {/* Custom range pickers — only shown in Custom mode. Useful
+                  for payroll processing: "how was Om's attendance from
+                  X to Y" for any arbitrary window, not just the presets. */}
+              {period === 'custom' && (
+                <div className="flex items-center gap-2 mt-3 flex-wrap">
+                  <label className="flex items-center gap-1.5 text-[11.5px]">
+                    <span className="text-muted-foreground">From</span>
+                    <input
+                      type="date" value={customFrom} max={customTo}
+                      onChange={e => setCustomFrom(e.target.value)}
+                      className="bg-background border border-input rounded-md px-2 h-7 text-[12px] focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1.5 text-[11.5px]">
+                    <span className="text-muted-foreground">To</span>
+                    <input
+                      type="date" value={customTo} min={customFrom} max={todayKey()}
+                      onChange={e => setCustomTo(e.target.value)}
+                      className="bg-background border border-input rounded-md px-2 h-7 text-[12px] focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                  </label>
+                </div>
+              )}
+
               {report && (
                 <p className="text-[11px] text-muted-foreground mt-2 flex items-center gap-1.5">
                   <Calendar className="h-3 w-3" />
-                  Since {format(new Date(report.startDate), 'EEE, dd MMM yyyy h:mm a')}
+                  {period === 'custom' && report.endDate
+                    ? <>{format(new Date(report.startDate), 'dd MMM yyyy')} → {format(new Date(report.endDate), 'dd MMM yyyy')}</>
+                    : <>Since {format(new Date(report.startDate), 'EEE, dd MMM yyyy h:mm a')}</>}
                 </p>
               )}
             </div>
