@@ -40,16 +40,26 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 import User from '../models/User';
 import Organization from '../models/Organization';
 
-// Owner correction (June 2026): "onboarded Bhawna not employee".
-// Role flipped from 'employee' → 'workroom' — the bare-minimum staff
-// role used for floor / support teammates who join the huddle but
-// don't manage tasks, projects, or brand pipelines. She still gets
-// the Meta team tag so admins can see her lane; role determines the
-// permission surface, teams are informational.
+// Owner correction (Aug 2026): "bhawana doesnt have the whole access
+// similar to sakhasi plz do that" — role flipped 'workroom' → 'employee'
+// to match Sakshi exactly (confirmed her role across seed.ts / routes/seed.ts
+// / updateTeamRoles.ts: role 'employee', team 'meta'). 'workroom' is Robin's
+// most restricted staff role (only /workroom, /workroom-home, and
+// /clients/pipeline* — see App.tsx route guards) — it could never give
+// Bhawna "the same access as Sakshi" no matter how many individual routes
+// got workroom added piecemeal, because Sakshi's access comes from being
+// 'employee' (which unlocks /dashboard, /tasks, /chat, /team-pulse,
+// /team-progress, /vault, /leaves, /client-schedule, /ads/meta,
+// /team/calendar, /influencers, /workroom-onboard, plus Client CRM).
+// Promoting the ROLE is the correct fix, not chasing route-by-route parity.
+//
+// Earlier note (June 2026, now superseded): "onboarded Bhawna not
+// employee" flipped her from 'employee' → 'workroom'. That's reversed by
+// this change per the owner's follow-up ask above.
 const DETAILS = {
   email:      'bhawnahastagcreator@gmail.com',
   name:       'Bhawna',
-  role:       'workroom' as const,
+  role:       'employee' as const,
   team:       'meta',
   teams:      ['meta'],
   department: 'Meta Ads',
