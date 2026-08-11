@@ -672,6 +672,7 @@ export async function returnService(req: AuthRequest, res: Response): Promise<vo
       });
     }
 
+    notifyDataChanged(io, orgId, 'service.returned', String(wf._id));
     res.json(wf);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -710,6 +711,7 @@ export async function addNote(req: AuthRequest, res: Response): Promise<void> {
       entityId: String(wf._id), entityType: 'workflow',
     });
 
+    notifyDataChanged(io, orgId, 'workflow.note', String(wf._id));
     res.json(wf);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -879,6 +881,7 @@ export async function blockWorkflow(req: AuthRequest, res: Response): Promise<vo
         },
         postHook: async (wf: any) => { try { await recomputeWorkflowHealth(String(wf._id)); } catch {} },
       });
+      notifyDataChanged(req.app.get('io'), orgId, 'workflow.blocked', req.params.id);
       res.json(result.workflow);
     } catch (err: any) {
       if (err instanceof WorkflowActionError) {
@@ -925,6 +928,7 @@ export async function unblockWorkflow(req: AuthRequest, res: Response): Promise<
         },
         postHook: async (wf: any) => { try { await recomputeWorkflowHealth(String(wf._id)); } catch {} },
       });
+      notifyDataChanged(req.app.get('io'), orgId, 'workflow.unblocked', req.params.id);
       res.json(result.workflow);
     } catch (err: any) {
       if (err instanceof WorkflowActionError) {
@@ -1094,6 +1098,7 @@ export async function bulkWorkflowAction(req: AuthRequest, res: Response): Promi
       });
     }
 
+    if (updated > 0) notifyDataChanged(req.app.get('io'), orgId, 'workflow.bulk', undefined);
     res.json({ updated, skipped, errors, total: ids.length });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });

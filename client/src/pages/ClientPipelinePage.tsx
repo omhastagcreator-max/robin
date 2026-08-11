@@ -6,7 +6,7 @@ import {
   Search, Plus, Loader2, X, Sparkles, Workflow,
   ChevronDown, ChevronRight, CheckCircle2, Circle, AlertTriangle,
   ArrowRight, Users, Activity, Clock, ShieldX, Unlock, MessageSquare,
-  Send, Flame, CalendarClock, Wifi,
+  Send, Flame, CalendarClock, Wifi, Filter,
 } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { toast } from 'sonner';
@@ -24,7 +24,7 @@ import { Avatar } from '@/components/shared/Avatar';
 import { AIInsight } from '@/components/ai/AIInsight';
 import {
   PipelineToolbar, PipelineFocusView, PipelineTableView, PipelineFlowView,
-  usePipelineState, applyFilters, applySort,
+  usePipelineState, applyFilters, applySort, EMPTY_FILTERS,
   type FlowStage,
 } from '@/components/pipeline/PipelineRevamp';
 import { PipelineExecutiveView } from '@/components/pipeline/PipelineExecutiveView';
@@ -107,7 +107,15 @@ export default function ClientPipelinePage() {
   const isAdminOrSales = ['admin', 'sales', 'employee'].includes(role);
 
   const [query, setQuery]       = useState('');
-  const [mineOnly, setMineOnly] = useState(role === 'employee'); // employees default to their own
+  // Aug 2026 — this used to default to true for role==='employee' ("employees
+  // default to their own"). That's what was actually blocking Bhawna: she was
+  // just promoted admin→employee for full access parity with Sakshi, landed
+  // on this page, and this default silently scoped her to services.assignedTo
+  // === her own id — which is empty (she's not in reassignByRole.ts's
+  // DEFAULT_RULES), so the list looked blank. "Full access similar to Sakshi"
+  // means full visibility by default; the Mine-only toggle is still right
+  // there for anyone who wants to narrow it themselves.
+  const [mineOnly, setMineOnly] = useState(false);
   const [list, setList]         = useState<Workflow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -221,6 +229,28 @@ export default function ClientPipelinePage() {
   // don't touch the loading flag and skip the state update when the data
   // hasn't actually changed, so the user never sees a flicker.
   useVisiblePoll(() => load({ background: true }), 300_000, [query, mineOnly]);
+
+  // Aug 2026 — owner ask: "the same data should sync across all roles."
+  // Don't make anyone wait up to 5 minutes for the poll: AppLayout
+  // re-dispatches the server's 'data:changed' socket event (fired on
+  // every workflow create/update/service change — see notify.ts) as a
+  // DOM CustomEvent so any page can listen without its own socket
+  // plumbing. One person editing a client now shows up for every other
+  // role within a second or two, not on the next poll tick.
+  useEffect(() => {
+    // Deliberately NOT filtering by `kind` here — the emitted kinds
+    // (workflow.created/updated, checklist.toggled, service.completed,
+    // service.returned, workflow.note, workflow.blocked/unblocked,
+    // workflow.bulk, performance entries...) keep growing, and missing
+    // one would silently reintroduce "stale until next 5-min poll" for
+    // that action. `load({background:true})` already no-ops when the
+    // fetched data is byte-identical, so an occasional irrelevant
+    // refresh costs one cheap GET, not a re-render.
+    const onDataChanged = () => load({ background: true });
+    window.addEventListener('robin:data-changed', onDataChanged);
+    return () => window.removeEventListener('robin:data-changed', onDataChanged);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, mineOnly]);
 
   // Apply client-side filters (server already handled q + mineOnly).
   // Filter first, then sort. Sort is stable so two equal priorities
@@ -364,6 +394,31 @@ export default function ClientPipelinePage() {
           <div className="py-16 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : list.length === 0 ? (
           <EmptyState query={query} isAdminOrSales={isAdminOrSales} onCreate={() => setShowCreate(true)} />
+        ) : filteredList.length === 0 ? (
+          // Aug 2026 — this exact "data loaded fine, filters/mine-only
+          // silently zeroed it out" case is what made the Bhawna access
+          // fix look broken three times in a row: the API correctly
+          // returned all `list.length` clients, but a leftover filter
+          // chip or "Mine only" toggle (persisted per-browser in
+          // localStorage) filtered them all out with no explanation.
+          // Never let that look like "no access" again.
+          <div className="py-16 flex flex-col items-center gap-3 text-center">
+            <Filter className="h-8 w-8 text-muted-foreground/50" />
+            <p className="text-sm font-semibold">
+              {list.length} client{list.length === 1 ? '' : 's'} loaded, but your filters are hiding all of them.
+            </p>
+            <p className="text-xs text-muted-foreground max-w-sm">
+              {mineOnly ? '"Mine only" is on, ' : ''}
+              {filters.health || filters.team || filters.priority || filters.blocker ? 'one or more filter chips are active. ' : ''}
+              Clear them to see the full list.
+            </p>
+            <button
+              onClick={() => { setFilters(EMPTY_FILTERS); setMineOnly(false); }}
+              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90"
+            >
+              Clear filters
+            </button>
+          </div>
         ) : view === 'focused' ? (
           <PipelineFocusedView
             list={filteredList}

@@ -55,6 +55,20 @@ export function ClientPerformanceCalendar({ workflowId }: { workflowId: string }
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [workflowId, tab, year, monthIdx]);
 
+  // Aug 2026 — sync across roles: if a teammate logs a spend/sales entry
+  // for this same client while I'm looking at the calendar, pick it up
+  // without a manual refresh.
+  useEffect(() => {
+    const onDataChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { entity?: string } | undefined;
+      if (detail?.entity && detail.entity !== workflowId) return;
+      load();
+    };
+    window.addEventListener('robin:data-changed', onDataChanged);
+    return () => window.removeEventListener('robin:data-changed', onDataChanged);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflowId, tab, year, monthIdx]);
+
   const byKey = useMemo(() => {
     const m = new Map<string, ClientPerformanceEntry>();
     entries.forEach(e => m.set(e.periodKey, e));

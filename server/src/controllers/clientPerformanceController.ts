@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/authMiddleware';
 import ClientWorkflow from '../models/ClientWorkflow';
 import ClientPerformanceEntry from '../models/ClientPerformanceEntry';
 import User from '../models/User';
+import { notifyDataChanged } from '../services/notify';
 
 /**
  * Per-client performance calendar — Meta Ads spend / sales achieved /
@@ -142,6 +143,10 @@ export async function upsertPerformance(req: AuthRequest, res: Response): Promis
       { $set: update },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     );
+    // Aug 2026 — "same data should sync across all roles": anyone else
+    // looking at this client's performance calendar picks up the new
+    // entry without waiting on a manual refresh.
+    notifyDataChanged(req.app.get('io'), orgId, 'performance.updated', String(wf._id));
     res.json(entry);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }

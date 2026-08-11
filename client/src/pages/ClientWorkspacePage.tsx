@@ -212,6 +212,22 @@ export default function ClientWorkspacePage() {
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
+  // Aug 2026 — owner ask: "the same data should sync across all roles."
+  // Re-fetch this workflow whenever ANY role saves a change to it
+  // elsewhere (edit details, checklist tick, performance entry, etc.)
+  // instead of only on next manual navigation. See notify.ts's
+  // notifyDataChanged + AppLayout's 'robin:data-changed' re-dispatch.
+  useEffect(() => {
+    const onDataChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { kind?: string; entity?: string } | undefined;
+      if (detail?.entity && detail.entity !== id) return; // a different workflow changed
+      load();
+    };
+    window.addEventListener('robin:data-changed', onDataChanged);
+    return () => window.removeEventListener('robin:data-changed', onDataChanged);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
   useEffect(() => {
     api.listUsers()
       .then((arr: any[]) => {
