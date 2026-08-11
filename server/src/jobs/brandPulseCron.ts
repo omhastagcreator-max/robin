@@ -67,8 +67,10 @@ const PRIYANKA = /priyanka/i;
 
 export const BRAND_ROUTING: BrandRoute[] = [
   { brand: /sroja/i,                people: [{ name: OM }] },
-  { brand: /vellore/i,              people: [{ name: SHAKSHI }, { name: OM }] },
-  { brand: /history/i,              people: [{ name: SHAKSHI }, { name: OM }] },
+  // Vellore + History removed (Aug 2026 owner ask: "remove all the old
+  // brand history, vellore from the whole robin") — both brands and all
+  // their data were purged via server/src/scripts/purgeBrand.ts. Do not
+  // re-add these routing entries unless the brands come back.
   // Darpan — engagement brand, not sales (owner rule):
   //   Shakshi → Meta ads + engagement · Priyanka → scripts/content ·
   //   Om → overall (everything except sales questions).

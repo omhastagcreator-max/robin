@@ -22,7 +22,8 @@
     "reset-password":  "ts-node src/scripts/resetPassword.ts",
     "backdate-session": "ts-node src/scripts/backdateSessionStart.ts",
     "inspect-session": "ts-node src/scripts/inspectSession.ts",
-    "bulk-add-website-clients": "ts-node src/scripts/bulkAddWebsiteClients.ts"
+    "bulk-add-website-clients": "ts-node src/scripts/bulkAddWebsiteClients.ts",
+    "purge-brand": "ts-node src/scripts/purgeBrand.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
