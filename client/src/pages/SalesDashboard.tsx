@@ -172,6 +172,11 @@ export default function SalesDashboard() {
     `U:${u.map(x => x._id).join(',')}|` +
     `D:${d.map(x => `${x._id}/${x.status || ''}`).join(',')}`;
 
+  // Counts consecutive *initial*-load failures so we can back off instead of
+  // hammering the server, while still recovering automatically without the
+  // rep having to manually refresh again.
+  const loadRetryRef = useRef(0);
+
   const load = useCallback(async () => {
     // First call → drive the full-screen spinner. Subsequent calls (after
     // any CRUD action) → silent refresh; keep the existing data visible
@@ -198,11 +203,36 @@ export default function SalesDashboard() {
         setClients(uu);
         setDeals(dd);
       }
-    } finally {
       initialLoadDone.current = true;
-      setLoading(false);
-      setRefreshing(false);
+      loadRetryRef.current = 0;
+    } catch (err) {
+      // IMPORTANT: previously this had no catch. A single transient error
+      // on the very first load after a hard refresh — a 401 from the JWT
+      // sliding-refresh race, a cold-start blip not covered by axios's
+      // built-in retry, a dropped request — left `leads/clients/deals` on
+      // their initial empty arrays FOREVER (the old `finally` marked the
+      // load "done" even on failure), so the whole pipeline looked wiped
+      // until the 2-minute background poll happened to succeed. No toast
+      // ever fired for the 401 case, so it looked like silent data loss.
+      console.warn('[sales-dashboard] load failed', (err as any)?.message || err);
+      if (!initialLoadDone.current) {
+        // Don't mark it "done" — keep the spinner up and retry shortly with
+        // a short backoff instead of flashing an empty dashboard. Bail out
+        // of this call WITHOUT touching loading/refreshing so the spinner
+        // stays visible until the retry (or final give-up) resolves it.
+        loadRetryRef.current += 1;
+        if (loadRetryRef.current <= 5) {
+          setTimeout(() => { load(); }, Math.min(1500 * loadRetryRef.current, 8000));
+        } else {
+          setLoading(false);
+          setRefreshing(false);
+          toast.error('Could not load sales data — check your connection and refresh.');
+        }
+        return;
+      }
     }
+    setLoading(false);
+    setRefreshing(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
