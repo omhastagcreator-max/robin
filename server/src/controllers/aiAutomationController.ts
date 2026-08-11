@@ -12,6 +12,7 @@ import Session from '../models/Session';
 import Deal from '../models/Deal';
 import ProjectTask from '../models/ProjectTask';
 import MorningBrief from '../models/MorningBrief';
+import LeaveApplication from '../models/LeaveApplication';
 
 // Local helper — matches the inline pattern used in other controllers.
 async function getOrgId(userId: string): Promise<string | null> {
@@ -779,6 +780,21 @@ export async function employeeReportEndpoint(req: AuthRequest, res: Response): P
       dueDate: { $lt: new Date() },
     });
 
+    // Approved leave days inside the report window — owner ask (July
+    // 2026): feed the same leave data into the AI narrative as the
+    // report's own "Leaves taken" stat, so the two never disagree.
+    const IST = 330 * 60_000;
+    const leaveApps = await LeaveApplication.find({
+      userId, status: 'approved',
+      'days.date': { $gte: new Date(startMs - dayMs), $lte: new Date(now + dayMs) },
+    }).lean();
+    const leaveDateSet = new Set<string>();
+    for (const l of leaveApps) for (const d of (l as any).days || []) {
+      const dm = new Date(d.date).getTime();
+      if (dm >= startMs && dm <= now) leaveDateSet.add(new Date(dm + IST).toISOString().slice(0, 10));
+    }
+    const leaveDates = [...leaveDateSet].sort();
+
     const snap: EmployeeReportInput = {
       name: emp.name || emp.email || 'Unknown',
       role: emp.role,
@@ -803,6 +819,7 @@ export async function employeeReportEndpoint(req: AuthRequest, res: Response): P
         ongoing:   tasksOngoing,
         overdue:   tasksOverdue,
       },
+      leaves: { count: leaveDates.length, dates: leaveDates },
     };
 
     const cacheKey = `emp-report:${userId}:${periodDays}d:${days[days.length-1]?.workedMin || 0}`;

@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Phone, Mail, AlertTriangle, Sparkles, ChevronDown, ChevronUp,
   CheckCircle2, Loader2, RotateCcw, ShieldX, Unlock, Plane,
-  Clock, Flag,
+  Clock, Flag, Pencil, LineChart,
 } from 'lucide-react';
 // Clock is used by BrandTaskEtaInline below; harmless if also used above.
 
@@ -16,6 +16,8 @@ import { CommentRequiredModal } from '@/components/shared/CommentRequiredModal';
 import { WarRoomBanner } from '@/components/workspace/WarRoomBanner';
 import { PipelineNavBar } from '@/components/pipeline/PipelineNavBar';
 import { BrandPipelinePie } from '@/components/clients/BrandPipelinePie';
+import { EditClientDetailsModal } from '@/components/clients/EditClientDetailsModal';
+import { ClientPerformanceCalendar } from '@/components/clients/ClientPerformanceCalendar';
 import { useAuth } from '@/contexts/AuthContext';
 import * as api from '@/api';
 
@@ -97,6 +99,8 @@ interface Workflow {
   delayCause?: string;
   riskScore?: number;
   predictedCompletionAt?: string | null;
+  paymentStatus?: string;
+  tags?: string[];
 }
 interface UserLite { _id: string; name?: string }
 
@@ -195,6 +199,10 @@ export default function ClientWorkspacePage() {
   const [aiBusy, setAiBusy]       = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [onLeaveIds, setOnLeaveIds] = useState<Set<string>>(new Set());
+  // Aug 2026 — full client-detail edit + performance calendar, open to
+  // every staff role (owner ask).
+  const [editDetailsOpen, setEditDetailsOpen] = useState(false);
+  const [perfOpen, setPerfOpen] = useState(false);
 
   const load = async () => {
     if (!id) return;
@@ -365,6 +373,7 @@ export default function ClientWorkspacePage() {
             currentStageLabel={currentStageLabel}
             ownerName={ownerName}
             launchLabel={launchLabel}
+            onEdit={() => setEditDetailsOpen(true)}
           />
 
           {/* ── 2. ATTENTION REQUIRED (only when blocked) ───────── */}
@@ -460,8 +469,46 @@ export default function ClientWorkspacePage() {
             doneCount={doneCount}
             services={wf.services}
           />
+
+          {/* ── 8. PERFORMANCE — Meta Ads spend / sales achieved / target,
+              daily · weekly · monthly (Aug 2026 owner ask) ─────────── */}
+          <button
+            onClick={() => setPerfOpen(o => !o)}
+            className="w-full px-4 py-2 flex items-center justify-between gap-2 hover:bg-muted/30 text-left text-[12px] border-t border-border"
+          >
+            <div className="flex items-center gap-2">
+              <LineChart className="h-3.5 w-3.5 text-muted-foreground" />
+              <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-muted-foreground">Performance calendar</p>
+            </div>
+            {perfOpen ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+          </button>
+          <AnimatePresence initial={false}>
+            {perfOpen && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden border-t border-border">
+                <div className="p-4">
+                  <ClientPerformanceCalendar workflowId={wf._id} />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
+
+      {editDetailsOpen && (
+        <EditClientDetailsModal
+          workflowId={wf._id}
+          initial={{
+            clientName: wf.clientName,
+            clientPhone: wf.clientPhone,
+            clientEmail: wf.clientEmail,
+            priority: wf.priority,
+            paymentStatus: wf.paymentStatus,
+            tags: wf.tags,
+          }}
+          onClose={() => setEditDetailsOpen(false)}
+          onSaved={(updated) => { setWf(updated as Workflow); setEditDetailsOpen(false); bumpActivity(); }}
+        />
+      )}
 
       {/* Modals */}
       {blockOpen && (
@@ -494,13 +541,14 @@ export default function ClientWorkspacePage() {
 // 1. Header strip
 // ─────────────────────────────────────────────────────────────────────
 function HeaderStrip({
-  wf, health, currentStageLabel, ownerName, launchLabel,
+  wf, health, currentStageLabel, ownerName, launchLabel, onEdit,
 }: {
   wf: Workflow;
   health: ReturnType<typeof healthDisplay>;
   currentStageLabel: string;
   ownerName?: string;
   launchLabel: string;
+  onEdit: () => void;
 }) {
   const healthCls =
     health.tone === 'success' ? 'text-emerald-700' :
@@ -514,7 +562,13 @@ function HeaderStrip({
           {initials(wf.clientName)}
         </div>
         <div className="min-w-0">
-          <h1 className="text-[17px] font-bold leading-none truncate">{wf.clientName}</h1>
+          <div className="flex items-center gap-1.5">
+            <h1 className="text-[17px] font-bold leading-none truncate">{wf.clientName}</h1>
+            {/* Aug 2026 — every staff role can edit client details, not just admin/sales. */}
+            <button onClick={onEdit} title="Edit client details" className="text-muted-foreground hover:text-primary shrink-0">
+              <Pencil className="h-3 w-3" />
+            </button>
+          </div>
           <div className="flex items-center gap-2.5 text-[10.5px] text-muted-foreground mt-0.5">
             {wf.clientPhone && <a href={`tel:${wf.clientPhone}`} className="hover:text-primary tabular-nums inline-flex items-center gap-1"><Phone className="h-2.5 w-2.5" />{wf.clientPhone}</a>}
             {wf.clientEmail && <a href={`mailto:${wf.clientEmail}`} className="hover:text-foreground inline-flex items-center gap-1 truncate"><Mail className="h-2.5 w-2.5" />{wf.clientEmail}</a>}

@@ -970,7 +970,7 @@ Answer in 1-3 short paragraphs. No markdown headers, no code blocks unless requi
 // ─────────────────────────────────────────────────────────────────────────
 const EMPLOYEE_REPORT_SYSTEM = `You write an admin-facing employee status report for the agency owner in HINGLISH (casual Hindi-English mix, NOT formal Hindi, NOT pure English). Sound like a teammate giving the owner a quick read on someone.
 
-You will receive a JSON snapshot of one employee's recent work: per-day session totals (worked, break, on-call), task throughput (completed, ongoing, overdue), activity counts, and pattern flags ("shortBreakDays", "noBreakDays", "lateStartDays", "longBreakDays").
+You will receive a JSON snapshot of one employee's recent work: per-day session totals (worked, break, on-call), task throughput (completed, ongoing, overdue), activity counts, pattern flags ("shortBreakDays", "noBreakDays", "lateStartDays", "longBreakDays"), and approved leave days taken in the period ("leaves": {"count", "dates"}). If leaves.count > 0, mention it plainly in paragraph 1 (e.g. "is hafte 2 din leave pe tha") — it's context, not a problem.
 
 Output: TWO short paragraphs of plain text, no markdown, no bullets, no greeting / sign-off. Roughly 60-120 words total. NO heavy English words, NO Sanskritised Hindi.
 
@@ -1017,6 +1017,11 @@ export interface EmployeeReportInput {
     assigned:  number;
     ongoing:   number;
     overdue:   number;
+  };
+  // Approved leave days that fall inside the report period.
+  leaves?: {
+    count: number;
+    dates: string[];   // YYYY-MM-DD
   };
 }
 

@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   X, BarChart2, CheckCircle2, ListTodo, Activity as ActivityIcon, Loader2,
   Calendar, Clock, FileText, FolderKanban, ArrowRight,
-  Timer, Coffee, Zap, AlertTriangle, TrendingUp,
+  Timer, Coffee, Zap, AlertTriangle, TrendingUp, CalendarOff,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import * as api from '@/api';
@@ -66,6 +66,10 @@ interface ReportPayload {
       lastEnd: string | null; // ISO or null
       sessionCount: number;
     }>;
+  };
+  leaves?: {
+    count: number;
+    days: Array<{ date: string; reason: string }>;
   };
 }
 
@@ -537,6 +541,18 @@ export function EmployeeReportModal({ open, employee, onClose }: Props) {
                     <StatCard icon={ListTodo}     label="Tasks Ongoing"     value={report.stats.totalTasksOngoing}          color="bg-blue-500/15 text-blue-500" />
                     <StatCard icon={ArrowRight}   label="Newly Assigned"    value={report.stats.totalTasksAssignedInPeriod} color="bg-amber-500/15 text-amber-500" />
                     <StatCard icon={ActivityIcon} label="Activity Count"    value={report.stats.activityCount}              color="bg-primary/15 text-primary" />
+                    {/* Leaves taken — owner ask (July 2026): needed for
+                        payroll processing alongside worked hours. Only
+                        rendered when the report carries leave data
+                        (older cached responses won't have it). */}
+                    {report.leaves && (
+                      <StatCard
+                        icon={CalendarOff}
+                        label="Leaves Taken"
+                        value={report.leaves.count}
+                        color={report.leaves.count > 0 ? 'bg-indigo-500/15 text-indigo-500' : 'bg-muted text-muted-foreground'}
+                      />
+                    )}
                   </div>
 
                   {/* Time stats — Working / Active / Break */}
@@ -560,6 +576,11 @@ export function EmployeeReportModal({ open, employee, onClose }: Props) {
                   {/* Attendance — typical start/end + per-day timestamps */}
                   {report.attendance && (
                     <AttendancePanel attendance={report.attendance} />
+                  )}
+
+                  {/* Leaves taken — dates + reasons, for payroll review */}
+                  {report.leaves && report.leaves.count > 0 && (
+                    <LeavesPanel leaves={report.leaves} />
                   )}
 
                   {/* Task completion summary — brief info */}
@@ -691,6 +712,36 @@ function AttendancePanel({ attendance }: { attendance: NonNullable<ReportPayload
       ) : (
         <p className="text-[11px] text-muted-foreground italic">No clock-in days in this period.</p>
       )}
+    </div>
+  );
+}
+
+function LeavesPanel({ leaves }: { leaves: NonNullable<ReportPayload['leaves']> }) {
+  const fmtDay = (yyyymmdd: string) => {
+    const [y, m, d] = yyyymmdd.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+  };
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="h-11 w-11 rounded-xl bg-indigo-500/15 flex items-center justify-center">
+          <CalendarOff className="h-5 w-5 text-indigo-500" />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-semibold">Leaves taken</p>
+          <p className="text-[11px] text-muted-foreground">
+            {leaves.count} approved leave day{leaves.count === 1 ? '' : 's'} in this period — factor into payroll.
+          </p>
+        </div>
+      </div>
+      <div className="border border-border/60 rounded-xl divide-y divide-border/40 max-h-48 overflow-y-auto">
+        {leaves.days.map(d => (
+          <div key={d.date} className="px-3 py-2 flex items-center gap-3 text-xs">
+            <span className="font-medium tabular-nums shrink-0">{fmtDay(d.date)}</span>
+            <span className="text-muted-foreground truncate">{d.reason || '—'}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

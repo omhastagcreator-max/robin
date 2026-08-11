@@ -202,6 +202,95 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
+// ── Edit client details ──────────────────────────────────────────────────
+/**
+ * PUT /api/client-workflows/:id/details
+ *
+ * Aug 2026 — owner ask: "make sure the employees are able to edit a
+ * client details fully". Lets any staff role (route already gates to
+ * admin/employee/sales/workroom) update the client-facing fields:
+ *   clientName, clientPhone, clientEmail, priority, tags, paymentStatus
+ *
+ * clientName/Phone/Email are denormalized copies of the linked User
+ * (see createWorkflow above) — this endpoint keeps BOTH in sync so the
+ * two don't drift: it patches the ClientWorkflow doc AND best-effort
+ * patches the underlying User(role:'client') record (name/phone only —
+ * email is left alone here since it's also the login identifier and
+ * changing it has bigger implications than a CRM detail edit; use the
+ * dedicated admin user-edit flow for that if it's ever needed).
+ *
+ * Every change is written to the activity log so "visible across the
+ * Robin ecosystem" also means "who changed what, when" stays auditable
+ * — same convention as every other mutation in this controller.
+ */
+const EDITABLE_DETAIL_FIELDS = ['clientName', 'clientPhone', 'clientEmail', 'priority', 'tags', 'paymentStatus'] as const;
+const VALID_PRIORITIES_DETAIL = ['urgent', 'high', 'medium', 'low'];
+const VALID_PAYMENT_STATUSES = ['pending', 'partial', 'paid', 'overdue', 'na'];
+
+export async function updateWorkflowDetails(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+    const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
+    if (!canSeeWorkflow(wf, req.user!.id, req.user!.role)) {
+      res.status(403).json({ error: 'Not authorized to edit this client' });
+      return;
+    }
+
+    const body = req.body || {};
+    if (body.priority !== undefined && !VALID_PRIORITIES_DETAIL.includes(String(body.priority))) {
+      res.status(400).json({ error: `priority must be one of ${VALID_PRIORITIES_DETAIL.join(', ')}` });
+      return;
+    }
+    if (body.paymentStatus !== undefined && !VALID_PAYMENT_STATUSES.includes(String(body.paymentStatus))) {
+      res.status(400).json({ error: `paymentStatus must be one of ${VALID_PAYMENT_STATUSES.join(', ')}` });
+      return;
+    }
+    if (body.tags !== undefined && !Array.isArray(body.tags)) {
+      res.status(400).json({ error: 'tags must be an array of strings' });
+      return;
+    }
+
+    const changes: string[] = [];
+    for (const field of EDITABLE_DETAIL_FIELDS) {
+      if (body[field] === undefined) continue;
+      const next = field === 'tags' ? body.tags : String(body[field]).trim();
+      const prev = (wf as any)[field];
+      if (JSON.stringify(prev) === JSON.stringify(next)) continue;
+      (wf as any)[field] = next;
+      changes.push(field);
+    }
+
+    if (changes.length === 0) { res.json(wf); return; }
+
+    wf.activity.push({
+      actorId: req.user!.id,
+      action: 'details_updated',
+      detail: `Updated: ${changes.join(', ')}`,
+    } as any);
+    await wf.save();
+
+    // Best-effort keep the linked client login's name/phone in sync so
+    // the two copies don't drift (see docstring above). Never fails the
+    // request if the User update has a hiccup — the CRM edit already
+    // succeeded and is the source of truth for this endpoint.
+    if ((changes.includes('clientName') || changes.includes('clientPhone')) && wf.clientId) {
+      try {
+        const patch: any = {};
+        if (changes.includes('clientName'))  patch.name  = wf.clientName;
+        if (changes.includes('clientPhone')) patch.phone = wf.clientPhone;
+        await User.updateOne({ _id: wf.clientId, organizationId: orgId, role: 'client' }, { $set: patch });
+      } catch (syncErr) {
+        console.warn('[updateWorkflowDetails] User sync failed (non-fatal):', (syncErr as Error).message);
+      }
+    }
+
+    notifyDataChanged(req.app.get('io'), orgId, 'workflow.updated', String(wf._id));
+    res.json(wf);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
 // ── List / search ────────────────────────────────────────────────────────
 /**
  * GET /api/client-workflows

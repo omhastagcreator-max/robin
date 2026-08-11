@@ -269,6 +269,40 @@ export const cwListActivity     = (wid: string, params: { cursor?: string; limit
     nextCursor: string | null;
   });
 
+// Aug 2026 — full client-detail edit, open to every staff role.
+export const cwUpdateDetails = (wid: string, body: Partial<{
+  clientName: string; clientPhone: string; clientEmail: string;
+  priority: 'urgent' | 'high' | 'medium' | 'low';
+  tags: string[];
+  paymentStatus: 'pending' | 'partial' | 'paid' | 'overdue' | 'na';
+}>) => api.put(`/client-workflows/${wid}/details`, body).then(r => r.data);
+
+// Aug 2026 — per-client performance calendar (Meta Ads spend / sales
+// achieved / sales target), logged per day / week / month.
+export interface ClientPerformanceEntry {
+  _id: string;
+  periodType: 'day' | 'week' | 'month';
+  periodKey: string;
+  periodStart: string;
+  periodEnd: string;
+  metaAdsSpend: number;
+  salesAchieved: number;
+  salesTarget: number;
+  notes?: string;
+  enteredBy?: string;
+  updatedAt?: string;
+}
+export const cwGetPerformance = (wid: string, params: { periodType: 'day' | 'week' | 'month'; from?: string; to?: string }) =>
+  api.get(`/client-workflows/${wid}/performance`, { params }).then(r => r.data as ClientPerformanceEntry[]);
+export const cwUpsertPerformance = (wid: string, body: {
+  periodType: 'day' | 'week' | 'month';
+  periodKey: string;
+  metaAdsSpend?: number;
+  salesAchieved?: number;
+  salesTarget?: number;
+  notes?: string;
+}) => api.put(`/client-workflows/${wid}/performance`, body).then(r => r.data as ClientPerformanceEntry);
+
 // ── Client Schedule (per-employee weekly calendar of clients to serve) ──
 export const listClientSchedule = (params: { from?: string; to?: string; userId?: string } = {}) =>
   api.get('/client-schedule', { params }).then(r => r.data);

@@ -828,6 +828,32 @@ export async function getEmployeeReport(req: AuthRequest, res: Response): Promis
       t.dueDate && new Date(t.dueDate).getTime() < now
     ).length;
 
+    // ── Leaves taken in the report period (owner ask, July 2026) ──────────
+    // Approved leaves only — matches the definition used everywhere else
+    // (Attendance Monthly/Calendar/Range views, My Hours). Bounded to the
+    // SAME [startDate, endDate||now] window as the rest of this report so
+    // "Custom range" payroll processing sees exactly the leave days that
+    // fall inside the chosen window. (IST already declared above, in the
+    // custom-range parsing block.)
+    const leaveWindowEnd = endDate ? endDate.getTime() : now;
+    const leaveApps = await LeaveApplication.find({
+      userId: id, status: 'approved',
+      'days.date': { $gte: new Date(startDate.getTime() - 24 * 3600_000), $lte: new Date(leaveWindowEnd + 24 * 3600_000) },
+    }).lean();
+    const leaveDaysMap = new Map<string, string>();   // date → reason
+    for (const l of leaveApps) {
+      for (const d of (l as any).days || []) {
+        const dm = new Date(d.date).getTime();
+        if (dm >= startDate.getTime() && dm <= leaveWindowEnd) {
+          const key = new Date(dm + IST).toISOString().slice(0, 10);
+          leaveDaysMap.set(key, (d as any).reason || '');
+        }
+      }
+    }
+    const leaveDays = [...leaveDaysMap.entries()]
+      .map(([date, reason]) => ({ date, reason }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
     // ── Attendance: per-day clock-in/out + averages over last 30 days ─────
     // We pull a wider window (30 days) for the *averages* so they're
     // statistically meaningful, but the per-day list is scoped to the
@@ -954,6 +980,10 @@ export async function getEmployeeReport(req: AuthRequest, res: Response): Promis
         sampleSize:     recentByDate.size,    // how many days the avg is based on
         // Per-day attendance for the REPORT PERIOD only.
         days: dailyAttendance,
+      },
+      leaves: {
+        count: leaveDays.length,
+        days: leaveDays,
       },
     });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
