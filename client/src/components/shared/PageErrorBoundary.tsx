@@ -3,6 +3,9 @@ import { AlertTriangle, RefreshCcw, Home } from 'lucide-react';
 import { reportError } from '@/lib/errorReporter';
 import { isChunkLoadFailure, recoverFromChunkFailure } from '@/lib/chunkRecovery';
 
+interface Props { children: ReactNode; fallback?: ReactNode; }
+interface State { error: Error | null; }
+
 /**
  * Catches React render errors anywhere in its subtree. Shows a friendly
  * fallback instead of a blank white screen, AND reports the error to the
