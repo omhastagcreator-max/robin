@@ -80,16 +80,27 @@ export const BRAND_ROUTING: BrandRoute[] = [
     { name: PRIYANKA, kinds: ['content_script'] },
   ]},
   { brand: /ghee/i,                 people: [{ name: NEERAJ }, { name: BHAWANA }, { name: OM }] },
-  { brand: /dpk/i,                  people: [{ name: BHAWANA }, { name: OM }] },
   { brand: /oudfy/i,                people: [{ name: OM }, { name: BHAWANA }] },
-  { brand: /shrikanth/i,            people: [{ name: BHAWANA }, { name: OM }] },
   { brand: /height\s*ayura|ayura/i, people: [{ name: SHAKSHI }, { name: OM }] },
   { brand: /moto\s*casa/i,          people: [{ name: SHAKSHI }, { name: OM }] },
   { brand: /ardo/i,                 people: [{ name: SHAKSHI }, { name: OM }] },
   { brand: /bombay/i,               people: [{ name: SHAKSHI }] },
   { brand: /woodsify/i,             people: [{ name: SHAKSHI }] },
   { brand: /dufft/i,                people: [{ name: OM }] },
-  { brand: /bazaar|qatar/i,         people: [{ name: SHAKSHI }] },
+  // Polmouni has no explicit routing entry yet — falls back to
+  // services[].assignedTo (Om, per bulkAddWebsiteClients.ts), then
+  // "anyone" clocked in. Add an explicit entry here once the owner says
+  // who should own Polmouni's pulse questions.
+  //
+  // Aug 2026 — owner ask: "the pop[up] should be for these brands only."
+  // Pruned /dpk/i, /shrikanth/i, /bazaar|qatar/i — none of those three
+  // are in the current 11-brand keep-list (see
+  // server/src/scripts/keepOnlyBrands.ts) and don't correspond to any
+  // live ClientWorkflow doc anymore. The pulse's brand pool is already
+  // just "every live ClientWorkflow in the org" (see the ClientWorkflow.find
+  // below), so removing their routing entries doesn't change WHICH brands
+  // get asked about — it only removes dead routing rules for brands that
+  // no longer exist, keeping this table honest about the current 11.
 ];
 
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];

@@ -67,7 +67,14 @@ const APPLY = process.argv.includes('--apply');
 
 // The two brands being purged this run — see docstring above for why
 // both are needed even though the owner's sheet showed one combined row.
-const BRAND_PATTERNS = [/vellor/i, /\bhistory\b/i];
+// Aug 2026 — broadened /vellor/i → /^vell/i after "Velloer Living" (an
+// inconsistent spelling of the same brand — see seedDummyPipelines.ts's
+// own cleanup list, which already knew about both "Vellore Living" AND
+// "Velloer Living") slipped through the narrower pattern and kept
+// showing up in the Client CRM. Prefix match on a brand-name field is
+// safe here — these regexes only ever run against clientName/name/
+// company/label, never free text.
+const BRAND_PATTERNS = [/^vell/i, /\bhistory\b/i];
 const matchesBrand = (s?: string | null) => !!s && BRAND_PATTERNS.some(re => re.test(s));
 const combinedRegex = new RegExp(BRAND_PATTERNS.map(re => re.source).join('|'), 'i');
 
@@ -116,9 +123,25 @@ function toObjectIdSafe(id: string): Types.ObjectId | null {
     .select('_id name').lean();
   namedClientUsers.forEach(u => clientIdStrings.add(String(u._id)));
 
-  console.log(`\nLinked client User accounts (${clientIdStrings.size}):`);
-  if (clientIdStrings.size > 0) {
-    const users = await User.find({ _id: { $in: Array.from(clientIdStrings) } }).select('_id name email').lean();
+  // Some older demo/seed ClientWorkflow docs stored a non-ObjectId
+  // placeholder in clientId (e.g. "dummy:vellore-living" from a seed
+  // script that never linked a real User). Mongoose throws a CastError
+  // if ANY of these hit a User query's $in — filter to valid ObjectId
+  // strings only, and just report the bogus ones instead of crashing.
+  const clientObjectIds: Types.ObjectId[] = [];
+  const invalidClientIdStrings: string[] = [];
+  for (const s of clientIdStrings) {
+    const oid = toObjectIdSafe(s);
+    if (oid) clientObjectIds.push(oid);
+    else invalidClientIdStrings.push(s);
+  }
+  if (invalidClientIdStrings.length > 0) {
+    console.log(`\nNon-ObjectId clientId value(s) found on matched docs (skipped, no linked User to delete): ${invalidClientIdStrings.join(', ')}`);
+  }
+
+  console.log(`\nLinked client User accounts (${clientObjectIds.length}):`);
+  if (clientObjectIds.length > 0) {
+    const users = await User.find({ _id: { $in: clientObjectIds } }).select('_id name email').lean();
     users.forEach(u => console.log(`  - ${u.name} <${u.email}>  (${String(u._id)})`));
   }
 
@@ -152,7 +175,7 @@ function toObjectIdSafe(id: string): Types.ObjectId | null {
   }
 
   // FocusList — count items that would be $pull'd, not whole docs.
-  const clientObjectIds = Array.from(clientIdStrings).map(toObjectIdSafe).filter((v): v is Types.ObjectId => v !== null);
+  // (clientObjectIds was already built above, right after clientIdStrings.)
   const focusLists = await FocusList.find({
     organizationId: org._id,
     $or: [
@@ -203,8 +226,10 @@ function toObjectIdSafe(id: string): Types.ObjectId | null {
   const dp = await Project.deleteMany({ _id: { $in: legacyProjects.map(p => p._id) } });
   console.log(`Deleted ${dp.deletedCount} legacy Project doc(s)`);
   // Safety: role:'client' filter so this can NEVER touch a staff account
-  // even if an id somehow ended up in the set by mistake.
-  const du = await User.deleteMany({ _id: { $in: Array.from(clientIdStrings) }, role: 'client' });
+  // even if an id somehow ended up in the set by mistake. Uses the
+  // pre-filtered clientObjectIds (not the raw strings) so a stray
+  // non-ObjectId placeholder like "dummy:vellore-living" can't crash this.
+  const du = await User.deleteMany({ _id: { $in: clientObjectIds }, role: 'client' });
   console.log(`Deleted ${du.deletedCount} client User doc(s)`);
 
   console.log('\nDone. (BRAND_ROUTING in server/src/jobs/brandPulseCron.ts already had the');

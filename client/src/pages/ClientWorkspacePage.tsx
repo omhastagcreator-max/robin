@@ -202,7 +202,10 @@ export default function ClientWorkspacePage() {
   // Aug 2026 — full client-detail edit + performance calendar, open to
   // every staff role (owner ask).
   const [editDetailsOpen, setEditDetailsOpen] = useState(false);
-  const [perfOpen, setPerfOpen] = useState(false);
+  // Aug 2026 — owner ask: "make sure this is visible across all users in
+  // robin" (re: the daily/weekly/monthly performance report). Defaults to
+  // expanded now instead of making everyone click to discover it exists.
+  const [perfOpen, setPerfOpen] = useState(true);
 
   const load = async () => {
     if (!id) return;

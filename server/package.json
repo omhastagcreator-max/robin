@@ -24,7 +24,10 @@
     "inspect-session": "ts-node src/scripts/inspectSession.ts",
     "bulk-add-website-clients": "ts-node src/scripts/bulkAddWebsiteClients.ts",
     "purge-brand": "ts-node src/scripts/purgeBrand.ts",
-    "inspect-user-access": "ts-node src/scripts/inspectUserAccess.ts"
+    "inspect-user-access": "ts-node src/scripts/inspectUserAccess.ts",
+    "dedupe-bulk-clients": "ts-node src/scripts/dedupeBulkImportedClients.ts",
+    "keep-only-brands": "ts-node src/scripts/keepOnlyBrands.ts",
+    "update-brand-statuses": "ts-node src/scripts/updateBrandStatuses.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

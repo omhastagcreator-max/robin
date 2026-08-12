@@ -311,11 +311,21 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
     // phone lost their mine-gate and saw the whole org.
     const andGroups: any[] = [];
 
-    // Non-admins/sales are FORCED to their own pipelines (created or
-    // assigned). The gate is on the server so a client-side toggle can't
-    // bypass it.
+    // Aug 2026 — owner ask ("make sure everyone in the Robin has Client CRM
+    // option and the same data should sync across all roles" / "give Bhawna
+    // the SAME access as Sakshi"): every internal staff role (admin, sales,
+    // employee, workroom) sees the FULL org client list by default now, not
+    // just workflows they personally created or are assigned a service on.
+    // That old "forced to your own pipelines" gate is exactly what was
+    // silently returning an empty list for employees with no assigned
+    // services — the reported "Client CRM is blank" bug. `mine=1` is still
+    // available to anyone (including admin/sales, as before) as an
+    // explicit opt-in narrow-down via the "Just mine" toggle client-side.
     const role = req.user!.role;
-    if (role !== 'admin' && role !== 'sales') {
+    const isInternalStaff = ['admin', 'sales', 'employee', 'workroom'].includes(role);
+    if (!isInternalStaff) {
+      // Defensive fallback only — route-level requireRole() should already
+      // block anyone who isn't internal staff from reaching this handler.
       andGroups.push({ $or: [
         { 'services.assignedTo': req.user!.id },
         { createdBy: req.user!.id },
@@ -374,16 +384,17 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
 }
 
 /**
- * Workflow access policy:
- *   - admin/sales: can see ALL workflows in the org
- *   - employee:    can only see workflows where THEY own at least one service
- *                  OR where they created it.
+ * Workflow access policy (Aug 2026 — widened to full staff parity):
+ *   - admin/sales/employee/workroom: can see ALL workflows in the org.
+ *   - anyone else (shouldn't normally reach here — route-level requireRole
+ *     already blocks non-staff): falls back to created-by-them or
+ *     assigned-a-service-to-them only.
  *
  * Centralised so getWorkflow / addNote / returnService / etc. all enforce
  * the same rule. Returns true if access is allowed.
  */
 function canSeeWorkflow(wf: any, userId: string, role: string): boolean {
-  if (role === 'admin' || role === 'sales') return true;
+  if (['admin', 'sales', 'employee', 'workroom'].includes(role)) return true;
   if (wf.createdBy === userId) return true;
   return (wf.services || []).some((s: any) => s.assignedTo === userId);
 }

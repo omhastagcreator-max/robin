@@ -127,6 +127,23 @@ async function findUserByName(orgId: any, name: string) {
 
     console.log(`\n— ${brand} (${email}) — website will be marked ${isDone ? 'DONE' : 'NOT done (pending)'}`);
 
+    // Aug 2026 fix — this script used to ONLY check for an existing User
+    // by its own synthetic placeholder email, which meant a brand that
+    // was already a real, live client (different, real email) got a
+    // SECOND duplicate User + ClientWorkflow instead of being skipped.
+    // (Caught from the owner's Client CRM screenshot showing "Oudfy" and
+    // "Darpan" twice — cleaned up after the fact by
+    // dedupeBulkImportedClients.ts.) Now refuses to touch a brand name
+    // that already has ANY ClientWorkflow in this org, real or not.
+    const existingByName = await ClientWorkflow.findOne({
+      organizationId: org._id,
+      clientName: { $regex: `^${brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
+    }).select('_id clientName').lean();
+    if (existingByName) {
+      console.log(`  SKIPPED — a ClientWorkflow named "${existingByName.clientName}" already exists (${String(existingByName._id)}). Not creating a duplicate.`);
+      continue;
+    }
+
     let user = await User.findOne({ email, organizationId: org._id });
     if (!user) {
       const crossOrg = await User.findOne({ email });
