@@ -37,6 +37,27 @@ async function resolveTemplate(orgId: string, type: ServiceType): Promise<{ labe
  *   - all internal: search by phone, view a workflow.
  */
 
+/**
+ * Aug 2026 — owner ask: "allow Om to edit anything any status of
+ * clients... change the project owner as well, edit the timelines and
+ * everything." Every ownership/admin-only check below used to hard-code
+ * `req.user.role !== 'admin'`, so a non-admin could only ever touch a
+ * service they were personally assigned to. Rather than granting a
+ * blanket extra 'admin' role (which would ALSO open every other
+ * admin-only surface in the app — payroll, employee reports, etc. — more
+ * than what was actually asked for), this checks the new, narrowly-scoped
+ * `User.canEditAllClients` flag alongside the primary role: full admins
+ * always pass, and anyone flagged `canEditAllClients` gets the exact same
+ * client-workflow powers (toggleChecklist / completeService / setServiceEta
+ * ownership bypass, reassignService's "change the project owner" gate,
+ * bulkWorkflowAction's priority/mark-on-track gate) without touching
+ * anything outside the Client CRM. Granted to Om via
+ * `server/src/scripts/grantClientEditPermission.ts`.
+ */
+function isPrivilegedEditor(user: { role: string; roles?: string[]; canEditAllClients?: boolean }): boolean {
+  return user.role === 'admin' || !!(user.roles && user.roles.includes('admin')) || !!user.canEditAllClients;
+}
+
 async function getOrgId(userId: string): Promise<string | null> {
   const u = await User.findById(userId).select('organizationId').lean();
   return u?.organizationId ? String(u.organizationId) : null;
@@ -467,7 +488,7 @@ export async function toggleChecklist(req: AuthRequest, res: Response): Promise<
     if (!wfPreview) { res.status(404).json({ error: 'Workflow not found' }); return; }
     const svcPreview = wfPreview.services.id(req.params.sid);
     if (!svcPreview) { res.status(404).json({ error: 'Service not found' }); return; }
-    if (svcPreview.assignedTo !== req.user!.id && req.user!.role !== 'admin') {
+    if (svcPreview.assignedTo !== req.user!.id && !isPrivilegedEditor(req.user!)) {
       res.status(403).json({ error: 'You can only update your own assigned service' });
       return;
     }
@@ -547,7 +568,7 @@ export async function completeService(req: AuthRequest, res: Response): Promise<
     if (!wfPreview) { res.status(404).json({ error: 'Workflow not found' }); return; }
     const svcPreview = wfPreview.services.id(req.params.sid);
     if (!svcPreview) { res.status(404).json({ error: 'Service not found' }); return; }
-    if (svcPreview.assignedTo !== req.user!.id && req.user!.role !== 'admin') {
+    if (svcPreview.assignedTo !== req.user!.id && !isPrivilegedEditor(req.user!)) {
       res.status(403).json({ error: 'Only the assignee can complete this service' });
       return;
     }
@@ -730,7 +751,7 @@ export async function addNote(req: AuthRequest, res: Response): Promise<void> {
 // ── Admin: reassign a service ────────────────────────────────────────────
 export async function reassignService(req: AuthRequest, res: Response): Promise<void> {
   try {
-    if (req.user!.role !== 'admin') { res.status(403).json({ error: 'Admin only' }); return; }
+    if (!isPrivilegedEditor(req.user!)) { res.status(403).json({ error: 'Admin only' }); return; }
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     const { userId } = req.body || {};
@@ -811,7 +832,7 @@ export async function setServiceEta(req: AuthRequest, res: Response): Promise<vo
     if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
     const svc = wf.services.id(req.params.sid);
     if (!svc) { res.status(404).json({ error: 'Service not found' }); return; }
-    if (svc.assignedTo !== req.user!.id && req.user!.role !== 'admin') {
+    if (svc.assignedTo !== req.user!.id && !isPrivilegedEditor(req.user!)) {
       res.status(403).json({ error: 'You can only set the ETA on your own assigned service' });
       return;
     }
@@ -1034,7 +1055,7 @@ export async function bulkWorkflowAction(req: AuthRequest, res: Response): Promi
     // 'priority' and 'mark-on-track' are admin/sales only — they overwrite
     // operational state across many clients at once. 'note' is open to all
     // internal staff because it's additive (no destructive overwrite).
-    if ((action === 'priority' || action === 'mark-on-track') && role !== 'admin' && role !== 'sales') {
+    if ((action === 'priority' || action === 'mark-on-track') && role !== 'sales' && !isPrivilegedEditor(req.user!)) {
       res.status(403).json({ error: 'Admin or sales only for this bulk action' }); return;
     }
 

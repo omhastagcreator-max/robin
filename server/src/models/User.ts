@@ -29,6 +29,19 @@ export interface IUser extends Document {
    * Default false. Admin-only to flip.
    */
   canManageWorkroom?: boolean;
+  /**
+   * Permission flag — when true, this user can edit ANY client's service
+   * status/checklist/ETA in the Client CRM, not just services assigned
+   * to them (the normal per-service ownership rule everyone else follows
+   * — see `isPrivilegedEditor()` in clientWorkflowController.ts). Same
+   * "delegate one specific admin-like power to a trusted employee
+   * without full admin" pattern as `canManageWorkroom` above.
+   *
+   * Default false. Admin-only to flip. Granted to Om via
+   * server/src/scripts/grantClientEditPermission.ts (Aug 2026 owner ask:
+   * "allow Om to edit anything any status of clients").
+   */
+  canEditAllClients?: boolean;
   importedFrom?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -61,6 +74,10 @@ const UserSchema = new Schema<IUser>(
     // teammates? Admins always can; this flag lets us grant the ability
     // to a trusted non-admin (e.g. Om) without giving them full admin.
     canManageWorkroom: { type: Boolean, default: false },
+    // Delegated permission: can this employee edit ANY client's service
+    // status/checklist/ETA, not just services assigned to them? See
+    // IUser.canEditAllClients above.
+    canEditAllClients: { type: Boolean, default: false },
     // Bookkeeping for bulk wipe-and-replace imports of placeholder
     // client users from the CRM sheets. NOT set on real internal staff.
     importedFrom: { type: String, default: '' },

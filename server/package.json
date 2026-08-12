@@ -27,7 +27,8 @@
     "inspect-user-access": "ts-node src/scripts/inspectUserAccess.ts",
     "dedupe-bulk-clients": "ts-node src/scripts/dedupeBulkImportedClients.ts",
     "keep-only-brands": "ts-node src/scripts/keepOnlyBrands.ts",
-    "update-brand-statuses": "ts-node src/scripts/updateBrandStatuses.ts"
+    "update-brand-statuses": "ts-node src/scripts/updateBrandStatuses.ts",
+    "grant-client-edit": "ts-node src/scripts/grantClientEditPermission.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

@@ -1,6 +1,7 @@
 import api from '@/api/axios';
 import { silent } from '@/api/axios';
 import { toast } from 'sonner';
+import { isChunkLoadFailure, recoverFromChunkFailure } from '@/lib/chunkRecovery';
 
 /**
  * Global client-side error reporter.
@@ -48,12 +49,23 @@ export function installGlobalErrorReporters() {
   if (typeof window === 'undefined') return;
 
   window.addEventListener('error', (event) => {
+    // Aug 2026 — owner report: "when I try to open anything it just goes
+    // blank." Root cause: a stale-deploy chunk-load failure (see
+    // chunkRecovery.ts) that fires as a genuinely UNCAUGHT window-level
+    // error — it's a native <script type="module">/modulepreload load
+    // failure, which happens OUTSIDE React's render cycle, so it never
+    // reaches PageErrorBoundary at all. This handler used to only log
+    // it and leave the tab blank/broken; now it self-heals the same way
+    // PageErrorBoundary does for the cases it CAN see.
+    if (isChunkLoadFailure(event.error || event.message) && recoverFromChunkFailure()) return;
     report(event.message, event.error?.stack, { kind: 'window.error', filename: event.filename, lineno: event.lineno });
   });
 
   window.addEventListener('unhandledrejection', (event) => {
     const reason: any = event.reason;
     const message = typeof reason === 'string' ? reason : (reason?.message || 'Unhandled rejection');
+
+    if (isChunkLoadFailure(reason) && recoverFromChunkFailure()) return;
 
     // If this looks like an axios error, the response interceptor in
     // axios.ts already toasted (or chose to stay silent). Don't double-toast.

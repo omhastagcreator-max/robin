@@ -1,33 +1,7 @@
 import { Component, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCcw, Home } from 'lucide-react';
 import { reportError } from '@/lib/errorReporter';
-
-interface Props { children: ReactNode; fallback?: ReactNode; }
-interface State { error: Error | null; }
-
-/**
- * Detect Vite's dynamic-import failure for a stale lazy chunk.
- *
- * When we ship a new build, asset hashes change. Any tab that still has
- * the OLD index.html cached will try to fetch the OLD chunk filename
- * (e.g. `ClientWorkflowDetailPage-Cr5c53O8.js`) — which no longer exists
- * on the CDN. Vite throws one of these:
- *   "Failed to fetch dynamically imported module: <url>"
- *   "Loading chunk N failed"
- *   "Importing a module script failed"
- *
- * The right cure is a fresh page load — that pulls the new index.html
- * which references the new asset hashes. We do that automatically.
- */
-function isChunkLoadFailure(e: Error): boolean {
-  const msg = String(e?.message || '');
-  return (
-    msg.includes('Failed to fetch dynamically imported module') ||
-    msg.includes('Importing a module script failed') ||
-    /Loading chunk \S+ failed/.test(msg) ||
-    /ChunkLoadError/i.test(e?.name || '')
-  );
-}
+import { isChunkLoadFailure, recoverFromChunkFailure } from '@/lib/chunkRecovery';
 
 /**
  * Catches React render errors anywhere in its subtree. Shows a friendly
@@ -52,24 +26,10 @@ export class PageErrorBoundary extends Component<Props, State> {
     // pointing at chunk hashes that don't exist on the new deploy. Force
     // a fresh load. Guarded by a 60s session flag so a TRULY broken
     // chunk doesn't trap the tab in a reload loop.
-    if (isChunkLoadFailure(e)) {
-      try {
-        const FLAG = 'robin.chunkReloadAt';
-        const last = Number(sessionStorage.getItem(FLAG) || 0);
-        if (Date.now() - last > 60_000) {
-          sessionStorage.setItem(FLAG, String(Date.now()));
-          // location.reload(true) is deprecated; the modern equivalent is
-          // a query-busted assignment. Using assign() instead so the back
-          // button still works after the recovery.
-          const u = new URL(window.location.href);
-          u.searchParams.set('_rcb', String(Date.now())); // robin chunk bust
-          window.location.replace(u.toString());
-          return;
-        }
-        // Still failing after a recent recovery — fall through to the
-        // snag UI so the user sees something actionable.
-      } catch { /* sessionStorage disabled — fall through */ }
-    }
+    if (isChunkLoadFailure(e) && recoverFromChunkFailure()) return;
+    // Either not a chunk-load failure, or we already tried a recovery
+    // reload within the last 60s and it's still failing — fall through
+    // to the snag UI so the user sees something actionable.
 
     // Persist to the central error log so admins can investigate later.
     try {

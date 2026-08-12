@@ -41,6 +41,11 @@ function publicUser(u: any) {
     // Delegated permission: lets the client show the "Onboard workroom
     // teammate" nav item + page to non-admins who admin trusted with it.
     canManageWorkroom: u.canManageWorkroom === true,
+    // Delegated permission (Aug 2026): lets the client unlock full
+    // client-edit controls (checklist/status/ETA/reassign owner on ANY
+    // client, not just services assigned to them) for a trusted non-admin
+    // — see clientWorkflowController.ts's isPrivilegedEditor().
+    canEditAllClients: u.canEditAllClients === true,
   };
 }
 

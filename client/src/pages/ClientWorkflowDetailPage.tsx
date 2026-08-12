@@ -384,7 +384,12 @@ export default function ClientWorkflowDetailPage() {
   const { id }              = useParams();
   const { user, role }      = useAuth();
   const isAdmin             = role === 'admin';
-  const isAdminEffective    = role === 'admin' || ((user as any)?.roles || []).includes('admin');
+  // Aug 2026 — owner ask: "allow Om to edit anything any status of
+  // clients... change the project owner as well." canEditAllClients is a
+  // delegated permission (granted via grantClientEditPermission.ts) that
+  // now also counts as "admin-effective" here, same as the pre-existing
+  // roles[] admin-stacking check.
+  const isAdminEffective    = role === 'admin' || ((user as any)?.roles || []).includes('admin') || !!(user as any)?.canEditAllClients;
 
   const [wf, setWf]         = useState<Workflow | null>(null);
   const [loading, setL]     = useState(true);
@@ -421,11 +426,11 @@ export default function ClientWorkflowDetailPage() {
   const [depsByType, setDepsByType] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdminEffective) return;
     api.listUsers({}).then((d: any[]) => {
       setTeammates(Array.isArray(d) ? d.filter(u => ['admin', 'employee', 'sales'].includes(u.role)) : []);
     }).catch(() => {});
-  }, [isAdmin]);
+  }, [isAdminEffective]);
 
   useEffect(() => {
     api.cwGetTemplates().then((tpl: any[]) => {
@@ -812,7 +817,7 @@ export default function ClientWorkflowDetailPage() {
                   ) : (
                     <span className="text-[12px] text-muted-foreground">Unassigned</span>
                   )}
-                  {isAdmin && (
+                  {isAdminEffective && (
                     <div className="relative">
                       <select
                         value={active.assignedTo || ''}

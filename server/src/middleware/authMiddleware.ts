@@ -14,6 +14,7 @@ export interface AuthRequest extends Request {
     roles?:         string[];      // additional roles (multi-role support)
     organizationId?: string;
     avatarUrl?:     string | null;
+    canEditAllClients?: boolean;
   };
 }
 
@@ -35,7 +36,7 @@ export async function authMiddleware(
     const userId  = payload.id || payload.userId;
     if (!userId) { res.status(401).json({ error: 'Invalid token payload' }); return; }
 
-    const user = await User.findById(userId).select('email name role roles team teams organizationId avatarUrl');
+    const user = await User.findById(userId).select('email name role roles team teams organizationId avatarUrl canEditAllClients');
     if (!user) { res.status(401).json({ error: 'User not found' }); return; }
 
     // SAFETY NET — legacy users without an organizationId would otherwise hit
@@ -67,6 +68,7 @@ export async function authMiddleware(
       roles:          (user as any).roles || [],
       organizationId: orgId,
       avatarUrl:      (user as any).avatarUrl || null,
+      canEditAllClients: !!(user as any).canEditAllClients,
     };
     next();
   } catch {

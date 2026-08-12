@@ -19,6 +19,9 @@ interface RobinUser {
   onCallSince?: string | null;
   /** Delegated permission to create workroom-only teammates (admin can grant). */
   canManageWorkroom?: boolean;
+  /** Delegated permission to edit ANY client's status/checklist/ETA/owner
+   *  in the Client CRM, not just services assigned to them (admin can grant). */
+  canEditAllClients?: boolean;
 }
 
 interface AuthContextValue {
@@ -56,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (refreshedToken) {
           localStorage.setItem(TOKEN_KEY, refreshedToken);
         }
-        const mapped: RobinUser = { id: u._id, email: u.email, name: u.name, role: u.role, roles: u.roles || [], team: u.team, teams: u.teams || [], avatarUrl: u.avatarUrl, organizationId: u.organizationId, canManageWorkroom: u.canManageWorkroom === true };
+        const mapped: RobinUser = { id: u._id, email: u.email, name: u.name, role: u.role, roles: u.roles || [], team: u.team, teams: u.teams || [], avatarUrl: u.avatarUrl, organizationId: u.organizationId, canManageWorkroom: u.canManageWorkroom === true, canEditAllClients: u.canEditAllClients === true };
         setUser(mapped);
         localStorage.setItem(USER_KEY, JSON.stringify(mapped));
       })
@@ -86,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { token, user: u } = await api.login(email, password);
       localStorage.setItem(TOKEN_KEY, token);
-      const mapped: RobinUser = { id: u.id, email: u.email, name: u.name, role: u.role, roles: u.roles || [], team: u.team, teams: u.teams || [], avatarUrl: u.avatarUrl, organizationId: u.organizationId, canManageWorkroom: u.canManageWorkroom === true };
+      const mapped: RobinUser = { id: u.id, email: u.email, name: u.name, role: u.role, roles: u.roles || [], team: u.team, teams: u.teams || [], avatarUrl: u.avatarUrl, organizationId: u.organizationId, canManageWorkroom: u.canManageWorkroom === true, canEditAllClients: u.canEditAllClients === true };
       localStorage.setItem(USER_KEY, JSON.stringify(mapped));
       setUser(mapped);
       // Auto-clock-in. Owner ask (May 2026): "when I log in then start
@@ -114,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithToken = (token: string, u: any) => {
     localStorage.setItem(TOKEN_KEY, token);
-    const mapped: RobinUser = { id: u.id || u._id, email: u.email, name: u.name, role: u.role, roles: u.roles || [], team: u.team, teams: u.teams || [], avatarUrl: u.avatarUrl, organizationId: u.organizationId, canManageWorkroom: u.canManageWorkroom === true };
+    const mapped: RobinUser = { id: u.id || u._id, email: u.email, name: u.name, role: u.role, roles: u.roles || [], team: u.team, teams: u.teams || [], avatarUrl: u.avatarUrl, organizationId: u.organizationId, canManageWorkroom: u.canManageWorkroom === true, canEditAllClients: u.canEditAllClients === true };
     localStorage.setItem(USER_KEY, JSON.stringify(mapped));
     setUser(mapped);
   };
@@ -188,7 +191,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshProfile = useCallback(async () => {
     try {
       const { user: u } = await api.getMe();
-      const mapped: RobinUser = { id: u._id, email: u.email, name: u.name, role: u.role, roles: u.roles || [], team: u.team, teams: u.teams || [], avatarUrl: u.avatarUrl, organizationId: u.organizationId };
+      const mapped: RobinUser = { id: u._id, email: u.email, name: u.name, role: u.role, roles: u.roles || [], team: u.team, teams: u.teams || [], avatarUrl: u.avatarUrl, organizationId: u.organizationId, canManageWorkroom: u.canManageWorkroom === true, canEditAllClients: u.canEditAllClients === true };
       setUser(mapped);
       localStorage.setItem(USER_KEY, JSON.stringify(mapped));
     } catch { /* ignore */ }

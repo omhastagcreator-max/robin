@@ -48,7 +48,12 @@ router.put ('/:id/services/:sid/check',                  requireRole(...STAFF), 
 router.put ('/:id/services/:sid/complete',                requireRole(...STAFF),   completeService);
 router.put ('/:id/return',                                requireRole(...STAFF),   returnService);
 router.post('/:id/notes',                                 requireRole(...STAFF),   addNote);
-router.put ('/:id/services/:sid/reassign',                requireRole('admin'),    reassignService);
+// Aug 2026 — was requireRole('admin') only, which blocked Om at the
+// ROUTE level before the controller's isPrivilegedEditor() check (which
+// already covers his canEditAllClients grant) ever ran. Route now lets
+// any staff role attempt it; reassignService() itself still enforces
+// admin-or-privileged-editor and 403s everyone else.
+router.put ('/:id/services/:sid/reassign',                requireRole(...STAFF),    reassignService);
 // Assignee enters their tentative completion date — see controller
 // docstring. Assignee-or-admin only; controller enforces it.
 router.put ('/:id/services/:sid/eta',                     requireRole(...STAFF),   setServiceEta);

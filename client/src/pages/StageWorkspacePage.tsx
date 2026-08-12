@@ -148,6 +148,12 @@ export default function StageWorkspacePage() {
   const { user, role } = useAuth();
   const isAdminOrSales = role === 'admin' || role === 'sales';
   const currentUserId  = (user as any)?.id;
+  // Aug 2026 — owner ask: "allow Om to edit anything any status of
+  // clients... change the project owner as well, edit the timelines and
+  // everything." canEditAllClients is a delegated permission (granted via
+  // grantClientEditPermission.ts) that gives the same edit rights as
+  // isAdmin below, without making them a full admin.
+  const canEditAny = role === 'admin' || !!(user as any)?.canEditAllClients;
 
   const [wf, setWf]           = useState<Workflow | null>(null);
   const [users, setUsers]     = useState<Record<string, UserLite>>({});
@@ -274,7 +280,7 @@ export default function StageWorkspacePage() {
               workflowId={wf._id}
               serviceId={svc._id!}
               isAssignee={!!(svc.assignedTo && currentUserId && svc.assignedTo === currentUserId)}
-              isAdmin={role === 'admin'}
+              isAdmin={canEditAny}
               ownerName={owner?.name}
               onSaved={(updated) => setWf(updated)}
             />
