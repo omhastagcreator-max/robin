@@ -71,9 +71,12 @@ import Notification from '../models/Notification';
 
 const APPLY = process.argv.includes('--apply');
 
+// Aug 2026 — 'Silvque' added (owner onboarded it mid-session via
+// updateBrandStatuses.ts, a brand-new client not on the original
+// 11-brand sheet: no website line, we don't manage that for them).
 const KEEP_BRANDS = [
   'Sroja', 'Darpan', 'Ghee-Neeraj', 'Oudfy', 'HeightAyura', 'MotoCasa',
-  'ArdoWellness', 'Bombay', 'Woodsify', 'dufft', 'Polmouni',
+  'ArdoWellness', 'Bombay', 'Woodsify', 'dufft', 'Polmouni', 'Silvque',
 ];
 const norm = (s?: string | null) => (s || '').trim().toLowerCase();
 const keepSet = new Set(KEEP_BRANDS.map(norm));

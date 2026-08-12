@@ -104,7 +104,11 @@ export default function ClientPipelinePage() {
   // May 2026 — opened to all internal staff; matches the new server
   // route gate. We keep the variable name `isAdminOrSales` for now to
   // avoid touching every read site; the predicate just got wider.
-  const isAdminOrSales = ['admin', 'sales', 'employee'].includes(role);
+  // Aug 2026 — added 'workroom' too (owner ask: "allow everyone to add
+  // new client"). Server route already accepted workroom via the STAFF
+  // gate in routes/clientWorkflows.ts; this was the one remaining
+  // client-side gap keeping the "+ Add client" button hidden from them.
+  const isAdminOrSales = ['admin', 'sales', 'employee', 'workroom'].includes(role);
 
   const [query, setQuery]       = useState('');
   // Aug 2026 — this used to default to true for role==='employee' ("employees
