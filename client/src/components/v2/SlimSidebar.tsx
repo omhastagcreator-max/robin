@@ -58,11 +58,23 @@ const NAV: NavItem[] = [
   // agency-wide overview. Admin's actual landing (see ProtectedRoute
   // .dashboardForRole) is this page.
   { to: '/command-center',    label: 'Command Center', icon: Compass,         section: 'home',      roles: ['admin', 'sales'] },
-  { to: '/workroom-home',     label: 'Workroom',      icon: LayoutDashboard, section: 'home',      roles: ['admin', 'sales', 'employee', 'workroom'] },
-  { to: '/dashboard',         label: 'Old dashboard', icon: LayoutDashboard, section: 'home',      roles: ['employee'] },
-  { to: '/admin',             label: 'Old admin',     icon: LayoutDashboard, section: 'home',      roles: ['admin'] },
+  // Aug 2026 — relabeled "Workroom" → "Dashboard" for this entry
+  // specifically: /workroom-home is the actual login landing for
+  // sales/employee/workroom roles (see dashboardForRole), but the label
+  // "Workroom" collided with the unrelated live-huddle page under
+  // Communication (route /workroom) — same word, two different
+  // destinations. "Dashboard" also now matches how admin ("Command
+  // Center") and client ("Dashboard") each see one clearly-named home.
+  { to: '/workroom-home',     label: 'Dashboard',     icon: LayoutDashboard, section: 'home',      roles: ['admin', 'sales', 'employee', 'workroom'] },
+  // Aug 2026 — "Old dashboard/admin/sales" were internal dev shorthand
+  // that leaked into user-facing nav — meaningless to a new employee
+  // ("old" compared to what? which one do I use?). These are secondary,
+  // more detailed alternate views of the same data, not deprecated pages
+  // — relabeled to describe what they actually are instead of their age.
+  { to: '/dashboard',         label: 'Detailed view', icon: LayoutDashboard, section: 'home',      roles: ['employee'] },
+  { to: '/admin',             label: 'Detailed view', icon: LayoutDashboard, section: 'home',      roles: ['admin'] },
   { to: '/client',            label: 'Dashboard',     icon: LayoutDashboard, section: 'home',      roles: ['client'] },
-  { to: '/sales',             label: 'Old sales',     icon: LayoutDashboard, section: 'home',      roles: ['sales'] },
+  { to: '/sales',             label: 'Sales pipeline', icon: LayoutDashboard, section: 'home',     roles: ['sales'] },
   { to: '/notifications',     label: 'Notifications', icon: Bell,            section: 'home' },
 
   // ── WORK ────────────────────────────────────────────────────────

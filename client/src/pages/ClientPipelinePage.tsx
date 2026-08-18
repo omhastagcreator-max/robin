@@ -20,6 +20,7 @@ import { useDrawer } from '@/components/ui/RightDrawer';
 import { ProjectDetailPanel } from '@/components/panels/ProjectDetailPanel';
 import { useShortcut } from '@/hooks/useShortcut';
 import { StatusPill, type Status } from '@/components/ui/StatusPill';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { Avatar } from '@/components/shared/Avatar';
 import { AIInsight } from '@/components/ai/AIInsight';
 import {
@@ -998,15 +999,21 @@ function ClientCard({ wf, users, highlightServiceType, onMutated, onOpenDrawer }
               <p className="text-[13px] font-bold truncate group-hover:text-primary transition-colors">
                 {wf.clientName || 'Unnamed client'}
               </p>
+              {/* Aug 2026 UX pass — priority used to be a full text pill
+                  ("URGENT"/"HIGH") competing with the health pill right
+                  next to it for attention. A small colored indicator +
+                  tooltip carries the same signal (color = meaning) at a
+                  fraction of the visual weight — see the redesign spec's
+                  "reduce color/badge noise" principle. */}
               {wf.priority === 'urgent' && (
-                <span className={`inline-flex items-center gap-0.5 px-1 h-[15px] rounded text-[9px] font-bold uppercase border ${priorityTone.urgent}`}>
-                  <Flame className="h-2.5 w-2.5" /> urgent
-                </span>
+                <Tooltip label="Urgent priority">
+                  <Flame className="h-3 w-3 text-rose-600 shrink-0" />
+                </Tooltip>
               )}
               {wf.priority === 'high' && (
-                <span className={`inline-flex items-center px-1 h-[15px] rounded text-[9px] font-bold uppercase border ${priorityTone.high}`}>
-                  high
-                </span>
+                <Tooltip label="High priority">
+                  <span className="h-1.5 w-1.5 rounded-full bg-orange-500 shrink-0" />
+                </Tooltip>
               )}
               {wf.health && (
                 <StatusPill state={wf.health as Status} size="xs" icon="none" />
@@ -1093,37 +1100,15 @@ function ClientCard({ wf, users, highlightServiceType, onMutated, onOpenDrawer }
           </div>
         )}
 
-        {/* ── AI insight strip ─ risk / delay cause / predicted ETA ─────
-            Heuristic-derived (no model call). Always-fresh because the
-            healthInference cron computes them every 15 min and on every
-            workflow mutation via performWorkflowAction's postHook.
-            Hidden when the workflow is healthy + on track. */}
-        {((wf.riskScore ?? 0) >= 40 || (wf.delayCause && !isBlocked) || predictedLabel) && (
-          <div className="flex items-center gap-1.5 text-[10.5px] flex-wrap rounded-md bg-muted/40 border border-border px-2 py-1">
-            <AIInsight.Badge aiUsed={false} />
-            {typeof wf.riskScore === 'number' && wf.riskScore > 0 && (
-              <span className={`inline-flex items-center gap-1 font-bold ${
-                riskTone === 'danger'  ? 'text-rose-700'   :
-                riskTone === 'warning' ? 'text-amber-700'  :
-                                         'text-muted-foreground'
-              }`}>
-                Risk {wf.riskScore}
-              </span>
-            )}
-            {wf.delayCause && !isBlocked && (
-              <>
-                <span className="text-muted-foreground/40">·</span>
-                <span className="text-foreground/80 line-clamp-1" title={wf.delayCause}>{wf.delayCause}</span>
-              </>
-            )}
-            {predictedLabel && (
-              <>
-                <span className="text-muted-foreground/40">·</span>
-                <span className="text-muted-foreground">{predictedLabel}</span>
-              </>
-            )}
-          </div>
-        )}
+        {/* AI insight (risk/delay/predicted-completion) and "last update"
+            moved into the expandable detail panel below — Aug 2026 UX
+            pass. They're genuinely useful but are SUPPORTING information
+            (per the redesign spec's information-hierarchy principle),
+            not primary — a card that's already showing name/health/
+            owner/service/next-action/progress doesn't need a 3rd and 4th
+            always-on strip competing for the same attention. Data + logic
+            unchanged, just relocated — see the `expanded` panel further
+            down for aiSummaryLine / lastUpdateLine. */}
 
         {/* ── Progress + step count ────────────────────────────────── */}
         <div>
@@ -1144,19 +1129,6 @@ function ClientCard({ wf, users, highlightServiceType, onMutated, onOpenDrawer }
               style={{ width: `${relevant ? relPct : pct}%` }} />
           </div>
         </div>
-
-        {/* ── Last update ─ "2h ago — Sakshi ticked Pixel verified" ── */}
-        {wf.lastUpdate?.detail && (
-          <p className="text-[10.5px] text-muted-foreground leading-snug">
-            <Clock className="h-2.5 w-2.5 inline-block -mt-0.5 mr-1" />
-            {wf.lastUpdate.at && (
-              <span className="font-medium text-foreground/70">
-                {formatDistanceToNowStrict(new Date(wf.lastUpdate.at), { addSuffix: true })}
-              </span>
-            )}
-            <span className="ml-1 line-clamp-1 inline">— {wf.lastUpdate.detail}</span>
-          </p>
-        )}
 
         {/* ── Inline action row ────────────────────────────────────── */}
         <div className="flex items-center gap-1 flex-wrap pt-0.5">
@@ -1235,9 +1207,12 @@ function ClientCard({ wf, users, highlightServiceType, onMutated, onOpenDrawer }
         </AnimatePresence>
       </div>
 
-      {/* Expandable "what's left" — checklist of pending items so admin
+      {/* Expandable detail panel — checklist of pending items (so admin
           can see EXACTLY what's blocking advance without opening the
-          detail page. */}
+          detail page), plus the AI insight + last-update lines that used
+          to sit permanently on the card face (Aug 2026 UX pass — see the
+          comment where they used to render). Same data, just tucked
+          behind one click instead of always competing for attention. */}
       <AnimatePresence initial={false}>
         {expanded && (
           <motion.div
@@ -1248,6 +1223,43 @@ function ClientCard({ wf, users, highlightServiceType, onMutated, onOpenDrawer }
             className="overflow-hidden border-t border-border bg-muted/20"
           >
             <div className="px-3 py-2 space-y-1">
+              {wf.lastUpdate?.detail && (
+                <p className="text-[10.5px] text-muted-foreground leading-snug pb-1.5 mb-1.5 border-b border-border/60">
+                  <Clock className="h-2.5 w-2.5 inline-block -mt-0.5 mr-1" />
+                  {wf.lastUpdate.at && (
+                    <span className="font-medium text-foreground/70">
+                      {formatDistanceToNowStrict(new Date(wf.lastUpdate.at), { addSuffix: true })}
+                    </span>
+                  )}
+                  <span className="ml-1">— {wf.lastUpdate.detail}</span>
+                </p>
+              )}
+              {((wf.riskScore ?? 0) >= 40 || (wf.delayCause && !isBlocked) || predictedLabel) && (
+                <div className="flex items-center gap-1.5 text-[10.5px] flex-wrap rounded-md bg-card border border-border px-2 py-1 mb-1.5">
+                  <AIInsight.Badge aiUsed={false} />
+                  {typeof wf.riskScore === 'number' && wf.riskScore > 0 && (
+                    <span className={`inline-flex items-center gap-1 font-bold ${
+                      riskTone === 'danger'  ? 'text-rose-700'   :
+                      riskTone === 'warning' ? 'text-amber-700'  :
+                                               'text-muted-foreground'
+                    }`}>
+                      Risk {wf.riskScore}
+                    </span>
+                  )}
+                  {wf.delayCause && !isBlocked && (
+                    <>
+                      <span className="text-muted-foreground/40">·</span>
+                      <span className="text-foreground/80" title={wf.delayCause}>{wf.delayCause}</span>
+                    </>
+                  )}
+                  {predictedLabel && (
+                    <>
+                      <span className="text-muted-foreground/40">·</span>
+                      <span className="text-muted-foreground">{predictedLabel}</span>
+                    </>
+                  )}
+                </div>
+              )}
               {remaining.length === 0 ? (
                 <div className="flex items-center gap-1.5 text-[11px] text-emerald-700">
                   <CheckCircle2 className="h-3 w-3" /> Nothing left — ready to advance.
