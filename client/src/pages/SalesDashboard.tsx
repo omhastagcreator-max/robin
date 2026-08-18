@@ -1411,7 +1411,7 @@ function LeadTagsEditor({ lead, onSaved }: { lead: any; onSaved: () => void }) {
   const save = async () => {
     setSaving(true);
     try {
-      const tags = tagsText.split(',').map(t => t.trim()).filter(Boolean);
+      const tags = tagsText.split(',').map((t: string) => t.trim()).filter(Boolean);
       await api.updateLead(lead._id, { tags });
       toast.success('Tags updated');
       onSaved();
