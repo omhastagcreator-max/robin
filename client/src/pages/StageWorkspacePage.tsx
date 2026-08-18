@@ -93,7 +93,7 @@ interface Workflow {
   createdAt?: string;
   eta?: string | null;
 }
-interface UserLite { _id: string; name?: string }
+interface UserLite { _id: string; name?: string; email?: string; role?: string }
 
 // ── Stage taxonomy ──────────────────────────────────────────────────
 const STAGE_DEFS: Record<string, {
@@ -154,6 +154,7 @@ export default function StageWorkspacePage() {
   // grantClientEditPermission.ts) that gives the same edit rights as
   // isAdmin below, without making them a full admin.
   const canEditAny = role === 'admin' || !!(user as any)?.canEditAllClients;
+  const [reassignBusy, setReassignBusy] = useState(false);
 
   const [wf, setWf]           = useState<Workflow | null>(null);
   const [users, setUsers]     = useState<Record<string, UserLite>>({});
@@ -219,6 +220,22 @@ export default function StageWorkspacePage() {
   const totalCount = checklist.length;
   const owner = svc?.assignedTo ? users[svc.assignedTo] : undefined;
   const ownerOnLeave = !!(svc?.assignedTo && onLeaveIds.has(svc.assignedTo));
+  // Aug 2026 — owner ask: give this stage's Owner field a real reassign
+  // control instead of a static label. Same privilege gate as
+  // reassignService server-side (admin / canEditAllClients).
+  const teammates = Object.values(users).filter(u => ['admin', 'employee', 'sales', 'workroom'].includes(u.role || ''));
+  const handleReassignOwner = async (userId: string) => {
+    if (!svc?._id) return;
+    setReassignBusy(true);
+    try {
+      const updated = await api.cwReassignService(wf!._id, svc._id, { userId });
+      setWf(updated as Workflow);
+      setActivityRev(r => r + 1);
+      toast.success('Reassigned');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to reassign');
+    } finally { setReassignBusy(false); }
+  };
   const health = computeStageHealth(svc, wf);
 
   // The "this stage is blocked" branch — only count workflow-level
@@ -268,6 +285,10 @@ export default function StageWorkspacePage() {
             startedAt={startedAt}
             etaAt={etaAt || undefined}
             blockerReason={stageBlocked ? wf.blockerReason : undefined}
+            teammates={teammates}
+            canReassign={canEditAny}
+            onReassignOwner={handleReassignOwner}
+            reassignBusy={reassignBusy}
           />
 
           {/* ── ETA prompt — assignee must enter tentative completion
@@ -482,6 +503,7 @@ function SendAheadModal({ stageLabel, nextStageLabel, submitting, onConfirm, onC
 function StageHeader({
   stageLabel, tone, serviceLabel, owner, ownerOnLeave,
   doneCount, totalCount, health, startedAt, etaAt, blockerReason,
+  teammates, canReassign, onReassignOwner, reassignBusy,
 }: {
   stageLabel: string;
   tone: 'emerald' | 'amber' | 'blue';
@@ -494,6 +516,10 @@ function StageHeader({
   startedAt?: string;
   etaAt?: string;
   blockerReason?: string;
+  teammates?: Array<{ _id: string; name?: string; email?: string }>;
+  canReassign?: boolean;
+  onReassignOwner?: (userId: string) => void;
+  reassignBusy?: boolean;
 }) {
   const healthCls =
     health.tone === 'success' ? 'text-emerald-700' :
@@ -521,10 +547,28 @@ function StageHeader({
       </div>
       <div className="px-6 pb-4 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3">
         <HeaderMeta label="Owner">
-          <span className="inline-flex items-center gap-1.5">
-            {owner || <span className="text-muted-foreground italic">Unassigned</span>}
-            {ownerOnLeave && <Plane className="h-3 w-3 text-sky-600" />}
-          </span>
+          {canReassign && onReassignOwner ? (
+            <span className="inline-flex items-center gap-1.5">
+              <select
+                value=""
+                onChange={e => { if (e.target.value) onReassignOwner(e.target.value); }}
+                disabled={reassignBusy}
+                className="appearance-none text-[13px] font-semibold pl-1 pr-5 py-0.5 bg-transparent border border-border/70 rounded-md focus:outline-none focus:ring-1 focus:ring-ring max-w-[160px] truncate"
+                title="Reassign this stage's owner"
+              >
+                <option value="">{owner || 'Unassigned — pick someone'}</option>
+                {(teammates || []).map(t => (
+                  <option key={t._id} value={t._id}>{t.name || t.email}</option>
+                ))}
+              </select>
+              {ownerOnLeave && <Plane className="h-3 w-3 text-sky-600" />}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5">
+              {owner || <span className="text-muted-foreground italic">Unassigned</span>}
+              {ownerOnLeave && <Plane className="h-3 w-3 text-sky-600" />}
+            </span>
+          )}
         </HeaderMeta>
         <HeaderMeta label="Progress">{totalCount === 0 ? '—' : `${doneCount} / ${totalCount} tasks`}</HeaderMeta>
         <HeaderMeta label="Started">

@@ -33,8 +33,14 @@ import User from '../models/User';
 import Organization from '../models/Organization';
 import { SERVICE_TEMPLATES, type ServiceType } from '../lib/workflowTemplates';
 
-const STANDARD_SERVICES: ServiceType[] = ['shopify', 'influencer', 'meta_ads'];
-const STAGE_OWNERS: Record<ServiceType, string> = {
+// Aug 2026 — ServiceType grew a 4th value ('misc') in the CRM upgrade,
+// but this script's whole premise is "every brand has the THREE canonical
+// stages" (misc is optional/ad-hoc, added per-brand, not something every
+// client is guaranteed to have) — so it's deliberately scoped to exclude
+// it rather than growing a "canonical" misc owner that doesn't exist.
+type StandardServiceType = Exclude<ServiceType, 'misc'>;
+const STANDARD_SERVICES: StandardServiceType[] = ['shopify', 'influencer', 'meta_ads'];
+const STAGE_OWNERS: Record<StandardServiceType, string> = {
   shopify:    'Om',
   influencer: 'Priyanka',
   meta_ads:   'Sakshi',
@@ -62,7 +68,7 @@ async function findUserByName(orgId: any, name: string): Promise<string | null> 
   if (!org) { console.error('No Organization in DB.'); process.exit(1); }
 
   // Resolve canonical owners once.
-  const ownerByStage: Record<ServiceType, string | null> = {
+  const ownerByStage: Record<StandardServiceType, string | null> = {
     shopify:    await findUserByName(org._id, STAGE_OWNERS.shopify),
     influencer: await findUserByName(org._id, STAGE_OWNERS.influencer),
     meta_ads:   await findUserByName(org._id, STAGE_OWNERS.meta_ads),
@@ -99,7 +105,7 @@ async function findUserByName(orgId: any, name: string): Promise<string | null> 
     // Reassign any existing service whose owner doesn't match the rule.
     for (const svc of (wf.services as any[])) {
       if (!STANDARD_SERVICES.includes(svc.serviceType)) continue;
-      const want = ownerByStage[svc.serviceType as ServiceType];
+      const want = ownerByStage[svc.serviceType as StandardServiceType];
       if (!want) continue;
       if (String(svc.assignedTo || '') !== want) {
         svc.assignedTo = want;

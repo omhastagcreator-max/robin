@@ -325,7 +325,12 @@ function AiPriorityCenter({ rows }: { rows: Snap['priorityCenter'] }) {
                 <span className="text-[10.5px] tabular-nums text-muted-foreground">{items.length}</span>
               </div>
               {items.length === 0 ? (
-                <p className="text-[11px] italic text-muted-foreground/80">Clear.</p>
+                // Aug 2026 — was the single word "Clear." which read like
+                // stray debug text, not a real empty state (spec: "never
+                // show 'No data.' — explain whether the absence is normal
+                // or a problem"). This bucket being empty is always good
+                // news, so say so.
+                <p className="text-[11px] text-emerald-700/80">Nothing here — all clear.</p>
               ) : (
                 <ul className="space-y-1">
                   {items.slice(0, 4).map(item => {

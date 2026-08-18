@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 /**
  * EditClientDetailsModal — full edit of a client's CRM details, open to
@@ -43,6 +44,16 @@ interface Props {
 }
 
 export function EditClientDetailsModal({ workflowId, initial, hasMetaAds, onClose, onSaved }: Props) {
+  // Aug 2026 — owner ask: "these details were supposed to be filled by
+  // sales team only, not by me." Money fields (payment status, the
+  // financial block, the Meta Ads fee model) are now sales+admin
+  // territory client-side too — mirrors the server-side gate in
+  // updateWorkflowDetails (clientWorkflowController.ts), which silently
+  // drops these same fields for anyone else. Hiding them here just keeps
+  // the form honest about what will actually save.
+  const { role, user } = useAuth();
+  const canEditFinancials = role === 'admin' || role === 'sales' || user?.canEditAllClients === true;
+
   const [clientName, setClientName]   = useState(initial.clientName || '');
   const [clientPhone, setClientPhone] = useState(initial.clientPhone || '');
   const [clientEmail, setClientEmail] = useState(initial.clientEmail || '');
@@ -72,21 +83,26 @@ export function EditClientDetailsModal({ workflowId, initial, hasMetaAds, onClos
         clientPhone: clientPhone.trim(),
         clientEmail: clientEmail.trim(),
         priority: priority as any,
-        paymentStatus: paymentStatus as any,
-        tags: tagsText.split(',').map(t => t.trim()).filter(Boolean),
+        tags: tagsText.split(',').map((t: string) => t.trim()).filter(Boolean),
         operationalStatus: operationalStatus as any,
-        totalAmount: totalAmount ? Number(totalAmount) : 0,
-        advanceReceived: advanceReceived ? Number(advanceReceived) : 0,
-        nextPaymentAmount: nextPaymentAmount ? Number(nextPaymentAmount) : 0,
-        nextPaymentDate: nextPaymentDate || null,
-        nextPaymentCondition,
-        ...(hasMetaAds ? {
-          metaAdsFeeModel: {
-            type: feeType,
-            fixedMonthlyFee: fixedFee ? Number(fixedFee) : null,
-            percentageOfSpend: percentFee ? Number(percentFee) : null,
-            customDescription: customFeeDesc,
-          },
+        // Financial fields are sales/admin-only — only sent when this
+        // user is actually allowed to change them (server also enforces
+        // this independently, so this is a UX courtesy, not the real gate).
+        ...(canEditFinancials ? {
+          paymentStatus: paymentStatus as any,
+          totalAmount: totalAmount ? Number(totalAmount) : 0,
+          advanceReceived: advanceReceived ? Number(advanceReceived) : 0,
+          nextPaymentAmount: nextPaymentAmount ? Number(nextPaymentAmount) : 0,
+          nextPaymentDate: nextPaymentDate || null,
+          nextPaymentCondition,
+          ...(hasMetaAds ? {
+            metaAdsFeeModel: {
+              type: feeType,
+              fixedMonthlyFee: fixedFee ? Number(fixedFee) : null,
+              percentageOfSpend: percentFee ? Number(percentFee) : null,
+              customDescription: customFeeDesc,
+            },
+          } : {}),
         } : {}),
       });
       toast.success('Client details updated');
@@ -122,7 +138,7 @@ export function EditClientDetailsModal({ workflowId, initial, hasMetaAds, onClos
               className="w-full px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
           </label>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className={canEditFinancials ? 'grid grid-cols-2 gap-2' : ''}>
           <label className="block space-y-1">
             <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Priority</span>
             <select value={priority} onChange={e => setPriority(e.target.value)}
@@ -130,13 +146,15 @@ export function EditClientDetailsModal({ workflowId, initial, hasMetaAds, onClos
               {PRIORITIES.map(p => <option key={p} value={p} className="capitalize">{p}</option>)}
             </select>
           </label>
-          <label className="block space-y-1">
-            <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Payment status</span>
-            <select value={paymentStatus} onChange={e => setPaymentStatus(e.target.value)}
-              className="w-full px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm capitalize focus:outline-none focus:ring-2 focus:ring-ring">
-              {PAYMENT_STATUSES.map(p => <option key={p} value={p} className="capitalize">{p === 'na' ? 'N/A' : p}</option>)}
-            </select>
-          </label>
+          {canEditFinancials && (
+            <label className="block space-y-1">
+              <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Payment status</span>
+              <select value={paymentStatus} onChange={e => setPaymentStatus(e.target.value)}
+                className="w-full px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm capitalize focus:outline-none focus:ring-2 focus:ring-ring">
+                {PAYMENT_STATUSES.map(p => <option key={p} value={p} className="capitalize">{p === 'na' ? 'N/A' : p}</option>)}
+              </select>
+            </label>
+          )}
         </div>
         <label className="block space-y-1">
           <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Tags (comma separated)</span>
@@ -152,26 +170,42 @@ export function EditClientDetailsModal({ workflowId, initial, hasMetaAds, onClos
           </select>
         </label>
 
-        <div className="border-t border-border pt-3 space-y-2">
-          <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Financials</p>
-          <div className="grid grid-cols-2 gap-2">
-            <input type="number" value={totalAmount} onChange={e => setTotalAmount(e.target.value)} placeholder="Total Amount (₹)"
-              className="w-full px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-            <input type="number" value={advanceReceived} onChange={e => setAdvanceReceived(e.target.value)} placeholder="Advance Received (₹)"
+        {canEditFinancials ? (
+          <div className="border-t border-border pt-3 space-y-2">
+            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Financials</p>
+            <div className="grid grid-cols-2 gap-2">
+              <input type="number" value={totalAmount} onChange={e => setTotalAmount(e.target.value)} placeholder="Total Amount (₹)"
+                className="w-full px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              <input type="number" value={advanceReceived} onChange={e => setAdvanceReceived(e.target.value)} placeholder="Advance Received (₹)"
+                className="w-full px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+            </div>
+            {totalAmount && <p className="text-xs text-muted-foreground">Remaining: ₹{remaining.toLocaleString('en-IN')}</p>}
+            <div className="grid grid-cols-2 gap-2">
+              <input type="number" value={nextPaymentAmount} onChange={e => setNextPaymentAmount(e.target.value)} placeholder="Next Payment (₹)"
+                className="w-full px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              <input type="date" value={nextPaymentDate} onChange={e => setNextPaymentDate(e.target.value)}
+                className="w-full px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+            </div>
+            <input value={nextPaymentCondition} onChange={e => setNextPaymentCondition(e.target.value)} placeholder="What triggers next payment?"
               className="w-full px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
           </div>
-          {totalAmount && <p className="text-xs text-muted-foreground">Remaining: ₹{remaining.toLocaleString('en-IN')}</p>}
-          <div className="grid grid-cols-2 gap-2">
-            <input type="number" value={nextPaymentAmount} onChange={e => setNextPaymentAmount(e.target.value)} placeholder="Next Payment (₹)"
-              className="w-full px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-            <input type="date" value={nextPaymentDate} onChange={e => setNextPaymentDate(e.target.value)}
-              className="w-full px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-          </div>
-          <input value={nextPaymentCondition} onChange={e => setNextPaymentCondition(e.target.value)} placeholder="What triggers next payment?"
-            className="w-full px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-        </div>
+        ) : (
+          // Aug 2026 — owner ask: financials are sales/admin territory.
+          // Non-privileged staff still get to SEE the numbers (useful
+          // context on the client) just not edit them here — a plain
+          // read-only summary instead of the input form.
+          (totalAmount || advanceReceived || nextPaymentAmount) ? (
+            <div className="border-t border-border pt-3 space-y-1">
+              <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Financials <span className="normal-case font-normal">(sales-managed)</span></p>
+              <p className="text-xs text-muted-foreground">
+                Total ₹{Number(totalAmount || 0).toLocaleString('en-IN')} · Advance ₹{Number(advanceReceived || 0).toLocaleString('en-IN')} · Remaining ₹{remaining.toLocaleString('en-IN')}
+              </p>
+              {nextPaymentAmount && <p className="text-xs text-muted-foreground">Next payment: ₹{Number(nextPaymentAmount).toLocaleString('en-IN')}{nextPaymentDate ? ` on ${nextPaymentDate}` : ''}</p>}
+            </div>
+          ) : null
+        )}
 
-        {hasMetaAds && (
+        {hasMetaAds && canEditFinancials && (
           <div className="border-t border-border pt-3 space-y-2">
             <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Meta Ads fee model</p>
             <select value={feeType} onChange={e => setFeeType(e.target.value)}

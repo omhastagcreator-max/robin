@@ -5,7 +5,7 @@ import {
   Building2, BarChart2, CalendarOff, Clock, BarChart3, Calendar,
   Bug, CalendarDays, Workflow, UserPlus, AlertTriangle, KeyRound,
   Sparkles, LogOut, Bird, ChevronsLeft, ChevronsRight, Bell, Settings,
-  TrendingUp, Compass, Archive, Activity,
+  TrendingUp, Compass, Archive, Activity, MoreHorizontal, ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnreadCounts } from '@/contexts/UnreadCountsContext';
@@ -36,6 +36,16 @@ interface NavItem {
   team?: string;
   anyTeam?: string[];
   requiresFlag?: 'canManageWorkroom';
+  // Aug 2026 — owner ask: WORK had grown to 8 always-visible rows and
+  // felt cluttered. Investigated each one — all 8 turned out to be real,
+  // distinct features (confirmed: Task ledger is a permanent audit log
+  // w/ CSV export, genuinely different from the live Tasks inbox; owner
+  // chose "group the 2 least-used into a submenu" over deleting anything.
+  // Items flagged here render under a collapsed "More" row instead of as
+  // a top-level link — only when the sidebar is expanded (collapsed/icon
+  // rail still shows every item flat, so nothing becomes harder to reach
+  // when space is already tight).
+  subItem?: boolean;
 }
 
 const SECTION_LABEL: Record<Section, string> = {
@@ -66,12 +76,12 @@ const NAV: NavItem[] = [
   // destinations. "Dashboard" also now matches how admin ("Command
   // Center") and client ("Dashboard") each see one clearly-named home.
   { to: '/workroom-home',     label: 'Dashboard',     icon: LayoutDashboard, section: 'home',      roles: ['admin', 'sales', 'employee', 'workroom'] },
-  // Aug 2026 — "Old dashboard/admin/sales" were internal dev shorthand
-  // that leaked into user-facing nav — meaningless to a new employee
-  // ("old" compared to what? which one do I use?). These are secondary,
-  // more detailed alternate views of the same data, not deprecated pages
-  // — relabeled to describe what they actually are instead of their age.
-  { to: '/dashboard',         label: 'Detailed view', icon: LayoutDashboard, section: 'home',      roles: ['employee'] },
+  // Aug 2026 — owner reviewed the actual rendered page and called
+  // /dashboard (EmployeeDashboard.tsx) redundant with the real landing
+  // (/workroom-home, "Dashboard" above) — removed from nav. The route +
+  // component are left in place (not deleted) in case anything still
+  // deep-links to it; it's just no longer reachable from the sidebar.
+  // /admin ("Old admin") kept for now — only /dashboard was flagged.
   { to: '/admin',             label: 'Detailed view', icon: LayoutDashboard, section: 'home',      roles: ['admin'] },
   { to: '/client',            label: 'Dashboard',     icon: LayoutDashboard, section: 'home',      roles: ['client'] },
   { to: '/sales',             label: 'Sales pipeline', icon: LayoutDashboard, section: 'home',     roles: ['sales'] },
@@ -79,7 +89,7 @@ const NAV: NavItem[] = [
 
   // ── WORK ────────────────────────────────────────────────────────
   { to: '/tasks',             label: 'Tasks',         icon: ListTodo,        section: 'work',      roles: ['employee', 'admin', 'sales'] },
-  { to: '/tasks/ledger',      label: 'Task ledger',   icon: Archive,         section: 'work',      roles: ['employee', 'admin', 'sales'] },
+  { to: '/tasks/ledger',      label: 'Task ledger',   icon: Archive,         section: 'work',      roles: ['employee', 'admin', 'sales'], subItem: true },
   // Team Pulse — admin + sales see it by role; non-admin "workroom
   // managers" (Om's canManageWorkroom flag) see it via the requiresFlag
   // path, same pattern we use for the workroom-onboard link below.
@@ -87,8 +97,8 @@ const NAV: NavItem[] = [
   { to: '/team-pulse',        label: 'Team Pulse',    icon: Activity,        section: 'work',      roles: ['employee'], requiresFlag: 'canManageWorkroom' },
   // Weekly employee scorecards — same visibility as Team Pulse
   // (admin/sales by role, Om via canManageWorkroom). July 2026.
-  { to: '/team-progress',     label: 'Progress',      icon: TrendingUp,      section: 'work',      roles: ['admin', 'sales'] },
-  { to: '/team-progress',     label: 'Progress',      icon: TrendingUp,      section: 'work',      roles: ['employee'], requiresFlag: 'canManageWorkroom' },
+  { to: '/team-progress',     label: 'Progress',      icon: TrendingUp,      section: 'work',      roles: ['admin', 'sales'], subItem: true },
+  { to: '/team-progress',     label: 'Progress',      icon: TrendingUp,      section: 'work',      roles: ['employee'], requiresFlag: 'canManageWorkroom', subItem: true },
   { to: '/clients/pipeline',  label: 'Client CRM',    icon: Workflow,        section: 'work',      roles: ['admin', 'employee', 'sales', 'workroom'] },
   { to: '/admin/clients',     label: 'Clients',       icon: Building2,       section: 'work',      roles: ['admin'] },
   { to: '/admin/projects',    label: 'Projects',      icon: Briefcase,       section: 'work',      roles: ['admin'] },
@@ -143,6 +153,10 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
   });
   const [hover, setHover]       = useState(false);
   const [clickOpen, setClickOpen] = useState(false);
+  // Aug 2026 — which sections have their "More" sub-group expanded.
+  // Keyed by section so WORK's More toggle doesn't affect any other
+  // section that might grow one later. Starts closed (that's the point).
+  const [moreOpen, setMoreOpen] = useState<Record<string, boolean>>({});
   const hoverTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const leaveTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -211,6 +225,56 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
     .map(section => ({ section, items: navItems.filter(i => i.section === section) }))
     .filter(g => g.items.length > 0);
 
+  // Aug 2026 — extracted from the old inline .map so the same Link markup
+  // can be reused for both top-level items and the "More" sub-group.
+  const renderNavItem = (item: NavItem) => {
+    const active = item.to === '/admin'
+      ? location.pathname === '/admin'
+      : item.to === '/dashboard'
+      ? location.pathname === '/dashboard'
+      : item.to === '/sales'
+      ? location.pathname === '/sales'
+      : location.pathname.startsWith(item.to);
+    const badge =
+      item.to === '/chat'           ? chatUnread :
+      item.to === '/notifications'  ? notifUnread :
+                                      0;
+    return (
+      <Link
+        key={item.to + item.label}
+        to={item.to}
+        className={`
+          group relative flex items-center gap-2.5 h-8 px-2 rounded
+          transition-colors duration-75
+          ${active
+            ? 'bg-primary/12 text-primary'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground'}
+        `}
+        title={!expanded ? `${item.label}${badge > 0 ? ` · ${badge}` : ''}` : undefined}
+      >
+        {active && <span className="absolute left-0 top-1 bottom-1 w-[3px] rounded-r bg-primary" />}
+        <div className="relative shrink-0">
+          <item.icon className={`h-[15px] w-[15px] ${active ? 'text-primary' : ''}`} />
+          {!expanded && badge > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-primary ring-1 ring-card" />
+          )}
+        </div>
+        {expanded && (
+          <>
+            <span className="text-[12.5px] font-medium truncate whitespace-nowrap flex-1">
+              {item.label}
+            </span>
+            {badge > 0 && (
+              <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold tabular-nums">
+                {badge > 99 ? '99+' : badge}
+              </span>
+            )}
+          </>
+        )}
+      </Link>
+    );
+  };
+
   return (
     <div className="min-h-screen flex bg-background">
       <aside
@@ -261,53 +325,30 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
               ) : null}
 
               <div className="space-y-0.5">
-                {g.items.map(item => {
-                  const active = item.to === '/admin'
-                    ? location.pathname === '/admin'
-                    : item.to === '/dashboard'
-                    ? location.pathname === '/dashboard'
-                    : item.to === '/sales'
-                    ? location.pathname === '/sales'
-                    : location.pathname.startsWith(item.to);
-                  const badge =
-                    item.to === '/chat'           ? chatUnread :
-                    item.to === '/notifications'  ? notifUnread :
-                                                    0;
-                  return (
-                    <Link
-                      key={item.to + item.label}
-                      to={item.to}
-                      className={`
-                        group relative flex items-center gap-2.5 h-8 px-2 rounded
-                        transition-colors duration-75
-                        ${active
-                          ? 'bg-primary/12 text-primary'
-                          : 'text-muted-foreground hover:bg-muted hover:text-foreground'}
-                      `}
-                      title={!expanded ? `${item.label}${badge > 0 ? ` · ${badge}` : ''}` : undefined}
+                {/* Aug 2026 — WORK decluttering: when expanded, subItem-
+                    flagged entries (Task ledger, Progress) are held back
+                    into a "More" toggle instead of listed flat. Collapsed
+                    (icon rail) mode ignores the split entirely — every
+                    item still shows as its own icon, so nothing is
+                    harder to reach when the sidebar is already minimal. */}
+                {(expanded ? g.items.filter(i => !i.subItem) : g.items).map(item =>
+                  renderNavItem(item),
+                )}
+                {expanded && g.items.some(i => i.subItem) && (
+                  <>
+                    <button
+                      onClick={() => setMoreOpen(m => ({ ...m, [g.section]: !m[g.section] }))}
+                      className="w-full flex items-center gap-2.5 h-8 px-2 rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-75"
                     >
-                      {active && <span className="absolute left-0 top-1 bottom-1 w-[3px] rounded-r bg-primary" />}
-                      <div className="relative shrink-0">
-                        <item.icon className={`h-[15px] w-[15px] ${active ? 'text-primary' : ''}`} />
-                        {!expanded && badge > 0 && (
-                          <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-primary ring-1 ring-card" />
-                        )}
-                      </div>
-                      {expanded && (
-                        <>
-                          <span className="text-[12.5px] font-medium truncate whitespace-nowrap flex-1">
-                            {item.label}
-                          </span>
-                          {badge > 0 && (
-                            <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold tabular-nums">
-                              {badge > 99 ? '99+' : badge}
-                            </span>
-                          )}
-                        </>
-                      )}
-                    </Link>
-                  );
-                })}
+                      <MoreHorizontal className="h-[15px] w-[15px] shrink-0" />
+                      <span className="text-[12.5px] font-medium flex-1 text-left">More</span>
+                      <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${moreOpen[g.section] ? 'rotate-180' : ''}`} />
+                    </button>
+                    {moreOpen[g.section] && g.items.filter(i => i.subItem).map(item =>
+                      renderNavItem(item),
+                    )}
+                  </>
+                )}
               </div>
             </div>
           ))}

@@ -27,6 +27,8 @@ import ProjectTask from '../models/ProjectTask';
 import ClientWorkflow from '../models/ClientWorkflow';
 import FocusList from '../models/FocusList';
 import RobinThread from '../models/RobinThread';
+import LeaveApplication from '../models/LeaveApplication';
+import DailyCheckin from '../models/DailyCheckin';
 
 // ── Context cache (in-memory, 30s TTL) ──────────────────────────────
 // We don't want every Copilot keystroke triggering 5+ Mongo finds.
@@ -85,6 +87,44 @@ export interface UserContext {
   /** Org-wide at-risk snapshot — top 5 highest risk score. Admins see all,
    *  everyone else sees a redacted version (count only). */
   atRisk: { count: number; topPaths: string[] };
+  /**
+   * Aug 2026 — owner ask: "the robin ai should have knowledge of every
+   * client ... and make it prompt visible to help one with summary in
+   * bullet point [which] client to focus on based on stage and sale
+   * details like amount." Full client roster with stage + financials.
+   * Financial figures are sales-territory (same gate as the CRM edit
+   * modal / updateWorkflowDetails) — admin + sales only. Employees still
+   * get orgClients with stage/health but WITHOUT amounts.
+   */
+  orgClients?: Array<{
+    name: string;
+    stage: string;
+    health: string;
+    blockerType?: string;
+    amount?: number;
+    remaining?: number;
+    paymentStatus?: string;
+    nextPaymentDate?: string | null;
+  }>;
+  /** Ranked "who to focus on today and why" — plain bullet strings, ready
+   *  to drop straight into a prompt or a UI list. Derived from orgClients. */
+  focusBullets?: string[];
+  /** Admin-only: one line per teammate — open task count, on-leave today,
+   *  whether they've done their morning check-in yet. Owner ask: "knowledge
+   *  of ... everyone's individual tasks." */
+  teamToday?: Array<{ name: string; openTasks: number; onLeave: boolean; morningCheckinDone: boolean }>;
+  /** Who's on approved leave today — low sensitivity, shown to everyone. */
+  leavesToday?: string[];
+  /**
+   * This user's own recent daily check-ins (last 5 workdays) — what they
+   * planned each morning vs. what actually got marked done by evening.
+   * Owner ask: "past tasks should be from daily morning checkins."
+   */
+  myRecentCheckins?: Array<{
+    date: string;
+    plannedTasks: string[];
+    tomorrowPlan?: string;
+  }>;
 }
 
 /** Strip undefined / empty / null values from the snapshot so the prompt stays terse. */
@@ -212,12 +252,145 @@ export async function buildUserContext(userId: string, orgId: string): Promise<U
       : [],
   };
 
+  // ── Aug 2026 additions — full org visibility for the copilot ───────
+  const [orgClients, focusBullets] = await buildOrgClientsAndFocus(orgId, u.role);
+  const leavesToday = await buildLeavesToday(orgId);
+  const teamToday = u.role === 'admin' ? await buildTeamToday(orgId, leavesToday) : undefined;
+  const myRecentCheckins = await buildMyRecentCheckins(orgId, userId);
+
   const ctx: UserContext = {
     me: { id: String(userId), name: u.name || '', role: u.role || '', teams: u.teams || [] },
     myProjects, myTasks, myLeads, myFocus, atRisk,
+    orgClients, focusBullets, teamToday, leavesToday, myRecentCheckins,
   };
   ctxCache.set(userId, { ctx, expiresAt: Date.now() + CTX_TTL_MS });
   return ctx;
+}
+
+/** IST day key (YYYY-MM-DD), matching DailyCheckin.dateIST's convention. */
+function istDayKeyFor(offsetDays = 0): string {
+  const d = new Date(Date.now() + 330 * 60_000 + offsetDays * 86_400_000);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Human label for a client's derived "stage" — reuses the same signals
+ *  the pipeline UI shows (operationalStatus + blocker + health), kept to
+ *  one short phrase since this feeds a prompt, not a UI panel. */
+function stageLabel(w: any): string {
+  if (w.blockerType) return `blocked (${String(w.blockerType).replace(/_/g, ' ')})`;
+  if (w.operationalStatus && w.operationalStatus !== 'in_progress') return String(w.operationalStatus).replace(/_/g, ' ');
+  const active = (w.services || []).find((s: any) => s.status === 'in_progress');
+  if (active) return `${active.label || active.serviceType} in progress`;
+  const allDone = (w.services || []).length > 0 && (w.services || []).every((s: any) => s.status === 'done');
+  return allDone ? 'all services done' : 'not started';
+}
+
+/**
+ * Every client, with stage + (for admin/sales only) the money — total /
+ * remaining / payment status / next payment date — plus a ranked bullet
+ * list of who to focus on. Ranking: blocked first, then overdue payment,
+ * then highest risk score, then worst health.
+ */
+async function buildOrgClientsAndFocus(orgId: string, role: string): Promise<[UserContext['orgClients'], UserContext['focusBullets']]> {
+  const canSeeMoney = role === 'admin' || role === 'sales';
+  const wfs = await ClientWorkflow.find({ organizationId: orgId })
+    .select('clientName health healthLevel operationalStatus blockerType riskScore services totalAmount advanceReceived nextPaymentAmount nextPaymentDate paymentStatus')
+    .sort({ riskScore: -1 })
+    .limit(60)
+    .lean() as any[];
+
+  const today = Date.now();
+  const orgClients = wfs.map(w => {
+    const remaining = Math.max(0, (w.totalAmount || 0) - (w.advanceReceived || 0));
+    const row: NonNullable<UserContext['orgClients']>[number] = compact({
+      name: w.clientName,
+      stage: stageLabel(w),
+      health: w.healthLevel || w.health || 'green',
+      blockerType: w.blockerType,
+    }) as any;
+    if (canSeeMoney) {
+      row.amount = w.totalAmount || 0;
+      row.remaining = remaining;
+      row.paymentStatus = w.paymentStatus || 'na';
+      row.nextPaymentDate = w.nextPaymentDate ? new Date(w.nextPaymentDate).toISOString().slice(0, 10) : null;
+    }
+    return row;
+  }).slice(0, 40);
+
+  const bullets = wfs
+    .map(w => {
+      const overdue = w.nextPaymentDate ? new Date(w.nextPaymentDate).getTime() < today : false;
+      const remaining = Math.max(0, (w.totalAmount || 0) - (w.advanceReceived || 0));
+      let score = 0;
+      let reason = '';
+      if (w.blockerType) { score += 100; reason = `blocked — ${String(w.blockerType).replace(/_/g, ' ')}`; }
+      else if (overdue && canSeeMoney) { score += 80; reason = `payment overdue${remaining ? ` (₹${remaining.toLocaleString('en-IN')} remaining)` : ''}`; }
+      else if ((w.riskScore || 0) >= 60) { score += 60 + (w.riskScore || 0); reason = 'high risk score'; }
+      else if ((w.healthLevel || w.health) === 'red' || (w.healthLevel || w.health) === 'orange') { score += 40; reason = 'unhealthy trend'; }
+      return { name: w.clientName, score, reason };
+    })
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8)
+    .map(x => `${x.name} — ${x.reason}`);
+
+  return [orgClients, bullets];
+}
+
+/** Names of everyone on approved leave today (org-wide, low sensitivity —
+ *  matches the "on leave" badge already shown to all staff elsewhere). */
+async function buildLeavesToday(orgId: string): Promise<string[]> {
+  const todayKey = istDayKeyFor();
+  const start = new Date(`${todayKey}T00:00:00.000Z`);
+  const end = new Date(`${todayKey}T23:59:59.999Z`);
+  const apps = await LeaveApplication.find({
+    organizationId: orgId, status: 'approved', 'days.date': { $gte: start, $lte: end },
+  }).select('userId').lean() as any[];
+  if (apps.length === 0) return [];
+  const users = await User.find({ _id: { $in: apps.map(a => a.userId) } }).select('name').lean() as any[];
+  return users.map(u => u.name).filter(Boolean);
+}
+
+/** Admin-only: one line per active teammate — open task count, on-leave
+ *  today, whether they've submitted their morning check-in yet. */
+async function buildTeamToday(orgId: string, leavesToday: string[]): Promise<UserContext['teamToday']> {
+  const staff = await User.find({ organizationId: orgId, role: { $in: ['admin', 'employee', 'sales', 'workroom'] } })
+    .select('name').lean() as any[];
+  if (staff.length === 0) return [];
+  const todayKey = istDayKeyFor();
+  const [taskCounts, checkins] = await Promise.all([
+    ProjectTask.aggregate([
+      { $match: { assignedTo: { $in: staff.map(s => String(s._id)) }, status: { $in: ['pending', 'ongoing'] } } },
+      { $group: { _id: '$assignedTo', count: { $sum: 1 } } },
+    ]),
+    DailyCheckin.find({ organizationId: orgId, dateIST: todayKey }).select('userId morning.done').lean(),
+  ]);
+  const countByUser = new Map(taskCounts.map((t: any) => [String(t._id), t.count]));
+  const checkinByUser = new Map(checkins.map((c: any) => [String(c.userId), !!c.morning?.done]));
+  const leaveSet = new Set(leavesToday);
+  return staff.map(s => ({
+    name: s.name,
+    openTasks: countByUser.get(String(s._id)) || 0,
+    onLeave: leaveSet.has(s.name),
+    morningCheckinDone: checkinByUser.get(String(s._id)) || false,
+  }));
+}
+
+/** This user's own last 5 workdays of morning check-ins — what they said
+ *  they'd work on, and their evening tomorrow-plan carry-forward. Gives
+ *  the copilot real "what did I say I'd do" history instead of guessing
+ *  from ProjectTask alone (which doesn't capture same-day intent). */
+async function buildMyRecentCheckins(orgId: string, userId: string): Promise<UserContext['myRecentCheckins']> {
+  const docs = await DailyCheckin.find({ organizationId: orgId, userId })
+    .sort({ dateIST: -1 })
+    .limit(5)
+    .select('dateIST morning.tasks evening.tomorrowPlan')
+    .lean() as any[];
+  return docs.map(d => compact({
+    date: d.dateIST,
+    plannedTasks: (d.morning?.tasks || []).map((t: any) => t.title).filter(Boolean),
+    tomorrowPlan: d.evening?.tomorrowPlan || undefined,
+  })) as UserContext['myRecentCheckins'];
 }
 
 /** Invalidate cache when we know the user just mutated their world. */

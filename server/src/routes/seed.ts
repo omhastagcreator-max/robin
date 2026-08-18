@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 
 // Inline all models
 import ClientWorkflow from '../models/ClientWorkflow';
-import { SERVICE_TEMPLATES } from '../lib/workflowTemplates';
+import { SERVICE_TEMPLATES, type ServiceType } from '../lib/workflowTemplates';
 import User from '../models/User';
 import Organization from '../models/Organization';
 import Project from '../models/Project';
@@ -408,7 +408,13 @@ router.post('/demo-clients', authMiddleware, async (req: AuthRequest, res: Respo
       activity.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 
       // Recompute blocked status (Meta is blocked until Shopify done).
-      const doneTypes = new Set(services.filter(s => s.status === 'done').map(s => s.serviceType));
+      // Aug 2026 — cast to the full ServiceType: workflowTemplates.ts's
+      // dependsOn arrays widened to ServiceType when 'misc' was added as
+      // a 4th type, but this seed script's demo BRANDS list only ever
+      // uses the original 3 — without the cast, TS infers doneTypes as
+      // the narrower 3-value Set and complains that dependsOn's (wider)
+      // element type isn't assignable to .has(). No behavior change.
+      const doneTypes = new Set(services.filter(s => s.status === 'done').map(s => s.serviceType as ServiceType));
       services.forEach(s => {
         const tpl = SERVICE_TEMPLATES[s.serviceType as keyof typeof SERVICE_TEMPLATES];
         const blockers = tpl.dependsOn.filter(d => services.some((x: any) => x.serviceType === d) && !doneTypes.has(d));

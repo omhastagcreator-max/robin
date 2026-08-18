@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Phone, Mail, AlertTriangle, Sparkles, ChevronDown, ChevronUp,
   CheckCircle2, Loader2, RotateCcw, ShieldX, Unlock, Plane,
-  Clock, Flag, Pencil, LineChart,
+  Clock, Flag, Pencil, LineChart, PieChart,
 } from 'lucide-react';
 // Clock is used by BrandTaskEtaInline below; harmless if also used above.
 
@@ -114,7 +114,7 @@ interface Workflow {
   onboardedAt?: string | null;
   leadId?: string | null;
 }
-interface UserLite { _id: string; name?: string }
+interface UserLite { _id: string; name?: string; email?: string; role?: string }
 
 const JOURNEY = [
   { key: 'discovery', label: 'Discovery'   },
@@ -192,8 +192,15 @@ function stageKeyToSvcType(key: StageKey): string | null {
 // ─────────────────────────────────────────────────────────────────────
 export default function ClientWorkspacePage() {
   const { id }   = useParams();
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const isAdminOrSales = role === 'admin' || role === 'sales';
+  // Aug 2026 — owner ask: give the War Room banner a real "assign the
+  // responsible team member" control (Owner), matching the privilege
+  // level reassignService already enforces server-side (admin or the
+  // delegated canEditAllClients flag — NOT sales/employee, since this
+  // moves who's accountable for the work, not just CRM metadata).
+  const canReassignOwner = role === 'admin' || user?.canEditAllClients === true;
+  const [reassignBusy, setReassignBusy] = useState(false);
   const navigate = useNavigate();
   // Click a service card → drill into its Stage Workspace (Layer 2).
   const openStage = (stageKey: StageKey) => {
@@ -218,6 +225,14 @@ export default function ClientWorkspacePage() {
   // robin" (re: the daily/weekly/monthly performance report). Defaults to
   // expanded now instead of making everyone click to discover it exists.
   const [perfOpen, setPerfOpen] = useState(true);
+  // Aug 2026 — owner ask: "this UI is wasting spaces make it more
+  // optimised" (screenshot showed the pipeline pie chart section, full
+  // height, always open). It's genuinely useful (per-service drilldown,
+  // by-teammate view) but it duplicates what the Journey strip above and
+  // the Service cards below already show at a glance — so it's now
+  // collapsed by default, same progressive-disclosure pattern as the
+  // Performance calendar below it, rather than removed.
+  const [pipelinePieOpen, setPipelinePieOpen] = useState(false);
 
   const load = async () => {
     if (!id) return;
@@ -331,6 +346,24 @@ export default function ClientWorkspacePage() {
 
   const ownerId   = activeSvc?.assignedTo || wf.services.find(s => s.assignedTo)?.assignedTo;
   const ownerName = ownerId ? users[ownerId]?.name : undefined;
+  // Which service doc actually gets the reassignment: the current
+  // stage's service if there is one, else whichever service is already
+  // carrying the owner, else just the first service on the workflow (so
+  // a totally-unassigned client can still get an initial owner set).
+  const ownerSvcId = activeSvc?._id || wf.services.find(s => s.assignedTo)?._id || wf.services[0]?._id;
+  const teammates = Object.values(users).filter(u => ['admin', 'employee', 'sales', 'workroom'].includes(u.role || ''));
+  const handleReassignOwner = async (userId: string) => {
+    if (!id || !ownerSvcId) return;
+    setReassignBusy(true);
+    try {
+      const updated = await api.cwReassignService(id, ownerSvcId, { userId });
+      setWf(updated as Workflow);
+      bumpActivity();
+      toast.success('Owner reassigned');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to reassign');
+    } finally { setReassignBusy(false); }
+  };
   const isBlocked = !!wf.blockerType;
   const nextAction = wf.nextAction || wf.nextBestAction;
   const launchLabel = wf.eta ? format(parseISO(wf.eta), 'd MMM') : 'TBD';
@@ -392,6 +425,10 @@ export default function ClientWorkspacePage() {
           <WarRoomBanner
             workflow={wf}
             ownerName={ownerName}
+            teammates={teammates}
+            canReassign={canReassignOwner}
+            onReassignOwner={handleReassignOwner}
+            reassignBusy={reassignBusy}
           />
         </div>
 
@@ -461,14 +498,32 @@ export default function ClientWorkspacePage() {
               in Shopify-green, Video in a unique color. Each slice is
               clickable for the per-service drilldown. A toggle on the
               top-right of the card switches to a "by teammate" view so
-              admins can see who owns what without clicking each service. */}
-          <div className="px-3 sm:px-4 lg:px-6 pt-3">
-            <BrandPipelinePie
-              services={wf.services}
-              users={Object.values(users).map(u => ({ _id: u._id, name: u.name }))}
-              onLeaveIds={Array.from(onLeaveIds)}
-            />
-          </div>
+              admins can see who owns what without clicking each service.
+              Aug 2026 — collapsed by default (see pipelinePieOpen above),
+              same reasoning as the Performance calendar toggle below. */}
+          <button
+            onClick={() => setPipelinePieOpen(o => !o)}
+            className="w-full px-4 py-2 flex items-center justify-between gap-2 hover:bg-muted/30 text-left text-[12px] border-t border-border"
+          >
+            <div className="flex items-center gap-2">
+              <PieChart className="h-3.5 w-3.5 text-muted-foreground" />
+              <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-muted-foreground">Project pipeline breakdown</p>
+            </div>
+            {pipelinePieOpen ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+          </button>
+          <AnimatePresence initial={false}>
+            {pipelinePieOpen && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden border-t border-border">
+                <div className="px-3 sm:px-4 lg:px-6 py-3">
+                  <BrandPipelinePie
+                    services={wf.services}
+                    users={Object.values(users).map(u => ({ _id: u._id, name: u.name }))}
+                    onLeaveIds={Array.from(onLeaveIds)}
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* ── 5. SERVICE OVERVIEW — 3 cards, active elevated.
               Each card click drills into Layer 2 (Stage Workspace) at

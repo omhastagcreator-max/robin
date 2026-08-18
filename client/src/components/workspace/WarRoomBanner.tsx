@@ -21,9 +21,19 @@ import { Activity, ShieldAlert, Sparkles, User as UserIcon, Flag, Clock, AlertTr
 interface Props {
   workflow: any;
   ownerName?: string;
-  reviewerName?: string;
-  approverName?: string;
-  requesterName?: string;
+  // Aug 2026 — owner ask: "no option to allot the responsible team
+  // member for this role." Reviewer/Approver/Requester slots below were
+  // pure display scaffolding — no schema field ever backed them, no
+  // caller ever passed them, so they always rendered "unassigned" and
+  // did nothing when clicked (they weren't clickable at all). Removed.
+  // Owner is real (backed by services[].assignedTo via reassignService)
+  // and now gets an actual reassign control here instead of a read-only
+  // label, gated to the same privilege level as the rest of the app's
+  // reassignment UI (admin / canEditAllClients).
+  teammates?: Array<{ _id: string; name?: string; email?: string }>;
+  canReassign?: boolean;
+  onReassignOwner?: (userId: string) => void;
+  reassignBusy?: boolean;
 }
 
 const HEALTH_TONE: Record<string, { dot: string; ring: string; text: string; emoji: string; word: string }> = {
@@ -33,7 +43,7 @@ const HEALTH_TONE: Record<string, { dot: string; ring: string; text: string; emo
   red:    { dot: 'bg-rose-500',    ring: 'border-rose-500/50',    text: 'text-rose-700',    emoji: '🔴', word: 'Critical' },
 };
 
-export function WarRoomBanner({ workflow, ownerName, reviewerName, approverName, requesterName }: Props) {
+export function WarRoomBanner({ workflow, ownerName, teammates, canReassign, onReassignOwner, reassignBusy }: Props) {
   const tone = HEALTH_TONE[workflow.healthLevel || 'green'] || HEALTH_TONE.green;
   const services = (workflow.services || []) as any[];
   const totalCl = services.reduce((s, sv) => s + (sv.checklist?.length || 0), 0);
@@ -77,12 +87,25 @@ export function WarRoomBanner({ workflow, ownerName, reviewerName, approverName,
       {/* Three columns: Responsibility · AI insight · Next action */}
       <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-border/60">
         <Section icon={<UserIcon className="h-3 w-3 text-violet-600" />} label="Responsibility">
-          <div className="grid grid-cols-2 gap-1.5">
+          {canReassign && onReassignOwner ? (
+            <div className="min-w-0">
+              <p className="text-[9px] uppercase tracking-wider text-muted-foreground mb-0.5">Owner</p>
+              <select
+                value=""
+                onChange={e => { if (e.target.value) onReassignOwner(e.target.value); }}
+                disabled={reassignBusy}
+                className="w-full appearance-none text-[11.5px] font-semibold pl-1.5 pr-5 py-0.5 bg-transparent border border-border/70 rounded-md focus:outline-none focus:ring-1 focus:ring-ring truncate"
+                title="Reassign the client owner"
+              >
+                <option value="">{ownerName || 'Unassigned — pick someone'}</option>
+                {(teammates || []).map(t => (
+                  <option key={t._id} value={t._id}>{t.name || t.email}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
             <Slot label="Owner" name={ownerName} />
-            <Slot label="Reviewer" name={reviewerName} />
-            <Slot label="Approver" name={approverName} />
-            <Slot label="Requester" name={requesterName} />
-          </div>
+          )}
         </Section>
 
         <Section icon={<Sparkles className="h-3 w-3 text-primary" />} label="AI insight">

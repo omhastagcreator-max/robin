@@ -327,9 +327,22 @@ export async function updateWorkflowDetails(req: AuthRequest, res: Response): Pr
       return;
     }
 
+    // Aug 2026 — owner ask: "these details were supposed to be filled by
+    // sales team only, not by me [an employee]." Money-related fields
+    // (payment status, the financial block, the Meta Ads fee model) are
+    // now sales-team territory — admin, sales, and whoever holds the
+    // canEditAllClients override (Om) can still edit them; every other
+    // staff role has them silently dropped from the update rather than
+    // 403-ing the whole request, so an employee can still edit the
+    // non-financial fields (name/tags/priority/operational status) in
+    // the same save.
+    const FINANCIAL_FIELDS = new Set(['paymentStatus', 'totalAmount', 'advanceReceived', 'nextPaymentAmount', 'nextPaymentCondition']);
+    const canEditFinancials = req.user!.role === 'admin' || req.user!.role === 'sales' || isPrivilegedEditor(req.user!);
+
     const changes: string[] = [];
     for (const field of EDITABLE_DETAIL_FIELDS) {
       if (body[field] === undefined) continue;
+      if (FINANCIAL_FIELDS.has(field) && !canEditFinancials) continue;
       const next = field === 'tags' ? body.tags : String(body[field]).trim();
       const prev = (wf as any)[field];
       if (JSON.stringify(prev) === JSON.stringify(next)) continue;
@@ -339,8 +352,9 @@ export async function updateWorkflowDetails(req: AuthRequest, res: Response): Pr
 
     // nextPaymentDate — separate from the scalar loop above so it gets a
     // real Date cast (or explicitly cleared with null) instead of the
-    // string-trim treatment.
-    if (body.nextPaymentDate !== undefined) {
+    // string-trim treatment. Same sales/admin-only gate as the rest of
+    // the financial block.
+    if (body.nextPaymentDate !== undefined && canEditFinancials) {
       const next = body.nextPaymentDate ? new Date(body.nextPaymentDate) : null;
       const prev = wf.nextPaymentDate ? new Date(wf.nextPaymentDate).getTime() : null;
       const nextTime = next ? next.getTime() : null;
@@ -349,8 +363,8 @@ export async function updateWorkflowDetails(req: AuthRequest, res: Response): Pr
 
     // metaAdsFeeModel — nested object, replaced wholesale (not merged
     // field-by-field) since the onboarding/edit form always sends the
-    // full sub-object for whichever fee type is selected.
-    if (body.metaAdsFeeModel !== undefined) {
+    // full sub-object for whichever fee type is selected. Same gate.
+    if (body.metaAdsFeeModel !== undefined && canEditFinancials) {
       const m = body.metaAdsFeeModel || {};
       const next = {
         type: VALID_FEE_MODEL_TYPES.includes(m.type) ? m.type : '',
