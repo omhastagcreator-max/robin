@@ -47,7 +47,29 @@ const ServiceSchema = new Schema({
   // last return note. Cleared when the service is re-completed.
   returnedReason: { type: String },
   returnedAt:     { type: Date },
+  // Added Aug 2026 for the "UGC Videos" service — owner wants to track how
+  // many videos were agreed on (e.g. "3 UGC videos"), not just a checklist.
+  // Optional/unused for the other service types.
+  quantity:       { type: Number, default: null },
 }, { _id: true });
+
+// Added Aug 2026 — CRM upgrade. Meta Ads fee model, set at onboarding when
+// the client selects the meta_ads service, editable later via
+// updateWorkflowDetails. Each `type` uses a different subset of the
+// numeric fields below; unused fields are simply left at their default.
+// Kept as a plain sub-object (not required) rather than a discriminated
+// union so partially-filled drafts don't fail validation while the sales
+// rep is still filling out the onboarding form.
+const MetaAdsFeeModelSchema = new Schema({
+  type: {
+    type: String,
+    enum: ['', 'fixed', 'percentage', 'hybrid', 'custom'],
+    default: '',
+  },
+  fixedMonthlyFee:      { type: Number, default: null }, // type: 'fixed' or the flat part of 'hybrid'
+  percentageOfSpend:    { type: Number, default: null }, // type: 'percentage' or the % part of 'hybrid'
+  customDescription:    { type: String, default: '' },   // type: 'custom' — freeform terms
+}, { _id: false });
 
 const ActivitySchema = new Schema({
   at:        { type: Date, default: Date.now },
@@ -195,6 +217,49 @@ const ClientWorkflowSchema = new Schema({
   priority: { type: String, enum: ['low', 'medium', 'high', 'urgent'], default: 'medium' },
   tags:     { type: [String], default: [] },
 
+  // ── Operational status (Aug 2026 CRM upgrade) ─────────────────────────
+  // Deliberately SEPARATE from `health`/`healthLevel` above (which are
+  // auto-computed traffic-light signals about whether delivery is on
+  // track) and from per-service `status` (pending/in_progress/done per
+  // service line). This is the simple, human-set "where does this
+  // engagement stand" field the owner asked for — set at onboarding,
+  // changed manually (e.g. client goes quiet → 'paused', engagement ends
+  // → 'completed'/'cancelled').
+  operationalStatus: {
+    type: String,
+    enum: ['in_progress', 'paused', 'completed', 'cancelled', 'on_hold'],
+    default: 'in_progress',
+    index: true,
+  },
+
+  // ── Financials (Aug 2026 CRM upgrade) ─────────────────────────────────
+  // Coarser than the per-transaction ClientTransaction ledger and the
+  // per-period ClientPerformanceEntry (ad spend/sales tracking) — this is
+  // the single deal-level picture: what was agreed, what's been paid,
+  // what's owed next. `remaining` is deliberately NOT stored — it's
+  // totalAmount - advanceReceived, computed on read (see toJSON below) so
+  // it can never drift out of sync with the two numbers that define it.
+  totalAmount:          { type: Number, default: 0 },
+  advanceReceived:      { type: Number, default: 0 },
+  nextPaymentAmount:    { type: Number, default: 0 },
+  nextPaymentDate:      { type: Date,   default: null },
+  // Freeform "what triggers this payment" note — e.g. "50% after store
+  // goes live" — same pattern as Lead.paymentNote.
+  nextPaymentCondition: { type: String, default: '' },
+
+  // Meta Ads fee model — only meaningful when a meta_ads service is
+  // present, but stored unconditionally so it isn't lost if that service
+  // is added later.
+  metaAdsFeeModel: { type: MetaAdsFeeModelSchema, default: () => ({}) },
+
+  // Who onboarded this client and from which lead — "Onboarded By" +
+  // traceability back to the Sales pipeline. `leadId` is separate from
+  // `clientId` (which points at the client-login User, the pre-existing
+  // linkage convention — see Lead.convertedToClientId / usersController).
+  onboardedBy: { type: String, default: '' },   // userId — Rishi, Om, etc.
+  onboardedAt: { type: Date,   default: null },
+  leadId:      { type: Types.ObjectId, ref: 'Lead', default: null, index: true },
+
   // Recurring meeting cadence imported from the CRM sheets (May 2026).
   // The CRM import stores e.g. "Wednesday 11:00 IST" because that's how
   // the agency owner wrote it in Excel. The meeting-auto-scheduler cron
@@ -218,7 +283,13 @@ const ClientWorkflowSchema = new Schema({
   createdBy:      { type: String, required: true },
   // Bookkeeping for bulk wipe-and-replace imports.
   importedFrom:   { type: String, default: '' },
-}, { timestamps: true });
+}, { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } });
+
+// remaining = totalAmount - advanceReceived, always derived, never stored,
+// so the two source numbers can't drift out of sync with a cached total.
+ClientWorkflowSchema.virtual('remaining').get(function (this: any) {
+  return Math.max(0, (this.totalAmount || 0) - (this.advanceReceived || 0));
+});
 
 // One workflow per (org, client) — uniqueness enforced.
 ClientWorkflowSchema.index({ organizationId: 1, clientId: 1 }, { unique: true });

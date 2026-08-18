@@ -41,10 +41,21 @@ export interface PipelineFilters {
   team:     '' | 'sales' | 'development' | 'meta' | 'influencer' | 'qa';
   priority: '' | 'urgent' | 'high' | 'medium' | 'low';
   blocker:  '' | 'any' | 'none' | 'waiting_client_input' | 'waiting_internal_approval' | 'dependency' | 'technical' | 'budget';
+  // Aug 2026 CRM upgrade — filtering across the fields the spec asked for:
+  // service, operational status (separate from `health` above), payment
+  // status, assigned employee, and tag. All free-standing — combine with
+  // any of the above.
+  service:           '' | 'shopify' | 'meta_ads' | 'influencer' | 'misc';
+  operationalStatus: '' | 'in_progress' | 'paused' | 'completed' | 'cancelled' | 'on_hold';
+  paymentStatus:     '' | 'pending' | 'partial' | 'paid' | 'overdue' | 'na';
+  assignee:          string;  // userId, '' = any
+  tag:               string;  // free-text, case-insensitive substring match, '' = any
+  onboardedBy:       string;  // userId, '' = any
 }
 
 export const EMPTY_FILTERS: PipelineFilters = {
   health: '', team: '', priority: '', blocker: '',
+  service: '', operationalStatus: '', paymentStatus: '', assignee: '', tag: '', onboardedBy: '',
 };
 
 // Sort order for the Client CRM dashboard. Owner ask (May 2026): the
@@ -140,7 +151,8 @@ export function applySort<T extends {
 /** Apply filters to a list of workflows. Pure — used by every view. */
 export function applyFilters<T extends {
   health?: string; blockerType?: string; priority?: string;
-  currentOwnerTeam?: string; services?: Array<{ status?: string }>;
+  currentOwnerTeam?: string; services?: Array<{ status?: string; serviceType?: string; assignedTo?: string }>;
+  operationalStatus?: string; paymentStatus?: string; tags?: string[]; onboardedBy?: string;
 }>(list: T[], filters: PipelineFilters): T[] {
   return list.filter(w => {
     if (filters.health) {
@@ -164,6 +176,27 @@ export function applyFilters<T extends {
       if (filters.blocker === 'none' &&  has) return false;
       if (filters.blocker !== 'any' && filters.blocker !== 'none' && (w.blockerType || '') !== filters.blocker) return false;
     }
+    // Aug 2026 CRM upgrade filters — service, operational status, payment
+    // status, assignee, tag.
+    if (filters.service) {
+      if (!(w.services || []).some(s => s.serviceType === filters.service)) return false;
+    }
+    if (filters.operationalStatus) {
+      if ((w.operationalStatus || 'in_progress') !== filters.operationalStatus) return false;
+    }
+    if (filters.paymentStatus) {
+      if ((w.paymentStatus || 'na') !== filters.paymentStatus) return false;
+    }
+    if (filters.assignee) {
+      if (!(w.services || []).some(s => s.assignedTo === filters.assignee)) return false;
+    }
+    if (filters.tag) {
+      const needle = filters.tag.trim().toLowerCase();
+      if (needle && !(w.tags || []).some(t => t.toLowerCase().includes(needle))) return false;
+    }
+    if (filters.onboardedBy) {
+      if ((w.onboardedBy || '') !== filters.onboardedBy) return false;
+    }
     return true;
   });
 }
@@ -179,6 +212,7 @@ export function PipelineToolbar({
   mineOnly, onMineOnly,
   selectedIds, onClearSelected, onBulk,
   totalCount, filteredCount, role,
+  users,
 }: {
   view: PipelineView; onView: (v: PipelineView) => void;
   filters: PipelineFilters; onFilters: (f: PipelineFilters) => void;
@@ -190,6 +224,9 @@ export function PipelineToolbar({
   selectedIds: string[]; onClearSelected: () => void;
   onBulk: (action: 'priority'|'note'|'mark-on-track', payload?: any) => Promise<void>;
   totalCount: number; filteredCount: number; role: string;
+  /** Assignee filter dropdown needs names — optional so old callers that
+   *  don't pass it just don't get the Assignee filter row. */
+  users?: Record<string, { _id: string; name?: string; email?: string }>;
 }) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [saveOpen, setSaveOpen]     = useState(false);
@@ -199,7 +236,13 @@ export function PipelineToolbar({
     (filters.health   ? 1 : 0) +
     (filters.team     ? 1 : 0) +
     (filters.priority ? 1 : 0) +
-    (filters.blocker  ? 1 : 0);
+    (filters.blocker  ? 1 : 0) +
+    (filters.service           ? 1 : 0) +
+    (filters.operationalStatus ? 1 : 0) +
+    (filters.paymentStatus     ? 1 : 0) +
+    (filters.assignee          ? 1 : 0) +
+    (filters.tag               ? 1 : 0) +
+    (filters.onboardedBy       ? 1 : 0);
 
   const clearFilters = () => onFilters(EMPTY_FILTERS);
 
@@ -380,7 +423,7 @@ export function PipelineToolbar({
             exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden"
           >
-            <div className="rounded-xl border border-border bg-card px-3 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11.5px]">
+            <div className="rounded-xl border border-border bg-card px-3 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11.5px] max-h-80 overflow-y-auto">
               <FilterSelect label="Status" value={filters.health} onChange={v => onFilters({ ...filters, health: v as any })}
                 options={[
                   ['', 'Any status'],
@@ -417,6 +460,59 @@ export function PipelineToolbar({
                   ['technical',  'Tech issue'],
                   ['budget',     'Budget / scope'],
                 ]} />
+              <FilterSelect label="Service" value={filters.service} onChange={v => onFilters({ ...filters, service: v as any })}
+                options={[
+                  ['', 'Any service'],
+                  ['shopify',    'Website Development'],
+                  ['meta_ads',   'Meta Ads'],
+                  ['influencer', 'UGC Videos'],
+                  ['misc',       'Miscellaneous'],
+                ]} />
+              <FilterSelect label="Client status" value={filters.operationalStatus} onChange={v => onFilters({ ...filters, operationalStatus: v as any })}
+                options={[
+                  ['', 'Any'],
+                  ['in_progress', 'In progress'],
+                  ['paused',      'Paused'],
+                  ['completed',   'Completed'],
+                  ['cancelled',   'Cancelled'],
+                  ['on_hold',     'On hold'],
+                ]} />
+              <FilterSelect label="Payment" value={filters.paymentStatus} onChange={v => onFilters({ ...filters, paymentStatus: v as any })}
+                options={[
+                  ['', 'Any'],
+                  ['na',      'N/A'],
+                  ['pending', 'Pending'],
+                  ['partial', 'Partial'],
+                  ['paid',    'Paid'],
+                  ['overdue', 'Overdue'],
+                ]} />
+              {users && (
+                <FilterSelect label="Assignee" value={filters.assignee} onChange={v => onFilters({ ...filters, assignee: v })}
+                  options={[
+                    ['', 'Anyone'],
+                    ...Object.values(users)
+                      .sort((a, b) => (a.name || a.email || '').localeCompare(b.name || b.email || ''))
+                      .map(u => [u._id, u.name || u.email || u._id] as [string, string]),
+                  ]} />
+              )}
+              {users && (
+                <FilterSelect label="Onboarded by" value={filters.onboardedBy} onChange={v => onFilters({ ...filters, onboardedBy: v })}
+                  options={[
+                    ['', 'Anyone'],
+                    ...Object.values(users)
+                      .sort((a, b) => (a.name || a.email || '').localeCompare(b.name || b.email || ''))
+                      .map(u => [u._id, u.name || u.email || u._id] as [string, string]),
+                  ]} />
+              )}
+              <label className="block">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Tag</span>
+                <input
+                  value={filters.tag}
+                  onChange={e => onFilters({ ...filters, tag: e.target.value })}
+                  placeholder="e.g. high-value"
+                  className="mt-1 w-full px-2 py-1.5 bg-background border border-input rounded-md text-[11.5px] focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </label>
               {filterCount > 0 && (
                 <button
                   onClick={clearFilters}

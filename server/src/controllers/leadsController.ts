@@ -89,12 +89,41 @@ export async function updateLead(req: AuthRequest, res: Response): Promise<void>
   try {
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
-    const allowed = ['name', 'contact', 'email', 'company', 'source', 'estimatedValue', 'status', 'notes', 'assignedTo', 'currentStage'];
+    // Aug 2026 — 'stage' was missing from this allowlist (only the legacy
+    // 'currentStage' — not an actual schema field — was here). The Sales
+    // Dashboard's drag-and-drop and "Move to stage" dropdown both send
+    // { stage, status: stage }, so only `status` was ever actually being
+    // written; `stage` — the field the kanban board groups leads BY — never
+    // changed in the DB. On the very next refetch, cards visibly reverted
+    // to their old column, which read as "the pipeline doesn't save."
+    // Fixed at the root: 'stage' is now persisted, and every real stage
+    // change is logged to stageHistory[] (mirroring how the client-detail
+    // side already logs activity), with closedAt stamped on won/lost.
+    // 'tags' added Aug 2026 — schema field existed but nothing could ever
+    // write it (no route, no UI). See SalesDashboard.tsx lead-detail view.
+    const allowed = ['name', 'contact', 'email', 'company', 'source', 'estimatedValue', 'status', 'stage', 'notes', 'assignedTo', 'closedAt', 'lostReason', 'wonAmount', 'tags'];
     const patch: Record<string, any> = {};
     for (const k of allowed) if (req.body[k] !== undefined) patch[k] = req.body[k];
+
+    const existing = await Lead.findOne({ _id: req.params.id, organizationId: orgId }).select('stage').lean();
+    if (!existing) { res.status(404).json({ error: 'Lead not found' }); return; }
+
+    const stageChanged = patch.stage !== undefined && patch.stage !== existing.stage;
+    if (stageChanged) {
+      patch.status = patch.status ?? patch.stage; // keep legacy status field in lockstep
+      if ((patch.stage === 'won' || patch.stage === 'lost') && !patch.closedAt) patch.closedAt = new Date();
+    }
+
+    const update: any = { ...patch };
+    if (stageChanged) {
+      update.$push = {
+        stageHistory: { stage: patch.stage, movedAt: new Date(), movedBy: req.user!.id },
+      };
+    }
+
     const lead = await Lead.findOneAndUpdate(
       { _id: req.params.id, organizationId: orgId },
-      patch,
+      update,
       { new: true },
     );
     if (!lead) { res.status(404).json({ error: 'Lead not found' }); return; }

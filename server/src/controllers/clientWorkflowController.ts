@@ -131,14 +131,25 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
 
-    const { clientId, services, priority } = req.body || {};
+    const {
+      clientId, services, priority,
+      // Aug 2026 CRM-upgrade additions — all optional so the endpoint stays
+      // backwards compatible with the existing "add a service" callers that
+      // only ever sent { clientId, services, priority }.
+      totalAmount, advanceReceived, nextPaymentAmount, nextPaymentDate, nextPaymentCondition,
+      metaAdsFeeModel, leadId, onboardedBy,
+    } = req.body || {};
     if (!clientId) { res.status(400).json({ error: 'clientId required' }); return; }
     if (!Array.isArray(services) || services.length === 0) {
       res.status(400).json({ error: 'Pick at least one service' });
       return;
     }
-    const invalid = services.filter((s: string) => !SERVICE_TYPES.includes(s as any));
-    if (invalid.length) { res.status(400).json({ error: `Unknown service: ${invalid.join(', ')}` }); return; }
+    // Each entry is either a bare ServiceType string (legacy shape) or
+    // { type, quantity? } (Aug 2026 — lets Onboarding specify e.g.
+    // "3 UGC videos" for the influencer service).
+    const normalizedServices = services.map((s: any) => (typeof s === 'string' ? { type: s, quantity: null } : { type: s.type, quantity: s.quantity ?? null }));
+    const invalid = normalizedServices.filter((s: any) => !SERVICE_TYPES.includes(s.type as any));
+    if (invalid.length) { res.status(400).json({ error: `Unknown service: ${invalid.map((s: any) => s.type).join(', ')}` }); return; }
     // Priority is optional — defaults to 'medium' on the schema. We
     // validate against the enum so a typo doesn't silently drop to
     // null and confuse the dashboard filters later.
@@ -150,7 +161,7 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
 
     // Build each service from its (possibly overridden) template, auto-
     // assigning a teammate from the right team.
-    const serviceDocs = await Promise.all(services.map(async (type: ServiceType) => {
+    const serviceDocs = await Promise.all(normalizedServices.map(async ({ type, quantity }: { type: ServiceType; quantity: number | null }) => {
       const tpl = await resolveTemplate(orgId, type);
       const assignedTo = await pickAssignee(orgId, tpl.team);
       return {
@@ -159,8 +170,29 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
         assignedTo: assignedTo || undefined,
         status: 'pending',
         checklist: tpl.checklist.map(text => ({ text, done: false })),
+        quantity: quantity ?? null,
       };
     }));
+
+    // Financials + Meta Ads fee model — only meaningful on first creation
+    // (an "add a service" call on an existing workflow shouldn't silently
+    // reset money already recorded), so these are only applied in the
+    // `else` (create) branch below.
+    const financials: Record<string, unknown> = {};
+    if (totalAmount !== undefined) financials.totalAmount = Number(totalAmount) || 0;
+    if (advanceReceived !== undefined) financials.advanceReceived = Number(advanceReceived) || 0;
+    if (nextPaymentAmount !== undefined) financials.nextPaymentAmount = Number(nextPaymentAmount) || 0;
+    if (nextPaymentDate) financials.nextPaymentDate = new Date(nextPaymentDate);
+    if (nextPaymentCondition !== undefined) financials.nextPaymentCondition = String(nextPaymentCondition).slice(0, 500);
+    if (metaAdsFeeModel && typeof metaAdsFeeModel === 'object') {
+      const VALID_FEE_TYPES = ['', 'fixed', 'percentage', 'hybrid', 'custom'];
+      financials.metaAdsFeeModel = {
+        type: VALID_FEE_TYPES.includes(metaAdsFeeModel.type) ? metaAdsFeeModel.type : '',
+        fixedMonthlyFee: metaAdsFeeModel.fixedMonthlyFee != null ? Number(metaAdsFeeModel.fixedMonthlyFee) : null,
+        percentageOfSpend: metaAdsFeeModel.percentageOfSpend != null ? Number(metaAdsFeeModel.percentageOfSpend) : null,
+        customDescription: String(metaAdsFeeModel.customDescription || '').slice(0, 500),
+      };
+    }
 
     // Upsert — if a workflow already exists for this client, add NEW services
     // to it rather than refusing or duplicating.
@@ -191,6 +223,13 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
         clientEmail: client.email,
         services: serviceDocs,
         ...(safePriority ? { priority: safePriority } : {}),
+        ...financials,
+        // "Onboarded By" — Sales-flow ask. Defaults to whoever is calling
+        // (Rishi, Om, or anyone on STAFF), but accepts an explicit
+        // onboardedBy if the caller wants to attribute it to someone else.
+        onboardedBy: onboardedBy || req.user!.id,
+        onboardedAt: new Date(),
+        leadId: leadId || null,
         createdBy: req.user!.id,
         activity: [{
           actorId: req.user!.id,
@@ -244,9 +283,16 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
  * Robin ecosystem" also means "who changed what, when" stays auditable
  * — same convention as every other mutation in this controller.
  */
-const EDITABLE_DETAIL_FIELDS = ['clientName', 'clientPhone', 'clientEmail', 'priority', 'tags', 'paymentStatus'] as const;
+// Aug 2026 CRM upgrade — added operationalStatus + the flat financial
+// scalars (totalAmount/advanceReceived/nextPaymentAmount/nextPaymentCondition)
+// to the plain string-diff loop below; nextPaymentDate and metaAdsFeeModel
+// are handled separately further down since one needs Date parsing and the
+// other is a nested object, not a scalar.
+const EDITABLE_DETAIL_FIELDS = ['clientName', 'clientPhone', 'clientEmail', 'priority', 'tags', 'paymentStatus', 'operationalStatus', 'totalAmount', 'advanceReceived', 'nextPaymentAmount', 'nextPaymentCondition'] as const;
 const VALID_PRIORITIES_DETAIL = ['urgent', 'high', 'medium', 'low'];
 const VALID_PAYMENT_STATUSES = ['pending', 'partial', 'paid', 'overdue', 'na'];
+const VALID_OPERATIONAL_STATUSES = ['in_progress', 'paused', 'completed', 'cancelled', 'on_hold'];
+const VALID_FEE_MODEL_TYPES = ['', 'fixed', 'percentage', 'hybrid', 'custom'];
 
 export async function updateWorkflowDetails(req: AuthRequest, res: Response): Promise<void> {
   try {
@@ -272,6 +318,14 @@ export async function updateWorkflowDetails(req: AuthRequest, res: Response): Pr
       res.status(400).json({ error: 'tags must be an array of strings' });
       return;
     }
+    if (body.operationalStatus !== undefined && !VALID_OPERATIONAL_STATUSES.includes(String(body.operationalStatus))) {
+      res.status(400).json({ error: `operationalStatus must be one of ${VALID_OPERATIONAL_STATUSES.join(', ')}` });
+      return;
+    }
+    if (body.metaAdsFeeModel !== undefined && body.metaAdsFeeModel !== null && !VALID_FEE_MODEL_TYPES.includes(String(body.metaAdsFeeModel.type || ''))) {
+      res.status(400).json({ error: `metaAdsFeeModel.type must be one of ${VALID_FEE_MODEL_TYPES.join(', ')}` });
+      return;
+    }
 
     const changes: string[] = [];
     for (const field of EDITABLE_DETAIL_FIELDS) {
@@ -281,6 +335,31 @@ export async function updateWorkflowDetails(req: AuthRequest, res: Response): Pr
       if (JSON.stringify(prev) === JSON.stringify(next)) continue;
       (wf as any)[field] = next;
       changes.push(field);
+    }
+
+    // nextPaymentDate — separate from the scalar loop above so it gets a
+    // real Date cast (or explicitly cleared with null) instead of the
+    // string-trim treatment.
+    if (body.nextPaymentDate !== undefined) {
+      const next = body.nextPaymentDate ? new Date(body.nextPaymentDate) : null;
+      const prev = wf.nextPaymentDate ? new Date(wf.nextPaymentDate).getTime() : null;
+      const nextTime = next ? next.getTime() : null;
+      if (prev !== nextTime) { (wf as any).nextPaymentDate = next; changes.push('nextPaymentDate'); }
+    }
+
+    // metaAdsFeeModel — nested object, replaced wholesale (not merged
+    // field-by-field) since the onboarding/edit form always sends the
+    // full sub-object for whichever fee type is selected.
+    if (body.metaAdsFeeModel !== undefined) {
+      const m = body.metaAdsFeeModel || {};
+      const next = {
+        type: VALID_FEE_MODEL_TYPES.includes(m.type) ? m.type : '',
+        fixedMonthlyFee: m.fixedMonthlyFee != null ? Number(m.fixedMonthlyFee) : null,
+        percentageOfSpend: m.percentageOfSpend != null ? Number(m.percentageOfSpend) : null,
+        customDescription: String(m.customDescription || '').slice(0, 500),
+      };
+      const prev = wf.metaAdsFeeModel ? JSON.parse(JSON.stringify(wf.metaAdsFeeModel)) : {};
+      if (JSON.stringify(prev) !== JSON.stringify(next)) { (wf as any).metaAdsFeeModel = next; changes.push('metaAdsFeeModel'); }
     }
 
     if (changes.length === 0) { res.json(wf); return; }

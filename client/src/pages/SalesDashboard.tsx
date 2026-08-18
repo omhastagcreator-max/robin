@@ -149,7 +149,23 @@ export default function SalesDashboard() {
   const [paymentForm, setPaymentForm]     = useState({ amount: '', dueDate: '', note: '' });
   const [sendingPayment, setSendingPayment] = useState(false);
   const [onboardLead, setOnboardLead]     = useState<any | null>(null);
-  const [onboardForm, setOnboardForm]     = useState({ clientName: '', email: '', password: '', services: [] as string[], projectType: 'combined', servicesDescription: '' });
+  // Aug 2026 CRM-upgrade onboarding form — replaces the old generic
+  // services checklist (which mapped to nothing real) with the 4 actual
+  // service types this agency delivers, plus the financial fields and
+  // Meta Ads fee model the owner asked for. See handleOnboardClient below
+  // for how this now creates a real ClientWorkflow instead of a legacy
+  // Project record.
+  const freshOnboardForm = (lead?: any) => ({
+    clientName: lead?.name || '', email: lead?.email || '', password: '',
+    svcShopify: false, svcMetaAds: false, svcInfluencer: false, svcMisc: false,
+    influencerQty: '', miscDescription: '',
+    servicesDescription: '',
+    totalAmount: lead?.estimatedValue ? String(lead.estimatedValue) : '',
+    advanceReceived: '', nextPaymentAmount: '', nextPaymentDate: '', nextPaymentCondition: '',
+    metaFeeType: '' as '' | 'fixed' | 'percentage' | 'hybrid' | 'custom',
+    metaFixedFee: '', metaPercentage: '', metaCustomDesc: '',
+  });
+  const [onboardForm, setOnboardForm] = useState(freshOnboardForm());
   const [onboarding, setOnboarding]       = useState(false);
   // Quick-add per column — when set, that stage's column shows an inline
   // single-line input above the cards. Hitting Enter creates a lead in that
@@ -279,7 +295,7 @@ export default function SalesDashboard() {
       const actualLead = leads.find(l => l._id === id);
       if (actualLead) {
         setOnboardLead(actualLead);
-        setOnboardForm({ clientName: actualLead.name || '', email: actualLead.email || '', password: '', services: [], projectType: 'combined', servicesDescription: '' });
+        setOnboardForm(freshOnboardForm(actualLead));
       }
       return;
     }
@@ -387,9 +403,23 @@ export default function SalesDashboard() {
   const handleOnboardClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!onboardLead) return;
+
+    // Aug 2026 CRM upgrade — real service selection instead of the old
+    // free checkbox list that mapped to nothing on the backend.
+    const services: { type: string; quantity?: number | null }[] = [];
+    if (onboardForm.svcShopify)    services.push({ type: 'shopify' });
+    if (onboardForm.svcMetaAds)    services.push({ type: 'meta_ads' });
+    if (onboardForm.svcInfluencer) services.push({ type: 'influencer', quantity: onboardForm.influencerQty ? Number(onboardForm.influencerQty) : null });
+    if (onboardForm.svcMisc)       services.push({ type: 'misc' });
+    if (services.length === 0) {
+      toast.error('Pick at least one service (Website, Meta Ads, UGC Videos, or Misc)');
+      return;
+    }
+
     setOnboarding(true);
     try {
-      // 1. Create User (Client)
+      // 1. Create User (Client) — unchanged. This also stamps
+      // Lead.convertedToClientId server-side (usersController.createUser).
       const userRes = await api.createUser({
         name: onboardForm.clientName,
         email: onboardForm.email,
@@ -398,20 +428,44 @@ export default function SalesDashboard() {
         company: onboardLead.company,
         fromLeadId: onboardLead._id
       });
-      
-      // 2. Create Project
-      await api.createProject({
-        name: `${onboardLead.company || onboardLead.name} - ${onboardForm.projectType}`,
+
+      // 2. Create the ONE real Client CRM record (ClientWorkflow) — this
+      // replaces the old api.createProject() call, which created a
+      // disconnected legacy "Project" that nothing else in Robin (Client
+      // CRM pipeline, performance calendar, activity log, employee "my
+      // work" view) ever reads. Now winning a lead lands the client in
+      // the same record every other role already sees.
+      const newWorkflow = await api.cwCreateWorkflow({
         clientId: userRes._id,
-        projectType: onboardForm.projectType,
-        services: onboardForm.services,
-        servicesDescription: onboardForm.servicesDescription,
-        deadline: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0] // default 30 days
+        services,
+        totalAmount: onboardForm.totalAmount ? Number(onboardForm.totalAmount) : undefined,
+        advanceReceived: onboardForm.advanceReceived ? Number(onboardForm.advanceReceived) : undefined,
+        nextPaymentAmount: onboardForm.nextPaymentAmount ? Number(onboardForm.nextPaymentAmount) : undefined,
+        nextPaymentDate: onboardForm.nextPaymentDate || undefined,
+        nextPaymentCondition: onboardForm.nextPaymentCondition || undefined,
+        ...(onboardForm.svcMetaAds && onboardForm.metaFeeType ? {
+          metaAdsFeeModel: {
+            type: onboardForm.metaFeeType,
+            fixedMonthlyFee: onboardForm.metaFixedFee ? Number(onboardForm.metaFixedFee) : null,
+            percentageOfSpend: onboardForm.metaPercentage ? Number(onboardForm.metaPercentage) : null,
+            customDescription: onboardForm.metaCustomDesc || '',
+          },
+        } : {}),
+        leadId: onboardLead._id,
       });
-      
-      // 3. Move Lead to Won
+
+      // Delivery-team instructions (e.g. "needs 5 creatives/week, focus on
+      // ROAS") — attached as a note on the new workflow so the assigned
+      // team sees it, instead of vanishing with the removed Project model.
+      if (onboardForm.servicesDescription?.trim() && newWorkflow?._id) {
+        try { await api.cwAddNote(newWorkflow._id, { detail: onboardForm.servicesDescription.trim() }); }
+        catch { /* non-fatal — client + workflow are already created */ }
+      }
+
+      // 3. Move Lead to Won — now actually persists `stage` (see the
+      // updateLead fix: the allowlist was silently dropping it before).
       await api.updateLead(onboardLead._id, { stage: 'won', status: 'won', closedAt: new Date() });
-      
+
       toast.success('Client onboarded successfully!');
       // Org-wide celebration — closing a lead → onboarding is a real
       // win, worth a confetti burst on every teammate's screen. The
@@ -439,7 +493,7 @@ export default function SalesDashboard() {
       const actualLead = leads.find(l => l._id === leadId);
       if (actualLead) {
         setOnboardLead(actualLead);
-        setOnboardForm({ clientName: actualLead.name || '', email: actualLead.email || '', password: '', services: [], projectType: 'combined', servicesDescription: '' });
+        setOnboardForm(freshOnboardForm(actualLead));
       }
       return;
     }
@@ -1149,6 +1203,7 @@ export default function SalesDashboard() {
                   {viewLead.estimatedValue > 0 && <p>💰 Value: <span className="font-semibold text-emerald-700">₹{viewLead.estimatedValue.toLocaleString('en-IN')}</span></p>}
                   {viewLead.source && <p>📣 Source: <span className="capitalize">{viewLead.source.replace(/_/g,' ')}</span></p>}
                 </div>
+                <LeadTagsEditor lead={viewLead} onSaved={() => load()} />
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-muted-foreground uppercase">Move to stage</p>
                   <select defaultValue={viewLead.stage || viewLead.status}
@@ -1156,7 +1211,7 @@ export default function SalesDashboard() {
                       const stage = e.target.value;
                       if (stage === 'won') {
                         setOnboardLead(viewLead);
-                        setOnboardForm({ clientName: viewLead.name || '', email: viewLead.email || '', password: '', services: [], projectType: 'combined', servicesDescription: '' });
+                        setOnboardForm(freshOnboardForm(viewLead));
                         setViewLead(null);
                         return;
                       }
@@ -1204,24 +1259,63 @@ export default function SalesDashboard() {
                   </div>
                   <div className="col-span-2 sm:col-span-1 border rounded-xl p-3 bg-muted/30 space-y-2">
                     <p className="text-xs font-semibold uppercase text-muted-foreground">Services</p>
-                    <select value={onboardForm.projectType} onChange={e => setOnboardForm(p => ({ ...p, projectType: e.target.value }))} className="w-full text-sm p-2 border rounded-lg bg-card">
-                      <option value="ads">Ads (Meta/Google)</option>
-                      <option value="website">Website Dev</option>
-                      <option value="combined">Combined / Both</option>
-                      <option value="seo">SEO</option>
-                      <option value="social">Social Media</option>
-                    </select>
-                    <div>
-                        {['Meta Ads', 'Google Ads', 'Shopify', 'WordPress', 'SEO', 'Creative'].map(svc => (
-                            <label key={svc} className="flex items-center gap-2 text-xs mb-1">
-                                <input type="checkbox" checked={onboardForm.services.includes(svc)} onChange={e => {
-                                    if(e.target.checked) setOnboardForm(p => ({...p, services: [...p.services, svc]}));
-                                    else setOnboardForm(p => ({...p, services: p.services.filter(s => s !== svc)}));
-                                }} /> {svc}
-                            </label>
-                        ))}
-                    </div>
+                    <label className="flex items-center gap-2 text-xs mb-1">
+                      <input type="checkbox" checked={onboardForm.svcShopify} onChange={e => setOnboardForm(p => ({ ...p, svcShopify: e.target.checked }))} /> Website Development
+                    </label>
+                    <label className="flex items-center gap-2 text-xs mb-1">
+                      <input type="checkbox" checked={onboardForm.svcMetaAds} onChange={e => setOnboardForm(p => ({ ...p, svcMetaAds: e.target.checked }))} /> Meta Ads Management
+                    </label>
+                    <label className="flex items-center gap-2 text-xs mb-1">
+                      <input type="checkbox" checked={onboardForm.svcInfluencer} onChange={e => setOnboardForm(p => ({ ...p, svcInfluencer: e.target.checked }))} /> UGC Videos
+                    </label>
+                    {onboardForm.svcInfluencer && (
+                      <input type="number" min={1} value={onboardForm.influencerQty} onChange={e => setOnboardForm(p => ({ ...p, influencerQty: e.target.value }))} placeholder="# of videos" className="w-full text-xs p-1.5 border rounded-lg bg-card ml-5" style={{ width: 'calc(100% - 1.25rem)' }} />
+                    )}
+                    <label className="flex items-center gap-2 text-xs mb-1">
+                      <input type="checkbox" checked={onboardForm.svcMisc} onChange={e => setOnboardForm(p => ({ ...p, svcMisc: e.target.checked }))} /> Miscellaneous
+                    </label>
                   </div>
+
+                  {onboardForm.svcMetaAds && (
+                    <div className="col-span-2 border rounded-xl p-3 bg-blue-50/50 space-y-2">
+                      <p className="text-xs font-semibold uppercase text-muted-foreground">Meta Ads fee model</p>
+                      <select value={onboardForm.metaFeeType} onChange={e => setOnboardForm(p => ({ ...p, metaFeeType: e.target.value as any }))} className="w-full text-sm p-2 border rounded-lg bg-card">
+                        <option value="">Select…</option>
+                        <option value="fixed">Fixed Monthly Fee</option>
+                        <option value="percentage">Percentage of Ad Spend</option>
+                        <option value="hybrid">Hybrid (fixed + %)</option>
+                        <option value="custom">Custom</option>
+                      </select>
+                      {(onboardForm.metaFeeType === 'fixed' || onboardForm.metaFeeType === 'hybrid') && (
+                        <input type="number" value={onboardForm.metaFixedFee} onChange={e => setOnboardForm(p => ({ ...p, metaFixedFee: e.target.value }))} placeholder="Fixed monthly fee (₹)" className="w-full text-sm p-2 border rounded-lg bg-card" />
+                      )}
+                      {(onboardForm.metaFeeType === 'percentage' || onboardForm.metaFeeType === 'hybrid') && (
+                        <input type="number" value={onboardForm.metaPercentage} onChange={e => setOnboardForm(p => ({ ...p, metaPercentage: e.target.value }))} placeholder="% of ad spend" className="w-full text-sm p-2 border rounded-lg bg-card" />
+                      )}
+                      {onboardForm.metaFeeType === 'custom' && (
+                        <textarea value={onboardForm.metaCustomDesc} onChange={e => setOnboardForm(p => ({ ...p, metaCustomDesc: e.target.value }))} placeholder="Describe the custom fee arrangement…" className="w-full text-sm p-2 border rounded-lg bg-card resize-none h-16" />
+                      )}
+                    </div>
+                  )}
+
+                  <div className="col-span-2 border rounded-xl p-3 bg-emerald-50/50 space-y-2">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">Financials</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input type="number" value={onboardForm.totalAmount} onChange={e => setOnboardForm(p => ({ ...p, totalAmount: e.target.value }))} placeholder="Total Amount (₹)" className="w-full text-sm p-2 border rounded-lg bg-card" />
+                      <input type="number" value={onboardForm.advanceReceived} onChange={e => setOnboardForm(p => ({ ...p, advanceReceived: e.target.value }))} placeholder="Advance Received (₹)" className="w-full text-sm p-2 border rounded-lg bg-card" />
+                    </div>
+                    {onboardForm.totalAmount && (
+                      <p className="text-xs text-muted-foreground">
+                        Remaining: ₹{Math.max(0, (Number(onboardForm.totalAmount) || 0) - (Number(onboardForm.advanceReceived) || 0)).toLocaleString('en-IN')}
+                      </p>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                      <input type="number" value={onboardForm.nextPaymentAmount} onChange={e => setOnboardForm(p => ({ ...p, nextPaymentAmount: e.target.value }))} placeholder="Next Payment (₹)" className="w-full text-sm p-2 border rounded-lg bg-card" />
+                      <input type="date" value={onboardForm.nextPaymentDate} onChange={e => setOnboardForm(p => ({ ...p, nextPaymentDate: e.target.value }))} className="w-full text-sm p-2 border rounded-lg bg-card" />
+                    </div>
+                    <input value={onboardForm.nextPaymentCondition} onChange={e => setOnboardForm(p => ({ ...p, nextPaymentCondition: e.target.value }))} placeholder="What triggers next payment? (e.g. after store goes live)" className="w-full text-sm p-2 border rounded-lg bg-card" />
+                  </div>
+
                   <div className="col-span-2 text-sm">
                       <textarea value={onboardForm.servicesDescription} onChange={e => setOnboardForm(p => ({...p, servicesDescription: e.target.value}))} placeholder="Specific instructions for delivery team... (e.g. Needs 5 creatives per week, focus on ROAS)" className="w-full p-2 border rounded-lg bg-muted/30 flex-1 resize-none h-20" />
                   </div>
@@ -1292,5 +1386,63 @@ export default function SalesDashboard() {
         </AnimatePresence>
       </div>
     </AppLayout>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// LeadTagsEditor — Aug 2026 CRM upgrade. Lead.tags existed on the schema
+// but had no UI anywhere to set it (ClientWorkflow.tags already had one
+// via EditClientDetailsModal — this brings leads to parity). Free-form
+// comma-separated entry, same UX as the client-side tag editor, plus a
+// few suggested chips so reps aren't starting from a blank field.
+// ─────────────────────────────────────────────────────────────────────
+const SUGGESTED_LEAD_TAGS = ['high-value', 'referral', 'urgent', 'D2C', 'needs-follow-up'];
+
+function LeadTagsEditor({ lead, onSaved }: { lead: any; onSaved: () => void }) {
+  const [tagsText, setTagsText] = useState((lead.tags || []).join(', '));
+  const [saving, setSaving] = useState(false);
+
+  const addSuggested = (tag: string) => {
+    const current = tagsText.split(',').map((t: string) => t.trim()).filter(Boolean);
+    if (current.includes(tag)) return;
+    setTagsText([...current, tag].join(', '));
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const tags = tagsText.split(',').map(t => t.trim()).filter(Boolean);
+      await api.updateLead(lead._id, { tags });
+      toast.success('Tags updated');
+      onSaved();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Could not save tags');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-semibold text-muted-foreground uppercase">Tags</p>
+      <div className="flex gap-1.5">
+        <input
+          value={tagsText}
+          onChange={e => setTagsText(e.target.value)}
+          placeholder="e.g. high-value, referral"
+          className="flex-1 px-3 py-2 bg-muted/30 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <button type="button" onClick={save} disabled={saving}
+          className="px-3 py-2 bg-primary/10 text-primary rounded-xl text-xs font-semibold hover:bg-primary/20 disabled:opacity-50">
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Save'}
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {SUGGESTED_LEAD_TAGS.map(t => (
+          <button key={t} type="button" onClick={() => addSuggested(t)}
+            className="px-1.5 h-[18px] rounded bg-muted text-[10px] font-medium text-muted-foreground hover:bg-muted/70">
+            + {t}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

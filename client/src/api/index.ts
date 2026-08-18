@@ -206,8 +206,24 @@ export const assignTeamRoles  = () => api.post('/seed/assign-roles', {}).then(r 
 export const cwListWorkflows    = (params: { q?: string; mine?: '1' } = {}) =>
   api.get('/client-workflows', { params }).then(r => r.data);
 export const cwGetWorkflow      = (id: string) => api.get(`/client-workflows/${id}`).then(r => r.data);
-export const cwCreateWorkflow   = (body: { clientId: string; services: string[] }) =>
-  api.post('/client-workflows', body).then(r => r.data);
+// Aug 2026 — widened for the CRM-upgrade onboarding flow: services can now
+// be plain type strings (legacy — still supported for "add a service" call
+// sites) OR { type, quantity } objects (lets UGC/influencer carry a video
+// count). Financials + Meta Ads fee model + leadId are all optional so
+// this stays backwards compatible with every existing caller.
+export const cwCreateWorkflow   = (body: {
+  clientId: string;
+  services: (string | { type: string; quantity?: number | null })[];
+  priority?: string;
+  totalAmount?: number;
+  advanceReceived?: number;
+  nextPaymentAmount?: number;
+  nextPaymentDate?: string;
+  nextPaymentCondition?: string;
+  metaAdsFeeModel?: { type: string; fixedMonthlyFee?: number | null; percentageOfSpend?: number | null; customDescription?: string };
+  leadId?: string;
+  onboardedBy?: string;
+}) => api.post('/client-workflows', body).then(r => r.data);
 // A short `comment` is now REQUIRED on every check / uncheck and on
 // completeService — captured for the activity log so admin can audit who
 // said what when changing pipeline state.
@@ -269,12 +285,19 @@ export const cwListActivity     = (wid: string, params: { cursor?: string; limit
     nextCursor: string | null;
   });
 
-// Aug 2026 — full client-detail edit, open to every staff role.
+// Aug 2026 — full client-detail edit, open to every staff role. Widened
+// for the CRM upgrade with operationalStatus (separate from per-service
+// status/health) + the financial fields + Meta Ads fee model, all optional
+// so partial saves (e.g. just changing priority) still work unchanged.
 export const cwUpdateDetails = (wid: string, body: Partial<{
   clientName: string; clientPhone: string; clientEmail: string;
   priority: 'urgent' | 'high' | 'medium' | 'low';
   tags: string[];
   paymentStatus: 'pending' | 'partial' | 'paid' | 'overdue' | 'na';
+  operationalStatus: 'in_progress' | 'paused' | 'completed' | 'cancelled' | 'on_hold';
+  totalAmount: number; advanceReceived: number;
+  nextPaymentAmount: number; nextPaymentDate: string | null; nextPaymentCondition: string;
+  metaAdsFeeModel: { type: string; fixedMonthlyFee?: number | null; percentageOfSpend?: number | null; customDescription?: string };
 }>) => api.put(`/client-workflows/${wid}/details`, body).then(r => r.data);
 
 // Aug 2026 — per-client performance calendar (Meta Ads spend / sales

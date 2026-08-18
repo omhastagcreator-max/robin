@@ -101,6 +101,18 @@ interface Workflow {
   predictedCompletionAt?: string | null;
   paymentStatus?: string;
   tags?: string[];
+  // Aug 2026 CRM upgrade — Info/Sales/Services/Financials/Operations panel.
+  operationalStatus?: 'in_progress' | 'paused' | 'completed' | 'cancelled' | 'on_hold';
+  totalAmount?: number;
+  advanceReceived?: number;
+  remaining?: number;
+  nextPaymentAmount?: number;
+  nextPaymentDate?: string | null;
+  nextPaymentCondition?: string;
+  metaAdsFeeModel?: { type?: string; fixedMonthlyFee?: number | null; percentageOfSpend?: number | null; customDescription?: string };
+  onboardedBy?: string;
+  onboardedAt?: string | null;
+  leadId?: string | null;
 }
 interface UserLite { _id: string; name?: string }
 
@@ -395,6 +407,16 @@ export default function ClientWorkspacePage() {
             onEdit={() => setEditDetailsOpen(true)}
           />
 
+          {/* ── 1.5. CLIENT DETAILS PANEL (Aug 2026 CRM upgrade) ──
+              Owner spec asked for a client detail view organized into
+              Info / Sales / Services / Financials / Operations sections.
+              Kept as one collapsible card rather than tabs — everything
+              here is a quick reference; the full interactive service
+              checklists still live in their own section further down,
+              this is just the at-a-glance summary + the new financial/
+              operational fields that didn't have a home before. */}
+          <ClientDetailsPanel wf={wf} users={users} />
+
           {/* ── 2. ATTENTION REQUIRED (only when blocked) ───────── */}
           {isBlocked && (
             <AttentionBar
@@ -523,7 +545,15 @@ export default function ClientWorkspacePage() {
             priority: wf.priority,
             paymentStatus: wf.paymentStatus,
             tags: wf.tags,
+            operationalStatus: (wf as any).operationalStatus,
+            totalAmount: (wf as any).totalAmount,
+            advanceReceived: (wf as any).advanceReceived,
+            nextPaymentAmount: (wf as any).nextPaymentAmount,
+            nextPaymentDate: (wf as any).nextPaymentDate,
+            nextPaymentCondition: (wf as any).nextPaymentCondition,
+            metaAdsFeeModel: (wf as any).metaAdsFeeModel,
           }}
+          hasMetaAds={wf.services.some(s => s.serviceType === 'meta_ads')}
           onClose={() => setEditDetailsOpen(false)}
           onSaved={(updated) => { setWf(updated as Workflow); setEditDetailsOpen(false); bumpActivity(); }}
         />
@@ -609,6 +639,123 @@ function HField({ label, value, cls }: { label: string; value: string; cls?: str
     <div className="min-w-0">
       <p className="text-[9.5px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">{label}</p>
       <p className={`text-[12.5px] font-semibold leading-tight mt-0.5 truncate ${cls || ''}`}>{value}</p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 1.5. Client Details Panel — Info / Sales / Services / Financials /
+// Operations, all in one collapsible card. Aug 2026 CRM upgrade.
+// ─────────────────────────────────────────────────────────────────────
+const OPERATIONAL_STATUS_LABEL: Record<string, string> = {
+  in_progress: 'In progress', paused: 'Paused', completed: 'Completed',
+  cancelled: 'Cancelled', on_hold: 'On hold',
+};
+const OPERATIONAL_STATUS_TONE: Record<string, string> = {
+  in_progress: 'bg-blue-500/12 text-blue-700',
+  paused:      'bg-amber-500/12 text-amber-700',
+  completed:   'bg-emerald-500/12 text-emerald-700',
+  cancelled:   'bg-rose-500/12 text-rose-700',
+  on_hold:     'bg-muted text-muted-foreground',
+};
+const SERVICE_LABELS: Record<string, string> = {
+  shopify: 'Website Development', meta_ads: 'Meta Ads Management',
+  influencer: 'UGC Videos', misc: 'Miscellaneous',
+};
+
+function ClientDetailsPanel({ wf, users }: { wf: Workflow; users: Record<string, UserLite> }) {
+  const [open, setOpen] = useState(true);
+  const onboardedByName = wf.onboardedBy ? (users[wf.onboardedBy]?.name || wf.onboardedBy) : null;
+  const remaining = wf.remaining != null ? wf.remaining : Math.max(0, (wf.totalAmount || 0) - (wf.advanceReceived || 0));
+  const money = (n?: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
+
+  return (
+    <div className="border-b border-border">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full px-4 py-2 flex items-center justify-between text-left hover:bg-muted/30 transition-colors"
+      >
+        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Client details</span>
+        {open ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+      </button>
+      {open && (
+        <div className="px-4 pb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 text-[12px]">
+          {/* Info */}
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">Info</p>
+            <p className="font-medium">{wf.clientName || '—'}</p>
+            <p className="text-muted-foreground">{wf.clientPhone || '—'}</p>
+            <p className="text-muted-foreground truncate">{wf.clientEmail || '—'}</p>
+            <div className="flex flex-wrap gap-1 pt-1">
+              {(wf.tags || []).length === 0 ? (
+                <span className="text-muted-foreground/60 italic text-[11px]">No tags</span>
+              ) : (wf.tags || []).map(t => (
+                <span key={t} className="px-1.5 h-[18px] inline-flex items-center rounded bg-muted text-[10px] font-medium text-foreground/80">{t}</span>
+              ))}
+            </div>
+          </div>
+
+          {/* Sales */}
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">Sales</p>
+            <p><span className="text-muted-foreground">Onboarded by </span>{onboardedByName || '—'}</p>
+            <p className="text-muted-foreground">
+              {wf.onboardedAt ? format(parseISO(wf.onboardedAt), 'd MMM yyyy') : 'Onboard date unknown'}
+            </p>
+            {wf.leadId && <p className="text-[10.5px] text-muted-foreground/70">Linked lead on file</p>}
+          </div>
+
+          {/* Services */}
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">Services</p>
+            {wf.services.length === 0 ? (
+              <p className="text-muted-foreground/60 italic text-[11px]">None yet</p>
+            ) : wf.services.map(s => (
+              <div key={s._id || s.serviceType} className="flex items-center justify-between gap-2">
+                <span className="truncate">{SERVICE_LABELS[s.serviceType] || s.label}</span>
+                <span className={`shrink-0 px-1.5 h-[16px] inline-flex items-center rounded text-[9.5px] font-semibold ${
+                  s.status === 'done' ? 'bg-emerald-500/12 text-emerald-700' :
+                  s.status === 'blocked' ? 'bg-rose-500/12 text-rose-700' :
+                  s.status === 'in_progress' ? 'bg-blue-500/12 text-blue-700' : 'bg-amber-500/12 text-amber-700'
+                }`}>{s.status.replace('_', ' ')}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Financials */}
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">Financials</p>
+            <p><span className="text-muted-foreground">Total </span>{money(wf.totalAmount)}</p>
+            <p><span className="text-muted-foreground">Advance </span>{money(wf.advanceReceived)}</p>
+            <p className="font-semibold">{money(remaining)} remaining</p>
+            {wf.nextPaymentAmount ? (
+              <p className="text-[10.5px] text-muted-foreground">
+                Next: {money(wf.nextPaymentAmount)}
+                {wf.nextPaymentDate ? ` by ${format(parseISO(wf.nextPaymentDate), 'd MMM')}` : ''}
+                {wf.nextPaymentCondition ? ` — ${wf.nextPaymentCondition}` : ''}
+              </p>
+            ) : null}
+            {wf.metaAdsFeeModel?.type && (
+              <p className="text-[10.5px] text-muted-foreground">
+                Meta fee: {wf.metaAdsFeeModel.type === 'fixed' ? `₹${wf.metaAdsFeeModel.fixedMonthlyFee || 0}/mo`
+                  : wf.metaAdsFeeModel.type === 'percentage' ? `${wf.metaAdsFeeModel.percentageOfSpend || 0}% of spend`
+                  : wf.metaAdsFeeModel.type === 'hybrid' ? `₹${wf.metaAdsFeeModel.fixedMonthlyFee || 0} + ${wf.metaAdsFeeModel.percentageOfSpend || 0}%`
+                  : 'Custom'}
+              </p>
+            )}
+          </div>
+
+          {/* Operations */}
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">Operations</p>
+            <span className={`inline-flex px-1.5 h-[18px] items-center rounded text-[10px] font-semibold ${OPERATIONAL_STATUS_TONE[wf.operationalStatus || 'in_progress']}`}>
+              {OPERATIONAL_STATUS_LABEL[wf.operationalStatus || 'in_progress']}
+            </span>
+            <p className="text-muted-foreground">Priority: {(wf.priority || 'medium').replace(/^\w/, c => c.toUpperCase())}</p>
+            <p className="text-muted-foreground">Payment: {(wf.paymentStatus || 'na').toUpperCase()}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

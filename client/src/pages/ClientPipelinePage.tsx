@@ -91,8 +91,23 @@ interface Workflow {
   riskScore?:             number;            // 0–100
   delayCause?:             string;
   nextBestAction?:        string;
-  predictedCompletionAt?: string | null;
+  predictedCompletionAt? : string | null;
   insightsComputedAt?:    string | null;
+  // ── Aug 2026 CRM upgrade fields — needed here for filtering + the
+  // sectioned client detail view. All optional so older cached list
+  // responses (before this field existed) don't break rendering.
+  tags?:               string[];
+  paymentStatus?:       'pending' | 'partial' | 'paid' | 'overdue' | 'na';
+  operationalStatus?:   'in_progress' | 'paused' | 'completed' | 'cancelled' | 'on_hold';
+  totalAmount?:          number;
+  advanceReceived?:      number;
+  remaining?:             number;
+  nextPaymentAmount?:    number;
+  nextPaymentDate?:      string | null;
+  nextPaymentCondition?: string;
+  metaAdsFeeModel?:      { type?: string; fixedMonthlyFee?: number | null; percentageOfSpend?: number | null; customDescription?: string };
+  onboardedBy?:          string;
+  onboardedAt?:          string | null;
 }
 
 interface UserLite { _id: string; name?: string; email?: string; avatarUrl?: string }
@@ -380,6 +395,7 @@ export default function ClientPipelinePage() {
             onBulk={handleBulk}
             totalCount={list.length} filteredCount={filteredList.length}
             role={role}
+            users={users}
           />
         </div>
 
@@ -413,7 +429,7 @@ export default function ClientPipelinePage() {
             </p>
             <p className="text-xs text-muted-foreground max-w-sm">
               {mineOnly ? '"Mine only" is on, ' : ''}
-              {filters.health || filters.team || filters.priority || filters.blocker ? 'one or more filter chips are active. ' : ''}
+              {filters.health || filters.team || filters.priority || filters.blocker || filters.service || filters.operationalStatus || filters.paymentStatus || filters.assignee || filters.tag || filters.onboardedBy ? 'one or more filter chips are active. ' : ''}
               Clear them to see the full list.
             </p>
             <button

@@ -22,7 +22,7 @@
  * later auto-progress, summarise, or flag stalled services.
  */
 
-export type ServiceType = 'shopify' | 'meta_ads' | 'influencer';
+export type ServiceType = 'shopify' | 'meta_ads' | 'influencer' | 'misc';
 
 export interface ServiceTemplate {
   label:        string;
@@ -77,6 +77,23 @@ export const SERVICE_TEMPLATES: Record<ServiceType, ServiceTemplate> = {
       'Product shipped to influencer',
       'Script finalised with influencer',
       'Videos delivered to client',
+    ],
+  },
+  // Added Aug 2026 — CRM-upgrade ask needed a catch-all fourth service
+  // ("Miscellaneous") alongside Website/Meta Ads/UGC Videos so onboarding
+  // isn't forced into one of the other three. Kept deliberately generic —
+  // the free-text `label` set at onboarding time (see createWorkflow) is
+  // what actually describes the work; this template just supplies a
+  // minimal checklist shape so it behaves like every other service line.
+  misc: {
+    label: 'Miscellaneous',
+    shortLabel: 'Misc',
+    team: 'dev',
+    dependsOn: [],
+    color: 'slate',
+    checklist: [
+      'Scope confirmed with client',
+      'Work delivered',
     ],
   },
 };
