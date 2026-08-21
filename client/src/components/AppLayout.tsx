@@ -25,7 +25,6 @@ import { SlimSidebar }     from '@/components/v2/SlimSidebar';
 import { TopBar }          from '@/components/v2/TopBar';
 import { GlobalShortcuts } from '@/components/v2/GlobalShortcuts';
 import { CheckinOrchestrator } from '@/components/checkin/CheckinOrchestrator';
-import { BrandPulseModal } from '@/components/shared/BrandPulseModal';
 import { PageErrorBoundary } from '@/components/shared/PageErrorBoundary';
 import { useKnock }        from '@/hooks/useKnock';
 import { useAppUpdater }   from '@/hooks/useAppUpdater';
@@ -271,12 +270,10 @@ function AppLayoutInner({ children }: Props) {
           <CheckinOrchestrator />
         </PageErrorBoundary>
 
-        {/* Random brand-accountability question (July 2026). Blocking,
-            undismissable — answer or redirect to whoever manages the
-            brand. Staff-only; same crash-isolation as the check-ins. */}
-        <PageErrorBoundary fallback={null}>
-          <BrandPulseModal />
-        </PageErrorBoundary>
+        {/* Random brand-accountability question — DISABLED (Aug 2026, owner
+            ask: remove the mid-screen popups asking about each client's
+            data). Component + server cron left in place, just not mounted;
+            see server/src/index.ts for the matching cron disable. */}
 
         {/* Sticky "huddle required" banner. Visible whenever a clocked-in
             teammate (any non-client role) is NOT currently in the huddle.

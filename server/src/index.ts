@@ -756,10 +756,13 @@ connectDB().then(() => {
     // just-ended week's scorecard per staff member (see services/progressReport).
     startProgressCron();
 
-    // Random brand-accountability questions — fires blocking questions at
-    // clocked-in staff during IST work hours (see jobs/brandPulseCron for
-    // the owner's brand→people routing table).
-    startBrandPulseCron();
+    // Random brand-accountability questions — DISABLED (Aug 2026, owner ask:
+    // remove the mid-screen popups asking about each client's data). Left
+    // commented rather than deleted — jobs/brandPulseCron.ts, the /api/brand-pulse
+    // routes, and the /team-progress admin report reading its historical data
+    // are all still intact, so this is a one-line revert if it's ever wanted
+    // back. Un-comment to resume firing new questions.
+    // startBrandPulseCron();
 
     // Pipeline 2.0 health inference — recomputes every active workflow's
     // health enum (healthy / at_risk / delayed / blocked / waiting_client
