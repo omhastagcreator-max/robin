@@ -1,7 +1,31 @@
 import api, { silent } from './axios';
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
-export const login        = (email: string, password: string) => api.post('/auth/login', { email, password }).then(r => r.data);
+// Cold-start tolerance (Aug 2026 — "Unable to reach server" on the FIRST
+// sign-in after idle). Login is a POST, so the base axios client's
+// auto-retry never covers it (axios.ts's isIdempotent only retries
+// GET/HEAD/OPTIONS, on purpose — a blind retry on most POSTs could
+// double-create/double-charge). But retrying a login POST is safe: same
+// email/password, no side effect from calling it twice. Same bespoke
+// per-call retry pattern as getHuddleToken below — 30s timeout per
+// attempt, up to 3 attempts, 1s/2s backoff. Real auth failures (wrong
+// password, locked account) come back with a real response (< 500) and
+// are NOT retried — they surface immediately like before.
+export const login = async (email: string, password: string) => {
+  let lastErr: any;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const r = await api.post('/auth/login', { email, password }, { timeout: 30_000 });
+      return r.data;
+    } catch (err: any) {
+      lastErr = err;
+      const status = err?.response?.status;
+      if (status && status < 500) throw err;
+      if (attempt < 2) await new Promise(res => setTimeout(res, 1000 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+};
 export const googleLogin  = (credential: string)              => api.post('/auth/google', { credential }).then(r => r.data);
 export const register     = (data: Record<string, unknown>)   => api.post('/auth/register', data).then(r => r.data);
 export const getMe        = ()                                 => api.get('/auth/me').then(r => r.data);
@@ -401,6 +425,10 @@ export const adminResetPass  = (id: string, newPassword?: string)        => api.
 // Delegate workroom-onboarding permission to a non-admin user (e.g. Om).
 export const adminSetCanManageWorkroom = (id: string, enabled: boolean) =>
   api.put(`/admin/users/${id}/can-manage-workroom`, { enabled }).then(r => r.data);
+// Aug 2026 — the canEditAllClients delegated permission previously had no
+// admin-UI control, only a one-off script. See TeammateAdminPanel.tsx.
+export const adminSetCanEditAllClients = (id: string, enabled: boolean) =>
+  api.put(`/admin/users/${id}/can-edit-all-clients`, { enabled }).then(r => r.data);
 // Create a new role='workroom' teammate. Admin OR canManageWorkroom users.
 export const onboardWorkroomUser = (body: { email: string; name?: string; password?: string }) =>
   api.post('/workroom-onboard', body).then(r => r.data);

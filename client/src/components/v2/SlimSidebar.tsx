@@ -197,8 +197,14 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
   };
 
   // Filter NAV by role + team + flag.
+  // Aug 2026 — this only ever checked the PRIMARY role, so a user granted
+  // a secondary role (e.g. Om given `roles: ['sales']` so he can reach
+  // /sales) would pass ProtectedRoute's own check (which already treats
+  // primary + secondary roles as candidates — see ProtectedRoute.tsx) but
+  // never see the nav entry to get there. Matches that same pattern now.
+  const allMyRoles = [role, ...((user as any)?.roles || [])].filter(Boolean);
   const visible = NAV.filter(item => {
-    if (item.roles && !item.roles.includes(role)) return false;
+    if (item.roles && !item.roles.some(r => allMyRoles.includes(r))) return false;
     if (item.team) {
       const teams = [user?.team, ...((user as any)?.teams || [])].filter(Boolean);
       if (!teams.includes(item.team)) return false;

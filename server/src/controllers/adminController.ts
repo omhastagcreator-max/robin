@@ -190,6 +190,30 @@ export async function setCanManageWorkroom(req: AuthRequest, res: Response): Pro
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
+// PUT /api/admin/users/:id/can-edit-all-clients
+// Admin-only — toggles the delegated "edit ANY client's status/checklist/
+// ETA/owner/financials in the Client CRM, not just services assigned to
+// them" permission (see isPrivilegedEditor() in clientWorkflowController.ts
+// and canEditFinancials in the same file). This flag existed on the User
+// schema and was previously only settable via the one-off
+// grantClientEditPermission.ts script — there was no admin-UI control for
+// it, so there was no way to confirm or grant it without shell access.
+// Aug 2026 — added this endpoint + a matching toggle in the Team Members
+// drawer (mirrors setCanManageWorkroom immediately above) so this is a
+// normal, visible admin action from now on.
+export async function setCanEditAllClients(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const enabled = req.body.enabled === true || req.body.enabled === 'true';
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { canEditAllClients: enabled },
+      { new: true },
+    ).select('-passwordHash');
+    if (!user) { res.status(404).json({ error: 'User not found' }); return; }
+    res.json(user);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
 // DELETE /api/admin/users/:id
 // Soft-deactivate the user (preserves history). Admin can't deactivate themselves.
 export async function deactivateUser(req: AuthRequest, res: Response): Promise<void> {

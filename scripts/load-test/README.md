@@ -35,7 +35,7 @@ choco install k6
 
 All scripts read these env vars:
 
-- `BASE_URL`         — API base, e.g. `https://robinrobin-api.onrender.com`
+- `BASE_URL`         — API base, e.g. `https://robin-rvtc.onrender.com`
 - `TEST_EMAIL`       — a real Robin login (use a dedicated test account, not your own)
 - `TEST_PASSWORD`    — that account's password
 
@@ -43,7 +43,7 @@ Tip: never stress-test against production during work hours. Off-peak only,
 or against a staging deploy. Render free tier shares CPU with other services.
 
 ```bash
-export BASE_URL="https://robinrobin-api.onrender.com"
+export BASE_URL="https://robin-rvtc.onrender.com"
 export TEST_EMAIL="loadtest@hastagcreator.com"
 export TEST_PASSWORD="..."
 

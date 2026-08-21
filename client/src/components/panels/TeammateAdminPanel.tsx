@@ -72,6 +72,35 @@ export function TeammateAdminPanel({ employee, onChange, onRemove, onClose }: Pr
     }
   };
 
+  // Aug 2026 — owner ask: "allow Om to have access to Sales Dashboard as
+  // well so I can create some client if needed." /sales is gated to
+  // role='admin'|'sales' — Om's primary role is 'employee'. Rather than
+  // changing his PRIMARY role (which would swap his whole nav/landing
+  // page), grant 'sales' as a SECONDARY role via the existing
+  // `roles: string[]` field — both ProtectedRoute and the server's
+  // requireRole() already treat primary + secondary roles as equally
+  // valid (see ProtectedRoute.tsx), so this "just works" once granted.
+  // Reuses the same adminUpdateUser endpoint the team-toggle chips use.
+  const SECONDARY_ROLES = ['sales', 'employee', 'workroom'];
+  const toggleSecondaryRole = async (r: string) => {
+    const cur: string[] = Array.isArray(emp.roles) ? emp.roles : [];
+    const nextList = cur.includes(r) ? cur.filter(x => x !== r) : [...cur, r];
+    const before = emp;
+    const next = { ...emp, roles: nextList };
+    setEmp(next);
+    onChange(next);
+    try {
+      await api.adminUpdateUser(emp._id, { roles: nextList });
+      toast.success(nextList.includes(r)
+        ? `${emp.name || emp.email} can now access ${r === 'sales' ? 'the Sales Dashboard' : r}`
+        : `Removed ${r} access from ${emp.name || emp.email}`);
+    } catch {
+      setEmp(before);
+      onChange(before);
+      toast.error('Could not update roles');
+    }
+  };
+
   const toggleWorkroom = async () => {
     const next = { ...emp, canManageWorkroom: !emp.canManageWorkroom };
     const before = emp;
@@ -82,6 +111,30 @@ export function TeammateAdminPanel({ employee, onChange, onRemove, onClose }: Pr
       toast.success(next.canManageWorkroom
         ? `${emp.name || emp.email} can now onboard workroom teammates`
         : `${emp.name || emp.email} can no longer onboard workroom teammates`);
+    } catch {
+      setEmp(before);
+      onChange(before);
+      toast.error('Could not update permission');
+    }
+  };
+
+  // Aug 2026 — the canEditAllClients delegated permission (full Client CRM
+  // edit rights — status/checklist/ETA/owner/financials on ANY client, not
+  // just ones assigned to you) previously had no admin-UI control at all,
+  // only a one-off script (grantClientEditPermission.ts). That meant there
+  // was no way to confirm or grant it without shell access — which is how
+  // Om ended up without the flag live despite the script existing. Mirrors
+  // toggleWorkroom above.
+  const toggleEditAllClients = async () => {
+    const next = { ...emp, canEditAllClients: !emp.canEditAllClients };
+    const before = emp;
+    setEmp(next);
+    onChange(next);
+    try {
+      await api.adminSetCanEditAllClients(emp._id, !before.canEditAllClients);
+      toast.success(next.canEditAllClients
+        ? `${emp.name || emp.email} can now edit any client in the CRM`
+        : `${emp.name || emp.email} can no longer edit clients outside their own assignments`);
     } catch {
       setEmp(before);
       onChange(before);
@@ -174,6 +227,30 @@ export function TeammateAdminPanel({ employee, onChange, onRemove, onClose }: Pr
         </div>
 
         <div className="space-y-1.5">
+          <label className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground">Secondary access (extra dashboards, keeps their primary role)</label>
+          <div className="flex flex-wrap gap-1.5">
+            {SECONDARY_ROLES.filter(r => r !== emp.role).map(r => {
+              const on = (Array.isArray(emp.roles) ? emp.roles : []).includes(r);
+              return (
+                <button
+                  key={r}
+                  onClick={() => toggleSecondaryRole(r)}
+                  disabled={busy}
+                  className={`px-2 h-7 text-[11.5px] font-semibold rounded-full border transition-colors capitalize ${
+                    on
+                      ? 'bg-primary/12 text-primary border-primary/30 hover:bg-primary/20'
+                      : 'bg-muted/40 text-muted-foreground border-transparent hover:bg-muted'
+                  }`}
+                  title={on ? `Remove ${r} dashboard access` : `Grant ${r} dashboard access`}
+                >
+                  {on ? '✓ ' : '+ '}{r}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
           <label className="text-[10px] uppercase tracking-[0.16em] font-bold text-muted-foreground">Permissions</label>
           <Button
             size="sm"
@@ -184,6 +261,16 @@ export function TeammateAdminPanel({ employee, onChange, onRemove, onClose }: Pr
             full
           >
             {emp.canManageWorkroom ? 'Can onboard workroom teammates' : 'Allow workroom onboarding'}
+          </Button>
+          <Button
+            size="sm"
+            intent={emp.canEditAllClients ? 'success' : 'secondary'}
+            iconLeft={emp.canEditAllClients ? <ShieldCheck className="h-3.5 w-3.5" /> : <ShieldOff className="h-3.5 w-3.5" />}
+            onClick={toggleEditAllClients}
+            loading={busy}
+            full
+          >
+            {emp.canEditAllClients ? 'Can edit any client (full CRM edit)' : 'Allow editing any client in CRM'}
           </Button>
         </div>
 

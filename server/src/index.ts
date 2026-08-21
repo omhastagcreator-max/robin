@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import mongoSanitize from 'express-mongo-sanitize';
@@ -110,6 +111,16 @@ const corsOrigin = (origin: string | undefined, cb: (e: Error | null, allow?: bo
 app.set('trust proxy', 1);
 
 app.use(cors({ origin: corsOrigin, credentials: true }));
+
+// Aug 2026 — Render's Hobby workspace only includes 5 GB/mo of free
+// bandwidth and we blew through it (workspace got suspended). Every JSON
+// response — org-wide client lists, activity feeds, Ask Robin context —
+// was going out uncompressed. gzip/brotli on text responses this size
+// typically cuts bytes-on-the-wire 70-90% for free: no behavior change,
+// negligible CPU cost, works with every existing client automatically
+// (browsers advertise Accept-Encoding and this negotiates transparently).
+// Placed early so it wraps every route below.
+app.use(compression());
 
 // Audit finding CRIT-2: a 50 MB JSON limit was a DoS vector — a handful of
 // concurrent oversized requests could OOM the Render free instance. We now

@@ -854,9 +854,20 @@ export async function reassignService(req: AuthRequest, res: Response): Promise<
     if (!svc) { res.status(404).json({ error: 'Service not found' }); return; }
     const before = svc.assignedTo;
     svc.assignedTo = userId || undefined;
+    // Aug 2026 — this used to log the raw ObjectId strings ("from
+    // 69e364af... to 6a0ece71...") instead of names, which then surfaced
+    // verbatim in the pipeline table's "last update" summary (found live
+    // on Silvque while investigating something else). Resolve both sides
+    // to names before writing the activity entry so it reads like every
+    // other activity line in the app.
+    const [beforeUser, afterUser] = await Promise.all([
+      before ? User.findById(before).select('name').lean() : null,
+      userId ? User.findById(userId).select('name').lean() : null,
+    ]);
     wf.activity.push({
       actorId: req.user!.id, action: 'reassigned',
-      serviceType: svc.serviceType, detail: `from ${before || 'unassigned'} to ${userId || 'unassigned'}`,
+      serviceType: svc.serviceType,
+      detail: `from ${(beforeUser as any)?.name || 'unassigned'} to ${(afterUser as any)?.name || 'unassigned'}`,
     } as any);
     await wf.save();
 
