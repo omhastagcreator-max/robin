@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { X, Loader2, ExternalLink, Send } from 'lucide-react';
+import { X, Loader2, ExternalLink, Send, EyeOff, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 /**
  * ClientQuickUpdateModal — update a client without leaving the page.
@@ -82,6 +83,13 @@ const SVC_STATUS_STYLE: Record<string, string> = {
 };
 
 export function ClientQuickUpdateModal({ clientId, onClose }: { clientId: string; onClose: () => void }) {
+  const { role, user } = useAuth();
+  // Same gate the server enforces on DELETE /client-workflows/:id — admin,
+  // or a teammate holding canEditAllClients (Om). Everyone else sees only
+  // the non-destructive "Hide" action.
+  const canDelete = role === 'admin' || !!(user as any)?.canEditAllClients;
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [wf, setWf] = useState<Workflow | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -150,6 +158,41 @@ export function ClientQuickUpdateModal({ clientId, onClose }: { clientId: string
       toast.error("Couldn't save the flag");
     } finally {
       setFlagSaving(false);
+    }
+  };
+
+  // "Hide" — the non-destructive half of the owner's "delete or hide" ask.
+  // Cancelling the engagement drops it out of the header pills and the
+  // active board (both filter on operationalStatus) while keeping every
+  // record intact and reversible from the dropdown above.
+  const hideClient = async () => {
+    setSaving(true);
+    try {
+      await api.cwUpdateDetails(clientId, { operationalStatus: 'cancelled' as any });
+      setOperationalStatus('cancelled');
+      toast.success('Hidden from the active board — set it back to In progress any time');
+      onClose();
+    } catch {
+      toast.error("Couldn't hide this client");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteClient = async () => {
+    setDeleting(true);
+    try {
+      const r: any = await api.cwDeleteWorkflow(clientId);
+      const d = r?.deleted;
+      toast.success(
+        d ? `${d.clientName} deleted (${d.tasks} tasks, ${d.performanceEntries} performance entries removed)`
+          : 'Client deleted'
+      );
+      onClose();
+    } catch {
+      toast.error("Couldn't delete — you may not have permission");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -329,6 +372,56 @@ export function ClientQuickUpdateModal({ clientId, onClose }: { clientId: string
                   Last: {wf.lastUpdate.detail}
                 </p>
               )}
+            </div>
+
+            {/* Hide / delete. Hide is reversible and open to everyone;
+                delete is permanent and gated to admin + canEditAllClients,
+                behind an explicit confirm step. */}
+            <div className="pt-3 border-t border-border">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={hideClient}
+                  disabled={saving}
+                  className="h-8 px-3 rounded-md border border-border text-[12px] font-semibold inline-flex items-center gap-1.5 hover:bg-muted transition-colors disabled:opacity-60"
+                  title="Takes it off the active board and header pills. Nothing is deleted — reversible from Engagement above."
+                >
+                  <EyeOff className="h-3.5 w-3.5" /> Hide from board
+                </button>
+
+                {canDelete && !confirmDelete && (
+                  <button
+                    onClick={() => setConfirmDelete(true)}
+                    className="h-8 px-3 rounded-md border border-red-500/40 text-red-700 text-[12px] font-semibold inline-flex items-center gap-1.5 hover:bg-red-500/10 transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Delete
+                  </button>
+                )}
+
+                {canDelete && confirmDelete && (
+                  <>
+                    <span className="text-[11.5px] text-red-700 font-medium">
+                      Delete permanently? Tasks and performance data go too.
+                    </span>
+                    <button
+                      onClick={deleteClient}
+                      disabled={deleting}
+                      className="h-8 px-3 rounded-md bg-red-600 text-white text-[12px] font-semibold inline-flex items-center gap-1.5 disabled:opacity-60"
+                    >
+                      {deleting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      Yes, delete
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(false)}
+                      className="h-8 px-3 rounded-md border border-border text-[12px] font-semibold hover:bg-muted transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+              </div>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                Hiding is reversible. Deleting is not.
+              </p>
             </div>
           </div>
         )}

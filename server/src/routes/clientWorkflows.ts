@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { requireRole } from '../middleware/roleMiddleware';
 import {
-  createWorkflow, listWorkflows, getWorkflow, toggleChecklist,
+  createWorkflow, listWorkflows, getWorkflow, toggleChecklist, deleteWorkflow,
   completeService, returnService, addNote, reassignService, getServiceTemplates,
   blockWorkflow, unblockWorkflow, listWorkflowActivity,
   bulkWorkflowAction, setServiceEta, updateWorkflowDetails,
@@ -40,6 +40,12 @@ router.post('/',                                         requireRole(...STAFF), 
 // never actually reachable — no route pointed at it. Fixed alongside the
 // Client CRM visibility bug.
 router.put ('/:id/details',                               requireRole(...STAFF),   updateWorkflowDetails);
+// Aug 2026 — "allow Om to delete or hide the client." Route is open to
+// STAFF so the controller (not the router) owns the real gate; deleteWorkflow
+// itself 403s anyone who isn't admin / canEditAllClients. Same pattern as
+// reassignService above, which was previously locked at the route level and
+// silently blocked Om before his grant was ever checked.
+router.delete('/:id',                                     requireRole(...STAFF),   deleteWorkflow);
 // Per-client performance calendar (Meta ads spend / sales achieved / sales
 // target, day+week+month) — same "never wired up" gap as /details above.
 router.get ('/:id/performance',                           requireRole(...STAFF),   getPerformance);

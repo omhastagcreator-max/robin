@@ -5,6 +5,8 @@ import ClientWorkflow from '../models/ClientWorkflow';
 import WorkflowActivity from '../models/WorkflowActivity';
 import User from '../models/User';
 import SopOverride from '../models/SopOverride';
+import ProjectTask from '../models/ProjectTask';
+import ClientPerformanceEntry from '../models/ClientPerformanceEntry';
 import { SERVICE_TEMPLATES, SERVICE_TYPES, blockingServices, type ServiceType } from '../lib/workflowTemplates';
 import { notify, notifyDataChanged } from '../services/notify';
 import { performWorkflowAction, WorkflowActionError } from '../services/workflowActions';
@@ -470,6 +472,64 @@ export async function updateWorkflowDetails(req: AuthRequest, res: Response): Pr
  *   ?q=phone-or-name   (universal search bar)
  *   ?mine=1            (only workflows where I'm assigned to a service)
  */
+/**
+ * deleteWorkflow — permanently remove a client pipeline and its directly
+ * owned records.
+ *
+ * Aug 2026 owner ask: "allow Om to delete or hide the client." HIDE already
+ * existed (operationalStatus → cancelled/completed drops a client out of the
+ * active roster, the header pills and the default board without destroying
+ * anything) — this adds the genuinely destructive half, which had no
+ * endpoint at all.
+ *
+ * Gate: isPrivilegedEditor — admin, or a non-admin holding canEditAllClients
+ * (that's Om's flag). Deliberately NOT the full STAFF set: everyone can
+ * create and edit clients, but irreversible deletion stays with the two
+ * people trusted with it.
+ *
+ * Cascade covers records keyed directly to this workflow — brand tasks,
+ * performance entries, the activity log. It deliberately does NOT delete the
+ * linked client-login User: that account may be shared with other records,
+ * and orphaning it is recoverable whereas deleting someone's login is not.
+ * (purgeBrand.ts remains the tool for a full multi-collection brand wipe.)
+ */
+export async function deleteWorkflow(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    if (!isPrivilegedEditor(req.user!)) {
+      res.status(403).json({ error: 'Only an admin (or a teammate granted full client-edit rights) can delete a client' });
+      return;
+    }
+
+    const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!wf) { res.status(404).json({ error: 'Client not found' }); return; }
+
+    const name = wf.clientName || 'Client';
+    const [tasks, perf, activity] = await Promise.all([
+      ProjectTask.deleteMany({ clientWorkflowId: wf._id }),
+      ClientPerformanceEntry.deleteMany({ clientWorkflowId: wf._id }),
+      WorkflowActivity.deleteMany({ workflowId: wf._id }),
+    ]);
+    await ClientWorkflow.deleteOne({ _id: wf._id });
+
+    console.log(`[deleteWorkflow] "${name}" (${String(wf._id)}) deleted by ${req.user!.id} — ` +
+      `${tasks.deletedCount || 0} tasks, ${perf.deletedCount || 0} performance entries, ${activity.deletedCount || 0} activity rows`);
+
+    notifyDataChanged(req.app.get('io'), orgId, 'workflow.deleted', String(wf._id));
+    res.json({
+      ok: true,
+      deleted: {
+        clientName: name,
+        tasks: tasks.deletedCount || 0,
+        performanceEntries: perf.deletedCount || 0,
+        activityRows: activity.deletedCount || 0,
+      },
+    });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
 export async function listWorkflows(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await getOrgId(req.user!.id);
