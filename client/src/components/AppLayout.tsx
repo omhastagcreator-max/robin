@@ -26,6 +26,7 @@ import { TopBar }          from '@/components/v2/TopBar';
 import { GlobalShortcuts } from '@/components/v2/GlobalShortcuts';
 import { CheckinOrchestrator } from '@/components/checkin/CheckinOrchestrator';
 import { PageErrorBoundary } from '@/components/shared/PageErrorBoundary';
+import { ClientPillsBar }  from '@/components/shared/ClientPillsBar';
 import { useKnock }        from '@/hooks/useKnock';
 import { useAppUpdater }   from '@/hooks/useAppUpdater';
 import { celebrate }       from '@/lib/celebrate';
@@ -247,6 +248,16 @@ function AppLayoutInner({ children }: Props) {
     <AppLayoutNestedCtx.Provider value={true}>
     <SlimSidebar>
       <TopBar />
+      {/* Always-on client roster (Aug 2026 owner ask: "all the client pills
+          fixed on header always … visible across all the Robin … static").
+          Mounted here in the persistent shell, directly under the TopBar, so
+          it survives route changes and stays pinned. Refreshes live off the
+          robin:data-changed socket event — a client Rishi onboards shows up
+          in everyone's header without a refresh. Crash-isolated like the
+          other shell widgets so a fetch/shape bug can't blank the app. */}
+      <PageErrorBoundary fallback={null}>
+        <ClientPillsBar />
+      </PageErrorBoundary>
       <main className="flex-1 flex flex-col min-w-0">
         {/* If host is in a client meeting, sticky pill on every page with
             mute / end / back-to-meeting controls. */}

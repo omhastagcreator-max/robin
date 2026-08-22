@@ -47,6 +47,18 @@ A `Session` doc tracks a work day: `status: active | on_break | ended`, `startTi
 - Cleanup script for corrupted break data: `cd server && npm run fix-open-breaks -- --apply` (dry-run without `--apply`).
 - History of bugs here: "253h break", "timer stuck at 0", "timer runs backwards", "can't end break". Every guard in `useSession.ts` / `sessionsController.ts` has a comment explaining which bug it prevents — **don't remove guards without reading the comments.**
 
+## Last done (Aug 2026) — always-on client roster pills in the app shell
+
+Owner ask: "all the client pills fixed on header always so that each client name should be there so that active clients are always visible, as soon as Rishi adds it should be visible across all the Robin, also make sure it's static." New `client/src/components/shared/ClientPillsBar.tsx`, mounted in `AppLayout.tsx` directly under `<TopBar />` (inside the persistent shell, so it survives every route change), wrapped in `PageErrorBoundary` like the other shell widgets.
+
+- **"static" / "fixed on header"** — sticky at `top: var(--h-topbar)` (44px, the TopBar height token), `z-20` so it sits under the TopBar's `z-30`. 36px tall, horizontally scrollable when the roster outgrows the width. Each pill = health dot (same 4-colour `healthLevel` taxonomy as the CRM cards) + client name, linking to `/clients/pipeline/:id`, with the currently-open client highlighted.
+- **"as soon as Rishi adds it"** — listens for the `robin:data-changed` DOM event AppLayout already re-dispatches from the server's `data:changed` socket broadcast. Verified the path actually fires for this case: `createWorkflow` (`clientWorkflowController.ts:260`) calls `notifyDataChanged(..., 'workflow.created', ...)`, so a client onboarded from the Sales Dashboard appears in every logged-in teammate's header within ~1s, no refresh. Debounced 800ms so a burst (bulk edit, maintenance script) triggers one refetch.
+- **"active clients"** — filters on `operationalStatus`, dropping `completed`/`cancelled`, so the strip stays the current roster instead of growing forever. Sorted alphabetically.
+- **Bandwidth-conscious by design** (given the Render suspension this same session): the fallback poll is 5 min AND skipped entirely while `document.visibilityState === 'hidden'` — freshness comes from the socket, not from polling. Renders `null` until the first successful load so the page never gets shoved down by a late-appearing empty bar.
+- Internal staff only (`admin|sales|employee|workroom`) — the `client` role's own portal doesn't show the agency's whole roster.
+
+`npx tsc --noEmit` clean in `client/`. Client-only change — needs the usual `git push` to `main` for Vercel.
+
 ## Last done (Aug 2026) — Brand Pulse popups disabled + Render→new-workspace migration completed
 
 **Brand Pulse disabled** (owner: "remove the pop ups that come in middle for each clients data") — the random blocking brand-accountability modal (`BrandPulseModal.tsx`, undismissable, asks about one client's sales/target/blockers/etc.) matched this exactly. Disabled surgically rather than deleted: `startBrandPulseCron()` call commented out in `server/src/index.ts` (no new pending questions ever get created), and `<BrandPulseModal />` unmounted from `AppLayout.tsx` (nothing renders even for any already-pending questions from before the change). The cron file, routes, model, and the `/team-progress` admin report reading historical Brand Pulse data are all left completely intact — this is a one-line revert in both files if it's ever wanted back. `tsc --noEmit` clean on both client and server.
