@@ -18,9 +18,12 @@ import { ClientQuickUpdateModal } from '@/components/shared/ClientQuickUpdateMod
  *
  * How each is met:
  *
- *  (1) "static" → sticky strip pinned directly beneath the 44px TopBar
- *      (top: var(--h-topbar)), mounted in the persistent AppLayout shell so
- *      it survives every route change and never scrolls away.
+ *  (1) "static" → mounted in the persistent AppLayout shell directly under
+ *      the TopBar, inside a shared sticky z-40 wrapper, so the header block
+ *      pins as one unit and survives every route change. (First attempt made
+ *      THIS component sticky on its own at z-20; SessionTopBar is sticky
+ *      top-0 z-30 and painted over it the moment you scrolled — hence the
+ *      wrapper. See AppLayout for the full note.)
  *
  *  (2) live → listens for `robin:data-changed`, the DOM event AppLayout
  *      re-dispatches from the server's `data:changed` socket broadcast.
@@ -140,10 +143,11 @@ export function ClientPillsBar() {
 
   return (
     <>
-      <div
-        className="sticky z-20 bg-card/95 backdrop-blur border-b border-border"
-        style={{ top: 'var(--h-topbar)' }}
-      >
+      {/* Not sticky itself — AppLayout wraps this + TopBar in ONE sticky
+          z-40 container so the whole header block pins together and stays
+          above SessionTopBar (which is sticky top-0 z-30 and used to paint
+          over these pills on scroll). */}
+      <div className="bg-card/95 backdrop-blur border-b border-border">
         {/* Stacked: wraps onto as many rows as needed — no sideways scroll,
             every client name readable at a glance. */}
         <div className="flex flex-wrap items-center gap-1.5 px-4 py-1.5">

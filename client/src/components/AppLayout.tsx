@@ -247,17 +247,27 @@ function AppLayoutInner({ children }: Props) {
   return (
     <AppLayoutNestedCtx.Provider value={true}>
     <SlimSidebar>
-      <TopBar />
-      {/* Always-on client roster (Aug 2026 owner ask: "all the client pills
-          fixed on header always … visible across all the Robin … static").
-          Mounted here in the persistent shell, directly under the TopBar, so
-          it survives route changes and stays pinned. Refreshes live off the
-          robin:data-changed socket event — a client Rishi onboards shows up
-          in everyone's header without a refresh. Crash-isolated like the
-          other shell widgets so a fetch/shape bug can't blank the app. */}
-      <PageErrorBoundary fallback={null}>
-        <ClientPillsBar />
-      </PageErrorBoundary>
+      {/* TopBar + the always-on client roster are ONE sticky unit, pinned
+          together at the very top of the viewport.
+
+          Why the wrapper (Aug 2026): ClientPillsBar was originally sticky on
+          its own at top:var(--h-topbar) with z-20, but SessionTopBar below it
+          is `sticky top-0 z-30` — so the moment you scrolled, the session
+          strip pinned to 0 and painted straight over the pills, which read as
+          "the pills aren't sticky". Wrapping both in a single z-40 sticky
+          container makes the header block outrank the session strip and stay
+          genuinely fixed. TopBar keeps its own internal sticky (harmless
+          nested inside this one). */}
+      <div className="sticky top-0 z-40">
+        <TopBar />
+        {/* Refreshes live off the robin:data-changed socket event — a client
+            Rishi onboards shows up in everyone's header without a refresh.
+            Crash-isolated like the other shell widgets so a fetch/shape bug
+            can't blank the app. */}
+        <PageErrorBoundary fallback={null}>
+          <ClientPillsBar />
+        </PageErrorBoundary>
+      </div>
       <main className="flex-1 flex flex-col min-w-0">
         {/* If host is in a client meeting, sticky pill on every page with
             mute / end / back-to-meeting controls. */}
