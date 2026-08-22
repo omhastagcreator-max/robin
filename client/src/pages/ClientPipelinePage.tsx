@@ -350,6 +350,11 @@ export default function ClientPipelinePage() {
           <div className="flex items-center gap-2">
             {/* AI: one-paragraph brief covering EVERY active project. The
                 model output lands in the BriefPanel just below this row. */}
+            {/* Aug 2026 owner ask: "add one overall health beside the brief
+                all-projects button." Computed client-side from the list
+                that's already loaded — no extra request, and it updates
+                with the same data the board is showing. */}
+            <OverallHealthChip list={list} />
             <AllProjectsBriefButton />
             {isAdminOrSales && (
               <button onClick={() => setShowCreate(true)}
@@ -1475,6 +1480,14 @@ function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCr
   const [clients, setClients] = useState<any[]>([]);
   const [templates, setTemplates] = useState<Record<string, any>>({});
   const [clientId, setClientId] = useState('');
+  // Aug 2026 — owner ask: "allow Om to add a new client that is not even
+  // onboarded as well." The dropdown only lists existing User(role:'client')
+  // records, so a brand with no login/contact details yet couldn't be put in
+  // the pipeline at all. `newMode` switches this field to a free-text name,
+  // which the server turns into a placeholder client User (see
+  // createWorkflow) before creating the workflow exactly as normal.
+  const [newMode, setNewMode]       = useState(false);
+  const [newClientName, setNewName] = useState('');
   const [chosen, setChosen]     = useState<Set<string>>(new Set());
   // Priority is captured on creation. Defaults to 'medium' — the
   // bulk of the agency's projects sit here. Owner ask (May 2026):
@@ -1499,19 +1512,29 @@ function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCr
   });
 
   const save = async () => {
-    if (!clientId) { toast.error('Pick a client'); return; }
+    const typedName = newClientName.trim();
+    if (newMode ? !typedName : !clientId) {
+      toast.error(newMode ? 'Enter a client name' : 'Pick a client');
+      return;
+    }
     if (chosen.size === 0) { toast.error('Pick at least one service'); return; }
     setSaving(true);
     try {
       // Priority is sent alongside the standard fields. The server's
       // createWorkflow controller persists it as `workflow.priority`
       // — same field the dashboard's existing priority filter reads.
-      await (api.cwCreateWorkflow as any)({ clientId, services: Array.from(chosen), priority });
+      // Exactly one of clientId / clientName goes up; the server accepts
+      // either and mints a placeholder client login for the name-only case.
+      await (api.cwCreateWorkflow as any)({
+        ...(newMode ? { clientName: typedName } : { clientId }),
+        services: Array.from(chosen),
+        priority,
+      });
       toast.success('Client CRM entry created — teammates have been auto-assigned');
       // Broadcast the celebration org-wide. Surface the client name on
       // every receiver's toast so the team knows WHO was just brought
       // on, not just that "something happened".
-      const clientLabel = clients.find(c => c._id === clientId)?.name || 'a new client';
+      const clientLabel = newMode ? typedName : (clients.find(c => c._id === clientId)?.name || 'a new client');
       celebrateBroadcast(socket, {
         reason:    `${clientLabel} added to Client CRM`,
         actorName: user?.name,
@@ -1533,19 +1556,47 @@ function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCr
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </div>
         <div className="p-5 space-y-4">
-          {/* Client */}
+          {/* Client — either an existing client login, or (Aug 2026) just a
+              name for a brand that hasn't been onboarded yet. */}
           <div>
-            <label className="text-xs font-semibold text-muted-foreground">Client</label>
-            <select value={clientId} onChange={e => setClientId(e.target.value)}
-              className="mt-1 w-full px-3 py-2 bg-background border border-input rounded-lg text-sm">
-              <option value="">— pick a client —</option>
-              {clients.map(c => (
-                <option key={c._id} value={c._id}>
-                  {c.name || c.email}{(c as any).phone ? ` · ${(c as any).phone}` : ''}
-                </option>
-              ))}
-            </select>
-            <p className="text-[11px] text-muted-foreground mt-1">Don't see them? Add them in Admin → Clients first.</p>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-muted-foreground">Client</label>
+              <button
+                type="button"
+                onClick={() => setNewMode(v => !v)}
+                className="text-[11px] font-semibold text-primary hover:underline"
+              >
+                {newMode ? 'Pick an existing client' : 'Not onboarded yet? Add by name'}
+              </button>
+            </div>
+
+            {newMode ? (
+              <>
+                <input
+                  value={newClientName}
+                  onChange={e => setNewName(e.target.value)}
+                  placeholder="Brand or client name"
+                  autoFocus
+                  className="mt-1 w-full px-3 py-2 bg-background border border-input rounded-lg text-sm"
+                />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Goes straight into the pipeline. No login or contact details needed — add those later if they ever need portal access.
+                </p>
+              </>
+            ) : (
+              <>
+                <select value={clientId} onChange={e => setClientId(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 bg-background border border-input rounded-lg text-sm">
+                  <option value="">— pick a client —</option>
+                  {clients.map(c => (
+                    <option key={c._id} value={c._id}>
+                      {c.name || c.email}{(c as any).phone ? ` · ${(c as any).phone}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-muted-foreground mt-1">Don't see them? Use "Add by name" above, or Admin → Clients.</p>
+              </>
+            )}
           </div>
 
           {/* Priority — captured upfront so the dashboard's filters
@@ -1609,7 +1660,7 @@ function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCr
           {/* Actions */}
           <div className="flex items-center justify-end gap-2 pt-2">
             <button onClick={onClose} className="px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted">Cancel</button>
-            <button onClick={save} disabled={saving || !clientId || chosen.size === 0}
+            <button onClick={save} disabled={saving || (newMode ? !newClientName.trim() : !clientId) || chosen.size === 0}
               className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1.5">
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
               Add to Client CRM
@@ -1628,6 +1679,62 @@ function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCr
 // closes. Cheap (one model call regardless of project count) and gives
 // a "state of the agency" answer in 2 seconds.
 // ─────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
+// OverallHealthChip — one-glance "how is the agency doing" summary sitting
+// next to the AI brief button (Aug 2026 owner ask).
+//
+// Derived from the workflow list already in memory, so it costs nothing
+// extra and never disagrees with the board below it. Scoring uses the same
+// 4-colour healthLevel taxonomy the cards use, but the owner's manual
+// `ownerFlag` OUTRANKS it per client — if a human said "critical", that
+// counts as critical here regardless of what the health cron computed.
+//
+// The headline number is the share of clients that are healthy; the
+// breakdown behind it is what makes it actionable ("3 critical" is the
+// part someone acts on, not "72%").
+// ─────────────────────────────────────────────────────────────────────────
+function OverallHealthChip({ list }: { list: Workflow[] }) {
+  const active = list.filter(w => !['completed', 'cancelled'].includes(String((w as any).operationalStatus || 'in_progress')));
+  if (active.length === 0) return null;
+
+  let good = 0, warn = 0, bad = 0;
+  for (const w of active) {
+    const flag = String((w as any).ownerFlag || '');
+    if (flag === 'critical')             { bad++;  continue; }
+    if (flag === 'needs_attention')      { warn++; continue; }
+    if (flag === 'smooth')               { good++; continue; }
+    const lvl = String((w as any).healthLevel || 'green');
+    if (lvl === 'red')                   bad++;
+    else if (lvl === 'orange' || lvl === 'yellow') warn++;
+    else                                 good++;
+  }
+
+  const pct = Math.round((good / active.length) * 100);
+  // Headline tone follows the worst thing that's true, not the average —
+  // an 80%-healthy board with two critical clients is not "healthy".
+  const tone = bad > 0
+    ? 'border-red-500/40 bg-red-500/10 text-red-800'
+    : warn > 0
+      ? 'border-amber-500/40 bg-amber-500/10 text-amber-800'
+      : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-800';
+
+  const parts = [
+    `${good} healthy`,
+    warn ? `${warn} watch` : '',
+    bad ? `${bad} critical` : '',
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <div
+      className={`h-9 px-3 hidden sm:flex items-center gap-2 rounded-lg border text-sm font-semibold ${tone}`}
+      title={`Overall health across ${active.length} active client${active.length === 1 ? '' : 's'} — ${parts}`}
+    >
+      <span className="tabular-nums">{pct}%</span>
+      <span className="text-[11px] font-medium opacity-80">{parts}</span>
+    </div>
+  );
+}
+
 function AllProjectsBriefButton() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);

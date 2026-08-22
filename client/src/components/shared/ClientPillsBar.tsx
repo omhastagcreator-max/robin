@@ -80,11 +80,14 @@ const FLAG_DOT: Record<string, string> = {
   needs_attention: 'bg-amber-500',
   critical:        'bg-red-600',
 };
-// Critical also gets a ring so it stands out even at a glance across a
-// wall of pills — colour alone is easy to miss (and unreadable for the
-// colour-blind).
+// Critical gets a tinted pill AND a looping pop + red halo (owner ask:
+// "whichever brand is flagged red it should be animated like popping
+// animation so that I can see that"). Motion + tint + colour together mean
+// it's never conveyed by a 6px dot alone — and the global
+// prefers-reduced-motion rule in styles/tokens.css stops the animation for
+// anyone who's asked their OS for less movement.
 const FLAG_RING: Record<string, string> = {
-  critical: 'border-red-500/60 bg-red-500/10',
+  critical: 'border-red-500/70 bg-red-500/15 text-red-800 animate-flag-critical',
 };
 
 const POLL_MS = 5 * 60_000;

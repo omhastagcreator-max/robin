@@ -138,8 +138,23 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
       // only ever sent { clientId, services, priority }.
       totalAmount, advanceReceived, nextPaymentAmount, nextPaymentDate, nextPaymentCondition,
       metaAdsFeeModel, leadId, onboardedBy,
+      // Aug 2026 — name-only creation for not-yet-onboarded brands.
+      clientName,
     } = req.body || {};
-    if (!clientId) { res.status(400).json({ error: 'clientId required' }); return; }
+    // Aug 2026 — owner ask: "allow Om to add a new client that is not even
+    // onboarded as well." Previously this endpoint REQUIRED clientId, i.e.
+    // an existing User(role:'client') — so a brand that hasn't been
+    // onboarded (no login, no contact details yet) simply could not be put
+    // in the pipeline. Now `clientName` is an accepted alternative: we
+    // create the same kind of placeholder client User the bulk-import
+    // script makes, and carry on down the identical path. clientId still
+    // works unchanged for every existing caller (Sales onboarding modal,
+    // "add a service" calls).
+    const rawName = typeof clientName === 'string' ? clientName.trim() : '';
+    if (!clientId && !rawName) {
+      res.status(400).json({ error: 'Pick a client, or type a name for one that is not onboarded yet' });
+      return;
+    }
     if (!Array.isArray(services) || services.length === 0) {
       res.status(400).json({ error: 'Pick at least one service' });
       return;
@@ -156,8 +171,44 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
     const VALID_PRIORITIES = ['urgent', 'high', 'medium', 'low'];
     const safePriority = (priority && VALID_PRIORITIES.includes(String(priority))) ? String(priority) : undefined;
 
-    const client = await User.findOne({ _id: clientId, organizationId: orgId, role: 'client' }).select('name phone email').lean();
-    if (!client) { res.status(400).json({ error: 'Client not found' }); return; }
+    // Resolve (or mint) the client-login User this workflow hangs off.
+    let client: { _id?: any; name?: string; phone?: string; email?: string } | null = null;
+    let effectiveClientId = clientId;
+
+    if (clientId) {
+      client = await User.findOne({ _id: clientId, organizationId: orgId, role: 'client' }).select('name phone email').lean() as any;
+      if (!client) { res.status(400).json({ error: 'Client not found' }); return; }
+    } else {
+      // Name-only path (not-yet-onboarded brand). Reuse an existing client
+      // User with the same name if there is one, so typing a name that
+      // already exists doesn't spawn a duplicate — the exact bug
+      // bulkAddWebsiteClients.ts caused and dedupeBulkImportedClients.ts
+      // had to clean up.
+      const escaped = rawName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      client = await User.findOne({
+        organizationId: orgId,
+        role: 'client',
+        name: { $regex: `^${escaped}$`, $options: 'i' },
+      }).select('name phone email').lean() as any;
+
+      if (!client) {
+        // Placeholder login — same convention as the bulk-import script.
+        // Real email/password get set later if this brand ever needs
+        // actual portal access.
+        const slug = rawName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const placeholderEmail = `${slug || 'client'}-${Date.now().toString(36)}@client.hastagcreator.com`;
+        const createdUser = await User.create({
+          organizationId: orgId,
+          email: placeholderEmail,
+          name: rawName,
+          role: 'client',
+          passwordHash: 'Welcome123!',   // pre-save hook bcrypts this
+          isActive: true,
+        } as any);
+        client = { _id: createdUser._id, name: createdUser.name, email: createdUser.email } as any;
+      }
+      effectiveClientId = String((client as any)._id);
+    }
 
     // Build each service from its (possibly overridden) template, auto-
     // assigning a teammate from the right team.
@@ -196,7 +247,7 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
 
     // Upsert — if a workflow already exists for this client, add NEW services
     // to it rather than refusing or duplicating.
-    const existing = await ClientWorkflow.findOne({ organizationId: orgId, clientId });
+    const existing = await ClientWorkflow.findOne({ organizationId: orgId, clientId: effectiveClientId });
     let wf;
     let notifyServices: typeof serviceDocs;
     if (existing) {
@@ -217,10 +268,10 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
     } else {
       wf = await ClientWorkflow.create({
         organizationId: orgId,
-        clientId,
-        clientName: client.name,
+        clientId: effectiveClientId,
+        clientName: client!.name,
         clientPhone: (client as any).phone,
-        clientEmail: client.email,
+        clientEmail: client!.email,
         services: serviceDocs,
         ...(safePriority ? { priority: safePriority } : {}),
         ...financials,
@@ -252,7 +303,7 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
         userId: s.assignedTo,
         type: 'workflow.assigned',
         title: `New client work: ${s.label}`,
-        body:  `${client.name || 'A client'} just got onboarded. You're the owner for ${s.label}.`,
+        body:  `${client!.name || 'A client'} just got onboarded. You're the owner for ${s.label}.`,
         entityId: String(wf._id), entityType: 'workflow',
       });
     }

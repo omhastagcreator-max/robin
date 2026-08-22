@@ -236,7 +236,11 @@ export const cwGetWorkflow      = (id: string) => api.get(`/client-workflows/${i
 // count). Financials + Meta Ads fee model + leadId are all optional so
 // this stays backwards compatible with every existing caller.
 export const cwCreateWorkflow   = (body: {
-  clientId: string;
+  /** Existing client login. Omit and pass `clientName` instead for a brand
+   *  that hasn't been onboarded yet (Aug 2026) — the server mints a
+   *  placeholder client User for it. Exactly one of the two is required. */
+  clientId?: string;
+  clientName?: string;
   services: (string | { type: string; quantity?: number | null })[];
   priority?: string;
   totalAmount?: number;

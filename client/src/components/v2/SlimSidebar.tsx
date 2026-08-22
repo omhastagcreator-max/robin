@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ListTodo, Video, MessageSquare, Briefcase, Users,
   Building2, BarChart2, CalendarOff, Clock, BarChart3, Calendar,
-  Bug, CalendarDays, Workflow, UserPlus, AlertTriangle, KeyRound,
+  Bug, Workflow, UserPlus, AlertTriangle, KeyRound,
   Sparkles, LogOut, Bird, ChevronsLeft, ChevronsRight, Bell, Settings,
   TrendingUp, Compass, Archive, Activity, MoreHorizontal, ChevronDown,
 } from 'lucide-react';
@@ -103,7 +103,9 @@ const NAV: NavItem[] = [
   { to: '/admin/clients',     label: 'Clients',       icon: Building2,       section: 'work',      roles: ['admin'] },
   { to: '/admin/projects',    label: 'Projects',      icon: Briefcase,       section: 'work',      roles: ['admin'] },
   { to: '/team/calendar',     label: 'Calendar',      icon: Calendar,        section: 'work',      roles: ['admin', 'employee', 'sales'] },
-  { to: '/client-schedule',   label: 'Schedule',      icon: CalendarDays,    section: 'work',      roles: ['admin', 'employee', 'sales'] },
+  // Aug 2026 — owner ask: "remove Schedule and keep Calendar only." Nav
+  // entry removed; the /client-schedule route + page are left intact so
+  // anything deep-linking to it still works (same treatment /dashboard got).
   { to: '/leaves',            label: 'Leaves',        icon: CalendarOff,     section: 'work',      roles: ['employee', 'sales'] },
 
   // ── COMMUNICATION ──────────────────────────────────────────────

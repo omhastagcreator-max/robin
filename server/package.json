@@ -29,7 +29,8 @@
     "keep-only-brands": "ts-node src/scripts/keepOnlyBrands.ts",
     "update-brand-statuses": "ts-node src/scripts/updateBrandStatuses.ts",
     "apply-roster-sync": "ts-node src/scripts/applyRosterSyncAug2026.ts",
-    "grant-client-edit": "ts-node src/scripts/grantClientEditPermission.ts"
+    "grant-client-edit": "ts-node src/scripts/grantClientEditPermission.ts",
+    "assign-bhawna-clients": "ts-node src/scripts/assignBhawnaClientsAug2026.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

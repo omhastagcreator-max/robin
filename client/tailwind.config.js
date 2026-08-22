@@ -35,12 +35,23 @@ module.exports = {
         'accordion-up': { from: { height: 'var(--radix-accordion-content-height)' }, to: { height: '0' } },
         'page-fade-in': { from: { opacity: '0', transform: 'translateY(12px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
         'pulse-ring': { '0%, 100%': { boxShadow: '0 0 0 0 hsl(0 84% 60% / 0.4)' }, '50%': { boxShadow: '0 0 0 8px hsl(0 84% 60% / 0)' } },
+        // Aug 2026 — owner ask: "whichever brand is flagged red it should be
+        // animated like popping animation so that I can see that." One
+        // keyframe does BOTH the scale-pop and the radiating red halo,
+        // because two `animate-*` classes on one element would just override
+        // each other's `animation` shorthand. Respects prefers-reduced-motion
+        // via the global rule in styles/tokens.css.
+        'flag-critical': {
+          '0%, 100%': { transform: 'scale(1)',    boxShadow: '0 0 0 0 hsl(0 84% 60% / 0.55)' },
+          '50%':      { transform: 'scale(1.06)', boxShadow: '0 0 0 7px hsl(0 84% 60% / 0)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
         'page-fade-in': 'page-fade-in 0.35s cubic-bezier(0.22,1,0.36,1) both',
         'pulse-ring': 'pulse-ring 2s infinite',
+        'flag-critical': 'flag-critical 1.6s ease-in-out infinite',
       },
     },
   },
