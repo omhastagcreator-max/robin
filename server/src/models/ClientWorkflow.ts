@@ -217,6 +217,24 @@ const ClientWorkflowSchema = new Schema({
   priority: { type: String, enum: ['low', 'medium', 'high', 'urgent'], default: 'medium' },
   tags:     { type: [String], default: [] },
 
+  // ── Owner flag (Aug 2026) ─────────────────────────────────────────────
+  // Owner ask: "make sure that I can add flag critical, smooth, needs
+  // attention." A HUMAN judgement call about how a client is going.
+  //
+  // Deliberately its own field rather than reusing healthLevel: that one is
+  // recomputed every 15 min by the health-inference cron, so anything a
+  // person set there would silently get overwritten within the quarter
+  // hour. It's also distinct from `priority` (how urgent the work is) and
+  // `operationalStatus` (whether the engagement is running at all) — this
+  // is specifically "is this account smooth, wobbling, or on fire."
+  // '' = unflagged, and the UI falls back to the auto healthLevel colour.
+  ownerFlag: {
+    type: String,
+    enum: ['', 'smooth', 'needs_attention', 'critical'],
+    default: '',
+    index: true,
+  },
+
   // ── Operational status (Aug 2026 CRM upgrade) ─────────────────────────
   // Deliberately SEPARATE from `health`/`healthLevel` above (which are
   // auto-computed traffic-light signals about whether delivery is on

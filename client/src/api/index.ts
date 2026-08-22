@@ -319,6 +319,10 @@ export const cwUpdateDetails = (wid: string, body: Partial<{
   tags: string[];
   paymentStatus: 'pending' | 'partial' | 'paid' | 'overdue' | 'na';
   operationalStatus: 'in_progress' | 'paused' | 'completed' | 'cancelled' | 'on_hold';
+  // Aug 2026 — human-set "how is this account going" flag. Separate from
+  // the auto-computed healthLevel (which the 15-min health cron owns and
+  // would overwrite) and from priority. '' clears it.
+  ownerFlag: '' | 'smooth' | 'needs_attention' | 'critical';
   totalAmount: number; advanceReceived: number;
   nextPaymentAmount: number; nextPaymentDate: string | null; nextPaymentCondition: string;
   metaAdsFeeModel: { type: string; fixedMonthlyFee?: number | null; percentageOfSpend?: number | null; customDescription?: string };

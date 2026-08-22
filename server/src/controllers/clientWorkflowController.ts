@@ -288,10 +288,14 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
 // to the plain string-diff loop below; nextPaymentDate and metaAdsFeeModel
 // are handled separately further down since one needs Date parsing and the
 // other is a nested object, not a scalar.
-const EDITABLE_DETAIL_FIELDS = ['clientName', 'clientPhone', 'clientEmail', 'priority', 'tags', 'paymentStatus', 'operationalStatus', 'totalAmount', 'advanceReceived', 'nextPaymentAmount', 'nextPaymentCondition'] as const;
+// Aug 2026 — `ownerFlag` (smooth / needs_attention / critical) joins the
+// scalar loop: it's a plain enum string, no special casting needed, and
+// it's NOT financial so every staff role can set it.
+const EDITABLE_DETAIL_FIELDS = ['clientName', 'clientPhone', 'clientEmail', 'priority', 'tags', 'paymentStatus', 'operationalStatus', 'ownerFlag', 'totalAmount', 'advanceReceived', 'nextPaymentAmount', 'nextPaymentCondition'] as const;
 const VALID_PRIORITIES_DETAIL = ['urgent', 'high', 'medium', 'low'];
 const VALID_PAYMENT_STATUSES = ['pending', 'partial', 'paid', 'overdue', 'na'];
 const VALID_OPERATIONAL_STATUSES = ['in_progress', 'paused', 'completed', 'cancelled', 'on_hold'];
+const VALID_OWNER_FLAGS = ['', 'smooth', 'needs_attention', 'critical'];
 const VALID_FEE_MODEL_TYPES = ['', 'fixed', 'percentage', 'hybrid', 'custom'];
 
 export async function updateWorkflowDetails(req: AuthRequest, res: Response): Promise<void> {
@@ -320,6 +324,10 @@ export async function updateWorkflowDetails(req: AuthRequest, res: Response): Pr
     }
     if (body.operationalStatus !== undefined && !VALID_OPERATIONAL_STATUSES.includes(String(body.operationalStatus))) {
       res.status(400).json({ error: `operationalStatus must be one of ${VALID_OPERATIONAL_STATUSES.join(', ')}` });
+      return;
+    }
+    if (body.ownerFlag !== undefined && !VALID_OWNER_FLAGS.includes(String(body.ownerFlag))) {
+      res.status(400).json({ error: `ownerFlag must be one of ${VALID_OWNER_FLAGS.filter(Boolean).join(', ')} (or empty to clear)` });
       return;
     }
     if (body.metaAdsFeeModel !== undefined && body.metaAdsFeeModel !== null && !VALID_FEE_MODEL_TYPES.includes(String(body.metaAdsFeeModel.type || ''))) {
