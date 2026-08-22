@@ -28,14 +28,14 @@ import { ClientQuickUpdateModal } from '@/components/shared/ClientQuickUpdateMod
  *      onboards on the Sales Dashboard appears in every teammate's header
  *      within ~1s. Debounced 800ms so a burst = one refetch.
  *
- *  (3) Rishi-only → SALES_ATTRIBUTED below. A workflow qualifies when its
- *      `onboardedBy` (set by createWorkflow to whoever onboarded it) or
- *      `createdBy` resolves to a user whose role is 'sales'. Matching on
- *      ROLE rather than a hardcoded name/id so this keeps working if Rishi
- *      changes accounts or a second sales rep joins — the rule the owner
- *      actually means is "came in through Sales", not "this one ObjectId".
- *      NOTE: clients created by the older bulk-import maintenance scripts
- *      have no sales attribution, so they deliberately do NOT appear here.
+ *  (3) "added by Rishi and then only it should come here" — resolved, after
+ *      a round trip, as a statement about the FLOW, not a filter: Rishi
+ *      enters a client on the Sales Dashboard and it lands here by itself
+ *      (that's (2) above). An earlier pass read it as "show only
+ *      sales-attributed workflows" and filtered on onboardedBy/createdBy —
+ *      that was wrong, and it hid every older bulk-imported client. The
+ *      owner's follow-up ("the pop up should open when I click on ANY
+ *      client") settled it: every active client belongs in the strip.
  *
  *  (4) click → opens ClientQuickUpdateModal OVER the current page. It does
  *      not navigate; that was the explicit complaint.
@@ -54,12 +54,8 @@ interface ClientPill {
   clientName: string;
   healthLevel?: 'green' | 'yellow' | 'orange' | 'red';
   operationalStatus?: string;
-  onboardedBy?: string;
-  createdBy?: string;
   ownerFlag?: string;
 }
-
-interface UserLite { _id: string; role?: string }
 
 // Engagements that are over — they stop being part of the live roster.
 const INACTIVE_STATUSES = ['completed', 'cancelled'];
@@ -103,18 +99,10 @@ export function ClientPillsBar() {
 
   const load = useCallback(() => {
     if (!isStaff) return;
-    Promise.all([api.cwListWorkflows(), api.listUsers({ isActive: true })])
-      .then(([list, users]: [ClientPill[], UserLite[]]) => {
-        // Who counts as "added by Rishi" — see (3) in the docblock.
-        const salesIds = new Set(
-          (users || []).filter(u => u.role === 'sales').map(u => String(u._id))
-        );
+    api.cwListWorkflows()
+      .then((list: ClientPill[]) => {
         const active = (list || [])
           .filter(w => !INACTIVE_STATUSES.includes(String(w.operationalStatus || 'in_progress')))
-          .filter(w =>
-            salesIds.has(String(w.onboardedBy || '')) ||
-            salesIds.has(String(w.createdBy || ''))
-          )
           .sort((a, b) => (a.clientName || '').localeCompare(b.clientName || ''));
         setClients(active);
         setLoaded(true);
