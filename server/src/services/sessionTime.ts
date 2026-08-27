@@ -143,9 +143,26 @@ export function sessionTotals(
   // worked); STANDARD_BREAK_MS now only powers the long-break warnings
   // and the breakOkDays progress metric. Kept in lockstep with the
   // identical change in client/src/hooks/useSession.ts.
+  // Aug 2026 (owner): "don't count away time for all." Heartbeat gaps were
+  // being logged as away-time for people demonstrably at their desks —
+  // backgrounded tabs, throttled timers, brief network drops — quietly
+  // shaving 15+ min/day off real worked hours (the Om case that prompted
+  // this). Huddle presence already covers "are they actually here", so this
+  // noisier second proxy cost more than it caught.
+  //
+  // awayMs is still ACCUMULATED by the heartbeat handler and still returned
+  // below, so it stays available for diagnostics (npm run inspect-session)
+  // and can be re-enabled by flipping this one flag — but it no longer
+  // reduces worked time.
+  //
+  // MUST stay in lockstep with COUNT_AWAY_TIME in
+  // client/src/hooks/useSession.ts, or the live timer and the admin reports
+  // will show different numbers for the same day.
+  const COUNT_AWAY_TIME = false;
+
   const rawPenalty     = breakMs;
   const breakPenaltyMs = Math.min(rawPenalty, workedMs);
-  const cappedAwayMs   = Math.min(awayInWindowMs, Math.floor(workedMs / 2));
+  const cappedAwayMs   = COUNT_AWAY_TIME ? Math.min(awayInWindowMs, Math.floor(workedMs / 2)) : 0;
   const activeMs       = Math.max(0, workedMs - breakPenaltyMs - cappedAwayMs);
 
   return {

@@ -47,6 +47,20 @@ A `Session` doc tracks a work day: `status: active | on_break | ended`, `startTi
 - Cleanup script for corrupted break data: `cd server && npm run fix-open-breaks -- --apply` (dry-run without `--apply`).
 - History of bugs here: "253h break", "timer stuck at 0", "timer runs backwards", "can't end break". Every guard in `useSession.ts` / `sessionsController.ts` has a comment explaining which bug it prevents — **don't remove guards without reading the comments.**
 
+## Last done (Aug 2026) — away-time no longer deducted from worked hours
+
+Owner: **"don't count away time for all."** Triggered by a live case — Om clocked in 09:14, one real 56m break, and the timer still read 7h51m instead of 8h06m. `npm run inspect-session` showed the data was otherwise clean: exactly one break event matching what he took, and **15 minutes of `awayMs`** accounting for the entire gap. Heartbeat gaps (backgrounded tab, throttled timer, brief network drop) were being logged as "not working" for someone demonstrably at his desk — the same phantom-away class of bug this script was originally built for, except this time the data was correct-looking and the RULE was the problem.
+
+Changed in three places, all flag-guarded rather than deleted:
+
+1. **`server/src/services/sessionTime.ts`** — `COUNT_AWAY_TIME = false`; `cappedAwayMs` is forced to 0 so `activeMs = workedMs − breakPenaltyMs`. awayMs is still returned in the result object.
+2. **`client/src/hooks/useSession.ts`** — the identical flag and change. **These two MUST stay in lockstep** (long-standing rule in this file) or the live ticker and the admin reports disagree about the same day.
+3. **`server/src/services/progressReport.ts`** — `presenceScore` (5 of the 25-point Focus pillar) was docking people whose away-ratio exceeded 5%. Keeping that would mean the signal we just called unreliable still quietly costs people score. It now awards the full 5 (`COUNT_AWAY_IN_SCORE = false`) rather than being removed — that keeps the pillar totals at 25/25/30/20 = 100, so scores stay comparable with the snapshots already frozen in `EmployeeProgress`. Rebalancing the weights instead would have silently repriced history.
+
+**What did NOT change**: the heartbeat handler still accumulates `awayMs` on the Session doc, so it remains visible via `npm run inspect-session` for diagnostics and the whole thing is a one-flag revert. Huddle presence is still the real "are they actually here" signal.
+
+Also this round, `inspectSession.ts` gained three modes: `DAYS=<n>` (read-only multi-day report, ignores repair flags), `SET_START_IST`/`SET_END_IST` (fix a whole day's clock times — worked = elapsed − break, so a fixed worked total needs a fixed END too), `START_BREAK_AGO_MINS` (open a LIVE break started N minutes ago; reopens the session if it was closed, since an ended session can't hold an open break), and `INCLUDE_ENDED=1` to target an already-closed session.
+
 ## Last done (Aug 2026) — Bhawna's clients, Early Flux, name-only client creation, overall-health chip, status tags
 
 Rapid owner round, mostly data + two real feature gaps:

@@ -173,8 +173,22 @@ export async function computeWeekForUser(userId: string, orgId: any, wkStart: nu
   const avgActiveMsDay = daysWorked > 0 ? totalActiveMs / daysWorked : 0;
   const hoursScore = 15 * clamp01(avgActiveMsDay / TARGET_DAY_MS);
   const breakScore = daysWorked > 0 ? 5 * (breakOkDays / daysWorked) : 0;
+  // Aug 2026 (owner): "don't count away time for all." Away-time no longer
+  // reduces worked hours (see COUNT_AWAY_TIME in services/sessionTime.ts),
+  // and it would be inconsistent to keep docking someone's weekly score
+  // with the same signal we just judged unreliable — heartbeat gaps fire
+  // for backgrounded tabs and brief network drops, not just real absence.
+  //
+  // presenceScore is awarded in FULL rather than removed, deliberately:
+  // the pillar totals stay 25/25/30/20 = 100, so this week's scores remain
+  // comparable with every snapshot already frozen in EmployeeProgress.
+  // Rebalancing the weights instead would silently reprice historical
+  // scores. awayRatio is still computed and returned for reporting.
   const awayRatio = grossMs > 0 ? awayMs / grossMs : 0;
-  const presenceScore = 5 * clamp01(1 - Math.max(0, awayRatio - 0.05) / 0.20); // ≤5% full → ≥25% zero
+  const COUNT_AWAY_IN_SCORE = false;
+  const presenceScore = COUNT_AWAY_IN_SCORE
+    ? 5 * clamp01(1 - Math.max(0, awayRatio - 0.05) / 0.20)  // ≤5% full → ≥25% zero
+    : 5;
   const focus = hoursScore + breakScore + presenceScore;
 
   const promiseScore = promiseRate === null ? 10 : 20 * clamp01(promiseRate); // neutral half-credit

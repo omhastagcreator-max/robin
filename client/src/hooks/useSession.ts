@@ -374,14 +374,24 @@ export function useSession() {
     const rawPenalty = totalBreakMs;
     const breakPenaltyMs = Math.min(rawPenalty, upper);
 
-    // ── Away time ────────────────────────────────────────────────────
-    // Server-tracked gaps between heartbeats > 2min. Sanity-capped to
-    // half of elapsed so a runaway awayMs value can't zero out worked
-    // time. If awayMs is bigger than elapsed / 2, treat that as a data
-    // bug rather than an accurate signal — the user will still see
-    // sensible worked hours while the underlying data is repaired.
+    // ── Away time — NO LONGER DEDUCTED (Aug 2026) ────────────────────
+    // Owner: "don't count away time for all." Heartbeat gaps kept being
+    // logged as away-time for people who were demonstrably at their desks
+    // (backgrounded tab, throttled timer, brief network drop), quietly
+    // shaving 15+ min a day off real worked hours — see the Om case that
+    // triggered this. Presence is already enforced by the huddle, so this
+    // second, noisier proxy was costing more than it caught.
+    //
+    // We still ACCUMULATE awayMs on the server (the heartbeat handler is
+    // untouched) so it stays visible for diagnostics via
+    // `npm run inspect-session` — it just no longer reduces worked time.
+    // Flip COUNT_AWAY_TIME back to true here AND in
+    // server/src/services/sessionTime.ts to restore the old behaviour;
+    // the two must stay in lockstep or the live timer and the admin
+    // reports will disagree.
+    const COUNT_AWAY_TIME = false;
     const rawAway = session.awayMs || 0;
-    const cappedAway = Math.min(rawAway, Math.floor(upper / 2));
+    const cappedAway = COUNT_AWAY_TIME ? Math.min(rawAway, Math.floor(upper / 2)) : 0;
 
     const raw = Math.max(0, upper - breakPenaltyMs - cappedAway);
 
