@@ -57,7 +57,7 @@ const ALL_STAGES = [...PIPELINE_STAGES, ...SALES_STAGES, ...OUTCOME_STAGES];
 // a follow-up call to markLeadPayment once the lead exists. estimatedValue
 // is reused as the full deal total so we don't have to ask twice.
 const EMPTY_FORM = {
-  name: '', contact: '', email: '', company: '', source: 'inbound',
+  name: '', contact: '', email: '', company: '', website: '', source: 'inbound',
   estimatedValue: '',
   paymentPaid:   '',   // amount the client has paid already
   paymentReason: '',   // "balance after Shopify launch" / "rest on delivery"
@@ -172,8 +172,15 @@ export default function SalesDashboard() {
   // stage with smart defaults. Massively reduces clicks vs. opening the
   // full new-lead modal every time.
   const [quickAddStage, setQuickAddStage]   = useState<string | null>(null);
-  const [quickAddName,  setQuickAddName]    = useState('');
-  const [quickAddSaving, setQuickAddSaving] = useState(false);
+  const [quickAddName,    setQuickAddName]    = useState('');
+  const [quickAddPhone,   setQuickAddPhone]   = useState('');
+  const [quickAddWebsite, setQuickAddWebsite] = useState('');
+  const [quickAddAmount,  setQuickAddAmount]  = useState('');
+  const [quickAddSaving,  setQuickAddSaving]  = useState(false);
+  const clearQuickAdd = () => {
+    setQuickAddStage(null);
+    setQuickAddName(''); setQuickAddPhone(''); setQuickAddWebsite(''); setQuickAddAmount('');
+  };
   // Mobile: which stage is being viewed (kanban is horizontal scroll on
   // desktop, but on a phone we show one stage at a time via this picker).
   const [mobileStage, setMobileStage] = useState<string>('new_lead');
@@ -367,14 +374,14 @@ export default function SalesDashboard() {
       const parsed = parseContactBlob(trimmed);
       await api.createLead({
         name:    parsed.name || trimmed,
-        contact: parsed.phone || '',
+        contact: quickAddPhone.trim() || parsed.phone || '',
         email:   parsed.email || '',
+        website: quickAddWebsite.trim(),
         source:  'inbound', // quick-adds default to 'inbound'; rep can recategorise later
         stage:   stageKey,
-        estimatedValue: 0,
+        estimatedValue: Number(quickAddAmount) || 0,
       });
-      setQuickAddName('');
-      setQuickAddStage(null);
+      clearQuickAdd();
       load();
     } catch { toast.error('Could not add lead'); }
     finally { setQuickAddSaving(false); }
@@ -620,6 +627,17 @@ export default function SalesDashboard() {
             📞 {lead.contact}
           </a>
         )}
+        {lead.website && (
+          <a
+            href={/^https?:\/\//i.test(lead.website) ? lead.website : `https://${lead.website}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            className="block text-[11px] text-primary hover:underline truncate"
+          >
+            🔗 {lead.website.replace(/^https?:\/\//i, '')}
+          </a>
+        )}
         {/* Source chip — three-bucket colour coding so reps can scan the
             kanban and immediately tell which leads came from outreach vs.
             inbound vs. organic. Falls back to a muted text label for any
@@ -760,11 +778,29 @@ export default function SalesDashboard() {
               onChange={e => setQuickAddName(e.target.value)}
               onKeyDown={e => {
                 if (e.key === 'Enter') { e.preventDefault(); quickAddSubmit(stage.key); }
-                if (e.key === 'Escape') { setQuickAddStage(null); setQuickAddName(''); }
+                if (e.key === 'Escape') { clearQuickAdd(); }
               }}
-              placeholder="Name, phone, email…"
+              placeholder="Name *"
               className="w-full px-2 py-1.5 bg-background border border-input rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-ring"
             />
+            {([
+              [quickAddPhone,   setQuickAddPhone,   'Phone',        'tel'   ],
+              [quickAddWebsite, setQuickAddWebsite, 'Website link', 'text'  ],
+              [quickAddAmount,  setQuickAddAmount,  'Amount (₹)',   'number'],
+            ] as const).map(([val, set, ph, type]) => (
+              <input
+                key={ph}
+                type={type}
+                value={val}
+                onChange={e => set(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { e.preventDefault(); quickAddSubmit(stage.key); }
+                  if (e.key === 'Escape') { clearQuickAdd(); }
+                }}
+                placeholder={ph}
+                className="w-full px-2 py-1.5 bg-background border border-input rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            ))}
             <div className="flex items-center gap-1">
               <button
                 onClick={() => quickAddSubmit(stage.key)}
@@ -774,7 +810,7 @@ export default function SalesDashboard() {
                 {quickAddSaving ? <Loader2 className="h-3 w-3 animate-spin mx-auto" /> : 'Add'}
               </button>
               <button
-                onClick={() => { setQuickAddStage(null); setQuickAddName(''); }}
+                onClick={clearQuickAdd}
                 className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted flex items-center justify-center"
               >
                 <X className="h-3 w-3" />
@@ -991,6 +1027,7 @@ export default function SalesDashboard() {
                   { field: 'contact', placeholder: 'Phone number' },
                   { field: 'email',   placeholder: 'Email' },
                   { field: 'company', placeholder: 'Company name' },
+                  { field: 'website', placeholder: 'Website link' },
                 ].map(f => (
                   <input key={f.field} value={(form as any)[f.field]} required={f.required}
                     onChange={e => setForm(p => ({ ...p, [f.field]: e.target.value }))}

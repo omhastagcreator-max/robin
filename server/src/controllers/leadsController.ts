@@ -34,9 +34,13 @@ export async function createLead(req: AuthRequest, res: Response): Promise<void>
   try {
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
-    const allowed = ['name', 'contact', 'email', 'company', 'source', 'estimatedValue', 'status', 'notes'];
+    // Sep 2026 — 'website' added (new-lead form field) and 'stage' added:
+    // the column quick-add always sent stage but it was silently dropped
+    // here, so quick-added leads landed in new_lead regardless of column.
+    const allowed = ['name', 'contact', 'email', 'company', 'website', 'source', 'estimatedValue', 'status', 'stage', 'notes'];
     const body: Record<string, any> = {};
     for (const k of allowed) if (req.body[k] !== undefined) body[k] = req.body[k];
+    if (body.stage && !body.status) body.status = body.stage; // keep legacy status in lockstep
     const lead = await Lead.create({ ...body, organizationId: orgId, assignedTo: req.user!.id });
 
     // Fire-and-forget AI scoring so the kanban shows hot/warm/cold + a
@@ -104,7 +108,7 @@ export async function updateLead(req: AuthRequest, res: Response): Promise<void>
     // side already logs activity), with closedAt stamped on won/lost.
     // 'tags' added Aug 2026 — schema field existed but nothing could ever
     // write it (no route, no UI). See SalesDashboard.tsx lead-detail view.
-    const allowed = ['name', 'contact', 'email', 'company', 'source', 'estimatedValue', 'status', 'stage', 'notes', 'assignedTo', 'closedAt', 'lostReason', 'wonAmount', 'tags'];
+    const allowed = ['name', 'contact', 'email', 'company', 'website', 'source', 'estimatedValue', 'status', 'stage', 'notes', 'assignedTo', 'closedAt', 'lostReason', 'wonAmount', 'tags'];
     const patch: Record<string, any> = {};
     for (const k of allowed) if (req.body[k] !== undefined) patch[k] = req.body[k];
 

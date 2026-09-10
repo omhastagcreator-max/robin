@@ -25,6 +25,7 @@ const LeadSchema = new Schema({
   contact:        { type: String },
   email:          { type: String },
   company:        String,
+  website:        { type: String, default: '' }, // lead's site/store URL (Sep 2026 — sales asked for it on the new-lead form)
   // Source — three categories drive the sales UI: 'outbound', 'inbound',
   // 'organic'. Legacy values ('referral', 'cold_call', 'website', 'social',
   // 'other') are kept so older docs continue to validate, but the New-Lead
