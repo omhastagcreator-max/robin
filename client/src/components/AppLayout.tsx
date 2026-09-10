@@ -26,6 +26,7 @@ import { TopBar }          from '@/components/v2/TopBar';
 import { GlobalShortcuts } from '@/components/v2/GlobalShortcuts';
 import { CheckinOrchestrator } from '@/components/checkin/CheckinOrchestrator';
 import { PageErrorBoundary } from '@/components/shared/PageErrorBoundary';
+import { GaneshFestiveTheme } from '@/components/shared/GaneshFestiveTheme';
 import { ClientPillsBar }  from '@/components/shared/ClientPillsBar';
 import { useKnock }        from '@/hooks/useKnock';
 import { useAppUpdater }   from '@/hooks/useAppUpdater';
@@ -247,6 +248,10 @@ function AppLayoutInner({ children }: Props) {
   return (
     <AppLayoutNestedCtx.Provider value={true}>
     <SlimSidebar>
+      {/* Ganesh Chaturthi 2026 decor — pure-CSS overlay, pointer-events
+          none, and date-gated: it removes ITSELF after 15 Sep 2026 IST,
+          so no redeploy is needed to take it down. */}
+      <GaneshFestiveTheme />
       {/* TopBar + the always-on client roster are ONE sticky unit, pinned
           together at the very top of the viewport.
 

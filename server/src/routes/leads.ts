@@ -12,7 +12,7 @@ router.post('/', requireRole('admin', 'sales'), createLead);
 router.post('/import', requireRole('admin', 'sales'), importLeads);
 router.get('/:id', requireRole('admin', 'sales'), getLead);
 router.put('/:id', requireRole('admin', 'sales'), updateLead);
-router.delete('/:id', requireRole('admin'), deleteLead);
+router.delete('/:id', requireRole('admin', 'sales'), deleteLead);
 router.post('/:id/notes', requireRole('admin', 'sales'), addNote);
 router.post('/:id/convert', requireRole('admin', 'sales'), convertLead);
 // Lead payment ledger — one event appended per call, denormalised

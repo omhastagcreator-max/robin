@@ -8,7 +8,7 @@ import {
   Phone, UserCheck, Calendar, Presentation, CheckCheck,
   TrendingUp, Repeat, Flame, ChefHat, Trophy, XCircle,
   Plus, IndianRupee, Loader2, X, Users, Bell, BadgeCheck,
-  AlertCircle, Clock, Building2, LayoutDashboard, ChevronDown, List, Search, Sheet,
+  AlertCircle, Clock, Building2, LayoutDashboard, ChevronDown, List, Search, Sheet, RotateCcw, Trash2,
 } from 'lucide-react';
 import * as api from '@/api';
 import { toast } from 'sonner';
@@ -502,6 +502,44 @@ export default function SalesDashboard() {
     catch { toast.error('Failed to update stage'); load(); }
   };
 
+  // Clear a terminal outcome (won/lost) — for the times a deal is marked
+  // won/lost by mistake, or a lost deal comes back to life. Reverts the
+  // lead to its last non-terminal stage (from stageHistory), falling back
+  // to 'follow_up', and wipes closedAt / lostReason (and wonAmount when
+  // clearing a Won) so revenue and conversion stats stop counting it.
+  const clearLeadStatus = async (lead: any) => {
+    const currentStage = lead.stage || lead.status;
+    const history: any[] = Array.isArray(lead.stageHistory) ? lead.stageHistory : [];
+    const prev = [...history].reverse().find(h => h?.stage && !['won', 'lost'].includes(h.stage));
+    const targetStage = prev?.stage || 'follow_up';
+    const targetLabel = ALL_STAGES.find(st => st.key === targetStage)?.label || targetStage;
+    if (!confirm(`Clear "${lead.name}" from ${currentStage === 'won' ? 'Won' : 'Lost'} and move it back to ${targetLabel}?`)) return;
+    const wipe = {
+      stage: targetStage, status: targetStage,
+      closedAt: null, lostReason: null,
+      ...(currentStage === 'won' ? { wonAmount: null } : {}),
+    };
+    setLeads(prevLeads => prevLeads.map(l => l._id === lead._id ? { ...l, ...wipe } : l));
+    try {
+      await api.updateLead(lead._id, wipe);
+      toast.success(`Status cleared — "${lead.name}" is back in ${targetLabel}`);
+    } catch { toast.error('Failed to clear status'); load(); }
+  };
+
+  // Permanently delete a lead — server hard-deletes the lead plus its
+  // notes, focus-list rows and deals, removes the client CRM record
+  // created at onboarding (workflow + activity log), and deactivates
+  // the client login. Gone for good — no soft delete.
+  const removeLead = async (lead: any) => {
+    if (!confirm(`Permanently delete "${lead.name}"? This also removes it from the Client CRM (if it was onboarded). This can't be undone.`)) return;
+    setLeads(prev => prev.filter(l => l._id !== lead._id));
+    if (viewLead?._id === lead._id) setViewLead(null);
+    try {
+      await api.deleteLead(lead._id);
+      toast.success('Lead deleted');
+    } catch { toast.error('Failed to delete lead'); load(); }
+  };
+
   // Single-click next-stage mapping — the most likely transition Rishi
   // will want for each stage. Returns null for terminal stages (won/lost).
   const nextStageFor = (stage: string): { key: string; label: string } | null => {
@@ -646,6 +684,34 @@ export default function SalesDashboard() {
                 <option key={s.key} value={s.key}>→ {s.label}</option>
               ))}
             </select>
+            <button
+              onClick={(e) => { e.stopPropagation(); removeLead(lead); }}
+              className="h-7 w-7 shrink-0 rounded-md bg-card border border-border text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600 hover:border-rose-500/30 inline-flex items-center justify-center"
+              title="Delete lead permanently"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
+        {/* CLEAR STATUS — only for terminal leads (won/lost). Lets Rishi
+            undo an accidental Won/Lost and put the lead back in play. */}
+        {isTerminal && (
+          <div className="flex items-center gap-1 pt-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); clearLeadStatus(lead); }}
+              className="flex-1 h-7 px-2 rounded-md bg-card border border-border text-muted-foreground text-[10px] font-semibold hover:bg-primary/10 hover:text-primary inline-flex items-center justify-center gap-1"
+              title={`Clear ${currentStage === 'won' ? 'Won' : 'Lost'} status — move this lead back into the pipeline`}
+            >
+              <RotateCcw className="h-3 w-3" /> Clear status
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); removeLead(lead); }}
+              className="h-7 w-7 shrink-0 rounded-md bg-card border border-border text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600 hover:border-rose-500/30 inline-flex items-center justify-center"
+              title="Delete lead permanently"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
           </div>
         )}
       </div>
@@ -791,6 +857,20 @@ export default function SalesDashboard() {
         className="opacity-0 group-hover:opacity-100 flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 text-amber-700 border border-amber-500/25 rounded-lg text-xs font-medium hover:bg-amber-500/20 transition-all"
       >
         <Bell className="h-3 w-3" /> Payment Due
+      </button>
+      <button
+        onClick={() => clearLeadStatus(lead)}
+        className="opacity-0 group-hover:opacity-100 flex items-center gap-1.5 px-3 py-1.5 bg-card text-muted-foreground border border-border rounded-lg text-xs font-medium hover:bg-rose-500/10 hover:text-rose-600 hover:border-rose-500/30 transition-all"
+        title="Clear Won status — move this lead back into the pipeline"
+      >
+        <RotateCcw className="h-3 w-3" /> Clear
+      </button>
+      <button
+        onClick={() => removeLead(lead)}
+        className="opacity-0 group-hover:opacity-100 flex items-center gap-1.5 px-2.5 py-1.5 bg-card text-muted-foreground border border-border rounded-lg text-xs font-medium hover:bg-rose-500/10 hover:text-rose-600 hover:border-rose-500/30 transition-all"
+        title="Delete lead permanently"
+      >
+        <Trash2 className="h-3 w-3" />
       </button>
     </div>
   );

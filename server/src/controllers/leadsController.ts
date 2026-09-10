@@ -4,6 +4,9 @@ import User from '../models/User';
 import Lead from '../models/Lead';
 import LeadNote from '../models/LeadNote';
 import Deal from '../models/Deal';
+import FocusList from '../models/FocusList';
+import ClientWorkflow from '../models/ClientWorkflow';
+import WorkflowActivity from '../models/WorkflowActivity';
 
 /**
  * Leads — STRICT org isolation. Reads, updates, deletes always scoped by org.
@@ -137,6 +140,38 @@ export async function deleteLead(req: AuthRequest, res: Response): Promise<void>
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     const result = await Lead.findOneAndDelete({ _id: req.params.id, organizationId: orgId });
     if (!result) { res.status(404).json({ error: 'Lead not found' }); return; }
+    // Sep 2026 — delete COMPLETELY, including the Client CRM side: the
+    // lead's own child docs (notes, focus-list rows, deals) are removed,
+    // any CRM workflow created when this lead was onboarded is deleted
+    // along with its activity log, and the client login created from the
+    // lead is deactivated — matching admin "remove user", which
+    // deactivates rather than hard-deletes accounts.
+    const clientIds = new Set<string>();
+    if ((result as any).convertedToClientId) clientIds.add(String((result as any).convertedToClientId));
+    const workflows = await ClientWorkflow.find({
+      organizationId: orgId,
+      $or: [
+        { leadId: result._id },
+        ...(clientIds.size ? [{ clientId: { $in: [...clientIds] } }] : []),
+      ],
+    }).select('_id clientId').lean();
+    workflows.forEach((w: any) => { if (w.clientId) clientIds.add(String(w.clientId)); });
+    const workflowIds = workflows.map((w: any) => w._id);
+    await Promise.all([
+      LeadNote.deleteMany({ leadId: result._id }),
+      FocusList.deleteMany({ leadId: result._id }),
+      Deal.deleteMany({ leadId: result._id }),
+      ...(workflowIds.length ? [
+        ClientWorkflow.deleteMany({ _id: { $in: workflowIds } }),
+        WorkflowActivity.deleteMany({ workflowId: { $in: workflowIds } }),
+      ] : []),
+      ...(clientIds.size ? [
+        User.updateMany(
+          { _id: { $in: [...clientIds] }, role: 'client' },
+          { $set: { isActive: false } },
+        ),
+      ] : []),
+    ]);
     res.json({ message: 'Lead deleted' });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
