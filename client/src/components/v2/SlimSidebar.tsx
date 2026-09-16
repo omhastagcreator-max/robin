@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ListTodo, Video, MessageSquare, Briefcase, Users,
   Building2, BarChart2, CalendarOff, Clock, BarChart3, Calendar,
-  Bug, Workflow, UserPlus, AlertTriangle, KeyRound,
+  Bug, UserPlus, AlertTriangle, KeyRound, FolderOpen, GitBranch,
   Sparkles, LogOut, Bird, ChevronsLeft, ChevronsRight, Bell, Settings,
   TrendingUp, Compass, Archive, Activity, MoreHorizontal, ChevronDown,
 } from 'lucide-react';
@@ -99,7 +99,14 @@ const NAV: NavItem[] = [
   // (admin/sales by role, Om via canManageWorkroom). July 2026.
   { to: '/team-progress',     label: 'Progress',      icon: TrendingUp,      section: 'work',      roles: ['admin', 'sales'], subItem: true },
   { to: '/team-progress',     label: 'Progress',      icon: TrendingUp,      section: 'work',      roles: ['employee'], requiresFlag: 'canManageWorkroom', subItem: true },
-  { to: '/clients/pipeline',  label: 'Client CRM',    icon: Workflow,        section: 'work',      roles: ['admin', 'employee', 'sales', 'workroom'] },
+  // Sep 2026 Robin OS build — executive CRM directory + the gated
+  // Decision Tree task-execution workspace (unlocks only after a client
+  // is selected on /crm or fetched on the DT screen itself).
+  { to: '/crm',               label: 'CRM',           icon: FolderOpen,      section: 'work',      roles: ['admin', 'employee', 'sales', 'workroom'] },
+  { to: '/decision-tree',     label: 'Decision Tree', icon: GitBranch,       section: 'work',      roles: ['admin', 'employee', 'sales', 'workroom'] },
+  // "Client CRM" (/clients/pipeline) removed from the sidebar — the new
+  // CRM page supersedes it here; the full pipeline stays reachable via
+  // the "Full pipeline view" button on /crm and by direct URL.
   { to: '/admin/clients',     label: 'Clients',       icon: Building2,       section: 'work',      roles: ['admin'] },
   { to: '/admin/projects',    label: 'Projects',      icon: Briefcase,       section: 'work',      roles: ['admin'] },
   { to: '/team/calendar',     label: 'Calendar',      icon: Calendar,        section: 'work',      roles: ['admin', 'employee', 'sales'] },

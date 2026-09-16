@@ -47,6 +47,9 @@ const CommandCenter     = lazy(() => import('@/pages/CommandCenter'));
 const TaskLedgerPage    = lazy(() => import('@/pages/TaskLedgerPage'));
 const TeamPulsePage     = lazy(() => import('@/pages/TeamPulsePage'));
 const TeamProgressPage  = lazy(() => import('@/pages/TeamProgressPage'));
+// Sep 2026 Robin OS build — executive CRM view + gated Decision Tree.
+const CrmPage           = lazy(() => import('@/pages/CrmPage'));
+const DecisionTreePage  = lazy(() => import('@/pages/DecisionTreePage'));
 
 /**
  * BlankRoot — the public root (robin.hastagcreator.com/) renders nothing.
@@ -188,6 +191,10 @@ function AppRoutes() {
           <Route path="/admin/crash-logs" element={<ProtectedRoute requiredRole="admin"><E><AdminCrashLogs /></E></ProtectedRoute>} />
           <Route path="/admin/issues"     element={<ProtectedRoute requiredRole="admin"><E><AdminIssues /></E></ProtectedRoute>} />
           <Route path="/client-schedule"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientSchedulePage /></E></ProtectedRoute>} />
+          {/* Robin OS (Sep 2026): executive CRM + Decision Tree. The DT page
+              gates itself — no client selected/fetched → locked prompt. */}
+          <Route path="/crm"              element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><CrmPage /></E></ProtectedRoute>} />
+          <Route path="/decision-tree"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><DecisionTreePage /></E></ProtectedRoute>} />
           <Route path="/clients/pipeline"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><ClientPipelinePage /></E></ProtectedRoute>} />
           {/* Two-layer system (May 2026, v3):
               :id              → ClientWorkspacePage  (Layer 1 — project command center)
