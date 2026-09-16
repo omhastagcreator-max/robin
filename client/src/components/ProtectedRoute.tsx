@@ -15,16 +15,16 @@ interface Props { children: ReactNode; requiredRole?: string | string[]; }
 export function dashboardForRole(role: string): string {
   switch (role) {
     case 'client':   return '/client';
-    // Sep 2026 Robin OS reset — every internal role lands on the CRM,
-    // the first item in the new nav and the entry point to the Decision
-    // Tree (which needs a client selected here before it will open).
-    // The old landings (/command-center, /workroom-home) still exist and
-    // are reachable directly; they're just no longer the front door.
-    case 'admin':
-    case 'sales':
-    case 'employee':
-    case 'workroom': return '/crm';
-    default:         return '/crm';
+    // June 2026 Mission Control: admin lands on /command-center (the
+    // new agency-wide overview). Sales / employee / workroom keep the
+    // Workroom landing (tuned for IC work, with brief, tasks,
+    // targets). Admin can still reach /workroom-home from the sidebar
+    // to see their personal clock + tasks.
+    case 'admin':    return '/command-center';
+    case 'sales':    return '/workroom-home';
+    case 'employee': return '/workroom-home';
+    case 'workroom': return '/workroom-home';
+    default:         return '/workroom-home';
   }
 }
 

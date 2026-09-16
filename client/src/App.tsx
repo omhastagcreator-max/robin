@@ -49,8 +49,6 @@ const TeamPulsePage     = lazy(() => import('@/pages/TeamPulsePage'));
 const TeamProgressPage  = lazy(() => import('@/pages/TeamProgressPage'));
 // Sep 2026 Robin OS build — executive CRM view + gated Decision Tree.
 const CrmPage           = lazy(() => import('@/pages/CrmPage'));
-const ProcessUpdatesPage = lazy(() => import('@/pages/ProcessUpdatesPage'));
-const ProcessTestPage    = lazy(() => import('@/pages/ProcessTestPage'));
 const DecisionTreePage  = lazy(() => import('@/pages/DecisionTreePage'));
 
 /**
@@ -196,11 +194,6 @@ function AppRoutes() {
           {/* Robin OS (Sep 2026): executive CRM + Decision Tree. The DT page
               gates itself — no client selected/fetched → locked prompt. */}
           <Route path="/crm"              element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><CrmPage /></E></ProtectedRoute>} />
-          {/* Process Updates (SOP library) + Process Test (training).
-              Everyone reads, acknowledges and takes tests; authoring is
-              admin-only, enforced server-side in routes/process.ts. */}
-          <Route path="/process-updates"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><ProcessUpdatesPage /></E></ProtectedRoute>} />
-          <Route path="/process-test"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><ProcessTestPage /></E></ProtectedRoute>} />
           <Route path="/decision-tree"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><DecisionTreePage /></E></ProtectedRoute>} />
           <Route path="/clients/pipeline"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><ClientPipelinePage /></E></ProtectedRoute>} />
           {/* Two-layer system (May 2026, v3):

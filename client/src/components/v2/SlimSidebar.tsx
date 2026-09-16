@@ -1,11 +1,14 @@
 import { useState, useRef, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  FolderOpen, GitBranch, CalendarCheck, Stamp, Code2, BookMarked,
-  GraduationCap, UsersRound, Target,
-  Sparkles, LogOut, Bird, ChevronsLeft, ChevronsRight,
+  LayoutDashboard, ListTodo, Video, MessageSquare, Briefcase, Users,
+  Building2, BarChart2, CalendarOff, Clock, BarChart3, Calendar,
+  Bug, UserPlus, AlertTriangle, KeyRound, FolderOpen, GitBranch,
+  Sparkles, LogOut, Bird, ChevronsLeft, ChevronsRight, Bell, Settings,
+  TrendingUp, Compass, Archive, Activity, MoreHorizontal, ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useUnreadCounts } from '@/contexts/UnreadCountsContext';
 import { Avatar } from '@/components/shared/Avatar';
 import { dashboardForRole } from '@/components/ProtectedRoute';
 
@@ -22,7 +25,7 @@ import { dashboardForRole } from '@/components/ProtectedRoute';
  * Pin state persists in localStorage.
  */
 
-type Section = 'core' | 'ops';
+type Section = 'home' | 'work' | 'comm' | 'sales' | 'reporting' | 'system';
 
 interface NavItem {
   to: string;
@@ -30,52 +33,113 @@ interface NavItem {
   icon: React.ElementType;
   section: Section;
   roles?: string[];
+  team?: string;
+  anyTeam?: string[];
+  requiresFlag?: 'canManageWorkroom';
+  // Aug 2026 — owner ask: WORK had grown to 8 always-visible rows and
+  // felt cluttered. Investigated each one — all 8 turned out to be real,
+  // distinct features (confirmed: Task ledger is a permanent audit log
+  // w/ CSV export, genuinely different from the live Tasks inbox; owner
+  // chose "group the 2 least-used into a submenu" over deleting anything.
+  // Items flagged here render under a collapsed "More" row instead of as
+  // a top-level link — only when the sidebar is expanded (collapsed/icon
+  // rail still shows every item flat, so nothing becomes harder to reach
+  // when space is already tight).
+  subItem?: boolean;
 }
 
 const SECTION_LABEL: Record<Section, string> = {
-  core: 'Core Navigation',
-  ops:  'Operations & Management',
+  home:      'Home',
+  work:      'Work',
+  comm:      'Communication',
+  sales:     'Sales',
+  reporting: 'Reporting',
+  system:    'System',
 };
 
-const SECTION_ORDER: Section[] = ['core', 'ops'];
+const SECTION_ORDER: Section[] = ['home', 'work', 'comm', 'sales', 'reporting', 'system'];
 
-/**
- * Sep 2026 — Robin OS reset.
- *
- * Owner ask: "replace the whole Robin with the file, keep only these
- * details." The nav is now EXACTLY the approved Robin OS mockup's two
- * groups — nothing else. Every removed entry's route and page is still
- * mounted in App.tsx (deep links, bookmarks and in-app links all keep
- * working); they're simply no longer surfaced in the sidebar. Restoring
- * one is a single line here.
- *
- * Mockup item → real Robin destination:
- *   CRM             → /crm                (executive client directory)
- *   Decision Tree   → /decision-tree      (gated task execution)
- *   Attendance      → /admin/attendance · /leaves for non-admins
- *   Approvals       → /admin/leaves       (leave sign-offs)
- *   Tech Updates    → /admin/issues       (issue + deployment tracker)
- *   Process Updates → /process-updates    (SOP module — placeholder)
- *   Process Test    → /process-test       (training module — placeholder)
- *   Workroom        → /workroom-home      (team collab hub)
- *   Sales Pipeline  → /sales
- */
 const NAV: NavItem[] = [
-  // ── CORE NAVIGATION ─────────────────────────────────────────────
-  { to: '/crm',               label: 'CRM',              icon: FolderOpen,     section: 'core', roles: ['admin', 'employee', 'sales', 'workroom'] },
-  { to: '/decision-tree',     label: 'Decision Tree',    icon: GitBranch,      section: 'core', roles: ['admin', 'employee', 'sales', 'workroom'] },
+  // ── HOME ────────────────────────────────────────────────────────
+  // Dashboard — one entry per role, routed via dashboardForRole. The
+  // sidebar dedupes by URL so a user with multiple roles never sees
+  // "Dashboard" twice.
+  // June 2026 Mission Control — first entry for admin + sales, the
+  // agency-wide overview. Admin's actual landing (see ProtectedRoute
+  // .dashboardForRole) is this page.
+  { to: '/command-center',    label: 'Command Center', icon: Compass,         section: 'home',      roles: ['admin', 'sales'] },
+  // Aug 2026 — relabeled "Workroom" → "Dashboard" for this entry
+  // specifically: /workroom-home is the actual login landing for
+  // sales/employee/workroom roles (see dashboardForRole), but the label
+  // "Workroom" collided with the unrelated live-huddle page under
+  // Communication (route /workroom) — same word, two different
+  // destinations. "Dashboard" also now matches how admin ("Command
+  // Center") and client ("Dashboard") each see one clearly-named home.
+  { to: '/workroom-home',     label: 'Dashboard',     icon: LayoutDashboard, section: 'home',      roles: ['admin', 'sales', 'employee', 'workroom'] },
+  // Aug 2026 — owner reviewed the actual rendered page and called
+  // /dashboard (EmployeeDashboard.tsx) redundant with the real landing
+  // (/workroom-home, "Dashboard" above) — removed from nav. The route +
+  // component are left in place (not deleted) in case anything still
+  // deep-links to it; it's just no longer reachable from the sidebar.
+  // /admin ("Old admin") kept for now — only /dashboard was flagged.
+  { to: '/admin',             label: 'Detailed view', icon: LayoutDashboard, section: 'home',      roles: ['admin'] },
+  { to: '/client',            label: 'Dashboard',     icon: LayoutDashboard, section: 'home',      roles: ['client'] },
+  { to: '/sales',             label: 'Sales pipeline', icon: LayoutDashboard, section: 'home',     roles: ['sales'] },
+  { to: '/notifications',     label: 'Notifications', icon: Bell,            section: 'home' },
 
-  // ── OPERATIONS & MANAGEMENT ─────────────────────────────────────
-  // Attendance: admins get the agency-wide register, everyone else
-  // gets their own attendance/leave record under the same label.
-  { to: '/admin/attendance',  label: 'Attendance',       icon: CalendarCheck,  section: 'ops',  roles: ['admin'] },
-  { to: '/leaves',            label: 'Attendance',       icon: CalendarCheck,  section: 'ops',  roles: ['employee', 'sales', 'workroom'] },
-  { to: '/admin/leaves',      label: 'Approvals',        icon: Stamp,          section: 'ops',  roles: ['admin'] },
-  { to: '/admin/issues',      label: 'Tech Updates',     icon: Code2,          section: 'ops',  roles: ['admin'] },
-  { to: '/process-updates',   label: 'Process Updates',  icon: BookMarked,     section: 'ops',  roles: ['admin', 'employee', 'sales', 'workroom'] },
-  { to: '/process-test',      label: 'Process Test',     icon: GraduationCap,  section: 'ops',  roles: ['admin', 'employee', 'sales', 'workroom'] },
-  { to: '/workroom-home',     label: 'Workroom',         icon: UsersRound,     section: 'ops',  roles: ['admin', 'employee', 'sales', 'workroom'] },
-  { to: '/sales',             label: 'Sales Pipeline',   icon: Target,         section: 'ops',  roles: ['admin', 'sales'] },
+  // ── WORK ────────────────────────────────────────────────────────
+  { to: '/tasks',             label: 'Tasks',         icon: ListTodo,        section: 'work',      roles: ['employee', 'admin', 'sales'] },
+  { to: '/tasks/ledger',      label: 'Task ledger',   icon: Archive,         section: 'work',      roles: ['employee', 'admin', 'sales'], subItem: true },
+  // Team Pulse — admin + sales see it by role; non-admin "workroom
+  // managers" (Om's canManageWorkroom flag) see it via the requiresFlag
+  // path, same pattern we use for the workroom-onboard link below.
+  { to: '/team-pulse',        label: 'Team Pulse',    icon: Activity,        section: 'work',      roles: ['admin', 'sales'] },
+  { to: '/team-pulse',        label: 'Team Pulse',    icon: Activity,        section: 'work',      roles: ['employee'], requiresFlag: 'canManageWorkroom' },
+  // Weekly employee scorecards — same visibility as Team Pulse
+  // (admin/sales by role, Om via canManageWorkroom). July 2026.
+  { to: '/team-progress',     label: 'Progress',      icon: TrendingUp,      section: 'work',      roles: ['admin', 'sales'], subItem: true },
+  { to: '/team-progress',     label: 'Progress',      icon: TrendingUp,      section: 'work',      roles: ['employee'], requiresFlag: 'canManageWorkroom', subItem: true },
+  // Sep 2026 Robin OS build — executive CRM directory + the gated
+  // Decision Tree task-execution workspace (unlocks only after a client
+  // is selected on /crm or fetched on the DT screen itself).
+  { to: '/crm',               label: 'CRM',           icon: FolderOpen,      section: 'work',      roles: ['admin', 'employee', 'sales', 'workroom'] },
+  { to: '/decision-tree',     label: 'Decision Tree', icon: GitBranch,       section: 'work',      roles: ['admin', 'employee', 'sales', 'workroom'] },
+  // "Client CRM" (/clients/pipeline) removed from the sidebar — the new
+  // CRM page supersedes it here; the full pipeline stays reachable via
+  // the "Full pipeline view" button on /crm and by direct URL.
+  { to: '/admin/clients',     label: 'Clients',       icon: Building2,       section: 'work',      roles: ['admin'] },
+  { to: '/admin/projects',    label: 'Projects',      icon: Briefcase,       section: 'work',      roles: ['admin'] },
+  { to: '/team/calendar',     label: 'Calendar',      icon: Calendar,        section: 'work',      roles: ['admin', 'employee', 'sales'] },
+  // Aug 2026 — owner ask: "remove Schedule and keep Calendar only." Nav
+  // entry removed; the /client-schedule route + page are left intact so
+  // anything deep-linking to it still works (same treatment /dashboard got).
+  { to: '/leaves',            label: 'Leaves',        icon: CalendarOff,     section: 'work',      roles: ['employee', 'sales'] },
+
+  // ── COMMUNICATION ──────────────────────────────────────────────
+  { to: '/chat',              label: 'Chat',          icon: MessageSquare,   section: 'comm',      roles: ['admin', 'employee', 'sales'] },
+  { to: '/workroom',          label: 'Workroom',      icon: Video,           section: 'comm',      roles: ['admin', 'employee', 'sales', 'workroom'] },
+
+  // ── SALES ──────────────────────────────────────────────────────
+  // Admin sees the sales pipeline from System nav; sales role's own
+  // pipeline lives at the same /sales URL but they reach it via Home.
+  { to: '/sales',             label: 'Sales pipeline', icon: TrendingUp,     section: 'sales',     roles: ['admin'] },
+
+  // ── REPORTING ──────────────────────────────────────────────────
+  { to: '/ads/meta',          label: 'Meta Ads',      icon: BarChart3,       section: 'reporting', roles: ['admin'] },
+  { to: '/ads/meta',          label: 'Meta Ads',      icon: BarChart3,       section: 'reporting', roles: ['employee'], anyTeam: ['meta', 'ads'] },
+  { to: '/admin/reports',     label: 'Reports',       icon: BarChart2,       section: 'reporting', roles: ['admin'] },
+  { to: '/influencers',       label: 'Influencer',    icon: Users,           section: 'reporting', roles: ['employee'], team: 'influencer' },
+
+  // ── SYSTEM ─────────────────────────────────────────────────────
+  { to: '/admin/employees',   label: 'Team',          icon: Users,           section: 'system',    roles: ['admin'] },
+  { to: '/vault',             label: 'Vault',         icon: KeyRound,        section: 'system',    roles: ['admin', 'employee', 'sales'] },
+  { to: '/admin/leaves',      label: 'Approvals',     icon: CalendarOff,     section: 'system',    roles: ['admin'] },
+  { to: '/admin/attendance',  label: 'Attendance',    icon: Clock,           section: 'system',    roles: ['admin'] },
+  { to: '/admin/crash-logs',  label: 'Crashes',       icon: Bug,             section: 'system',    roles: ['admin'] },
+  { to: '/admin/issues',      label: 'Issues',        icon: AlertTriangle,   section: 'system',    roles: ['admin'] },
+  { to: '/workroom-onboard',  label: 'Onboard',       icon: UserPlus,        section: 'system',    roles: ['admin'] },
+  { to: '/workroom-onboard',  label: 'Onboard',       icon: UserPlus,        section: 'system',    roles: ['employee', 'sales'], requiresFlag: 'canManageWorkroom' },
+  { to: '/profile',           label: 'Settings',      icon: Settings,        section: 'system' },
 ];
 
 const PIN_KEY = 'robin.sidebar.pinned';
@@ -83,6 +147,7 @@ const PIN_KEY = 'robin.sidebar.pinned';
 export function SlimSidebar({ children }: { children: ReactNode }) {
   const { user, role, logout } = useAuth();
   const location = useLocation();
+  const { chat: chatUnread, notifications: notifUnread } = useUnreadCounts();
   // Default: COLLAPSED rail. Owner ask (June 2026 redesign) — the
   // sidebar should default to an icon-only column and only expand on
   // hover OR explicit click. Users who want it permanently visible
@@ -97,6 +162,10 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
   });
   const [hover, setHover]       = useState(false);
   const [clickOpen, setClickOpen] = useState(false);
+  // Aug 2026 — which sections have their "More" sub-group expanded.
+  // Keyed by section so WORK's More toggle doesn't affect any other
+  // section that might grow one later. Starts closed (that's the point).
+  const [moreOpen, setMoreOpen] = useState<Record<string, boolean>>({});
   const hoverTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const leaveTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -143,9 +212,23 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
   // primary + secondary roles as candidates — see ProtectedRoute.tsx) but
   // never see the nav entry to get there. Matches that same pattern now.
   const allMyRoles = [role, ...((user as any)?.roles || [])].filter(Boolean);
-  const visible = NAV.filter(item =>
-    !item.roles || item.roles.some(r => allMyRoles.includes(r)),
-  );
+  const visible = NAV.filter(item => {
+    if (item.roles && !item.roles.some(r => allMyRoles.includes(r))) return false;
+    if (item.team) {
+      const teams = [user?.team, ...((user as any)?.teams || [])].filter(Boolean);
+      if (!teams.includes(item.team)) return false;
+    }
+    if (item.anyTeam) {
+      const teams = [user?.team, ...((user as any)?.teams || [])].filter(Boolean);
+      if (!item.anyTeam.some(t => teams.includes(t))) return false;
+    }
+    if (item.requiresFlag === 'canManageWorkroom') {
+      const flag = (user as any)?.canManageWorkroom === true;
+      const isOm = /^om(\s|$)/i.test(user?.name || '');
+      if (!flag && !isOm) return false;
+    }
+    return true;
+  });
 
   // Dedupe by URL — a user with multi-role might match the same /sales row
   // twice (once via /admin, once via /sales role).
@@ -160,13 +243,17 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
   // Aug 2026 — extracted from the old inline .map so the same Link markup
   // can be reused for both top-level items and the "More" sub-group.
   const renderNavItem = (item: NavItem) => {
-    const active = item.to === '/sales'
+    const active = item.to === '/admin'
+      ? location.pathname === '/admin'
+      : item.to === '/dashboard'
+      ? location.pathname === '/dashboard'
+      : item.to === '/sales'
       ? location.pathname === '/sales'
       : location.pathname.startsWith(item.to);
-    // No nav row carries an unread badge in the Robin OS layout — chat
-    // and notifications live in the top bar. Kept as a constant so the
-    // badge markup below stays intact for whenever one returns.
-    const badge = 0;
+    const badge =
+      item.to === '/chat'           ? chatUnread :
+      item.to === '/notifications'  ? notifUnread :
+                                      0;
     return (
       <Link
         key={item.to + item.label}
@@ -225,12 +312,7 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
             >
               <Bird className="h-3.5 w-3.5 text-primary-foreground" />
             </div>
-            {expanded && (
-              <span className="min-w-0 leading-tight">
-                <span className="block font-black text-[15px] tracking-tight truncate">Robin OS</span>
-                <span className="block text-[10px] text-muted-foreground truncate">Hashtag Creator Agency</span>
-              </span>
-            )}
+            {expanded && <span className="font-black text-[15px] tracking-tight truncate">Robin</span>}
           </Link>
           {expanded && (
             <button
@@ -258,7 +340,30 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
               ) : null}
 
               <div className="space-y-0.5">
-                {g.items.map(item => renderNavItem(item))}
+                {/* Aug 2026 — WORK decluttering: when expanded, subItem-
+                    flagged entries (Task ledger, Progress) are held back
+                    into a "More" toggle instead of listed flat. Collapsed
+                    (icon rail) mode ignores the split entirely — every
+                    item still shows as its own icon, so nothing is
+                    harder to reach when the sidebar is already minimal. */}
+                {(expanded ? g.items.filter(i => !i.subItem) : g.items).map(item =>
+                  renderNavItem(item),
+                )}
+                {expanded && g.items.some(i => i.subItem) && (
+                  <>
+                    <button
+                      onClick={() => setMoreOpen(m => ({ ...m, [g.section]: !m[g.section] }))}
+                      className="w-full flex items-center gap-2.5 h-8 px-2 rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-75"
+                    >
+                      <MoreHorizontal className="h-[15px] w-[15px] shrink-0" />
+                      <span className="text-[12.5px] font-medium flex-1 text-left">More</span>
+                      <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${moreOpen[g.section] ? 'rotate-180' : ''}`} />
+                    </button>
+                    {moreOpen[g.section] && g.items.filter(i => i.subItem).map(item =>
+                      renderNavItem(item),
+                    )}
+                  </>
+                )}
               </div>
             </div>
           ))}
@@ -286,16 +391,10 @@ export function SlimSidebar({ children }: { children: ReactNode }) {
           >
             <Avatar name={user?.name} email={user?.email} url={user?.avatarUrl} size="sm" tone="primary" />
             {expanded && (
-              <>
-                <div className="flex-1 min-w-0 leading-tight">
-                  <p className="text-[12px] font-semibold truncate">{user?.name || 'User'}</p>
-                  <p className="text-[10px] text-muted-foreground truncate capitalize">{role || 'guest'}</p>
-                </div>
-                <span className="relative flex h-2 w-2 shrink-0" title="Online">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                </span>
-              </>
+              <div className="flex-1 min-w-0 leading-tight">
+                <p className="text-[12px] font-semibold truncate">{user?.name || 'User'}</p>
+                <p className="text-[10px] text-muted-foreground truncate capitalize">{role || 'guest'}</p>
+              </div>
             )}
           </Link>
 
