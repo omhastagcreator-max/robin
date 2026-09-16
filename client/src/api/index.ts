@@ -823,3 +823,39 @@ export const autoDistributeDayPlan = (userId: string, replace = false, week?: st
 // Per-employee daily activity rollup for the Command Center.
 export const getTodayStats        = () =>
   api.get('/team-stats/today').then(r => r.data);
+
+// ── Process Updates (SOPs) + Process Tests — Sep 2026 Robin OS modules ──
+// Reads and acknowledgements are open to every staff role; authoring
+// endpoints 403 for non-admins server-side.
+export const listProcessDocs      = (params: { department?: string; includeArchived?: '1' } = {}) =>
+  api.get('/process/docs', { params }).then(r => r.data);
+export const getProcessDoc        = (id: string) =>
+  api.get(`/process/docs/${id}`).then(r => r.data);
+export const createProcessDoc     = (body: {
+  title: string; department?: string; summary?: string; body?: string; requiredFor?: string[];
+}) => api.post('/process/docs', body).then(r => r.data);
+export const updateProcessDoc     = (id: string, body: Record<string, unknown>) =>
+  api.put(`/process/docs/${id}`, body).then(r => r.data);
+export const ackProcessDoc        = (id: string) =>
+  api.post(`/process/docs/${id}/ack`).then(r => r.data);
+export const deleteProcessDoc     = (id: string) =>
+  api.delete(`/process/docs/${id}`).then(r => r.data);
+
+export const listProcessTests     = (params: { includeArchived?: '1' } = {}) =>
+  api.get('/process/tests', { params }).then(r => r.data);
+// withAnswers is honoured for admins only — everyone else gets the
+// taker-safe shape with correctIndex stripped.
+export const getProcessTest       = (id: string, withAnswers = false) =>
+  api.get(`/process/tests/${id}`, { params: withAnswers ? { withAnswers: '1' } : undefined }).then(r => r.data);
+export const createProcessTest    = (body: {
+  title: string; description?: string; processDocId?: string | null; department?: string;
+  questions: Array<{ question: string; options: string[]; correctIndex: number }>; passMark?: number;
+}) => api.post('/process/tests', body).then(r => r.data);
+export const updateProcessTest    = (id: string, body: Record<string, unknown>) =>
+  api.put(`/process/tests/${id}`, body).then(r => r.data);
+export const deleteProcessTest    = (id: string) =>
+  api.delete(`/process/tests/${id}`).then(r => r.data);
+export const submitProcessTest    = (id: string, answers: number[]) =>
+  api.post(`/process/tests/${id}/attempt`, { answers }).then(r => r.data);
+export const listProcessAttempts  = (params: { testId?: string; mine?: '1' } = {}) =>
+  api.get('/process/tests/attempts', { params }).then(r => r.data);
