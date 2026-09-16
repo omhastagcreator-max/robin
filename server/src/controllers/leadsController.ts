@@ -147,9 +147,17 @@ export async function deleteLead(req: AuthRequest, res: Response): Promise<void>
     // Sep 2026 — delete COMPLETELY, including the Client CRM side: the
     // lead's own child docs (notes, focus-list rows, deals) are removed,
     // any CRM workflow created when this lead was onboarded is deleted
-    // along with its activity log, and the client login created from the
-    // lead is deactivated — matching admin "remove user", which
-    // deactivates rather than hard-deletes accounts.
+    // along with its activity log.
+    //
+    // Sep 2026 — this used to ALSO set isActive:false on the client's
+    // login. That was wrong, and it bit us: deleting a stale won lead
+    // silently cut off a client onboarded months earlier. Worse, REST
+    // login never checked isActive while the socket layer DOES reject
+    // inactive users (index.ts → 'socket_user_inactive'), so the client
+    // could sign in but had no realtime, presence or notifications —
+    // a half-dead app rather than a clear error. A sales record being
+    // deleted must never disable a person's account; that's what the
+    // admin "remove user" action is for. Accounts are untouched here.
     const clientIds = new Set<string>();
     if ((result as any).convertedToClientId) clientIds.add(String((result as any).convertedToClientId));
     const workflows = await ClientWorkflow.find({
@@ -168,12 +176,6 @@ export async function deleteLead(req: AuthRequest, res: Response): Promise<void>
       ...(workflowIds.length ? [
         ClientWorkflow.deleteMany({ _id: { $in: workflowIds } }),
         WorkflowActivity.deleteMany({ workflowId: { $in: workflowIds } }),
-      ] : []),
-      ...(clientIds.size ? [
-        User.updateMany(
-          { _id: { $in: [...clientIds] }, role: 'client' },
-          { $set: { isActive: false } },
-        ),
       ] : []),
     ]);
     res.json({ message: 'Lead deleted' });
