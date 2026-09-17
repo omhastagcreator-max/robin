@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robin OS — Executive Agency Dashboard & CRM</title>
+    <!-- Tailwind CSS Script -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        slate: {
+                            850: '#151e32',
+                            900: '#0f172a',
+                            950: '#090d16'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome for professional icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="h-full bg-slate-950 text-slate-100 antialiased overflow-hidden flex flex-col">
+
+    <div id="app" class="flex h-screen w-screen overflow-hidden">
+
+        <!-- SIDEBAR NAVIGATION -->
+        <aside class="w-72 bg-slate-900 border-r border-slate-800 flex flex-col justify-between z-20 shrink-0">
+            <div>
+                <!-- App Brand Header -->
+                <div class="h-16 flex items-center px-6 border-b border-slate-800 bg-slate-900/50">
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-bold shadow-lg shadow-blue-500/30">
+                            <i class="fa-solid fa-robot text-sm"></i>
+                        </div>
+                        <div>
+                            <h1 class="font-bold text-base tracking-tight text-white">Robin OS</h1>
+                            <p class="text-xs text-slate-400">Hashtag Creator Agency</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navigation Links -->
+                <nav class="p-4 space-y-1.5 overflow-y-auto max-h-[calc(100vh-8rem)]">
+                    <div class="text-[10px] font-semibold tracking-wider text-slate-500 uppercase px-3 pb-2">Core Navigation</div>
+                    
+                    <button onclick="switchView('crm')" id="nav-crm" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all bg-blue-600 text-white shadow-md shadow-blue-600/20">
+                        <i class="fa-solid fa-address-book w-5 text-center"></i>
+                        <span class="truncate">CRM</span>
+                    </button>
+
+                    <button onclick="handleDTTabClick()" id="nav-dt" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800/80 hover:text-white transition-all">
+                        <i class="fa-solid fa-diagram-project w-5 text-center text-blue-400"></i>
+                        <span class="truncate">Decision Tree (DT)</span>
+                    </button>
+
+                    <div class="pt-4 text-[10px] font-semibold tracking-wider text-slate-500 uppercase px-3 pb-2">Operations & Management</div>
+
+                    <button onclick="switchPlaceholderView('Attendance & Leave Logs')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800/80 hover:text-white transition-all">
+                        <i class="fa-solid fa-calendar-check w-5 text-center text-emerald-400"></i>
+                        <span class="truncate">Attendance</span>
+                    </button>
+
+                    <button onclick="switchPlaceholderView('Approvals & Sign-offs')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800/80 hover:text-white transition-all">
+                        <i class="fa-solid fa-stamp w-5 text-center text-amber-400"></i>
+                        <span class="truncate">Approvals</span>
+                    </button>
+
+                    <button onclick="switchPlaceholderView('Tech Updates & Deployments')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800/80 hover:text-white transition-all">
+                        <i class="fa-solid fa-code-branch w-5 text-center text-cyan-400"></i>
+                        <span class="truncate">Tech Updates</span>
+                    </button>
+
+                    <button onclick="switchPlaceholderView('Process Updates & SOPs')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800/80 hover:text-white transition-all">
+                        <i class="fa-solid fa-book-bookmark w-5 text-center text-purple-400"></i>
+                        <span class="truncate">Process Updates</span>
+                    </button>
+
+                    <button onclick="switchPlaceholderView('Process Training & Tests')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800/80 hover:text-white transition-all">
+                        <i class="fa-solid fa-graduation-cap w-5 text-center text-indigo-400"></i>
+                        <span class="truncate">Process Test</span>
+                    </button>
+
+                    <button onclick="switchPlaceholderView('Workroom & Team Collab')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800/80 hover:text-white transition-all">
+                        <i class="fa-solid fa-users-rectangle w-5 text-center text-rose-400"></i>
+                        <span class="truncate">Workroom</span>
+                    </button>
+
+                    <button onclick="switchPlaceholderView('Sales Pipeline & Performance')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800/80 hover:text-white transition-all">
+                        <i class="fa-solid fa-bullseye w-5 text-center text-orange-400"></i>
+                        <span class="truncate">Sales Pipeline</span>
+                    </button>
+                </nav>
+            </div>
+
+            <!-- User Footer Profile -->
+            <div class="p-4 border-t border-slate-800 bg-slate-900/80 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-sm text-blue-400">
+                        RO
+                    </div>
+                    <div>
+                        <p class="text-xs font-semibold text-white">Rishi Om</p>
+                        <p class="text-[10px] text-slate-400">Executive Agency Admin</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1">
+                    <span class="relative flex h-2 w-2">
+                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT AREA -->
+        <main class="flex-1 flex flex-col min-w-0 bg-slate-950 overflow-hidden">
+            
+            <!-- TOP BAR HEADER WITH LOGIN & WORK TIMER TRACKING -->
+            <header class="h-16 bg-slate-900/95 border-b border-slate-800 px-6 flex items-center justify-between z-10 shrink-0 backdrop-blur">
+                <div class="flex items-center gap-4">
+                    <div id="login-status-indicator" class="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                        <i class="fa-solid fa-clock text-amber-400"></i>
+                        <span id="login-text-status">LOGGED OUT</span>
+                        <span class="text-slate-400 font-normal">— Log in to start tracking your day.</span>
+                    </div>
+
+                    <!-- Active Time & Break Counters -->
+                    <div id="timer-stats-container" class="hidden items-center gap-4 text-xs font-mono">
+                        <div class="bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 flex items-center gap-2 text-emerald-400">
+                            <i class="fa-solid fa-business-time"></i>
+                            <span>Active Hours: <strong id="active-hours-display" class="text-white">00:00:00</strong></span>
+                        </div>
+                        <div class="bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 flex items-center gap-2 text-amber-400">
+                            <i class="fa-solid fa-mug-hot"></i>
+                            <span>Break Time: <strong id="break-hours-display" class="text-white">00:00:00</strong></span>
+                        </div>
+                        <button onclick="toggleBreakState()" id="break-btn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition border border-slate-700">
+                            Take Break
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Log In / Log Out Toggle Button -->
+                <div class="flex items-center gap-3">
+                    <button onclick="toggleLoginState()" id="login-action-btn" class="px-4 py-2 rounded-lg text-xs font-bold transition-all bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20 flex items-center gap-2">
+                        <i class="fa-solid fa-right-to-bracket"></i> Log in
+                    </button>
+                </div>
+            </header>
+
+            <!-- VIEW CONTAINER -->
+            <div id="view-container" class="flex-1 overflow-y-auto p-6 bg-slate-950">
+                
+                <div id="content-crm" class="space-y-6">
+                    
+                    <!-- Page Header Banner (Streamlined Ref 1 & 2 Corrections) -->
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-slate-800/80">
+                        <div>
+                            <h2 class="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                                <i class="fa-solid fa-folder-open text-blue-500"></i> Client project pipeline
+                            </h2>
+                            <p class="text-xs text-slate-400 mt-0.5">Live overview of active agency projects, current stage, and verified audit logs.</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <button onclick="alertBox('Briefing all active agency projects... Summary report generated.')" class="bg-slate-900 hover:bg-slate-800 text-slate-200 px-3.5 py-2 rounded-lg text-xs font-semibold transition border border-slate-700 flex items-center gap-2">
+                                <i class="fa-solid fa-file-lines text-blue-400"></i> Brief all projects
+                            </button>
+                            <button onclick="alertBox('Opening Add Client modal workspace.')" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition shadow-md shadow-emerald-600/20 flex items-center gap-2">
+                                <i class="fa-solid fa-plus"></i> Add client
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Polished Toolbar & Search Bar (Ref 1 & 2 Redundant Filters Removed) -->
+                    <div class="space-y-3">
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-slate-400">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                            </span>
+                            <input type="text" id="crm-search-input" oninput="filterClientTable(this.value)" placeholder="Search by phone, brand name or email — selects client instantly for Decision Tree unlocking" class="w-full bg-slate-900 border border-slate-800 rounded-xl pl-11 pr-4 py-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition shadow-inner">
+                        </div>
+
+                        <!-- Clean Polished Filter Toolbar -->
+                        <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white shadow">
+                                    <i class="fa-solid fa-crosshairs mr-1.5"></i> Focused Pipeline
+                                </button>
+                                <div class="h-4 w-px bg-slate-800 mx-1"></div>
+                                <div class="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-300">
+                                    <span class="text-slate-500 font-semibold uppercase text-[10px]">SORT</span>
+                                    <select class="bg-transparent text-white font-medium focus:outline-none">
+                                        <option>Priority · High to Low</option>
+                                        <option>Recently Updated</option>
+                                    </select>
+                                </div>
+                                <label class="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-300 cursor-pointer hover:bg-slate-850">
+                                    <input type="checkbox" class="rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0">
+                                    <span>Assigned to me</span>
+                                </label>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs text-slate-400 font-mono" id="client-count-badge">3 active accounts</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Progress Overview & Metrics Card -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
+                        <!-- Left-hand side progress meter with dynamic color coding -->
+                        <div class="flex items-center gap-4 w-full md:w-auto">
+                            <div class="relative w-16 h-16 flex items-center justify-center rounded-full bg-slate-950 border-4 shadow-inner transition-all duration-500" id="progress-ring-container" style="border-color: rgba(59, 130, 246, 0.3);">
+                                <span class="absolute inset-0 flex items-center justify-center text-sm font-bold text-white" id="overall-percentage-text">87%</span>
+                            </div>
+                            <div>
+                                <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">OVERALL AGENCY PROGRESS</span>
+                                <h3 class="text-base font-bold text-white" id="overall-steps-text">150 of 172 steps completed</h3>
+                            </div>
+                        </div>
+
+                        <!-- Task Metrics on Summary Area (Ref 3 Requirement) -->
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 w-full md:w-auto border-t md:border-t-0 md:border-l border-slate-800 pt-4 md:pt-0 md:pl-6 text-center">
+                            <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+                                <p class="text-[10px] text-slate-400 uppercase font-semibold">Active Tasks Today</p>
+                                <p class="text-base font-bold text-blue-400 mt-1"><i class="fa-solid fa-list-check mr-1 text-xs"></i> 8</p>
+                            </div>
+                            <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+                                <p class="text-[10px] text-slate-400 uppercase font-semibold">Completed Today</p>
+                                <p class="text-base font-bold text-emerald-400 mt-1"><i class="fa-solid fa-circle-check mr-1 text-xs"></i> 14</p>
+                            </div>
+                            <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+                                <p class="text-[10px] text-slate-400 uppercase font-semibold">Transferred Today</p>
+                                <p class="text-base font-bold text-purple-400 mt-1"><i class="fa-solid fa-right-left mr-1 text-xs"></i> 3</p>
+                            </div>
+                            <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+                                <p class="text-[10px] text-slate-400 uppercase font-semibold">Total Tasks Today</p>
+                                <p class="text-base font-bold text-cyan-400 mt-1"><i class="fa-solid fa-layer-group mr-1 text-xs"></i> 25</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 6 Metric Cards Row -->
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-semibold text-slate-400 uppercase">Active Projects</span>
+                                <i class="fa-solid fa-folder text-blue-400 text-xs"></i>
+                            </div>
+                            <h4 class="text-2xl font-bold text-white">8</h4>
+                        </div>
+                        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-semibold text-slate-400 uppercase">On Track</span>
+                                <i class="fa-solid fa-circle-check text-emerald-400 text-xs"></i>
+                            </div>
+                            <h4 class="text-2xl font-bold text-emerald-400">5</h4>
+                        </div>
+                        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-semibold text-slate-400 uppercase">At Risk</span>
+                                <i class="fa-solid fa-triangle-exclamation text-amber-400 text-xs"></i>
+                            </div>
+                            <h4 class="text-2xl font-bold text-amber-400">0</h4>
+                        </div>
+                        <!-- Interactive Awaiting Client Card (Ref 4 requirement) -->
+                        <div onclick="openAwaitingClientModal()" class="bg-slate-900 border border-purple-500/30 hover:border-purple-500/70 cursor-pointer rounded-xl p-4 flex flex-col justify-between shadow-sm transition-all group">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-semibold text-purple-400 uppercase group-hover:underline">Awaiting Client</span>
+                                <i class="fa-solid fa-user-clock text-purple-400 text-xs animate-pulse"></i>
+                            </div>
+                            <div class="flex items-baseline justify-between">
+                                <h4 class="text-2xl font-bold text-purple-400">3</h4>
+                                <span class="text-[10px] text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded">View Blockers</span>
+                            </div>
+                        </div>
+                        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-semibold text-slate-400 uppercase">Delayed</span>
+                                <i class="fa-solid fa-clock text-rose-400 text-xs"></i>
+                            </div>
+                            <h4 class="text-2xl font-bold text-rose-400">3</h4>
+                        </div>
+                        <!-- Renamed 'Launched' to 'Stage Moved' (Ref 4 requirement) -->
+                        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-semibold text-slate-400 uppercase">Stage Moved</span>
+                                <i class="fa-solid fa-arrow-progress text-cyan-400 text-xs"></i>
+                            </div>
+                            <h4 class="text-2xl font-bold text-cyan-400">12</h4>
+                        </div>
+                    </div>
+
+                    <!-- Client Table Feed -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+                        <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+                            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-table-list text-blue-400"></i> Active Client Accounts & Pipeline Directory
+                            </h3>
+                            <span class="text-xs text-slate-400">Click 'Select & Unlock DT' to load into Decision Tree</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-slate-950/80 text-slate-400 border-b border-slate-800 uppercase tracking-wider text-[10px]">
+                                    <tr>
+                                        <th class="p-3.5">Brand / Client</th>
+                                        <th class="p-3.5">Assigned Head</th>
+                                        <th class="p-3.5">Current Stage / Module</th>
+                                        <th class="p-3.5">Verified Revenue</th>
+                                        <th class="p-3.5">Last CRM Audit Log</th>
+                                        <th class="p-3.5 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-800/60 text-slate-300" id="client-table-body">
+                                    <tr class="hover:bg-slate-850/50 transition">
+                                        <td class="p-3.5 font-medium text-white flex items-center gap-2">
+                                            <div class="w-7 h-7 rounded bg-blue-600/20 text-blue-400 flex items-center justify-center font-bold text-xs">W</div>
+                                            Woodsify D2C
+                                        </td>
+                                        <td class="p-3.5"><span class="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400">Om (Meta)</span></td>
+                                        <td class="p-3.5">Meta Ads: Conversion Scaling</td>
+                                        <td class="p-3.5 font-semibold text-emerald-400">₹12,00,000</td>
+                                        <td class="p-3.5 text-slate-400 font-mono text-[11px]">Pixel Status: Active & Firing (ROAS 4.1x)</td>
+                                        <td class="p-3.5 text-right">
+                                            <button onclick="selectClientAndOpenDT('woodsify', 'Woodsify D2C')" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow">Select & Unlock DT <i class="fa-solid fa-unlock ml-1"></i></button>
+                                        </td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-850/50 transition">
+                                        <td class="p-3.5 font-medium text-white flex items-center gap-2">
+                                            <div class="w-7 h-7 rounded bg-purple-600/20 text-purple-400 flex items-center justify-center font-bold text-xs">P</div>
+                                            Prolicious Foods
+                                        </td>
+                                        <td class="p-3.5"><span class="px-2 py-0.5 rounded bg-purple-500/10 text-purple-400">Priyanka (UGC)</span></td>
+                                        <td class="p-3.5">Scripting & Hook Architecture</td>
+                                        <td class="p-3.5 font-semibold text-emerald-400">₹25,00,000</td>
+                                        <td class="p-3.5 text-slate-400 font-mono text-[11px]">SKU Count: 3 | 10 UGC Videos Assigned</td>
+                                        <td class="p-3.5 text-right">
+                                            <button onclick="selectClientAndOpenDT('prolicious', 'Prolicious Foods')" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow">Select & Unlock DT <i class="fa-solid fa-unlock ml-1"></i></button>
+                                        </td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-850/50 transition">
+                                        <td class="p-3.5 font-medium text-white flex items-center gap-2">
+                                            <div class="w-7 h-7 rounded bg-emerald-600/20 text-emerald-400 flex items-center justify-center font-bold text-xs">S</div>
+                                            Stoxkart Capital
+                                        </td>
+                                        <td class="p-3.5"><span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400">Rishi (Sales)</span></td>
+                                        <td class="p-3.5">GST-Verified Cash Gate (Won)</td>
+                                        <td class="p-3.5 font-semibold text-emerald-400">₹1,50,000</td>
+                                        <td class="p-3.5 text-slate-400 font-mono text-[11px]">Txn ID: HDFC9843 | GSTIN Verified</td>
+                                        <td class="p-3.5 text-right">
+                                            <button onclick="selectClientAndOpenDT('stoxkart', 'Stoxkart Capital')" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow">Select & Unlock DT <i class="fa-solid fa-unlock ml-1"></i></button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- DECISION TREE TASK EXECUTION WORKSPACE VIEW (Initially gated or unlocked based on state) -->
+                <div id="content-dt" class="hidden h-[calc(100vh-8rem)] flex flex-col space-y-4">
+                    
+                    <!-- GATED SCREEN (Shown when no client selected) -->
+                    <div id="dt-gated-prompt" class="flex-1 flex items-center justify-center p-6">
+                        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-8 text-center shadow-2xl space-y-6">
+                            <div class="w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 flex items-center justify-center text-2xl mx-auto shadow-inner">
+                                <i class="fa-solid fa-lock"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-bold text-white tracking-tight">Input and fetch client details from CRM first</h3>
+                                <p class="text-xs text-slate-400 mt-2 leading-relaxed">Decision Tree (DT) workflows require a verified active client context to enforce mandatory stage gates and compliance rules.</p>
+                            </div>
+
+                            <div class="space-y-3 pt-2">
+                                <div class="relative">
+                                    <span class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-slate-400">
+                                        <i class="fa-solid fa-magnifying-glass"></i>
+                                    </span>
+                                    <input type="text" id="dt-fetch-input" placeholder="Enter registered brand name or mobile number (e.g. Woodsify)..." class="w-full bg-slate-950 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition">
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <button onclick="fetchClientAndUnlockDT()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2.5 rounded-xl text-xs font-semibold transition shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2">
+                                        <i class="fa-solid fa-bolt"></i> Fetch & Unlock DT
+                                    </button>
+                                    <button onclick="switchView('crm')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2.5 rounded-xl text-xs font-semibold transition border border-slate-700">
+                                        Return to CRM
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- UNLOCKED WORKSPACE (Shown when client is selected/fetched) -->
+                    <div id="dt-unlocked-workspace" class="hidden flex-1 flex flex-col space-y-4 min-h-0 overflow-hidden">
+                        
+                        <!-- Top Sub-Bar for Client Selector -->
+                        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center justify-between shrink-0">
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs text-slate-400 uppercase font-semibold">Active Client Workspace:</span>
+                                <select id="client-selector" onchange="updateDTWorkspace()" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-medium focus:outline-none focus:border-blue-500">
+                                    <option value="woodsify">Woodsify D2C (Department: Om - Website & Meta Services)</option>
+                                    <option value="prolicious">Prolicious Foods (Department: Priyanka - UGC & Influencer)</option>
+                                    <option value="stoxkart">Stoxkart Capital (Department: Rishi - Sales Pipeline)</option>
+                                </select>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="px-2.5 py-1 rounded-md text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+                                    <i class="fa-solid fa-shield-halved mr-1"></i> System-Enforced Decision Tree Active
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Main Split Workspace Container -->
+                        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0 overflow-hidden">
+                            
+                            <!-- LEFT PANEL: Stage Pointers & Sub-Stages -->
+                            <div class="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col overflow-y-auto">
+                                <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
+                                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">Decision Tree Stage Pointers</h3>
+                                    <span id="dt-dept-badge" class="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 font-semibold">Om: Meta Services</span>
+                                </div>
+
+                                <!-- Stage Pointers List -->
+                                <div id="stage-pointers-list" class="space-y-2">
+                                    <!-- Populated dynamically by JS -->
+                                </div>
+                            </div>
+
+                            <!-- RIGHT PANEL: Single Task Execution Card & Live CRM Log Generator -->
+                            <div class="lg:col-span-8 flex flex-col space-y-4 min-h-0 overflow-hidden">
+                                
+                                <!-- Single Task Execution Card -->
+                                <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between shrink-0 shadow-sm">
+                                    <div>
+                                        <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+                                            <div class="flex items-center gap-2">
+                                                <span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
+                                                <h3 id="task-card-title" class="text-sm font-bold text-white uppercase tracking-wider">Current Rule / Task: Verify Meta Pixel & Tracking</h3>
+                                            </div>
+                                            <span id="task-id-badge" class="text-xs font-mono text-slate-400 bg-slate-950 px-2.5 py-1 rounded border border-slate-800">TASK #META-03</span>
+                                        </div>
+
+                                        <p id="task-description" class="text-xs text-slate-300 leading-relaxed mb-4">
+                                            System enforcement requires verifying that Facebook pixel and conversion events are firing properly before launching sales conversion campaigns. Input the target daily ad spend and CPA limits below.
+                                        </p>
+
+                                        <!-- Interactive Execution Input Fields -->
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 bg-slate-950 p-4 rounded-xl border border-slate-800">
+                                            <div>
+                                                <label class="block text-[11px] font-semibold text-slate-400 mb-1">Daily Ad Budget Limit (INR)*</label>
+                                                <input type="text" id="input-budget" value="₹50,000 / day" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+                                            </div>
+                                            <div>
+                                                <label class="block text-[11px] font-semibold text-slate-400 mb-1">Target CPA Threshold (INR)*</label>
+                                                <input type="text" id="input-cpa" value="₹450.00 Max" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+                                            </div>
+                                        </div>
+
+                                        <!-- Status Selectors & WhatsApp Copy Helper -->
+                                        <div class="flex flex-wrap items-center justify-between gap-4 pt-2">
+                                            <div class="flex items-center gap-3">
+                                                <span class="text-xs text-slate-400 font-medium">Task Status:</span>
+                                                <select id="task-status-select" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-emerald-400 font-semibold focus:outline-none">
+                                                    <option>In Progress (Active Gate)</option>
+                                                    <option selected>Ready to Verify & Complete</option>
+                                                    <option>Blocked / Pending Client</option>
+                                                </select>
+                                            </div>
+
+                                            <button onclick="copyWhatsAppTemplate()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition border border-slate-700 flex items-center gap-2">
+                                                <i class="fa-brands fa-whatsapp text-emerald-400"></i> Copy Client WhatsApp Update
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 pt-4 border-t border-slate-800 flex justify-end gap-3">
+                                        <button onclick="alertBox('Task saved as draft successfully.')" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-lg text-xs font-semibold transition">
+                                            Save Draft
+                                        </button>
+                                        <button onclick="executeAndLogTask()" class="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg text-xs font-semibold transition shadow-lg shadow-blue-600/20 flex items-center gap-2">
+                                            <i class="fa-solid fa-check-circle"></i> Complete Task & Auto-Log to CRM
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Live Automated CRM Log Generator (Bottom Section) -->
+                                <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex-1 flex flex-col min-h-0 shadow-sm">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                                            <i class="fa-solid fa-terminal text-emerald-400"></i> Live Automated CRM Feed & Audit Trail
+                                        </h4>
+                                        <span class="text-[10px] text-slate-500">Immutable Audit Log Active</span>
+                                    </div>
+                                    <div id="crm-log-stream" class="bg-slate-950 rounded-lg p-3 font-mono text-[11px] text-slate-300 overflow-y-auto space-y-2 flex-1 border border-slate-800/80">
+                                        <div class="text-emerald-400">[02:18 AM] SYSTEM INIT: Robin OS Decision Tree router loaded successfully.</div>
+                                        <div class="text-blue-400">[02:19 AM] STAGE UPDATE: Woodsify transitioned to Meta Ads Management Module. Owner: Om.</div>
+                                        <div class="text-slate-300">[02:20 AM] AUDIT LOG: Pixel check verified. Daily budget set to ₹50,000. Ready for deployment.</div>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Global State Variables
+        let isLogged = false;
+        let isOnBreak = false;
+        let activeSeconds = 0;
+        let breakSeconds = 0;
+        let timerInterval = null;
+        let isClientSelectedInCRM = false; // Tracks if client is fetched/selected for DT gating
+
+        // Toggle Login / Logout State & Start Work Timer
+        function toggleLoginState() {
+            isLogged = window.isLogged = !isLogged;
+            const loginBtn = document.getElementById('login-action-btn');
+            const statusInd = document.getElementById('login-status-indicator');
+            const textStatus = document.getElementById('login-text-status');
+            const timerStats = document.getElementById('timer-stats-container');
+
+            if (isLogged) {
+                loginBtn.className = "px-4 py-2 rounded-lg text-xs font-bold transition-all bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/20 flex items-center gap-2";
+                loginBtn.innerHTML = `<i class="fa-solid fa-right-from-bracket"></i> Log out`;
+                
+                statusInd.className = "flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+                textStatus.innerText = "LOGGED IN";
+                statusInd.querySelector('span:last-child').innerText = "— Tracking active work hours.";
+                
+                timerStats.classList.remove('hidden');
+                timerStats.classList.add('flex');
+
+                if (!timerInterval) {
+                    timerInterval = setInterval(updateTimers, 1000);
+                }
+                alertBox("Successfully logged in! Work timer started tracking active hours.");
+            } else {
+                loginBtn.className = "px-4 py-2 rounded-lg text-xs font-bold transition-all bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20 flex items-center gap-2";
+                loginBtn.innerHTML = `<i class="fa-solid fa-right-to-bracket"></i> Log in`;
+                
+                statusInd.className = "flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20";
+                textStatus.innerText = "LOGGED OUT";
+                statusInd.querySelector('span:last-child').innerText = "— Log in to start tracking your day.";
+                
+                timerStats.classList.remove('flex');
+                timerStats.classList.add('hidden');
+
+                clearInterval(timerInterval);
+                timerInterval = null;
+                alertBox("Logged out successfully. Day timer paused.");
+            }
+        }
+
+        // Toggle Break State
+        function toggleBreakState() {
+            isOnBreak = !isOnBreak;
+            const breakBtn = document.getElementById('break-btn');
+            if (isOnBreak) {
+                breakBtn.className = "bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition border border-amber-500 shadow-md";
+                breakBtn.innerText = "Resume Work";
+            } else {
+                breakBtn.className = "bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition border border-slate-700";
+                breakBtn.innerText = "Take Break";
+            }
+        }
+
+        // Format Seconds to HH:MM:SS
+        function formatTime(totalSeconds) {
+            const hrs = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
+            const mins = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+            const secs = (totalSeconds % 60).toString().padStart(2, '0');
+            return `${hrs}:${mins}:${secs}`;
+        }
+
+        // Timer Tick Function
+        function updateTimers() {
+            if (isLogged) {
+                if (!isOnBreak) {
+                    activeSeconds++;
+                    document.getElementById('active-hours-display').innerText = formatTime(activeSeconds);
+                } else {
+                    breakSeconds++;
+                    document.getElementById('break-hours-display').innerText = formatTime(breakSeconds);
+                }
+            }
+        }
+
+        // Switch between CRM and Decision Tree View with Gating Check
+        function switchView(viewName) {
+            const crmView = document.getElementById('content-crm');
+            const dtView = document.getElementById('content-dt');
+            const navCrm = document.getElementById('nav-crm');
+            const navDt = document.getElementById('nav-dt');
+
+            if (viewName === 'crm') {
+                crmView.classList.remove('hidden');
+                dtView.classList.add('hidden');
+                
+                navCrm.className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all bg-blue-600 text-white shadow-md shadow-blue-600/20";
+                navDt.className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800/80 hover:text-white transition-all";
+            } else {
+                crmView.classList.add('hidden');
+                dtView.classList.remove('hidden');
+                
+                navDt.className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all bg-blue-600 text-white shadow-md shadow-blue-600/20";
+                navCrm.className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800/80 hover:text-white transition-all";
+                
+                // Enforce Gating rule: If client not selected, show gated prompt, else show workspace
+                const gatedPrompt = document.getElementById('dt-gated-prompt');
+                const unlockedWorkspace = document.getElementById('dt-unlocked-workspace');
+
+                if (isClientSelectedInCRM) {
+                    gatedPrompt.classList.add('hidden');
+                    unlockedWorkspace.classList.remove('hidden');
+                    updateDTWorkspace();
+                } else {
+                    gatedPrompt.classList.remove('hidden');
+                    unlockedWorkspace.classList.add('hidden');
+                }
+            }
+        }
+
+        // Handle sidebar click on Decision Tree tab (Ref 5 requirement)
+        function handleDTTabClick() {
+            switchView('dt');
+        }
+
+        // Select client from CRM table and unlock DT directly
+        function selectClientAndOpenDT(clientKey, clientName) {
+            isClientSelectedInCRM = true;
+            document.getElementById('client-selector').value = clientKey;
+            switchView('dt');
+            alertBox(`Client "${clientName}" successfully loaded into CRM context. Decision Tree unlocked.`);
+        }
+
+        // Fetch client via input search box on gated DT screen
+        function fetchClientAndUnlockDT() {
+            const query = document.getElementById('dt-fetch-input').value.trim();
+            if (!query) {
+                alertBox("Please enter a valid brand name or mobile number to fetch from CRM.");
+                return;
+            }
+            isClientSelectedInCRM = true;
+            switchView('dt');
+            alertBox(`Client match found for "${query}". Decision Tree successfully unlocked.`);
+        }
+
+        // Dynamic progress bar color coding based on percentage (Ref 3 requirement)
+        function setAgencyProgress(percent) {
+            const ring = document.getElementById('progress-ring-container');
+            const txt = document.getElementById('overall-percentage-text');
+            const stepsTxt = document.getElementById('overall-steps-text');
+            
+            txt.innerText = percent + '%';
+            stepsTxt.innerText = Math.round((percent / 100) * 172) + ' of 172 steps completed';
+
+            if (percent < 50) {
+                ring.style.borderColor = 'rgba(239, 68, 68, 0.4)'; // Red
+                ring.style.color = '#ef4444';
+            } else if (percent >= 50 && percent <= 80) {
+                ring.style.borderColor = 'rgba(245, 158, 11, 0.4)'; // Orange
+                ring.style.color = '#f59e0b';
+            } else {
+                ring.style.borderColor = 'rgba(74, 222, 128, 0.4)'; // Light Green
+                ring.style.color = '#4ade80';
+            }
+        }
+
+        // Filter CRM Table by search input
+        function filterClientTable(query) {
+            const q = query.toLowerCase();
+            const rows = document.querySelectorAll('#client-table-body tr');
+            let count = 0;
+            rows.forEach(row => {
+                const text = row.innerText.toLowerCase();
+                if (text.includes(q)) {
+                    row.style.display = '';
+                    count++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            document.getElementById('client-count-badge').innerText = count + ' active accounts';
+        }
+
+        // Interactive "Awaiting Client" Modal (Ref 4 requirement)
+        function openAwaitingClientModal() {
+            const modal = document.createElement('div');
+            modal.className = "fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn";
+            modal.innerHTML = `
+                <div class="bg-slate-900 border border-purple-500/40 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-5">
+                    <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-lg">
+                                <i class="fa-solid fa-user-clock"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-white text-sm">Awaiting Client Team & Blockers Breakdown</h4>
+                                <p class="text-xs text-slate-400">Live operational review of pending client approvals</p>
+                            </div>
+                        </div>
+                        <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-white p-2">
+                            <i class="fa-solid fa-xmark text-base"></i>
+                        </button>
+                    </div>
+
+                    <div class="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="font-bold text-white">Woodsify D2C</span>
+                                <span class="text-purple-400 font-medium">Om (Meta Services)</span>
+                            </div>
+                            <p class="text-xs text-slate-300">Waiting on client to approve billing method for Meta Pixel scaling campaign.</p>
+                            <span class="text-[10px] font-mono text-slate-500">Last Follow-up: 2 hours ago via WhatsApp</span>
+                        </div>
+
+                        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="font-bold text-white">Prolicious Foods</span>
+                                <span class="text-purple-400 font-medium">Priyanka (UGC)</span>
+                            </div>
+                            <p class="text-xs text-slate-300">Awaiting creator product sample shipping confirmation from marketing head.</p>
+                            <span class="text-[10px] font-mono text-slate-500">Last Follow-up: Yesterday at 4:30 PM</span>
+                        </div>
+
+                        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="font-bold text-white">Stoxkart Capital</span>
+                                <span class="text-purple-400 font-medium">Rishi (Sales)</span>
+                            </div>
+                            <p class="text-xs text-slate-300">Pending verified GSTIN document upload before closing cash collection gate.</p>
+                            <span class="text-[10px] font-mono text-slate-500">Last Follow-up: Today at 10:15 AM</span>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end pt-2 border-t border-slate-800">
+                        <button onclick="this.closest('.fixed').remove()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl text-xs font-semibold transition shadow">
+                            Close & Return
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        // Placeholder handler for sidebar items
+        function switchPlaceholderView(titleName) {
+            alertBox(`Opening module: ${titleName}. Loaded with live executive synchronization.`);
+        }
+
+        // Custom alert modal replacement
+        function alertBox(message) {
+            const modal = document.createElement('div');
+            modal.className = "fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4";
+            modal.innerHTML = `
+                <div class="bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full p-6 shadow-2xl">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold">
+                            <i class="fa-solid fa-bell"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-white text-sm">Robin OS Notification</h4>
+                            <p class="text-xs text-slate-400">System Execution Verified</p>
+                        </div>
+                    </div>
+                    <p class="text-xs text-slate-300 mb-6 leading-relaxed">${message}</p>
+                    <div class="flex justify-end">
+                        <button onclick="this.closest('.fixed').remove()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-semibold transition">
+                            Acknowledge & Close
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        // Update Decision Tree stages based on selected client
+        function updateDTWorkspace() {
+            const clientVal = document.getElementById('client-selector').value;
+            const stageList = document.getElementById('stage-pointers-list');
+            const deptBadge = document.getElementById('dt-dept-badge');
+            const taskTitle = document.getElementById('task-card-title');
+            const taskDesc = document.getElementById('task-description');
+            const taskId = document.getElementById('task-id-badge');
+
+            stageList.innerHTML = '';
+
+            if (clientVal === 'woodsify') {
+                deptBadge.innerText = 'Om: Website & Meta Services';
+                taskTitle.innerText = 'Current Rule: Verify Meta Pixel & Ad Scaling Goals';
+                taskDesc.innerText = 'System enforcement requires verifying that Facebook pixel and conversion events are firing properly before launching sales conversion campaigns.';
+                taskId.innerText = 'TASK #META-03';
+
+                const stages = [
+                    { name: '1. Kickoff & Scope Agreement', status: 'completed' },
+                    { name: '2. Shopify Store Build & Variant Upload', status: 'completed' },
+                    { name: '3. Meta Ads Management Module', status: 'active', sub: ['Step 1: Business Manager Check', 'Step 2: Tracking Pixel Audit', 'Step 3: Conversion Campaign Launch'] },
+                    { name: '4. Weekly Milestone Check-in', status: 'pending' }
+                ];
+
+                stages.forEach((st) => {
+                    let div = document.createElement('div');
+                    div.className = `p-3 rounded-lg border text-xs transition ${st.status === 'active' ? 'bg-blue-600/10 border-blue-500/40 text-white font-semibold' : st.status === 'completed' ? 'bg-slate-950 border-slate-800 text-slate-300' : 'bg-slate-950/40 border-slate-850 text-slate-500'}`;
+                    div.innerHTML = `
+                        <div class="flex items-center justify-between">
+                            <span>${st.name}</span>
+                            <span>${st.status === 'completed' ? '<i class="fa-solid fa-check text-emerald-400"></i>' : st.status === 'active' ? '<i class="fa-solid fa-spinner fa-spin text-blue-400"></i>' : '<i class="fa-solid fa-lock text-slate-600"></i>'}</span>
+                        </div>
+                    `;
+                    if (st.sub && st.status === 'active') {
+                        let subDiv = document.createElement('div');
+                        subDiv.className = "mt-2 pl-3 border-l-2 border-blue-500 space-y-1 text-[11px] text-slate-300";
+                        st.sub.forEach((sub, sIdx) => {
+                            subDiv.innerHTML += `<div class="${sIdx === 2 ? 'text-blue-400 font-bold' : ''}">• ${sub}</div>`;
+                        });
+                        div.appendChild(subDiv);
+                    }
+                    stageList.appendChild(div);
+                });
+
+            } else if (clientVal === 'prolicious') {
+                deptBadge.innerText = 'Priyanka: UGC & Influencer';
+                taskTitle.innerText = 'Current Rule: Scripting & Hook Architecture (SKU <= 2 Rule)';
+                taskDesc.innerText = 'Mandatory structure: Hook (3-4 secs with Meta AI-compliant keywords + verified reference URL) → Body (Offer/USP) → CTA (Last 4 secs).';
+                taskId.innerText = 'TASK #UGC-02';
+
+                const stages = [
+                    { name: '1. Brand Intelligence & COGS Analysis', status: 'completed' },
+                    { name: '2. Scripting & Hook Architecture', status: 'active', sub: ['Step 1: SKU Scoping Count', 'Step 2: Hook Copywriting', 'Step 3: Writer Assignment (Amit)'] },
+                    { name: '3. Creator Sourcing & Database Selection', status: 'pending' },
+                    { name: '4. TAT & Final Hand-off Review', status: 'pending' }
+                ];
+
+                stages.forEach((st) => {
+                    let div = document.createElement('div');
+                    div.className = `p-3 rounded-lg border text-xs transition ${st.status === 'active' ? 'bg-purple-600/10 border-purple-500/40 text-white font-semibold' : st.status === 'completed' ? 'bg-slate-950 border-slate-800 text-slate-300' : 'bg-slate-950/40 border-slate-850 text-slate-500'}`;
+                    div.innerHTML = `
+                        <div class="flex items-center justify-between">
+                            <span>${st.name}</span>
+                            <span>${st.status === 'completed' ? '<i class="fa-solid fa-check text-emerald-400"></i>' : st.status === 'active' ? '<i class="fa-solid fa-spinner fa-spin text-purple-400"></i>' : '<i class="fa-solid fa-lock text-slate-600"></i>'}</span>
+                        </div>
+                    `;
+                    if (st.sub && st.status === 'active') {
+                        let subDiv = document.createElement('div');
+                        subDiv.className = "mt-2 pl-3 border-l-2 border-purple-500 space-y-1 text-[11px] text-slate-300";
+                        st.sub.forEach((sub, sIdx) => {
+                            subDiv.innerHTML += `<div class="${sIdx === 0 ? 'text-purple-400 font-bold' : ''}">• ${sub}</div>`;
+                        });
+                        div.appendChild(subDiv);
+                    }
+                    stageList.appendChild(div);
+                });
+
+            } else {
+                deptBadge.innerText = 'Rishi: Sales Department';
+                taskTitle.innerText = 'Current Rule: GST-Verified Cash Collection Gate';
+                taskDesc.innerText = 'Hard block on Closed (Won) status unless rep inputs verified GSTIN, exact amount received, transaction ID, and timestamp.';
+                taskId.innerText = 'TASK #SALES-08';
+
+                const stages = [
+                    { name: '1. New Lead Qualification (15-min timer)', status: 'completed' },
+                    { name: '2. Demo Done & Proposal Dispatch', status: 'completed' },
+                    { name: '3. GST-Verified Cash Collection Gate', status: 'active', sub: ['Step 1: Input Transaction ID', 'Step 2: Verify GSTIN Database', 'Step 3: Mark Closed (Won)'] }
+                ];
+
+                stages.forEach((st) => {
+                    let div = document.createElement('div');
+                    div.className = `p-3 rounded-lg border text-xs transition ${st.status === 'active' ? 'bg-emerald-600/10 border-emerald-500/40 text-white font-semibold' : 'bg-slate-950 border-slate-800 text-slate-300'}`;
+                    div.innerHTML = `
+                        <div class="flex items-center justify-between">
+                            <span>${st.name}</span>
+                            <span><i class="fa-solid fa-check text-emerald-400"></i></span>
+                        </div>
+                    `;
+                    if (st.sub && st.status === 'active') {
+                        let subDiv = document.createElement('div');
+                        subDiv.className = "mt-2 pl-3 border-l-2 border-emerald-500 space-y-1 text-[11px] text-slate-300";
+                        st.sub.forEach((sub) => {
+                            subDiv.innerHTML += `<div>• ${sub}</div>`;
+                        });
+                        div.appendChild(subDiv);
+                    }
+                    stageList.appendChild(div);
+                });
+            }
+        }
+
+        // Copy WhatsApp template helper
+        function copyWhatsAppTemplate() {
+            const text = "Hi [Client Name], update from Hashtag Creator desk: Your current milestone has been successfully verified and executed as per Robin OS standards. Let's scale!";
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            alertBox("Client WhatsApp update template copied to clipboard successfully!");
+        }
+
+        // Execute task and append live CRM audit log
+        function executeAndLogTask() {
+            const stream = document.getElementById('crm-log-stream');
+            const now = new Date().toLocaleTimeString();
+            const clientName = document.getElementById('client-selector').options[document.getElementById('client-selector').selectedIndex].text.split(' ')[0];
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = "text-emerald-400 font-mono text-[11px] animate-pulse";
+            logEntry.innerHTML = `[${now}] CRM AUDIT LOG: Task executed for ${clientName}. Stage pointer advanced. Immutable audit record appended.`;
+            
+            stream.insertBefore(logEntry, stream.firstChild);
+            alertBox("Task successfully marked complete! The automated CRM log has been updated and synchronized across all departmental views.");
+        }
+
+        // Initialize view on load
+        window.onload = function() {
+            switchView('crm');
+            setAgencyProgress(87); // Initializes progress gauge (Light green above 80%)
+        }
+    </script>
+</body>
+</html>
