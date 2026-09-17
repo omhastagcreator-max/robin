@@ -47,6 +47,7 @@ const CommandCenter     = lazy(() => import('@/pages/CommandCenter'));
 const TaskLedgerPage    = lazy(() => import('@/pages/TaskLedgerPage'));
 const TeamPulsePage     = lazy(() => import('@/pages/TeamPulsePage'));
 const TeamProgressPage  = lazy(() => import('@/pages/TeamProgressPage'));
+const ExecutiveDashboard = lazy(() => import('@/pages/ExecutiveDashboard'));
 
 /**
  * BlankRoot — the public root (robin.hastagcreator.com/) renders nothing.
@@ -209,6 +210,9 @@ function AppRoutes() {
           <Route path="/sales"            element={<ProtectedRoute requiredRole={['admin', 'sales']}><E><SalesDashboard /></E></ProtectedRoute>} />
           <Route path="/influencers"      element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><InfluencerSheet /></E></ProtectedRoute>} />
         </Route>
+
+        {/* ── Authenticated routes — NO persistent chrome ────────────── */}
+        <Route path="/executive-dashboard" element={<ProtectedRoute requiredRole={['admin', 'sales']}><E><ExecutiveDashboard /></E></ProtectedRoute>} />
 
         {/* Catch-all */}
         <Route path="*"                 element={<Navigate to="/" replace />} />
