@@ -21,9 +21,9 @@ import { HelpBubble } from '@/components/shared/HelpBubble';
 import { AiCopilotPanel } from '@/components/shared/AiCopilotPanel';
 import { GlobalSearch } from '@/components/shared/GlobalSearch';
 import { AssignTaskModal } from '@/components/shared/AssignTaskModal';
-import { SlimSidebar }     from '@/components/v2/SlimSidebar';
-import { TopBar }          from '@/components/v2/TopBar';
 import { GlobalShortcuts } from '@/components/v2/GlobalShortcuts';
+import { ExecutiveSidebar } from '@/pages/ExecutiveDashboard/ExecutiveSidebar';
+import { ExecutiveHeader } from '@/pages/ExecutiveDashboard/ExecutiveHeader';
 import { CheckinOrchestrator } from '@/components/checkin/CheckinOrchestrator';
 import { PageErrorBoundary } from '@/components/shared/PageErrorBoundary';
 import { GaneshFestiveTheme } from '@/components/shared/GaneshFestiveTheme';
@@ -247,39 +247,29 @@ function AppLayoutInner({ children }: Props) {
 
   return (
     <AppLayoutNestedCtx.Provider value={true}>
-    <SlimSidebar>
+    <div className="flex h-screen w-screen overflow-hidden bg-slate-950 font-sans text-slate-100 antialiased dark">
       {/* Ganesh Chaturthi 2026 decor — pure-CSS overlay, pointer-events
           none, and date-gated: it removes ITSELF after 15 Sep 2026 IST,
           so no redeploy is needed to take it down. */}
       <GaneshFestiveTheme />
-      {/* TopBar + the always-on client roster are ONE sticky unit, pinned
-          together at the very top of the viewport.
+      
+      {/* NEW SIDEBAR */}
+      <ExecutiveSidebar />
 
-          Why the wrapper (Aug 2026): ClientPillsBar was originally sticky on
-          its own at top:var(--h-topbar) with z-20, but SessionTopBar below it
-          is `sticky top-0 z-30` — so the moment you scrolled, the session
-          strip pinned to 0 and painted straight over the pills, which read as
-          "the pills aren't sticky". Wrapping both in a single z-40 sticky
-          container makes the header block outrank the session strip and stay
-          genuinely fixed. TopBar keeps its own internal sticky (harmless
-          nested inside this one). */}
-      <div className="sticky top-0 z-40">
-        <TopBar />
-        {/* Refreshes live off the robin:data-changed socket event — a client
-            Rishi onboards shows up in everyone's header without a refresh.
-            Crash-isolated like the other shell widgets so a fetch/shape bug
-            can't blank the app. */}
+      <main className="flex-1 flex flex-col min-w-0 bg-slate-950 overflow-hidden relative">
+        
+        {/* NEW HEADER */}
+        <ExecutiveHeader />
+
         <PageErrorBoundary fallback={null}>
-          <ClientPillsBar />
+          <div className="sticky top-0 z-20">
+            <ClientPillsBar />
+          </div>
         </PageErrorBoundary>
-      </div>
-      <main className="flex-1 flex flex-col min-w-0">
+
         {/* If host is in a client meeting, sticky pill on every page with
             mute / end / back-to-meeting controls. */}
         <ClientMeetingDock />
-
-        {/* Sticky session controls — timer + start/break/end on every page */}
-        <SessionTopBar />
 
         {/* Daily 3-popup orchestrator (morning/midday/evening) + its
             "checkin required" banner. Mounted here so it sits sticky
@@ -347,8 +337,7 @@ function AppLayoutInner({ children }: Props) {
           </div>
         )}
 
-        {/* Page content */}
-        <div className="flex-1 p-4 sm:p-6 lg:p-8 overflow-x-hidden">
+        <div className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto bg-slate-950">
           {children}
         </div>
       </main>
@@ -356,13 +345,8 @@ function AppLayoutInner({ children }: Props) {
       <CommandPalette />
       <MeetingQuickFab />
       <HelpBubble />
-      {/* Robin Copilot — always-on AI assistant. Internal roles only. */}
       {user && ['admin', 'sales', 'employee'].includes(role) && <AiCopilotPanel />}
-      {/* Cmd-K instant entity search. Cheap; no AI call. */}
       {user && ['admin', 'sales', 'employee'].includes(role) && <GlobalSearch />}
-      {/* Global "Assign a task" — accessible from a fixed pill at the
-          bottom-left of every internal page + via the 't' keyboard
-          shortcut. Internal roles only (clients don't assign tasks). */}
       {user && ['admin', 'sales', 'employee'].includes(role) && (
         <>
           <button
@@ -380,7 +364,7 @@ function AppLayoutInner({ children }: Props) {
         </>
       )}
       <GlobalShortcuts />
-    </SlimSidebar>
+    </div>
     </AppLayoutNestedCtx.Provider>
   );
 }

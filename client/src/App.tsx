@@ -47,7 +47,8 @@ const CommandCenter     = lazy(() => import('@/pages/CommandCenter'));
 const TaskLedgerPage    = lazy(() => import('@/pages/TaskLedgerPage'));
 const TeamPulsePage     = lazy(() => import('@/pages/TeamPulsePage'));
 const TeamProgressPage  = lazy(() => import('@/pages/TeamProgressPage'));
-const ExecutiveDashboard = lazy(() => import('@/pages/ExecutiveDashboard'));
+const CRMView           = lazy(() => import('@/pages/ExecutiveDashboard/CRMView').then(m => ({ default: m.CRMView })));
+const DecisionTreeView  = lazy(() => import('@/pages/ExecutiveDashboard/DecisionTreeView').then(m => ({ default: m.DecisionTreeView })));
 
 /**
  * BlankRoot — the public root (robin.hastagcreator.com/) renders nothing.
@@ -155,7 +156,7 @@ function AppRoutes() {
           <Route path="/workroom-home"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><WorkroomHome /></E></ProtectedRoute>} />
           {/* Mission Control — admin landing (June 2026). Sales can
               also view; employees / workroom keep their Workroom. */}
-          <Route path="/command-center"   element={<ProtectedRoute requiredRole={['admin', 'sales']}><E><CommandCenter /></E></ProtectedRoute>} />
+          <Route path="/command-center"   element={<ProtectedRoute requiredRole={['admin', 'sales']}><E><DecisionTreeView /></E></ProtectedRoute>} />
           {/* Task ledger — permanent searchable history of every
               assigned task. Internal roles. */}
           <Route path="/tasks/ledger"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TaskLedgerPage /></E></ProtectedRoute>} />
@@ -189,7 +190,7 @@ function AppRoutes() {
           <Route path="/admin/crash-logs" element={<ProtectedRoute requiredRole="admin"><E><AdminCrashLogs /></E></ProtectedRoute>} />
           <Route path="/admin/issues"     element={<ProtectedRoute requiredRole="admin"><E><AdminIssues /></E></ProtectedRoute>} />
           <Route path="/client-schedule"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientSchedulePage /></E></ProtectedRoute>} />
-          <Route path="/clients/pipeline"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><ClientPipelinePage /></E></ProtectedRoute>} />
+          <Route path="/clients/pipeline"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><CRMView /></E></ProtectedRoute>} />
           {/* Two-layer system (May 2026, v3):
               :id              → ClientWorkspacePage  (Layer 1 — project command center)
               :id/stage/:stageKey → StageWorkspacePage (Layer 2 — checklist + per-stage detail)
@@ -210,9 +211,6 @@ function AppRoutes() {
           <Route path="/sales"            element={<ProtectedRoute requiredRole={['admin', 'sales']}><E><SalesDashboard /></E></ProtectedRoute>} />
           <Route path="/influencers"      element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><InfluencerSheet /></E></ProtectedRoute>} />
         </Route>
-
-        {/* ── Authenticated routes — NO persistent chrome ────────────── */}
-        <Route path="/executive-dashboard" element={<ProtectedRoute requiredRole={['admin', 'sales']}><E><ExecutiveDashboard /></E></ProtectedRoute>} />
 
         {/* Catch-all */}
         <Route path="*"                 element={<Navigate to="/" replace />} />

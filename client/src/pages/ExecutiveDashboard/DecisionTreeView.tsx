@@ -1,28 +1,37 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 
-interface DecisionTreeViewProps {
-  isClientSelected: boolean;
-  selectedClientKey: string | null;
-  onFetchClient: (query: string) => void;
-  onReturnToCRM: () => void;
-  onUpdateClient: (key: string) => void;
-  onAlertBox: (msg: string) => void;
-}
-
-export function DecisionTreeView({ 
-  isClientSelected, 
-  selectedClientKey, 
-  onFetchClient, 
-  onReturnToCRM, 
-  onUpdateClient, 
-  onAlertBox 
-}: DecisionTreeViewProps) {
+export function DecisionTreeView() {
+  const navigate = useNavigate();
+  const [isClientSelected, setIsClientSelected] = useState(false);
+  const [selectedClientKey, setSelectedClientKey] = useState<string | null>(null);
   const [fetchQuery, setFetchQuery] = useState('');
   const [logs, setLogs] = useState<string[]>([
     '[02:18 AM] SYSTEM INIT: Robin OS Decision Tree router loaded successfully.',
     '[02:19 AM] STAGE UPDATE: Woodsify transitioned to Meta Ads Management Module. Owner: Om.',
     '[02:20 AM] AUDIT LOG: Pixel check verified. Daily budget set to ₹50,000. Ready for deployment.'
   ]);
+
+  const onFetchClient = (query: string) => {
+    // Dummy fetch logic
+    const k = query.toLowerCase().includes('wood') ? 'woodsify' : query.toLowerCase().includes('pro') ? 'prolicious' : 'stoxkart';
+    setSelectedClientKey(k);
+    setIsClientSelected(true);
+    toast.success("Client data fetched and DT unlocked.");
+  };
+
+  const onReturnToCRM = () => {
+    navigate('/clients/pipeline');
+  };
+
+  const onUpdateClient = (key: string) => {
+    setSelectedClientKey(key);
+  };
+
+  const onAlertBox = (msg: string) => {
+    toast(msg);
+  };
 
   if (!isClientSelected) {
     return (
