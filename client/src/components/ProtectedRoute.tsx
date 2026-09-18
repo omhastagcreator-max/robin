@@ -20,8 +20,8 @@ export function dashboardForRole(role: string): string {
     // Workroom landing (tuned for IC work, with brief, tasks,
     // targets). Admin can still reach /workroom-home from the sidebar
     // to see their personal clock + tasks.
-    case 'admin':    return '/command-center';
-    case 'sales':    return '/workroom-home';
+    case 'admin':    return '/executive-dashboard';
+    case 'sales':    return '/executive-dashboard';
     case 'employee': return '/workroom-home';
     case 'workroom': return '/workroom-home';
     default:         return '/workroom-home';
