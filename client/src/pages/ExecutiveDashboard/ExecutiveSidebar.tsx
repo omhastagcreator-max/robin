@@ -4,10 +4,19 @@ import { useAuth } from '@/contexts/AuthContext';
 
 export function ExecutiveSidebar() {
   const location = useLocation();
-  const { user } = useAuth();
-  
+  const { user, role } = useAuth();
+
   // A helper to determine if a route is active
   const isActive = (path: string) => location.pathname.startsWith(path);
+
+  // Mirrors the requiredRole gate on each <Route> in App.tsx / the
+  // server-side requireRole check. Previously this sidebar showed every
+  // link to every staff role regardless of permission — clicking one you
+  // didn't have access to silently bounced you back to your own dashboard
+  // via ProtectedRoute's dashboardForRole() redirect, with no explanation.
+  // Hiding the link up front avoids that dead-end click entirely.
+  const userRoles = [role, ...((user as any)?.roles || [])].filter(Boolean);
+  const can = (allowed: string[]) => allowed.some(r => userRoles.includes(r));
 
   return (
     <aside className="w-72 bg-slate-900 border-r border-slate-800 flex flex-col justify-between z-20 shrink-0 h-screen overflow-hidden">
@@ -45,37 +54,51 @@ export function ExecutiveSidebar() {
             <span className="truncate">Decision Tree (DT)</span>
           </Link>
 
-          <div className="pt-4 text-[10px] font-semibold tracking-wider text-slate-500 uppercase px-3 pb-2">Operations & Management</div>
+          {can(['admin', 'employee', 'sales', 'workroom', 'client']) && (
+            <div className="pt-4 text-[10px] font-semibold tracking-wider text-slate-500 uppercase px-3 pb-2">Operations & Management</div>
+          )}
 
-          <Link to="/admin/attendance" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/admin/attendance') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
-            <i className="fa-solid fa-calendar-check w-5 text-center text-emerald-400"></i>
-            <span className="truncate">Attendance</span>
-          </Link>
+          {can(['admin']) && (
+            <Link to="/admin/attendance" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/admin/attendance') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+              <i className="fa-solid fa-calendar-check w-5 text-center text-emerald-400"></i>
+              <span className="truncate">Attendance</span>
+            </Link>
+          )}
 
-          <Link to="/admin/leaves" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/admin/leaves') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
-            <i className="fa-solid fa-stamp w-5 text-center text-amber-400"></i>
-            <span className="truncate">Approvals</span>
-          </Link>
+          {can(['admin']) && (
+            <Link to="/admin/leaves" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/admin/leaves') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+              <i className="fa-solid fa-stamp w-5 text-center text-amber-400"></i>
+              <span className="truncate">Approvals</span>
+            </Link>
+          )}
 
-          <Link to="/admin/crash-logs" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/admin/crash-logs') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
-            <i className="fa-solid fa-code-branch w-5 text-center text-cyan-400"></i>
-            <span className="truncate">Tech Updates</span>
-          </Link>
+          {can(['admin']) && (
+            <Link to="/admin/crash-logs" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/admin/crash-logs') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+              <i className="fa-solid fa-code-branch w-5 text-center text-cyan-400"></i>
+              <span className="truncate">Tech Updates</span>
+            </Link>
+          )}
 
-          <Link to="/workroom-onboard" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/workroom-onboard') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
-            <i className="fa-solid fa-graduation-cap w-5 text-center text-indigo-400"></i>
-            <span className="truncate">Process Training</span>
-          </Link>
+          {can(['admin', 'employee', 'sales']) && (
+            <Link to="/workroom-onboard" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/workroom-onboard') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+              <i className="fa-solid fa-graduation-cap w-5 text-center text-indigo-400"></i>
+              <span className="truncate">Process Training</span>
+            </Link>
+          )}
 
-          <Link to="/workroom" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/workroom') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
-            <i className="fa-solid fa-users-rectangle w-5 text-center text-rose-400"></i>
-            <span className="truncate">Workroom</span>
-          </Link>
+          {can(['admin', 'employee', 'sales', 'workroom']) && (
+            <Link to="/workroom" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/workroom') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+              <i className="fa-solid fa-users-rectangle w-5 text-center text-rose-400"></i>
+              <span className="truncate">Workroom</span>
+            </Link>
+          )}
 
-          <Link to="/sales" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/sales') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
-            <i className="fa-solid fa-bullseye w-5 text-center text-orange-400"></i>
-            <span className="truncate">Sales Pipeline</span>
-          </Link>
+          {can(['admin', 'sales']) && (
+            <Link to="/sales" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/sales') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+              <i className="fa-solid fa-bullseye w-5 text-center text-orange-400"></i>
+              <span className="truncate">Sales Pipeline</span>
+            </Link>
+          )}
         </nav>
       </div>
 
