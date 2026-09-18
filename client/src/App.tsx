@@ -24,6 +24,8 @@ const WorkroomOnboardPage = lazy(() => import('@/pages/WorkroomOnboardPage'));
 const SalesDashboard    = lazy(() => import('@/pages/SalesDashboard'));
 const CRMView           = lazy(() => import('@/pages/ExecutiveDashboard/CRMView').then(m => ({ default: m.CRMView })));
 const DecisionTreeView  = lazy(() => import('@/pages/ExecutiveDashboard/DecisionTreeView').then(m => ({ default: m.DecisionTreeView })));
+const CommandCenter     = lazy(() => import('@/pages/CommandCenter'));
+const WorkroomHome      = lazy(() => import('@/pages/WorkroomHome'));
 
 /**
  * BlankRoot — the public root (robin.hastagcreator.com/) renders nothing.
@@ -122,6 +124,13 @@ function AppRoutes() {
             All inner routes share a single AppLayout instance, so the
             sidebar/header don't unmount on navigation. */}
         <Route element={<AppShell />}>
+          {/* Post-login landing pages — dashboardForRole() (see
+              ProtectedRoute.tsx) sends every user here immediately after
+              sign-in: admin/sales → /executive-dashboard, everyone else →
+              /workroom-home. Both routes MUST exist or every login hits
+              the catch-all and loops forever. */}
+          <Route path="/executive-dashboard" element={<ProtectedRoute requiredRole={['admin', 'sales']}><E><CommandCenter /></E></ProtectedRoute>} />
+          <Route path="/workroom-home"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><WorkroomHome /></E></ProtectedRoute>} />
           {/* Employee / Sales / Admin — internal staff only.
               Clients hitting these get bounced to /client. */}
           <Route path="/workroom"         element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><WorkRoom /></E></ProtectedRoute>} />
