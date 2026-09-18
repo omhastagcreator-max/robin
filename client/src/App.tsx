@@ -10,43 +10,18 @@ import { Loader2 } from 'lucide-react';
 
 const Login             = lazy(() => import('@/pages/Login'));
 const UpdatePassword    = lazy(() => import('@/pages/UpdatePassword'));
-const EmployeeDashboard = lazy(() => import('@/pages/EmployeeDashboard'));
-const AdminDashboard    = lazy(() => import('@/pages/AdminDashboard'));
-const AdminProjects     = lazy(() => import('@/pages/AdminProjects'));
-const AdminEmployees    = lazy(() => import('@/pages/AdminEmployees'));
-const AdminClients      = lazy(() => import('@/pages/AdminClients'));
-const AdminReports      = lazy(() => import('@/pages/AdminReports'));
-const ClientDashboard   = lazy(() => import('@/pages/ClientDashboard'));
-const SalesDashboard    = lazy(() => import('@/pages/SalesDashboard'));
-const TasksPage         = lazy(() => import('@/pages/TasksPage'));
 const WorkRoom          = lazy(() => import('@/pages/WorkRoom'));
-const GroupChat         = lazy(() => import('@/pages/GroupChat'));
-const InfluencerSheet   = lazy(() => import('@/pages/InfluencerSheet'));
-const NotificationsPage = lazy(() => import('@/pages/NotificationsPage'));
 const ProfilePage       = lazy(() => import('@/pages/ProfilePage'));
-const ClientVault       = lazy(() => import('@/pages/ClientVault'));
-const LeavesPage        = lazy(() => import('@/pages/LeavesPage'));
 const AdminLeaves       = lazy(() => import('@/pages/AdminLeaves'));
 const AdminAttendance   = lazy(() => import('@/pages/AdminAttendance'));
 const AdminCrashLogs    = lazy(() => import('@/pages/AdminCrashLogs'));
-const ClientSchedulePage = lazy(() => import('@/pages/ClientSchedulePage'));
-const ClientPipelinePage = lazy(() => import('@/pages/ClientPipelinePage'));
-const ClientWorkflowDetailPage = lazy(() => import('@/pages/ClientWorkflowDetailPage'));
 const ClientWorkspacePage      = lazy(() => import('@/pages/ClientWorkspacePage'));
 const StageWorkspacePage       = lazy(() => import('@/pages/StageWorkspacePage'));
-const MetaAdsReport     = lazy(() => import('@/pages/MetaAdsReport'));
 const MetaShareView     = lazy(() => import('@/pages/MetaShareView'));
-const TeamCalendar      = lazy(() => import('@/pages/TeamCalendar'));
 const MeetGuest         = lazy(() => import('@/pages/MeetGuest'));
 const MeetHost          = lazy(() => import('@/pages/MeetHost'));
-const WorkroomHome      = lazy(() => import('@/pages/WorkroomHome'));
 const WorkroomOnboardPage = lazy(() => import('@/pages/WorkroomOnboardPage'));
-const AdminIssues       = lazy(() => import('@/pages/AdminIssues'));
-// June 2026 Mission Control build.
-const CommandCenter     = lazy(() => import('@/pages/CommandCenter'));
-const TaskLedgerPage    = lazy(() => import('@/pages/TaskLedgerPage'));
-const TeamPulsePage     = lazy(() => import('@/pages/TeamPulsePage'));
-const TeamProgressPage  = lazy(() => import('@/pages/TeamProgressPage'));
+const SalesDashboard    = lazy(() => import('@/pages/SalesDashboard'));
 const CRMView           = lazy(() => import('@/pages/ExecutiveDashboard/CRMView').then(m => ({ default: m.CRMView })));
 const DecisionTreeView  = lazy(() => import('@/pages/ExecutiveDashboard/DecisionTreeView').then(m => ({ default: m.DecisionTreeView })));
 
@@ -149,67 +124,27 @@ function AppRoutes() {
         <Route element={<AppShell />}>
           {/* Employee / Sales / Admin — internal staff only.
               Clients hitting these get bounced to /client. */}
-          <Route path="/dashboard"        element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><EmployeeDashboard /></E></ProtectedRoute>} />
-          <Route path="/tasks"            element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TasksPage /></E></ProtectedRoute>} />
-          <Route path="/chat"             element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><GroupChat /></E></ProtectedRoute>} />
           <Route path="/workroom"         element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><WorkRoom /></E></ProtectedRoute>} />
-          <Route path="/workroom-home"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><WorkroomHome /></E></ProtectedRoute>} />
-          {/* Mission Control — admin landing (June 2026). Sales can
-              also view; employees / workroom keep their Workroom. */}
           <Route path="/command-center"   element={<ProtectedRoute requiredRole={['admin', 'sales']}><E><DecisionTreeView /></E></ProtectedRoute>} />
-          {/* Task ledger — permanent searchable history of every
-              assigned task. Internal roles. */}
-          <Route path="/tasks/ledger"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TaskLedgerPage /></E></ProtectedRoute>} />
           {/* Team Pulse — Om + admin dashboard of every teammate's
               morning / midday / evening checkin. Route gate allows
               admin + sales + employee; the server route further checks
               canManageWorkroom so plain employees who hit the URL get
               a 403 from the API (page renders an empty list). */}
-          <Route path="/team-pulse"       element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TeamPulsePage /></E></ProtectedRoute>} />
-          {/* Weekly employee scorecards — same loose-route/strict-API
-              pattern as Team Pulse: the server 403s anyone who isn't
-              admin/sales/canManageWorkroom. */}
-          <Route path="/team-progress"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TeamProgressPage /></E></ProtectedRoute>} />
-          {/* Onboard a workroom teammate — admin OR any user the admin
-              has flagged with canManageWorkroom (e.g. Om). The page itself
-              re-checks the flag and bounces if accessed directly. */}
           <Route path="/workroom-onboard" element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><WorkroomOnboardPage /></E></ProtectedRoute>} />
-          <Route path="/vault"            element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientVault /></E></ProtectedRoute>} />
-          <Route path="/leaves"           element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><LeavesPage /></E></ProtectedRoute>} />
-          <Route path="/notifications"    element={<E><NotificationsPage /></E>} />
           <Route path="/profile"          element={<E><ProfilePage /></E>} />
 
           {/* Admin only */}
-          <Route path="/admin"            element={<ProtectedRoute requiredRole="admin"><E><AdminDashboard /></E></ProtectedRoute>} />
-          <Route path="/admin/projects"   element={<ProtectedRoute requiredRole="admin"><E><AdminProjects /></E></ProtectedRoute>} />
-          <Route path="/admin/employees"  element={<ProtectedRoute requiredRole="admin"><E><AdminEmployees /></E></ProtectedRoute>} />
-          <Route path="/admin/clients"    element={<ProtectedRoute requiredRole="admin"><E><AdminClients /></E></ProtectedRoute>} />
-          <Route path="/admin/reports"    element={<ProtectedRoute requiredRole="admin"><E><AdminReports /></E></ProtectedRoute>} />
           <Route path="/admin/leaves"     element={<ProtectedRoute requiredRole="admin"><E><AdminLeaves /></E></ProtectedRoute>} />
           <Route path="/admin/attendance" element={<ProtectedRoute requiredRole="admin"><E><AdminAttendance /></E></ProtectedRoute>} />
           <Route path="/admin/crash-logs" element={<ProtectedRoute requiredRole="admin"><E><AdminCrashLogs /></E></ProtectedRoute>} />
-          <Route path="/admin/issues"     element={<ProtectedRoute requiredRole="admin"><E><AdminIssues /></E></ProtectedRoute>} />
-          <Route path="/client-schedule"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><ClientSchedulePage /></E></ProtectedRoute>} />
           <Route path="/clients/pipeline"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><CRMView /></E></ProtectedRoute>} />
-          {/* Two-layer system (May 2026, v3):
-              :id              → ClientWorkspacePage  (Layer 1 — project command center)
-              :id/stage/:stageKey → StageWorkspacePage (Layer 2 — checklist + per-stage detail)
-              :id/legacy       → old ClientWorkflowDetailPage as a rollback escape hatch
-              Aug 2026: opened to 'workroom' too — owner ask ("all staff roles" should be
-              able to see + fully edit client details, not just admin/employee/sales). */}
+          {/* Two-layer system (May 2026, v3) */}
           <Route path="/clients/pipeline/:id"                   element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><ClientWorkspacePage /></E></ProtectedRoute>} />
           <Route path="/clients/pipeline/:id/stage/:stageKey"   element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><StageWorkspacePage /></E></ProtectedRoute>} />
-          <Route path="/clients/pipeline/:id/legacy"            element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><ClientWorkflowDetailPage /></E></ProtectedRoute>} />
-          <Route path="/ads/meta"         element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><MetaAdsReport /></E></ProtectedRoute>} />
-          <Route path="/team/calendar"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><TeamCalendar /></E></ProtectedRoute>} />
-          <Route path="/meet/host/:slug"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><MeetHost /></E></ProtectedRoute>} />
-
-          {/* Client only */}
-          <Route path="/client"           element={<ProtectedRoute requiredRole="client"><E><ClientDashboard /></E></ProtectedRoute>} />
-
-          {/* Sales / Influencer */}
+          
+          {/* Sales */}
           <Route path="/sales"            element={<ProtectedRoute requiredRole={['admin', 'sales']}><E><SalesDashboard /></E></ProtectedRoute>} />
-          <Route path="/influencers"      element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales']}><E><InfluencerSheet /></E></ProtectedRoute>} />
         </Route>
 
         {/* Catch-all */}
