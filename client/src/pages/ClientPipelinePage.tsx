@@ -1476,7 +1476,7 @@ function EmptyState({ query, isAdminOrSales, onCreate }: { query: string; isAdmi
 // ─────────────────────────────────────────────────────────────────────────
 // Create modal — pick a client + pick services
 // ─────────────────────────────────────────────────────────────────────────
-function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+export function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [clients, setClients] = useState<any[]>([]);
   const [templates, setTemplates] = useState<Record<string, any>>({});
   const [clientId, setClientId] = useState('');
@@ -1735,7 +1735,7 @@ function OverallHealthChip({ list }: { list: Workflow[] }) {
   );
 }
 
-function AllProjectsBriefButton() {
+export function AllProjectsBriefButton() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [brief, setBrief] = useState<string>('');

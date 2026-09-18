@@ -59,6 +59,47 @@
   color-scheme: light;
 }
 
+/*
+ * "Robin OS" dark theme — applied via the `.dark` class that
+ * AppLayoutInner puts on the persistent app shell (see AppLayout.tsx).
+ * This is a plain class selector (NOT `:root.dark`) because the `dark`
+ * class sits on a wrapper <div> deep in the tree, not on <html> — CSS
+ * custom properties still cascade to every descendant either way, which
+ * is exactly what we want: every existing page that reads the semantic
+ * tokens (bg-card, text-foreground, border-border, bg-background,
+ * text-muted-foreground, bg-primary, …) re-themes automatically, with
+ * zero per-page edits and zero risk to any page's actual logic/data.
+ *
+ * Palette matches the Robin OS executive dashboard reference exactly:
+ * slate-950 page background, slate-900 card surfaces, slate-800
+ * hairline borders, blue-600 primary/accent. Values are the standard
+ * shadcn "slate" dark HSL triplets (battle-tested contrast ratios),
+ * with --background/--card split so cards visibly lift off the page
+ * the way the reference's bg-slate-900-on-slate-950 cards do.
+ */
+.dark {
+  --background:          222 45% 7%;         /* slate-950-ish page bg */
+  --foreground:          210 40% 98%;        /* near-white text */
+  --card:                222 47% 11%;        /* slate-900 card surface */
+  --card-foreground:     210 40% 98%;
+  --popover:             222 47% 11%;
+  --popover-foreground:  210 40% 98%;
+  --border:              217 33% 17%;        /* slate-800 hairline */
+  --input:               217 33% 17%;
+  --primary:             221 83% 53%;        /* blue-600 */
+  --primary-foreground:  210 40% 98%;
+  --muted:               217 33% 17%;
+  --muted-foreground:    215 20% 65%;        /* slate-400 */
+  --accent:              217 33% 17%;
+  --accent-foreground:   210 40% 98%;
+  --ring:                221 83% 53%;
+  --destructive:         347 77% 50%;        /* rose-600 */
+  --success:             160 84% 39%;        /* emerald-500 */
+  --warning:             38  92% 50%;        /* amber-500 */
+  --radius:              0.75rem;            /* rounded-xl to match reference cards */
+  color-scheme: dark;
+}
+
 /* ── Opt-in themes (data-theme attribute on <html>) ────────────────── */
 
 /* Robin's-Egg — the previous brand teal+saffron palette. */

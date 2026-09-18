@@ -2,6 +2,10 @@ import React, { useEffect, useState, useMemo } from 'react';
 import * as api from '@/api';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+// Reusing Robin's existing, real, tested onboarding modal and AI-brief
+// button — both already wired to the live API (cwCreateWorkflow /
+// aiBriefAllProjects) — instead of re-implementing them as fake buttons.
+import { CreateWorkflowModal, AllProjectsBriefButton } from '@/pages/ClientPipelinePage';
 
 interface ActivityStub {
   at?: string;
@@ -19,6 +23,7 @@ interface ClientRow {
   services?: { label: string; status: string }[];
   totalAmount?: number;
   remaining?: number;
+  priority?: 'urgent' | 'high' | 'medium' | 'low';
   lastUpdate?: ActivityStub | null;
   updatedAt?: string;
 }
@@ -49,21 +54,38 @@ export function CRMView() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [awaitingOpen, setAwaitingOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  // Real server-backed "just mine" filter — cwListWorkflows({mine:'1'})
+  // restricts to workflows the signed-in user created or is assigned a
+  // service on (see clientWorkflowController.listWorkflows).
+  const [focusedOnly, setFocusedOnly] = useState(false);
+  const [sortBy, setSortBy] = useState<'recent' | 'priority'>('recent');
 
-  const load = () => {
+  const load = (mine = focusedOnly) => {
     setLoading(true);
-    api.cwListWorkflows()
+    api.cwListWorkflows(mine ? { mine: '1' } : {})
       .then((rows: ClientRow[]) => setClients(Array.isArray(rows) ? rows : []))
       .catch(() => toast.error('Failed to load clients'))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(focusedOnly); }, [focusedOnly]);
 
-  const filteredClients = clients.filter(c =>
-    (c.clientName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (c.clientPhone || '').includes(searchQuery)
-  );
+  const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+
+  const filteredClients = clients
+    .filter(c =>
+      (c.clientName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.clientPhone || '').includes(searchQuery)
+    )
+    .sort((a: any, b: any) => {
+      if (sortBy === 'priority') {
+        return (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9);
+      }
+      // 'recent' — server already sorts by updatedAt desc, but re-sort
+      // client-side too so it stays correct after local search/filter.
+      return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+    });
 
   const metrics = useMemo(() => {
     const onTrack  = clients.filter(c => c.health === 'healthy' || c.health === 'ready_to_deliver').length;
@@ -105,10 +127,10 @@ export function CRMView() {
           <p className="text-xs text-slate-400 mt-0.5">Live overview of active agency projects, current stage, and verified audit logs.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => toast.success(`Briefing ${clients.length} active agency projects...`)} className="bg-slate-900 hover:bg-slate-800 text-slate-200 px-3.5 py-2 rounded-lg text-xs font-semibold transition border border-slate-700 flex items-center gap-2">
-            <i className="fa-solid fa-file-lines text-blue-400"></i> Brief all projects
-          </button>
-          <button onClick={() => navigate('/clients/pipeline')} className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition shadow-md shadow-emerald-600/20 flex items-center gap-2">
+          {/* Real Gemini-backed brief covering every active project — same
+              component the old Client Pipeline page used. */}
+          <AllProjectsBriefButton />
+          <button onClick={() => setAddOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition shadow-md shadow-emerald-600/20 flex items-center gap-2">
             <i className="fa-solid fa-plus"></i> Add client
           </button>
         </div>
@@ -131,15 +153,23 @@ export function CRMView() {
 
         <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
           <div className="flex flex-wrap items-center gap-2">
-            <button className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white shadow">
-              <i className="fa-solid fa-crosshairs mr-1.5"></i> Focused Pipeline
+            <button
+              onClick={() => setFocusedOnly(v => !v)}
+              title="Show only clients you created or are assigned a service on"
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition ${focusedOnly ? 'bg-blue-600 text-white' : 'bg-slate-950 border border-slate-800 text-slate-300 hover:text-white'}`}
+            >
+              <i className="fa-solid fa-crosshairs mr-1.5"></i> {focusedOnly ? 'Focused Pipeline · Mine' : 'Focused Pipeline'}
             </button>
             <div className="h-4 w-px bg-slate-800 mx-1"></div>
             <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-300">
               <span className="text-slate-500 font-semibold uppercase text-[10px]">SORT</span>
-              <select className="bg-transparent text-white font-medium focus:outline-none [&>option]:bg-slate-900 [&>option]:text-white">
-                <option>Recently Updated</option>
-                <option>Priority · High to Low</option>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as 'recent' | 'priority')}
+                className="bg-transparent text-white font-medium focus:outline-none [&>option]:bg-slate-900 [&>option]:text-white"
+              >
+                <option value="recent">Recently Updated</option>
+                <option value="priority">Priority · High to Low</option>
               </select>
             </div>
           </div>
@@ -320,6 +350,16 @@ export function CRMView() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Real "onboard a client" flow — picks/creates the client, assigns
+          services, and creates the actual ClientWorkflow via the live API.
+          Refreshes the table on success. */}
+      {addOpen && (
+        <CreateWorkflowModal
+          onClose={() => setAddOpen(false)}
+          onCreated={() => { setAddOpen(false); load(); }}
+        />
       )}
     </div>
   );
