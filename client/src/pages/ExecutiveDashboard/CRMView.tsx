@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 // Reusing Robin's existing, real, tested onboarding modal and AI-brief
 // button — both already wired to the live API (cwCreateWorkflow /
 // aiBriefAllProjects) — instead of re-implementing them as fake buttons.
-import { CreateWorkflowModal, AllProjectsBriefButton } from '@/pages/ClientPipelinePage';
+import { CreateWorkflowModal, AllProjectsBriefButton } from '@/components/shared/CrmSharedModals';
 
 interface ActivityStub {
   at?: string;

@@ -113,7 +113,7 @@ export default function AdminCrashLogs() {
     <AppLayout requiredRole="admin">
       <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-4">
         {/* Header */}
-        <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-wrap items-end justify-between gap-3 pb-4 mb-1 border-b border-border">
           <div>
             <h1 className="text-[20px] font-bold tracking-tight inline-flex items-center gap-2">
               <Bug className="h-5 w-5 text-rose-600" /> Crash &amp; error logs

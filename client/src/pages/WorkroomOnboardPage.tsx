@@ -55,7 +55,7 @@ export default function WorkroomOnboardPage() {
     <AppLayout>
       <div className="max-w-xl mx-auto space-y-5">
         {/* Header */}
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-3 pb-4 mb-1 border-b border-border">
           <div className="h-10 w-10 rounded-lg bg-primary/12 text-primary flex items-center justify-center shrink-0">
             <Headphones className="h-5 w-5" />
           </div>

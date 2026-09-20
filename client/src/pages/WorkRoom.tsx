@@ -34,7 +34,7 @@ export default function WorkRoom() {
     <AppLayout>
       <div className="max-w-6xl mx-auto space-y-5">
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="flex items-start justify-between gap-3 flex-wrap pb-4 mb-1 border-b border-border">
           <div>
             <h1 className="text-[20px] font-bold tracking-tight flex items-center gap-2">
               <Headphones className="h-5 w-5 text-primary" /> Work Room

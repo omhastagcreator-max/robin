@@ -167,7 +167,7 @@ export default function AdminLeaves() {
   return (
     <AppLayout requiredRole="admin">
       <div className="max-w-5xl mx-auto space-y-5 page-transition-enter">
-        <div>
+        <div className="pb-4 mb-1 border-b border-border">
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <CalendarOff className="h-6 w-6 text-primary" /> Leaves
           </h1>

@@ -76,7 +76,7 @@ export default function AdminAttendance() {
   return (
     <AppLayout requiredRole="admin">
       <div className="max-w-6xl mx-auto space-y-5">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="flex items-start justify-between gap-3 flex-wrap pb-4 mb-1 border-b border-border">
           <div>
             <h1 className="text-[20px] font-bold tracking-tight inline-flex items-center gap-2">
               <Clock className="h-5 w-5 text-primary" /> Attendance
