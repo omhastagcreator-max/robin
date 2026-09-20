@@ -719,7 +719,12 @@ const SERVICE_LABELS: Record<string, string> = {
 };
 
 function ClientDetailsPanel({ wf, users }: { wf: Workflow; users: Record<string, UserLite> }) {
-  const [open, setOpen] = useState(true);
+  // Collapsed by default (Sep 2026 declutter pass) — Info/Sales/Services/
+  // Financials/Operations is reference detail, not the thing a user needs
+  // on landing. It now behaves as a "view options" dropdown: closed until
+  // the header row is clicked, so the page opens straight onto the stage
+  // hero instead of a five-column data dump.
+  const [open, setOpen] = useState(false);
   const onboardedByName = wf.onboardedBy ? (users[wf.onboardedBy]?.name || wf.onboardedBy) : null;
   const remaining = wf.remaining != null ? wf.remaining : Math.max(0, (wf.totalAmount || 0) - (wf.advanceReceived || 0));
   const money = (n?: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
@@ -729,8 +734,11 @@ function ClientDetailsPanel({ wf, users }: { wf: Workflow; users: Record<string,
       <button
         onClick={() => setOpen(v => !v)}
         className="w-full px-4 py-2 flex items-center justify-between text-left hover:bg-muted/30 transition-colors"
+        aria-expanded={open}
       >
-        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Client details</span>
+        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+          Client details <span className="font-normal text-muted-foreground/60">(Info · Sales · Services · Financials · Ops)</span>
+        </span>
         {open ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
       </button>
       {open && (
