@@ -87,7 +87,7 @@ export async function updateUser(req: AuthRequest, res: Response): Promise<void>
     const orgId = await getActorOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'Your account is not linked to an organization.' }); return; }
 
-    const { name, role, team, teams, roles, phone, isActive } = req.body;
+    const { name, role, team, teams, roles, phone, isActive, serviceScope } = req.body;
     const update: Record<string, any> = {};
     if (name)                  update.name = name;
     if (role)                  update.role = role;
@@ -96,6 +96,11 @@ export async function updateUser(req: AuthRequest, res: Response): Promise<void>
     if (Array.isArray(roles))  update.roles = Array.from(new Set(roles.filter(Boolean)));
     if (phone !== undefined)   update.phone = phone;
     if (isActive !== undefined) update.isActive = isActive;
+    // Sep 2026 — CRM access-scoping (see User.serviceScope). Admin-only
+    // (this whole route is requireRole('admin')) — lets Om set/clear a
+    // teammate's Client CRM visibility scope from the same call that
+    // sets their team/teams.
+    if (Array.isArray(serviceScope)) update.serviceScope = Array.from(new Set(serviceScope.filter(Boolean)));
 
     const user = await User.findOneAndUpdate(
       { _id: req.params.id, organizationId: orgId },
