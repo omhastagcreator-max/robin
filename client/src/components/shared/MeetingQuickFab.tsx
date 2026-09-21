@@ -17,6 +17,11 @@ import { useClientMeeting } from '@/contexts/ClientMeetingContext';
  *
  * Hidden on the meeting host page itself (no point of a floating button
  * pointing at the page you're on) and on the public guest meet page.
+ *
+ * Sep 2026: was pinned to the exact same bottom-5 right-5 spot as the
+ * "Ask Robin" copilot launcher (AiCopilotPanel), so the two buttons sat
+ * directly on top of each other for admin/sales. Shifted this one left
+ * (right-44) so both are visible side by side instead of overlapping.
  */
 export function MeetingQuickFab() {
   const navigate = useNavigate();
@@ -38,7 +43,7 @@ export function MeetingQuickFab() {
       <button
         onClick={() => navigate(`/meet/host/${meeting.slug}`)}
         title="Return to your live meeting"
-        className="fixed bottom-5 right-5 z-40 h-12 px-4 rounded-full bg-emerald-600 text-white shadow-lg hover:bg-emerald-700 flex items-center gap-2 text-sm font-semibold"
+        className="fixed bottom-5 right-44 z-40 h-12 px-4 rounded-full bg-emerald-600 text-white shadow-lg hover:bg-emerald-700 flex items-center gap-2 text-sm font-semibold"
       >
         <span className="h-2 w-2 rounded-full bg-green-300 animate-pulse" />
         <Phone className="h-4 w-4" />
@@ -66,7 +71,7 @@ export function MeetingQuickFab() {
       onClick={quickStart}
       disabled={busy}
       title="One-tap client meeting — opens the host room with the link copied"
-      className="fixed bottom-5 right-5 z-40 h-14 px-5 rounded-full bg-primary text-primary-foreground shadow-xl hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2 text-sm font-semibold transition-all hover:scale-105"
+      className="fixed bottom-5 right-44 z-40 h-14 px-5 rounded-full bg-primary text-primary-foreground shadow-xl hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2 text-sm font-semibold transition-all hover:scale-105"
     >
       {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <UserPlus className="h-5 w-5" />}
       <span className="hidden sm:inline">{busy ? 'Creating…' : 'Start meeting'}</span>
