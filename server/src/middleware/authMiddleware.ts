@@ -15,6 +15,7 @@ export interface AuthRequest extends Request {
     organizationId?: string;
     avatarUrl?:     string | null;
     canEditAllClients?: boolean;
+    serviceScope?:  string[];      // Sep 2026 CRM access-scoping — see User.serviceScope
   };
 }
 
@@ -36,7 +37,7 @@ export async function authMiddleware(
     const userId  = payload.id || payload.userId;
     if (!userId) { res.status(401).json({ error: 'Invalid token payload' }); return; }
 
-    const user = await User.findById(userId).select('email name role roles team teams organizationId avatarUrl canEditAllClients');
+    const user = await User.findById(userId).select('email name role roles team teams organizationId avatarUrl canEditAllClients serviceScope');
     if (!user) { res.status(401).json({ error: 'User not found' }); return; }
 
     // SAFETY NET — legacy users without an organizationId would otherwise hit
@@ -69,6 +70,7 @@ export async function authMiddleware(
       organizationId: orgId,
       avatarUrl:      (user as any).avatarUrl || null,
       canEditAllClients: !!(user as any).canEditAllClients,
+      serviceScope:   (user as any).serviceScope || [],
     };
     next();
   } catch {

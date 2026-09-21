@@ -556,6 +556,15 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
     // explicit opt-in narrow-down via the "Just mine" toggle client-side.
     const role = req.user!.role;
     const isInternalStaff = ['admin', 'sales', 'employee', 'workroom'].includes(role);
+    // Sep 2026 — CRM access-scoping. A non-admin/sales user with a
+    // non-empty serviceScope (e.g. a meta-ads-only or design-only
+    // teammate) only sees clients where THEY are assigned a service
+    // whose type is in their scope — narrower than the Aug 2026
+    // "every staff role sees the full org list" default, but opt-in
+    // (empty scope = unaffected) so it can't reintroduce the old
+    // "Client CRM is blank" bug for anyone who isn't explicitly scoped.
+    const scope = req.user!.serviceScope || [];
+    const isScoped = isInternalStaff && role !== 'admin' && role !== 'sales' && scope.length > 0;
     if (!isInternalStaff) {
       // Defensive fallback only — route-level requireRole() should already
       // block anyone who isn't internal staff from reaching this handler.
@@ -563,6 +572,8 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
         { 'services.assignedTo': req.user!.id },
         { createdBy: req.user!.id },
       ]});
+    } else if (isScoped) {
+      andGroups.push({ services: { $elemMatch: { assignedTo: req.user!.id, serviceType: { $in: scope } } } });
     } else if (mine === '1') {
       filter['services.assignedTo'] = req.user!.id;
     }
@@ -597,7 +608,7 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
       const last = Array.isArray(wf.activity) && wf.activity.length
         ? wf.activity[wf.activity.length - 1]
         : null;
-      return {
+      const base = {
         ...wf,
         lastUpdate: last ? {
           at:          last.at || last.createdAt || wf.updatedAt,
@@ -611,14 +622,39 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
         // full one separately.
         activity: undefined,
       };
+      return isScoped ? applyServiceScope(base, req.user!.id, scope) : base;
     });
     res.json(decorated);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
 /**
+ * Sep 2026 — CRM access-scoping. Given a workflow already known to be
+ * visible to this scoped user, strip out everything outside their
+ * function: services whose type isn't in their scope (or that aren't
+ * assigned to them), and the financial fields (those are a sales/admin
+ * concern, not something a design/video/meta-ads specialist needs to
+ * see). Returns a new object — never mutates the lean doc in place.
+ */
+function applyServiceScope(wf: any, userId: string, scope: string[]): any {
+  const visibleServices = (wf.services || []).filter(
+    (s: any) => scope.includes(s.serviceType) && s.assignedTo === userId,
+  );
+  const {
+    totalAmount, advanceReceived, remaining, nextPaymentAmount, nextPaymentDate,
+    nextPaymentCondition, metaAdsFeeModel, paymentStatus, ...rest
+  } = wf;
+  return { ...rest, services: visibleServices, scopeRestricted: true };
+}
+
+/**
  * Workflow access policy (Aug 2026 — widened to full staff parity):
- *   - admin/sales/employee/workroom: can see ALL workflows in the org.
+ *   - admin/sales: can see ALL workflows in the org.
+ *   - employee/workroom with an empty serviceScope: can see ALL
+ *     workflows in the org (unchanged Aug 2026 default).
+ *   - employee/workroom with a non-empty serviceScope (Sep 2026): only
+ *     workflows where they're assigned a service whose type is in that
+ *     scope — the same narrowing applied in listWorkflows above.
  *   - anyone else (shouldn't normally reach here — route-level requireRole
  *     already blocks non-staff): falls back to created-by-them or
  *     assigned-a-service-to-them only.
@@ -626,8 +662,12 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
  * Centralised so getWorkflow / addNote / returnService / etc. all enforce
  * the same rule. Returns true if access is allowed.
  */
-function canSeeWorkflow(wf: any, userId: string, role: string): boolean {
-  if (['admin', 'sales', 'employee', 'workroom'].includes(role)) return true;
+function canSeeWorkflow(wf: any, userId: string, role: string, scope: string[] = []): boolean {
+  if (role === 'admin' || role === 'sales') return true;
+  if (['employee', 'workroom'].includes(role)) {
+    if (scope.length === 0) return true;
+    return (wf.services || []).some((s: any) => s.assignedTo === userId && scope.includes(s.serviceType));
+  }
   if (wf.createdBy === userId) return true;
   return (wf.services || []).some((s: any) => s.assignedTo === userId);
 }
@@ -639,11 +679,13 @@ export async function getWorkflow(req: AuthRequest, res: Response): Promise<void
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId }).lean();
     if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
+    const scope = req.user!.serviceScope || [];
     // AuthZ: stop employees from URL-guessing into workflows they don't own.
-    if (!canSeeWorkflow(wf, req.user!.id, req.user!.role)) {
+    if (!canSeeWorkflow(wf, req.user!.id, req.user!.role, scope)) {
       res.status(403).json({ error: 'You do not have access to this client' });
       return;
     }
+    const isScoped = ['employee', 'workroom'].includes(req.user!.role) && scope.length > 0;
 
     // Hydrate assignee names on services AND activity log actor names so
     // the UI doesn't show user IDs as avatars.
@@ -671,6 +713,7 @@ export async function getWorkflow(req: AuthRequest, res: Response): Promise<void
         })),
       };
     }
+    if (isScoped) payload = applyServiceScope(payload, req.user!.id, scope);
     res.json(payload);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }

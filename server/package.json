@@ -22,6 +22,7 @@
     "reset-password": "ts-node src/scripts/resetPassword.ts",
     "set-user-role": "ts-node src/scripts/setUserRole.ts",
     "list-user-roles": "ts-node src/scripts/listAllUserRoles.ts",
+    "set-service-scope": "ts-node src/scripts/setServiceScope.ts",
     "backdate-session": "ts-node src/scripts/backdateSessionStart.ts",
     "inspect-session": "ts-node src/scripts/inspectSession.ts",
     "reactivate-clients": "ts-node src/scripts/reactivateClients.ts",

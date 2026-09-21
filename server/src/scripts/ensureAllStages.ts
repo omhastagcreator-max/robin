@@ -38,7 +38,11 @@ import { SERVICE_TEMPLATES, type ServiceType } from '../lib/workflowTemplates';
 // stages" (misc is optional/ad-hoc, added per-brand, not something every
 // client is guaranteed to have) — so it's deliberately scoped to exclude
 // it rather than growing a "canonical" misc owner that doesn't exist.
-type StandardServiceType = Exclude<ServiceType, 'misc'>;
+// Sep 2026 — same reasoning applies to the 4 new access-scoping service
+// types (graphic_design/video_editing/script_writing/social_media): those
+// are per-brand ad-hoc additions too, not one of the three guaranteed
+// stages, so they stay excluded here as well.
+type StandardServiceType = Exclude<ServiceType, 'misc' | 'graphic_design' | 'video_editing' | 'script_writing' | 'social_media'>;
 const STANDARD_SERVICES: StandardServiceType[] = ['shopify', 'influencer', 'meta_ads'];
 const STAGE_OWNERS: Record<StandardServiceType, string> = {
   shopify:    'Om',

@@ -22,7 +22,14 @@
  * later auto-progress, summarise, or flag stalled services.
  */
 
-export type ServiceType = 'shopify' | 'meta_ads' | 'influencer' | 'misc';
+export type ServiceType =
+  | 'shopify' | 'meta_ads' | 'influencer' | 'misc'
+  // Sep 2026 — owner ask: lock each employee's CRM visibility to their
+  // actual function (design/video, script/social, meta ads only, etc).
+  // The org's design/content/social work had no service type of its own
+  // before this, so it couldn't be assigned, tracked, or scoped the same
+  // way meta_ads already is. See User.serviceScope for the visibility gate.
+  | 'graphic_design' | 'video_editing' | 'script_writing' | 'social_media';
 
 export interface ServiceTemplate {
   label:        string;
@@ -94,6 +101,64 @@ export const SERVICE_TEMPLATES: Record<ServiceType, ServiceTemplate> = {
     checklist: [
       'Scope confirmed with client',
       'Work delivered',
+    ],
+  },
+  // Added Sep 2026 — CRM access-scoping ask. Each maps to its own `team`
+  // so pickAssignee's existing round-robin-by-team logic auto-assigns
+  // these exactly like meta_ads/influencer already do — no new
+  // assignment machinery needed, just a teammate whose team/teams
+  // includes it (e.g. Beant -> 'design' + 'video', Amit -> 'script' +
+  // 'social').
+  graphic_design: {
+    label: 'Graphic Design',
+    shortLabel: 'Design',
+    team: 'design',
+    dependsOn: [],
+    color: 'purple',
+    checklist: [
+      'Brief confirmed with client',
+      'First draft delivered',
+      'Revisions incorporated',
+      'Final files delivered',
+    ],
+  },
+  video_editing: {
+    label: 'Video Editing',
+    shortLabel: 'Video',
+    team: 'video',
+    dependsOn: [],
+    color: 'rose',
+    checklist: [
+      'Raw footage/assets received',
+      'First cut delivered',
+      'Revisions incorporated',
+      'Final video delivered',
+    ],
+  },
+  script_writing: {
+    label: 'Script Writing',
+    shortLabel: 'Script',
+    team: 'script',
+    dependsOn: [],
+    color: 'orange',
+    checklist: [
+      'Brief/topic confirmed',
+      'Draft script delivered',
+      'Revisions incorporated',
+      'Final script approved',
+    ],
+  },
+  social_media: {
+    label: 'Social Media Posts',
+    shortLabel: 'Social',
+    team: 'social',
+    dependsOn: [],
+    color: 'teal',
+    checklist: [
+      'Content calendar agreed',
+      'Posts designed/drafted',
+      'Client approval on batch',
+      'Posts scheduled/published',
     ],
   },
 };

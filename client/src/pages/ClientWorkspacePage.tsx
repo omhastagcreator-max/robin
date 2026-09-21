@@ -81,6 +81,11 @@ interface Workflow {
   clientName?: string;
   clientPhone?: string;
   clientEmail?: string;
+  // Sep 2026 — CRM access-scoping. Set by the server (getWorkflow) when
+  // the viewer has a non-empty serviceScope: services[] has already been
+  // filtered down to just their own, and financial fields are omitted
+  // entirely rather than sent as 0/null.
+  scopeRestricted?: boolean;
   services: Service[];
   health?: string;
   healthReason?: string;
@@ -716,6 +721,9 @@ const OPERATIONAL_STATUS_TONE: Record<string, string> = {
 const SERVICE_LABELS: Record<string, string> = {
   shopify: 'Website Development', meta_ads: 'Meta Ads Management',
   influencer: 'UGC Videos', misc: 'Miscellaneous',
+  // Sep 2026 — CRM access-scoping service types.
+  graphic_design: 'Graphic Design', video_editing: 'Video Editing',
+  script_writing: 'Script Writing', social_media: 'Social Media Posts',
 };
 
 function ClientDetailsPanel({ wf, users }: { wf: Workflow; users: Record<string, UserLite> }) {
@@ -742,7 +750,7 @@ function ClientDetailsPanel({ wf, users }: { wf: Workflow; users: Record<string,
         {open ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
       </button>
       {open && (
-        <div className="px-4 pb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 text-[12px]">
+        <div className={`px-4 pb-4 grid grid-cols-1 sm:grid-cols-2 ${wf.scopeRestricted ? 'lg:grid-cols-4' : 'lg:grid-cols-5'} gap-4 text-[12px]`}>
           {/* Info */}
           <div className="space-y-1.5">
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">Info</p>
@@ -785,28 +793,35 @@ function ClientDetailsPanel({ wf, users }: { wf: Workflow; users: Record<string,
             ))}
           </div>
 
-          {/* Financials */}
-          <div className="space-y-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">Financials</p>
-            <p><span className="text-muted-foreground">Total </span>{money(wf.totalAmount)}</p>
-            <p><span className="text-muted-foreground">Advance </span>{money(wf.advanceReceived)}</p>
-            <p className="font-semibold">{money(remaining)} remaining</p>
-            {wf.nextPaymentAmount ? (
-              <p className="text-[10.5px] text-muted-foreground">
-                Next: {money(wf.nextPaymentAmount)}
-                {wf.nextPaymentDate ? ` by ${format(parseISO(wf.nextPaymentDate), 'd MMM')}` : ''}
-                {wf.nextPaymentCondition ? ` — ${wf.nextPaymentCondition}` : ''}
-              </p>
-            ) : null}
-            {wf.metaAdsFeeModel?.type && (
-              <p className="text-[10.5px] text-muted-foreground">
-                Meta fee: {wf.metaAdsFeeModel.type === 'fixed' ? `₹${wf.metaAdsFeeModel.fixedMonthlyFee || 0}/mo`
-                  : wf.metaAdsFeeModel.type === 'percentage' ? `${wf.metaAdsFeeModel.percentageOfSpend || 0}% of spend`
-                  : wf.metaAdsFeeModel.type === 'hybrid' ? `₹${wf.metaAdsFeeModel.fixedMonthlyFee || 0} + ${wf.metaAdsFeeModel.percentageOfSpend || 0}%`
-                  : 'Custom'}
-              </p>
-            )}
-          </div>
+          {/* Financials — hidden entirely for a scoped viewer (Sep 2026
+              CRM access-scoping: money is a sales/admin concern, not
+              something a design/video/meta-ads specialist needs). The
+              server already omits these fields for them; this check is
+              belt-and-suspenders so a stale cached response never shows
+              a misleading "Total ₹0". */}
+          {!wf.scopeRestricted && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">Financials</p>
+              <p><span className="text-muted-foreground">Total </span>{money(wf.totalAmount)}</p>
+              <p><span className="text-muted-foreground">Advance </span>{money(wf.advanceReceived)}</p>
+              <p className="font-semibold">{money(remaining)} remaining</p>
+              {wf.nextPaymentAmount ? (
+                <p className="text-[10.5px] text-muted-foreground">
+                  Next: {money(wf.nextPaymentAmount)}
+                  {wf.nextPaymentDate ? ` by ${format(parseISO(wf.nextPaymentDate), 'd MMM')}` : ''}
+                  {wf.nextPaymentCondition ? ` — ${wf.nextPaymentCondition}` : ''}
+                </p>
+              ) : null}
+              {wf.metaAdsFeeModel?.type && (
+                <p className="text-[10.5px] text-muted-foreground">
+                  Meta fee: {wf.metaAdsFeeModel.type === 'fixed' ? `₹${wf.metaAdsFeeModel.fixedMonthlyFee || 0}/mo`
+                    : wf.metaAdsFeeModel.type === 'percentage' ? `${wf.metaAdsFeeModel.percentageOfSpend || 0}% of spend`
+                    : wf.metaAdsFeeModel.type === 'hybrid' ? `₹${wf.metaAdsFeeModel.fixedMonthlyFee || 0} + ${wf.metaAdsFeeModel.percentageOfSpend || 0}%`
+                    : 'Custom'}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Operations */}
           <div className="space-y-1.5">
@@ -815,7 +830,9 @@ function ClientDetailsPanel({ wf, users }: { wf: Workflow; users: Record<string,
               {OPERATIONAL_STATUS_LABEL[wf.operationalStatus || 'in_progress']}
             </span>
             <p className="text-muted-foreground">Priority: {(wf.priority || 'medium').replace(/^\w/, c => c.toUpperCase())}</p>
-            <p className="text-muted-foreground">Payment: {(wf.paymentStatus || 'na').toUpperCase()}</p>
+            {!wf.scopeRestricted && (
+              <p className="text-muted-foreground">Payment: {(wf.paymentStatus || 'na').toUpperCase()}</p>
+            )}
           </div>
         </div>
       )}

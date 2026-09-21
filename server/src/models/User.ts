@@ -12,6 +12,18 @@ export interface IUser extends Document {
   roles: AppRole[];           // secondary/multiple roles
   team?: string;              // primary team
   teams: string[];            // multiple teams
+  /**
+   * Sep 2026 — CRM access-scoping. When non-empty, this user's Client
+   * CRM view is locked to clients where they have an assigned service
+   * whose serviceType is in this list (e.g. ['meta_ads'] for a
+   * meta-ads-only teammate, ['graphic_design','video_editing'] for a
+   * design+video teammate). Other services on the same client, and
+   * financial fields, are hidden from them. Empty/undefined = no
+   * restriction (the org-wide default every other role already has —
+   * see listWorkflows in clientWorkflowController.ts). Admin and sales
+   * always bypass this regardless of what's set here.
+   */
+  serviceScope?: string[];
   phone?: string;
   avatarUrl?: string;
   googleId?: string;
@@ -58,6 +70,10 @@ const UserSchema = new Schema<IUser>(
     roles:          { type: [String], default: [] },               // extra roles
     team:           { type: String, default: '' },
     teams:          { type: [String], default: [] },               // multiple teams
+    // See IUser.serviceScope above. Plain string array (not a ServiceType
+    // enum) so it never needs a schema change when a new service type is
+    // added to workflowTemplates.ts.
+    serviceScope:   { type: [String], default: [] },
     phone:          { type: String, default: '' },
     avatarUrl:      { type: String, default: '' },
     googleId:       { type: String, default: '' },
