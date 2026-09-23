@@ -18,6 +18,12 @@ import { useJarvisMode } from '@/hooks/useJarvisMode';
  * Mounted once at the AppLayout level. Client role doesn't see it (no
  * Copilot access). Firefox + browsers without SpeechRecognition see a
  * disabled state with a tooltip explaining why.
+ *
+ * Sep 2026: was pinned to bottom-4 right-4 — almost the exact same spot
+ * as the "Ask Robin" copilot launcher (AiCopilotPanel, bottom-5 right-5),
+ * so this orb sat directly on top of/behind that pill on every screen
+ * size. Moved to bottom-24 right-24 so it clears Ask Robin/Start meeting
+ * (both docked at bottom-5) and the help bubble (bottom-24 right-5).
  */
 export function RobinOrb() {
   const { role } = useAuth();
@@ -62,7 +68,7 @@ export function RobinOrb() {
   const Icon = cfg.icon;
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2 pointer-events-none">
+    <div className="fixed bottom-24 right-24 z-40 flex flex-col items-end gap-2 pointer-events-none">
       {/* Live transcript bubble — only while armed / thinking / speaking */}
       {j.enabled && (j.state === 'armed' || j.state === 'thinking' || j.state === 'speaking') && (
         <div className="pointer-events-auto max-w-xs rounded-2xl bg-card border border-border shadow-lg px-3 py-2 text-[12px] leading-snug">

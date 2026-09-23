@@ -690,19 +690,58 @@ export const meetingsFindFree = (params: { date?: string; duration?: number; use
   }).then(r => r.data);
 
 // ── Client meetings (instant external prospect calls) ──────────────────────
+// Cold-start tolerance (Sep 2026 — meeting backend may spin down on free tier).
+// clientMeetingsHostToken is critical: timeout on this call blocks joining.
+// Pattern matches login (line 14) — safe to retry since it's idempotent
+// (getting a token for an existing meeting). Real errors (410 expired meeting)
+// return with status < 500 and are NOT retried.
+const clientMeetingsHostTokenWithRetry = async (slug: string) => {
+  let lastErr: any;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const r = await api.post(`/client-meetings/${slug}/host-token`, undefined, { timeout: 30_000 });
+      return r.data;
+    } catch (err: any) {
+      lastErr = err;
+      const status = err?.response?.status;
+      // Real error (expired meeting, not found, etc) — fail fast
+      if (status && status < 500) throw err;
+      // Network error / 5xx — retry with backoff
+      if (attempt < 2) await new Promise(res => setTimeout(res, 1000 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+};
+
+// Guest token endpoint — same retry pattern as host token
+const clientMeetingsGuestTokenWithRetry = async (slug: string, name: string) => {
+  let lastErr: any;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const r = await api.post(`/meet/${slug}/guest-token`, { name }, { timeout: 30_000 });
+      return r.data;
+    } catch (err: any) {
+      lastErr = err;
+      const status = err?.response?.status;
+      if (status && status < 500) throw err;
+      if (attempt < 2) await new Promise(res => setTimeout(res, 1000 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+};
+
 export const clientMeetingsCreate = (body: { clientName?: string; note?: string; durationMinutes?: number }) =>
   api.post('/client-meetings', body).then(r => r.data);
 export const clientMeetingsMine   = () => api.get('/client-meetings/mine').then(r => r.data);
 export const clientMeetingsActive = () => api.get('/client-meetings/active').then(r => r.data);
 export const clientMeetingsEnd    = (slug: string) => api.put(`/client-meetings/${slug}/end`).then(r => r.data);
 export const clientMeetingsExtend = (slug: string) => api.put(`/client-meetings/${slug}/extend`).then(r => r.data);
-export const clientMeetingsHostToken = (slug: string) =>
-  api.post(`/client-meetings/${slug}/host-token`).then(r => r.data);
+export const clientMeetingsHostToken = (slug: string) => clientMeetingsHostTokenWithRetry(slug);
 // Public — guest endpoints. Don't require auth, just hit the path.
 export const clientMeetingsPublicInfo = (slug: string) =>
   api.get(`/meet/${slug}`).then(r => r.data);
 export const clientMeetingsGuestToken = (slug: string, name: string) =>
-  api.post(`/meet/${slug}/guest-token`, { name }).then(r => r.data);
+  clientMeetingsGuestTokenWithRetry(slug, name);
 
 // ── Huddle (LiveKit) ──────────────────────────────────────────────────────────
 // Cold-start tolerance (June 2026): Render's free tier spins the API
