@@ -634,6 +634,18 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
       };
       return isScoped ? applyServiceScope(base, req.user!.id, scope) : base;
     });
+    // Oct 2026 — "the CRM should be enough to find out why the client is
+    // stuck": each row carries the same stuck-at summary the Decision Tree
+    // uses (computed AFTER scoping, so a scoped user only sees their part).
+    const ownerIds = new Set<string>();
+    for (const wf of decorated as any[]) for (const sv of wf.services || []) if (sv.assignedTo) ownerIds.add(String(sv.assignedTo));
+    const owners = ownerIds.size ? await User.find({ _id: { $in: Array.from(ownerIds) } }).select('name email').lean() : [];
+    const ownerName = new Map(owners.map((u: any) => [String(u._id), u.name || u.email || '']));
+    for (const wf of decorated as any[]) {
+      const { services: pipeline, stuckAt } = summarizePipeline(wf, ownerName);
+      wf.pipeline = pipeline;
+      wf.stuckAt = stuckAt;
+    }
     res.json(decorated);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
@@ -1463,59 +1475,8 @@ export async function pipelineOverview(req: AuthRequest, res: Response): Promise
     const users = ids.size ? await User.find({ _id: { $in: Array.from(ids) } }).select('name email').lean() : [];
     const nameById = new Map(users.map((u: any) => [String(u._id), u.name || u.email || '']));
 
-    const now = Date.now();
     const rows = (list as any[]).map(wf => {
-      const services = (wf.services || []).map((s: any) => {
-        const checklist = s.checklist || [];
-        return {
-          _id: String(s._id),
-          label: s.label,
-          serviceType: s.serviceType,
-          status: s.status,
-          assigneeName: s.assignedTo ? nameById.get(String(s.assignedTo)) || '' : '',
-          done: checklist.filter((c: any) => c.done).length,
-          total: checklist.length,
-          nextItem: (checklist.find((c: any) => !c.done) || {}).text || '',
-          returnedReason: s.returnedReason || '',
-          eta: s.eta || null,
-          overdue: !!(s.eta && s.status !== 'done' && new Date(s.eta).getTime() < now),
-        };
-      });
-
-      // Where is it stuck? Priority: explicit client-level blocker →
-      // a blocked/returned service → the active (in-progress) stage →
-      // the first pending stage. All done → not stuck.
-      let stuckAt: { stage: string; owner: string; reason: string; severity: 'blocked' | 'waiting' | 'active' | 'done' };
-      const blockedSvc = services.find((s: any) => s.status === 'blocked' || s.returnedReason);
-      const activeSvc  = services.find((s: any) => s.status === 'in_progress') || services.find((s: any) => s.status === 'pending');
-      if (wf.blockerType || wf.blockerReason) {
-        const svc = blockedSvc || activeSvc;
-        stuckAt = {
-          stage: svc?.label || 'Client level',
-          owner: svc?.assigneeName || '',
-          reason: wf.blockerReason || String(wf.blockerType).replace(/_/g, ' '),
-          severity: 'blocked',
-        };
-      } else if (blockedSvc) {
-        stuckAt = {
-          stage: blockedSvc.label,
-          owner: blockedSvc.assigneeName,
-          reason: blockedSvc.returnedReason || 'Waiting on an earlier stage',
-          severity: blockedSvc.returnedReason ? 'blocked' : 'waiting',
-        };
-      } else if (activeSvc) {
-        stuckAt = {
-          stage: activeSvc.label,
-          owner: activeSvc.assigneeName,
-          reason: activeSvc.overdue
-            ? 'Past its ETA'
-            : activeSvc.nextItem ? `Next: ${activeSvc.nextItem}` : 'In progress',
-          severity: activeSvc.overdue ? 'blocked' : 'active',
-        };
-      } else {
-        stuckAt = { stage: services.length ? 'All stages complete' : 'No stages set up', owner: '', reason: '', severity: 'done' };
-      }
-
+      const { services, stuckAt } = summarizePipeline(wf, nameById);
       return {
         _id: String(wf._id),
         clientName: wf.clientName || 'Client',
@@ -1532,4 +1493,69 @@ export async function pipelineOverview(req: AuthRequest, res: Response): Promise
     });
     res.json(rows);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * Oct 2026 — shared "where is this client stuck, and why" summary. Used by
+ * the Decision Tree overview AND each CRM list row, so both screens give
+ * the same answer. Pure function over a lean workflow doc.
+ */
+export function summarizePipeline(wf: any, nameById: Map<string, string>) {
+  const now = Date.now();
+  const services = (wf.services || []).map((s: any) => {
+    const checklist = s.checklist || [];
+    return {
+      _id: String(s._id),
+      label: s.label,
+      serviceType: s.serviceType,
+      status: s.status,
+      assignedTo: s.assignedTo ? String(s.assignedTo) : '',
+      assigneeName: s.assignedTo ? nameById.get(String(s.assignedTo)) || '' : '',
+      done: checklist.filter((c: any) => c.done).length,
+      total: checklist.length,
+      nextItem: (checklist.find((c: any) => !c.done) || {}).text || '',
+      returnedReason: s.returnedReason || '',
+      eta: s.eta || null,
+      overdue: !!(s.eta && s.status !== 'done' && new Date(s.eta).getTime() < now),
+    };
+  });
+
+  let stuckAt: { stage: string; owner: string; reason: string; severity: 'blocked' | 'waiting' | 'active' | 'done'; serviceId?: string };
+  const blockedSvc = services.find((s: any) => s.status === 'blocked' || s.returnedReason);
+  const activeSvc  = services.find((s: any) => s.status === 'in_progress') || services.find((s: any) => s.status === 'pending');
+  const idle = (wf.daysInactive || 0) >= 5 ? ` · no movement for ${wf.daysInactive}d` : '';
+  if (wf.blockerType || wf.blockerReason) {
+    const svc = blockedSvc || activeSvc;
+    stuckAt = {
+      stage: svc?.label || 'Client level',
+      owner: svc?.assigneeName || '',
+      reason: (wf.blockerReason || String(wf.blockerType).replace(/_/g, ' ')) + idle,
+      severity: 'blocked',
+      serviceId: svc?._id,
+    };
+  } else if (blockedSvc) {
+    stuckAt = {
+      stage: blockedSvc.label,
+      owner: blockedSvc.assigneeName,
+      reason: (blockedSvc.returnedReason ? `Returned: ${blockedSvc.returnedReason}` : 'Waiting on an earlier stage') + idle,
+      severity: blockedSvc.returnedReason ? 'blocked' : 'waiting',
+      serviceId: blockedSvc._id,
+    };
+  } else if (activeSvc) {
+    const parts: string[] = [];
+    if (activeSvc.overdue) parts.push('Past its ETA');
+    else if (!activeSvc.eta) parts.push('No ETA set');
+    if (!activeSvc.assigneeName) parts.push('No owner');
+    if (activeSvc.nextItem) parts.push(`Next: ${activeSvc.nextItem}`);
+    stuckAt = {
+      stage: activeSvc.label,
+      owner: activeSvc.assigneeName,
+      reason: (parts.join(' · ') || 'In progress') + idle,
+      severity: activeSvc.overdue || (wf.daysInactive || 0) >= 5 ? 'blocked' : 'active',
+      serviceId: activeSvc._id,
+    };
+  } else {
+    stuckAt = { stage: services.length ? 'All stages complete' : 'No stages set up', owner: '', reason: '', severity: 'done' };
+  }
+  return { services, stuckAt };
 }

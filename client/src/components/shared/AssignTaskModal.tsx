@@ -76,7 +76,10 @@ export function AssignTaskModal({ open, onClose, defaultBrandId }: Props) {
     api.listUsers()
       .then((arr: any[]) => setTeam(Array.isArray(arr) ? arr.filter((u: any) => u.role !== 'client') : []))
       .catch(() => setTeam([]));
-    api.cwListWorkflows({})
+    // Oct 2026 — the CRM list is role-scoped now, so use the org-wide
+    // pipeline overview for the brand picker: anyone can raise a task
+    // against any client, not just the ones they personally work on.
+    api.cwPipelineOverview()
       .then((arr: any[]) => setBrands(Array.isArray(arr) ? arr : []))
       .catch(() => setBrands([]));
   }, [open]);

@@ -14,6 +14,7 @@ import { PendingAcceptanceBanner } from '@/components/workroom/PendingAcceptance
 import { MyHoursCard } from '@/components/shared/MyHoursCard';
 import { DayPlanTable } from '@/components/workroom/DayPlanTable';
 import { IncentivesStrip } from '@/components/shared/IncentivesStrip';
+import { MyWorkDesk } from '@/components/workroom/MyWorkDesk';
 import * as api from '@/api';
 
 /**
@@ -160,6 +161,10 @@ export default function WorkroomHome() {
               {/* Pending-acceptance banner — auto-hides when empty. Top
                   of the page so cross-team handoffs aren't missed. */}
               <PendingAcceptanceBanner />
+
+              {/* My work desk — assigned client stages + tasks, updatable in
+                  place. Shows as "Creative desk" for design/video (Beant). */}
+              <MyWorkDesk />
 
               {/* My hours — worked time this week + catch-up deficit
                   (owner ask, July 2026). */}

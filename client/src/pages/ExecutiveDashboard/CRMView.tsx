@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 // button — both already wired to the live API (cwCreateWorkflow /
 // aiBriefAllProjects) — instead of re-implementing them as fake buttons.
 import { CreateWorkflowModal, AllProjectsBriefButton } from '@/components/shared/CrmSharedModals';
+import { AssignTaskModal } from '@/components/shared/AssignTaskModal';
 
 interface ActivityStub {
   at?: string;
@@ -27,7 +28,24 @@ interface ClientRow {
   priority?: 'urgent' | 'high' | 'medium' | 'low';
   lastUpdate?: ActivityStub | null;
   updatedAt?: string;
+  // Oct 2026 — server-computed "where is it stuck / why" (same logic as
+  // the Decision Tree overview) + per-stage breakdown.
+  stuckAt?: { stage: string; owner: string; reason: string; severity: 'blocked' | 'waiting' | 'active' | 'done'; serviceId?: string };
+  pipeline?: Array<{
+    _id: string; label: string; status: string; assignedTo: string; assigneeName: string;
+    done: number; total: number; nextItem: string; returnedReason: string; eta: string | null; overdue: boolean;
+  }>;
 }
+
+const SEV_STYLE: Record<string, string> = {
+  blocked: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
+  waiting: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+  active:  'bg-blue-500/10 text-blue-400 border-blue-500/30',
+  done:    'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+};
+const SEV_LABEL: Record<string, string> = { blocked: 'Stuck', waiting: 'Waiting', active: 'Moving', done: 'Done' };
+const STAGE_STATUS: Record<string, string> = { done: 'Done', in_progress: 'In progress', pending: 'Not started', blocked: 'Blocked' };
+const toDateInput = (iso: string | null) => iso ? new Date(new Date(iso).getTime() + 330 * 60_000).toISOString().slice(0, 10) : '';
 
 const HEALTH_META: Record<string, { label: string; badge: string }> = {
   healthy:           { label: 'On Track',        badge: 'bg-emerald-500/10 text-emerald-400' },
@@ -66,7 +84,26 @@ export function CRMView() {
   // restricts to workflows the signed-in user created or is assigned a
   // service on (see clientWorkflowController.listWorkflows).
   const [focusedOnly, setFocusedOnly] = useState(false);
-  const [sortBy, setSortBy] = useState<'recent' | 'priority'>('recent');
+  const [sortBy, setSortBy] = useState<'recent' | 'priority' | 'stuck'>('stuck');
+  const [openRow, setOpenRow] = useState<string | null>(null);
+  const [taskFor, setTaskFor] = useState<string | null>(null);
+  const [savingEta, setSavingEta] = useState<string | null>(null);
+  const canEditAny = user?.role === 'admin' || !!user?.canEditAllClients;
+
+  // Set/clear a stage ETA right from the CRM row. Server enforces
+  // "your own stage, or admin/Om" — we only show the input when allowed.
+  const saveEta = async (wid: string, sid: string, value: string) => {
+    setSavingEta(sid);
+    try {
+      // Store as end-of-day IST so "due 14 Oct" doesn't flip to overdue at 05:30.
+      const eta = value ? new Date(`${value}T23:59:00+05:30`).toISOString() : null;
+      await api.cwSetServiceEta(wid, sid, { eta, comment: value ? `ETA set to ${value} from CRM` : 'ETA cleared from CRM' });
+      toast.success(value ? 'ETA saved.' : 'ETA cleared.');
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Could not save ETA.');
+    } finally { setSavingEta(null); }
+  };
 
   const load = (mine = focusedOnly) => {
     setLoading(true);
@@ -86,6 +123,10 @@ export function CRMView() {
       (c.clientPhone || '').includes(searchQuery)
     )
     .sort((a: any, b: any) => {
+      if (sortBy === 'stuck') {
+        const R: Record<string, number> = { blocked: 0, waiting: 1, active: 2, done: 3 };
+        return (R[a.stuckAt?.severity] ?? 9) - (R[b.stuckAt?.severity] ?? 9);
+      }
       if (sortBy === 'priority') {
         return (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9);
       }
@@ -174,9 +215,10 @@ export function CRMView() {
               <span className="text-slate-500 font-semibold uppercase text-[10px]">SORT</span>
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'recent' | 'priority')}
+                onChange={(e) => setSortBy(e.target.value as 'recent' | 'priority' | 'stuck')}
                 className="bg-transparent text-white font-medium focus:outline-none [&>option]:bg-slate-900 [&>option]:text-white"
               >
+                <option value="stuck">Most stuck first</option>
                 <option value="recent">Recently Updated</option>
                 <option value="priority">Priority · High to Low</option>
               </select>
@@ -259,7 +301,7 @@ export function CRMView() {
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
             <i className="fa-solid fa-table-list text-blue-400"></i> Active Client Accounts & Pipeline Directory
           </h3>
-          <span className="text-xs text-slate-400">Click 'Select & Unlock DT' to load into Decision Tree</span>
+          <span className="text-xs text-slate-400">Click a row to see every stage, its owner and ETA</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -267,9 +309,9 @@ export function CRMView() {
               <tr>
                 <th className="p-3.5">Brand / Client</th>
                 <th className="p-3.5">Status</th>
-                <th className="p-3.5">Current Stage / Module</th>
+                <th className="p-3.5">Stuck at</th>
+                <th className="p-3.5">Why it's not moving</th>
                 {!roleScoped && <th className="p-3.5">Deal Value</th>}
-                <th className="p-3.5">Last CRM Audit Log</th>
                 <th className="p-3.5 text-right">Actions</th>
               </tr>
             </thead>
@@ -281,8 +323,10 @@ export function CRMView() {
               ) : filteredClients.map((client) => {
                 const meta = HEALTH_META[client.health || ''] || { label: 'Active', badge: 'bg-slate-800 text-slate-300' };
                 return (
-                  <tr key={client._id} className="hover:bg-slate-850/50 transition">
+                  <React.Fragment key={client._id}>
+                  <tr onClick={() => setOpenRow(r => r === client._id ? null : client._id)} className="hover:bg-slate-800/40 transition cursor-pointer">
                     <td className="p-3.5 font-medium text-white flex items-center gap-2">
+                      <i className={`fa-solid fa-chevron-right text-[9px] text-slate-500 transition-transform ${openRow === client._id ? 'rotate-90' : ''}`}></i>
                       <div className="w-7 h-7 rounded flex items-center justify-center font-bold text-xs bg-blue-600/20 text-blue-400">
                         {(client.clientName || '?').charAt(0).toUpperCase()}
                       </div>
@@ -291,14 +335,27 @@ export function CRMView() {
                     <td className="p-3.5">
                       <span className={`px-2 py-0.5 rounded ${meta.badge}`}>{meta.label}</span>
                     </td>
-                    <td className="p-3.5">{currentStageLabel(client)}</td>
+                    <td className="p-3.5">
+                      {client.stuckAt ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className={`px-1.5 py-0.5 rounded border text-[10px] font-semibold ${SEV_STYLE[client.stuckAt.severity]}`}>{SEV_LABEL[client.stuckAt.severity]}</span>
+                          <span className="text-white">{client.stuckAt.stage}</span>
+                        </span>
+                      ) : currentStageLabel(client)}
+                      {client.stuckAt?.owner && <div className="text-[10.5px] text-slate-500 mt-0.5">Owner: {client.stuckAt.owner}</div>}
+                    </td>
+                    <td className="p-3.5 text-slate-400 max-w-[280px]">{client.stuckAt?.reason || '—'}</td>
                     {!roleScoped && <td className="p-3.5 font-semibold text-emerald-400">
                       {client.totalAmount ? `₹${client.totalAmount.toLocaleString('en-IN')}` : '—'}
                     </td>}
-                    <td className="p-3.5 text-slate-400 font-mono text-[11px]">
-                      {client.lastUpdate?.detail || client.lastUpdate?.action || 'No activity logged yet'}
-                    </td>
-                    <td className="p-3.5 text-right whitespace-nowrap">
+                    <td className="p-3.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => setTaskFor(client._id)}
+                        title="Raise a task on this client"
+                        className="bg-emerald-600/90 hover:bg-emerald-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-semibold transition mr-2"
+                      >
+                        <i className="fa-solid fa-plus mr-1"></i> Task
+                      </button>
                       <button
                         onClick={() => navigate(`/clients/pipeline/${client._id}`)}
                         title="Open full client workspace"
@@ -306,11 +363,62 @@ export function CRMView() {
                       >
                         <i className="fa-solid fa-folder-open"></i>
                       </button>
-                      <button onClick={() => openDT(client)} className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow">
-                        Select & Unlock DT <i className="fa-solid fa-unlock ml-1"></i>
+                      <button onClick={() => openDT(client)} title="Open in Decision Tree" className="bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-semibold transition shadow">
+                        <i className="fa-solid fa-diagram-project"></i>
                       </button>
                     </td>
                   </tr>
+                  {openRow === client._id && (
+                    <tr className="bg-slate-950/60">
+                      <td colSpan={roleScoped ? 5 : 6} className="px-6 py-4">
+                        <div className="space-y-2">
+                          {(client.pipeline || []).length === 0 && <p className="text-slate-500">No stages on this client yet.</p>}
+                          {(client.pipeline || []).map(st => {
+                            const mine = st.assignedTo && st.assignedTo === user?.id;
+                            const canEta = st.status !== 'done' && (mine || canEditAny);
+                            const isStuckHere = client.stuckAt?.serviceId === st._id;
+                            return (
+                              <div key={st._id} className={`grid grid-cols-1 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.6fr)_auto] gap-2 md:gap-4 items-center p-2.5 rounded-lg border ${isStuckHere ? 'border-rose-500/40 bg-rose-500/5' : 'border-slate-800'}`}>
+                                <div className="text-white font-medium">
+                                  {st.status === 'done' ? <i className="fa-solid fa-check text-emerald-400 mr-1.5"></i> : isStuckHere ? <i className="fa-solid fa-hand text-rose-400 mr-1.5"></i> : <i className="fa-regular fa-circle text-slate-600 mr-1.5"></i>}
+                                  {st.label}
+                                  <span className="ml-2 text-[10.5px] text-slate-500">{STAGE_STATUS[st.status] || st.status}</span>
+                                </div>
+                                <div className="text-slate-400">{st.assigneeName || <span className="text-amber-400">No owner</span>}{st.total ? ` · ${st.done}/${st.total}` : ''}</div>
+                                <div className="text-slate-400 truncate">
+                                  {st.returnedReason ? <span className="text-rose-400">Returned: {st.returnedReason}</span>
+                                    : st.status !== 'done' && st.nextItem ? <>Next: {st.nextItem}</> : st.status === 'done' ? '—' : ''}
+                                </div>
+                                <div className="flex items-center gap-2 justify-start md:justify-end">
+                                  {canEta ? (
+                                    <label className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                                      ETA
+                                      <input
+                                        type="date"
+                                        defaultValue={toDateInput(st.eta)}
+                                        disabled={savingEta === st._id}
+                                        onChange={(e) => saveEta(client._id, st._id, e.target.value)}
+                                        className={`bg-slate-900 border rounded px-1.5 py-0.5 text-[11px] text-white [color-scheme:dark] ${st.overdue ? 'border-rose-500/60' : !st.eta ? 'border-amber-500/50' : 'border-slate-700'}`}
+                                      />
+                                    </label>
+                                  ) : (
+                                    <span className={`text-[11px] ${st.overdue ? 'text-rose-400' : 'text-slate-500'}`}>
+                                      {st.eta ? `ETA ${new Date(st.eta).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}${st.overdue ? ' · overdue' : ''}` : st.status === 'done' ? '' : 'No ETA'}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <p className="text-[10.5px] text-slate-500 pt-1 font-mono">
+                            Last update: {client.lastUpdate?.detail || client.lastUpdate?.action || 'No activity logged yet'}
+                            {client.lastUpdate?.at ? ` · ${new Date(client.lastUpdate.at).toLocaleString('en-IN')}` : ''}
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -364,6 +472,8 @@ export function CRMView() {
       {/* Real "onboard a client" flow — picks/creates the client, assigns
           services, and creates the actual ClientWorkflow via the live API.
           Refreshes the table on success. */}
+      <AssignTaskModal open={!!taskFor} onClose={() => { setTaskFor(null); load(); }} defaultBrandId={taskFor || undefined} />
+
       {addOpen && (
         <CreateWorkflowModal
           onClose={() => setAddOpen(false)}
