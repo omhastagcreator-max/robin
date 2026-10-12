@@ -13,6 +13,7 @@ import { DayPlanEditorSection } from '@/components/command/DayPlanEditorSection'
 import { TodayActivityTable } from '@/components/command/TodayActivityTable';
 import { DailyCheckinsReport } from '@/components/command/DailyCheckinsReport';
 import { useNetworkAware } from '@/hooks/useNetworkAware';
+import { IncentivesStrip } from '@/components/shared/IncentivesStrip';
 import * as api from '@/api';
 
 /**
@@ -130,6 +131,9 @@ export default function CommandCenter() {
             {/* 1. Executive Overview — 6 KPI cards. */}
             <SectionHeader title="Executive Overview" subtitle="Agency status, at a glance." />
             <ExecutiveOverview k={snap.kpis} />
+
+            {/* Team incentives — quiet one-liner, expands on click (Oct 2026). */}
+            <div className="mt-3"><IncentivesStrip /></div>
 
             {/* 2. Command Actions — large action buttons. */}
             <SectionHeader title="Quick Actions" />

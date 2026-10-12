@@ -825,3 +825,8 @@ export const autoDistributeDayPlan = (userId: string, replace = false, week?: st
 // Per-employee daily activity rollup for the Command Center.
 export const getTodayStats        = () =>
   api.get('/team-stats/today').then(r => r.data);
+
+// ── Incentives (Oct 2026) — visible to all staff, admin edits ────────────────
+export const listIncentives  = (month?: string) => api.get('/incentives', { params: month ? { month } : {} }).then(r => r.data);
+export const addIncentive    = (d: { userId: string; amount: number; reason?: string; month?: string }) => api.post('/incentives', d).then(r => r.data);
+export const deleteIncentive = (id: string) => api.delete(`/incentives/${id}`).then(r => r.data);

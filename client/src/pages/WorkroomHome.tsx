@@ -13,6 +13,7 @@ import { useNetworkAware } from '@/hooks/useNetworkAware';
 import { PendingAcceptanceBanner } from '@/components/workroom/PendingAcceptanceBanner';
 import { MyHoursCard } from '@/components/shared/MyHoursCard';
 import { DayPlanTable } from '@/components/workroom/DayPlanTable';
+import { IncentivesStrip } from '@/components/shared/IncentivesStrip';
 import * as api from '@/api';
 
 /**
@@ -171,6 +172,9 @@ export default function WorkroomHome() {
                   employee sees when they sit down. Auto-hides when no
                   plan has been set for the current week. */}
               <DayPlanTable />
+
+              {/* Team incentives — quiet one-liner, expands on click (Oct 2026). */}
+              <IncentivesStrip />
 
               {loading && !snap ? (
                 <SkeletonBlock />

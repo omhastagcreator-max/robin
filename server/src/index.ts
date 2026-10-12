@@ -75,6 +75,7 @@ import workroomSnapshotRoutes   from './routes/workroomSnapshot';
 import dayPlanRoutes            from './routes/dayPlan';
 import teamStatsRoutes          from './routes/teamStats';
 import checkinRoutes            from './routes/checkin';
+import incentivesRoutes         from './routes/incentives';
 import progressRoutes           from './routes/progress';
 import { startProgressCron }    from './jobs/progressCron';
 import brandPulseRoutes         from './routes/brandPulse';
@@ -705,6 +706,7 @@ app.use('/api/workroom',        workroomSnapshotRoutes);
 app.use('/api/day-plan',        dayPlanRoutes);
 app.use('/api/team-stats',      teamStatsRoutes);
 app.use('/api/checkin',         checkinRoutes);
+app.use('/api/incentives',      incentivesRoutes);        // Oct 2026 — team incentives, visible to all staff
 app.use('/api/progress',        progressRoutes);          // weekly employee scorecards (admin/sales/Om)
 app.use('/api/brand-pulse',     brandPulseRoutes);        // random blocking brand questions + report
 app.use('/api/seed',            seedRoutes);
