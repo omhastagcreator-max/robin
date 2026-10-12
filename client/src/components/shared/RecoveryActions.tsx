@@ -40,6 +40,10 @@ async function wipeBrowserCaches() {
 function clearLocalStorage(keepAuth: boolean) {
   try {
     const keep: Record<string, string> = {};
+    // Never drop the org-wide reset marker (lib/cacheReset.ts), or the
+    // next load would run that one-time reset again.
+    const marker = localStorage.getItem('robin.cacheResetId');
+    if (marker !== null) keep['robin.cacheResetId'] = marker;
     if (keepAuth) for (const k of AUTH_KEYS) { const v = localStorage.getItem(k); if (v !== null) keep[k] = v; }
     localStorage.clear();
     for (const [k, v] of Object.entries(keep)) localStorage.setItem(k, v);
