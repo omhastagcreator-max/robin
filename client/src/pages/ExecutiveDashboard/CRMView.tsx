@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import * as api from '@/api';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 // Reusing Robin's existing, real, tested onboarding modal and AI-brief
 // button — both already wired to the live API (cwCreateWorkflow /
 // aiBriefAllProjects) — instead of re-implementing them as fake buttons.
@@ -50,6 +51,12 @@ function currentStageLabel(c: ClientRow): string {
 
 export function CRMView() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  // Oct 2026 — role-scoped CRM: employee/workroom users (except Om, who
+  // has canEditAllClients) only get their own assigned services back from
+  // the server. Hide the org-wide extras (all-projects AI brief, deal
+  // value, "mine" toggle) so nothing beyond their own tasks shows here.
+  const roleScoped = ['employee', 'workroom'].includes(user?.role || '') && !user?.canEditAllClients;
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -122,14 +129,16 @@ export function CRMView() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-slate-800/80">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <i className="fa-solid fa-folder-open text-blue-500"></i> Client project pipeline
+            <i className="fa-solid fa-folder-open text-blue-500"></i> {roleScoped ? 'My client tasks' : 'Client project pipeline'}
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">Live overview of active agency projects, current stage, and verified audit logs.</p>
+          <p className="text-xs text-slate-400 mt-0.5">{roleScoped
+            ? 'Only the clients and stages assigned to you. See the Decision Tree for where every client is in the pipeline.'
+            : 'Live overview of active agency projects, current stage, and verified audit logs.'}</p>
         </div>
         <div className="flex items-center gap-3">
           {/* Real Gemini-backed brief covering every active project — same
               component the old Client Pipeline page used. */}
-          <AllProjectsBriefButton />
+          {!roleScoped && <AllProjectsBriefButton />}
           <button onClick={() => setAddOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition shadow-md shadow-emerald-600/20 flex items-center gap-2">
             <i className="fa-solid fa-plus"></i> Add client
           </button>
@@ -153,13 +162,13 @@ export function CRMView() {
 
         <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
           <div className="flex flex-wrap items-center gap-2">
-            <button
+            {!roleScoped && <button
               onClick={() => setFocusedOnly(v => !v)}
               title="Show only clients you created or are assigned a service on"
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition ${focusedOnly ? 'bg-blue-600 text-white' : 'bg-slate-950 border border-slate-800 text-slate-300 hover:text-white'}`}
             >
               <i className="fa-solid fa-crosshairs mr-1.5"></i> {focusedOnly ? 'Focused Pipeline · Mine' : 'Focused Pipeline'}
-            </button>
+            </button>}
             <div className="h-4 w-px bg-slate-800 mx-1"></div>
             <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-300">
               <span className="text-slate-500 font-semibold uppercase text-[10px]">SORT</span>
@@ -174,7 +183,7 @@ export function CRMView() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-400 font-mono">{filteredClients.length} active accounts</span>
+            <span className="text-xs text-slate-400 font-mono">{filteredClients.length} {roleScoped ? 'assigned to you' : 'active accounts'}</span>
           </div>
         </div>
       </div>
@@ -259,16 +268,16 @@ export function CRMView() {
                 <th className="p-3.5">Brand / Client</th>
                 <th className="p-3.5">Status</th>
                 <th className="p-3.5">Current Stage / Module</th>
-                <th className="p-3.5">Deal Value</th>
+                {!roleScoped && <th className="p-3.5">Deal Value</th>}
                 <th className="p-3.5">Last CRM Audit Log</th>
                 <th className="p-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-slate-300">
               {loading ? (
-                <tr><td colSpan={6} className="p-6 text-center text-slate-500">Loading clients...</td></tr>
+                <tr><td colSpan={roleScoped ? 5 : 6} className="p-6 text-center text-slate-500">Loading clients...</td></tr>
               ) : filteredClients.length === 0 ? (
-                <tr><td colSpan={6} className="p-6 text-center text-slate-500">No clients found.</td></tr>
+                <tr><td colSpan={roleScoped ? 5 : 6} className="p-6 text-center text-slate-500">No clients found.</td></tr>
               ) : filteredClients.map((client) => {
                 const meta = HEALTH_META[client.health || ''] || { label: 'Active', badge: 'bg-slate-800 text-slate-300' };
                 return (
@@ -283,9 +292,9 @@ export function CRMView() {
                       <span className={`px-2 py-0.5 rounded ${meta.badge}`}>{meta.label}</span>
                     </td>
                     <td className="p-3.5">{currentStageLabel(client)}</td>
-                    <td className="p-3.5 font-semibold text-emerald-400">
+                    {!roleScoped && <td className="p-3.5 font-semibold text-emerald-400">
                       {client.totalAmount ? `₹${client.totalAmount.toLocaleString('en-IN')}` : '—'}
-                    </td>
+                    </td>}
                     <td className="p-3.5 text-slate-400 font-mono text-[11px]">
                       {client.lastUpdate?.detail || client.lastUpdate?.action || 'No activity logged yet'}
                     </td>

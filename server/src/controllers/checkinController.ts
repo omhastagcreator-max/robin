@@ -71,7 +71,13 @@ export async function getMyCheckinToday(req: AuthRequest, res: Response): Promis
       })(),
     ]);
 
-    const brandsForMorning = brands
+    // Oct 2026 — owner ask: "remove meta ads confirmation from Om's
+    // dashboard". Om (the canEditAllClients user) no longer gets the
+    // per-brand "Daily Meta pulse" step in the morning check-in — an empty
+    // list makes the modal skip straight to today's tasks, and the submit
+    // sends brands: [] which the POST handler already accepts.
+    const skipMetaPulse = !!req.user!.canEditAllClients;
+    const brandsForMorning = skipMetaPulse ? [] : brands
       .filter(b => Array.isArray((b as any).services) && (b as any).services.some((s: any) => String(s.assignedTo) === String(userId)))
       .map(b => ({
         clientWorkflowId: String((b as any)._id),

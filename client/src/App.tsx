@@ -13,6 +13,7 @@ const UpdatePassword    = lazy(() => import('@/pages/UpdatePassword'));
 const WorkRoom          = lazy(() => import('@/pages/WorkRoom'));
 const ProfilePage       = lazy(() => import('@/pages/ProfilePage'));
 const AdminLeaves       = lazy(() => import('@/pages/AdminLeaves'));
+const LeavesPage        = lazy(() => import('@/pages/LeavesPage'));
 const AdminAttendance   = lazy(() => import('@/pages/AdminAttendance'));
 const AdminCrashLogs    = lazy(() => import('@/pages/AdminCrashLogs'));
 const ClientWorkspacePage      = lazy(() => import('@/pages/ClientWorkspacePage'));
@@ -134,7 +135,13 @@ function AppRoutes() {
           {/* Employee / Sales / Admin — internal staff only.
               Clients hitting these get bounced to /client. */}
           <Route path="/workroom"         element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><WorkRoom /></E></ProtectedRoute>} />
-          <Route path="/command-center"   element={<ProtectedRoute requiredRole={['admin', 'sales']}><E><DecisionTreeView /></E></ProtectedRoute>} />
+          {/* Oct 2026 — Decision Tree opened to every staff role: it now
+              shows the whole client pipeline ("where is each client
+              stuck"), read-only for anyone who isn't the stage owner. */}
+          <Route path="/command-center"   element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><DecisionTreeView /></E></ProtectedRoute>} />
+          {/* Oct 2026 — apply-for-leave form, reached from "Approvals" in
+              the sidebar. Every staff role can apply. */}
+          <Route path="/leaves"           element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><LeavesPage /></E></ProtectedRoute>} />
           {/* Team Pulse — Om + admin dashboard of every teammate's
               morning / midday / evening checkin. Route gate allows
               admin + sales + employee; the server route further checks

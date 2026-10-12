@@ -5,7 +5,7 @@ import {
   createWorkflow, listWorkflows, getWorkflow, toggleChecklist, deleteWorkflow,
   completeService, returnService, addNote, reassignService, getServiceTemplates,
   blockWorkflow, unblockWorkflow, listWorkflowActivity,
-  bulkWorkflowAction, setServiceEta, updateWorkflowDetails,
+  bulkWorkflowAction, setServiceEta, updateWorkflowDetails, pipelineOverview,
 } from '../controllers/clientWorkflowController';
 import { getPerformance, upsertPerformance } from '../controllers/clientPerformanceController';
 
@@ -23,6 +23,11 @@ const STAFF = ['admin', 'employee', 'sales', 'workroom'] as const;
 
 // Templates (static — anyone internal can read)
 router.get('/templates', requireRole(...STAFF), getServiceTemplates);
+
+// Oct 2026 — read-only whole-pipeline map for the Decision Tree ("where is
+// each client stuck"). MUST be registered before '/:id' or Express would
+// treat 'pipeline-overview' as a workflow id.
+router.get('/pipeline-overview', requireRole(...STAFF), pipelineOverview);
 
 // List + search
 router.get('/',                  requireRole(...STAFF), listWorkflows);

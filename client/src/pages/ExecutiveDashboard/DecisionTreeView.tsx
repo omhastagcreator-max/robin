@@ -33,7 +33,55 @@ interface Workflow {
   totalAmount?: number;
   remaining?: number;
 }
-interface ClientOption { _id: string; clientName: string; clientPhone?: string; clientEmail?: string; }
+interface OverviewService {
+  _id: string; label: string; serviceType: string;
+  status: 'blocked' | 'pending' | 'in_progress' | 'done';
+  assigneeName: string; done: number; total: number; nextItem: string;
+  returnedReason: string; eta: string | null; overdue: boolean;
+}
+interface OverviewRow {
+  _id: string; clientName: string; healthLevel: string; ownerFlag: string;
+  priority: string; daysInactive: number; updatedAt?: string;
+  services: OverviewService[];
+  stuckAt: { stage: string; owner: string; reason: string; severity: 'blocked' | 'waiting' | 'active' | 'done' };
+}
+type ClientOption = OverviewRow;
+
+const SEVERITY_RANK: Record<string, number> = { blocked: 0, waiting: 1, active: 2, done: 3 };
+const SEVERITY_STYLE: Record<string, string> = {
+  blocked: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
+  waiting: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+  active:  'bg-blue-500/10 text-blue-400 border-blue-500/30',
+  done:    'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+};
+const SEVERITY_LABEL: Record<string, string> = { blocked: 'Stuck', waiting: 'Waiting', active: 'Moving', done: 'Complete' };
+const STAGE_CHIP: Record<string, string> = {
+  done:        'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+  in_progress: 'bg-blue-500/15 text-blue-300 border-blue-500/40',
+  pending:     'bg-slate-800 text-slate-400 border-slate-700',
+  blocked:     'bg-rose-500/15 text-rose-300 border-rose-500/40',
+};
+
+/** Read-only stage strip — one chip per service, coloured by status. */
+function StageStrip({ services }: { services: OverviewService[] }) {
+  if (!services.length) return <span className="text-slate-600">No stages</span>;
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {services.map((s, i) => (
+        <React.Fragment key={s._id}>
+          {i > 0 && <i className="fa-solid fa-chevron-right text-[8px] text-slate-600"></i>}
+          <span
+            title={`${s.label} — ${STATUS_LABEL[s.status] || s.status}${s.assigneeName ? ` · ${s.assigneeName}` : ''}${s.total ? ` · ${s.done}/${s.total}` : ''}`}
+            className={`px-1.5 py-0.5 rounded border text-[10px] font-medium whitespace-nowrap ${s.returnedReason || s.overdue ? STAGE_CHIP.blocked : STAGE_CHIP[s.status] || STAGE_CHIP.pending}`}
+          >
+            {s.status === 'done' && <i className="fa-solid fa-check mr-1"></i>}
+            {s.label}{s.total && s.status !== 'done' ? ` ${s.done}/${s.total}` : ''}
+          </span>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
 
 const STATUS_LABEL: Record<string, string> = {
   blocked: 'Blocked / Pending Dependency',
@@ -54,17 +102,35 @@ export function DecisionTreeView() {
 
   // Load the lightweight client directory once — powers both the gated
   // search box and the "Active Client Workspace" switcher.
-  useEffect(() => {
-    api.cwListWorkflows()
+  // Oct 2026 — the directory is now the org-wide pipeline overview (every
+  // staff role sees every client's stages + where it's stuck), since the
+  // CRM list itself is role-scoped.
+  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [boardFilter, setBoardFilter] = useState<'all' | 'blocked' | 'waiting' | 'active' | 'done'>('all');
+  const loadOverview = useCallback(() => {
+    api.cwPipelineOverview()
       .then((rows: ClientOption[]) => setClientOptions(Array.isArray(rows) ? rows : []))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setOverviewLoading(false));
   }, []);
+  useEffect(() => {
+    loadOverview();
+    const onChanged = () => loadOverview();
+    window.addEventListener('robin:data-changed', onChanged);
+    return () => window.removeEventListener('robin:data-changed', onChanged);
+  }, [loadOverview]);
 
+  // Full workflow (checklists, audit log) only loads for clients the user
+  // is allowed to work on. For anyone else the server answers 403 and we
+  // fall back to the read-only overview row — they still see exactly
+  // where the client is stuck, just can't tick another team's checklist.
+  const [readOnly, setReadOnly] = useState(false);
   const loadWorkflow = useCallback((id: string) => {
     setLoading(true);
     api.cwGetWorkflow(id)
-      .then((wf: Workflow) => { setWorkflow(wf); setSelectedClientId(id); })
+      .then((wf: Workflow) => { setWorkflow(wf); setReadOnly(false); setSelectedClientId(id); })
       .catch((err: any) => {
+        if (err?.response?.status === 403) { setWorkflow(null); setReadOnly(true); return; }
         toast.error(err?.response?.data?.error || 'Failed to load client from CRM.');
       })
       .finally(() => setLoading(false));
@@ -75,61 +141,150 @@ export function DecisionTreeView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClientId]);
 
+  // Enter in the board filter jumps straight into the first matching client.
   const onFetchClient = () => {
     const q = fetchQuery.trim().toLowerCase();
-    if (!q) { toast.error('Please enter a valid brand name or mobile number to fetch from CRM.'); return; }
-    const digits = q.replace(/\D/g, '');
-    const match = clientOptions.find(c =>
-      (c.clientName || '').toLowerCase().includes(q) ||
-      (digits.length >= 4 && (c.clientPhone || '').replace(/\D/g, '').includes(digits)) ||
-      (c.clientEmail || '').toLowerCase().includes(q)
-    );
-    if (!match) { toast.error(`No client matching "${fetchQuery}" found in CRM.`); return; }
-    toast.success(`Client match found for "${match.clientName}". Decision Tree unlocked.`);
+    if (!q) return;
+    const match = clientOptions.find(c => (c.clientName || '').toLowerCase().includes(q));
+    if (!match) { toast.error(`No client matching "${fetchQuery}".`); return; }
     setSelectedClientId(match._id);
   };
 
-  const onReturnToCRM = () => navigate('/clients/pipeline');
-
-  // ── Gated screen — no client picked yet ─────────────────────────────────
+  // ── Whole-pipeline board — no client picked yet ───────────────────────
   if (!selectedClientId) {
+    const counts = clientOptions.reduce((m, r) => { m[r.stuckAt.severity] = (m[r.stuckAt.severity] || 0) + 1; return m; }, {} as Record<string, number>);
+    const q = fetchQuery.trim().toLowerCase();
+    const rows = clientOptions
+      .filter(r => boardFilter === 'all' || r.stuckAt.severity === boardFilter)
+      .filter(r => !q || r.clientName.toLowerCase().includes(q) || r.stuckAt.owner.toLowerCase().includes(q) || r.stuckAt.stage.toLowerCase().includes(q))
+      .sort((a, b) => (SEVERITY_RANK[a.stuckAt.severity] - SEVERITY_RANK[b.stuckAt.severity]) || a.clientName.localeCompare(b.clientName));
+    const FILTERS: Array<{ k: typeof boardFilter; label: string }> = [
+      { k: 'all', label: `All · ${clientOptions.length}` },
+      { k: 'blocked', label: `Stuck · ${counts.blocked || 0}` },
+      { k: 'waiting', label: `Waiting · ${counts.waiting || 0}` },
+      { k: 'active', label: `Moving · ${counts.active || 0}` },
+      { k: 'done', label: `Complete · ${counts.done || 0}` },
+    ];
     return (
-      <div className="flex-1 flex items-center justify-center p-6 animate-in fade-in duration-300">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-8 text-center shadow-2xl space-y-6">
-          <div className="w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 flex items-center justify-center text-2xl mx-auto shadow-inner">
-            <i className="fa-solid fa-lock"></i>
-          </div>
+      <div className="flex-1 flex flex-col min-h-0 p-6 space-y-4 overflow-y-auto animate-in fade-in duration-300">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
           <div>
-            <h3 className="text-lg font-bold text-white tracking-tight">Input and fetch client details from CRM first</h3>
-            <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-              Decision Tree (DT) workflows require a verified active client context to enforce mandatory stage gates and compliance rules.
-            </p>
+            <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+              <i className="fa-solid fa-diagram-project text-blue-500"></i> Whole client pipeline
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">Every active client, every stage — and exactly where each one is stuck. Click a client for its full decision tree.</p>
           </div>
-
-          <div className="space-y-3 pt-2">
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-slate-400">
-                <i className="fa-solid fa-magnifying-glass"></i>
-              </span>
-              <input
-                type="text"
-                value={fetchQuery}
-                onChange={(e) => setFetchQuery(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') onFetchClient(); }}
-                placeholder="Enter registered brand name or mobile number (e.g. Woodsify)..."
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
-              />
-            </div>
-            <div className="flex items-center gap-3">
-              <button onClick={onFetchClient} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2.5 rounded-xl text-xs font-semibold transition shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2">
-                <i className="fa-solid fa-bolt"></i> Fetch & Unlock DT
-              </button>
-              <button onClick={onReturnToCRM} className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2.5 rounded-xl text-xs font-semibold transition border border-slate-700">
-                Return to CRM
-              </button>
-            </div>
+          <div className="relative w-full md:w-80">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-500"><i className="fa-solid fa-magnifying-glass text-xs"></i></span>
+            <input
+              type="text"
+              value={fetchQuery}
+              onChange={(e) => setFetchQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') onFetchClient(); }}
+              placeholder="Filter by client, stage or owner…"
+              className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+            />
           </div>
         </div>
+
+        <div className="flex flex-wrap gap-2">
+          {FILTERS.map(f => (
+            <button
+              key={f.k}
+              onClick={() => setBoardFilter(f.k)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${boardFilter === f.k ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white'}`}
+            >{f.label}</button>
+          ))}
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-950/80 text-slate-400 border-b border-slate-800 uppercase tracking-wider text-[10px]">
+                <tr>
+                  <th className="p-3">Client</th>
+                  <th className="p-3">Stuck at</th>
+                  <th className="p-3">Why</th>
+                  <th className="p-3">Owner</th>
+                  <th className="p-3 min-w-[280px]">Pipeline</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                {overviewLoading ? (
+                  <tr><td colSpan={5} className="p-6 text-center text-slate-500">Loading pipeline…</td></tr>
+                ) : rows.length === 0 ? (
+                  <tr><td colSpan={5} className="p-6 text-center text-slate-500">No clients match.</td></tr>
+                ) : rows.map(r => (
+                  <tr key={r._id} onClick={() => setSelectedClientId(r._id)} className="hover:bg-slate-800/40 cursor-pointer transition">
+                    <td className="p-3 font-semibold text-white whitespace-nowrap">
+                      {r.ownerFlag === 'critical' && <i className="fa-solid fa-circle text-[7px] text-rose-500 mr-1.5 align-middle"></i>}
+                      {r.clientName}
+                    </td>
+                    <td className="p-3">
+                      <span className={`px-2 py-0.5 rounded border text-[10.5px] font-semibold whitespace-nowrap ${SEVERITY_STYLE[r.stuckAt.severity]}`}>
+                        {SEVERITY_LABEL[r.stuckAt.severity]}
+                      </span>
+                      <span className="ml-2 text-white">{r.stuckAt.stage}</span>
+                    </td>
+                    <td className="p-3 text-slate-400">{r.stuckAt.reason || '—'}{r.daysInactive >= 5 ? ` · idle ${r.daysInactive}d` : ''}</td>
+                    <td className="p-3 whitespace-nowrap">{r.stuckAt.owner || <span className="text-slate-600">Unassigned</span>}</td>
+                    <td className="p-3"><StageStrip services={r.services} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const overviewRow = clientOptions.find(c => c._id === selectedClientId) || null;
+
+  // ── Read-only view — client the user doesn't work on ────────────────────
+  if (readOnly && !workflow) {
+    return (
+      <div className="flex-1 flex flex-col min-h-0 p-6 space-y-4 overflow-y-auto animate-in fade-in duration-300">
+        <div className="flex items-center justify-between gap-3">
+          <button onClick={() => { setSelectedClientId(null); setReadOnly(false); }} className="text-xs text-blue-400 hover:text-blue-300">
+            <i className="fa-solid fa-arrow-left mr-1.5"></i> Whole pipeline
+          </button>
+          <span className="px-2.5 py-1 rounded-md text-[10.5px] bg-slate-800 text-slate-300 border border-slate-700">
+            <i className="fa-solid fa-eye mr-1"></i> View only — not one of your stages
+          </span>
+        </div>
+        {!overviewRow ? (
+          <p className="text-sm text-slate-500">Client not found.</p>
+        ) : (
+          <>
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+              <h3 className="text-lg font-bold text-white">{overviewRow.clientName}</h3>
+              <p className="mt-2 text-xs text-slate-300">
+                <span className={`px-2 py-0.5 rounded border text-[10.5px] font-semibold mr-2 ${SEVERITY_STYLE[overviewRow.stuckAt.severity]}`}>{SEVERITY_LABEL[overviewRow.stuckAt.severity]}</span>
+                at <b className="text-white">{overviewRow.stuckAt.stage}</b>
+                {overviewRow.stuckAt.owner ? <> · owner <b className="text-white">{overviewRow.stuckAt.owner}</b></> : null}
+                {overviewRow.stuckAt.reason ? <> · {overviewRow.stuckAt.reason}</> : null}
+              </p>
+            </div>
+            <div className="space-y-2">
+              {overviewRow.services.map(s => (
+                <div key={s._id} className={`p-3 rounded-lg border text-xs ${s.returnedReason || s.overdue ? STAGE_CHIP.blocked : STAGE_CHIP[s.status] || STAGE_CHIP.pending}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold">{s.label}</span>
+                    <span className="text-[10.5px] opacity-80">{STATUS_LABEL[s.status] || s.status}</span>
+                  </div>
+                  <div className="mt-1 text-[11px] opacity-80">
+                    {s.assigneeName || 'Unassigned'}
+                    {s.total ? ` · ${s.done}/${s.total} checklist items` : ''}
+                    {s.status !== 'done' && s.nextItem ? ` · next: ${s.nextItem}` : ''}
+                    {s.overdue ? ' · past ETA' : ''}
+                    {s.returnedReason ? ` · returned: "${s.returnedReason}"` : ''}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -216,6 +371,9 @@ export function DecisionTreeView() {
               <option key={c._id} value={c._id}>{c.clientName}</option>
             ))}
           </select>
+          <button onClick={() => { setSelectedClientId(null); setWorkflow(null); }} className="text-xs text-slate-300 hover:text-white">
+            <i className="fa-solid fa-arrow-left mr-1"></i> Whole pipeline
+          </button>
           <button onClick={() => navigate(`/clients/pipeline/${workflow._id}`)} className="text-xs text-blue-400 hover:text-blue-300 underline underline-offset-2">
             Open full client workspace
           </button>

@@ -10,12 +10,12 @@ router.use(authMiddleware);
 
 // All internal staff (admin/employee/sales) can apply / view their own /
 // cancel their own.
-router.post('/',                  requireRole('admin', 'employee', 'sales'), createLeave);
-router.get('/mine',               requireRole('admin', 'employee', 'sales'), listMyLeaves);
-router.put('/:id/cancel',         requireRole('admin', 'employee', 'sales'), cancelLeave);
+router.post('/',                  requireRole('admin', 'employee', 'sales', 'workroom'), createLeave);
+router.get('/mine',               requireRole('admin', 'employee', 'sales', 'workroom'), listMyLeaves);
+router.put('/:id/cancel',         requireRole('admin', 'employee', 'sales', 'workroom'), cancelLeave);
 // "Are you working today?" flow when user clocks in despite an approved leave
-router.get('/mine-today',         requireRole('admin', 'employee', 'sales'), myLeaveToday);
-router.put('/mine-today/working', requireRole('admin', 'employee', 'sales'), setWorkingDespiteLeave);
+router.get('/mine-today',         requireRole('admin', 'employee', 'sales', 'workroom'), myLeaveToday);
+router.put('/mine-today/working', requireRole('admin', 'employee', 'sales', 'workroom'), setWorkingDespiteLeave);
 
 // Admin-only review actions
 router.get('/admin',              requireRole('admin'),                     listAdminLeaves);
@@ -26,6 +26,6 @@ router.put('/:id/reject',         requireRole('admin'),                     reje
 router.put('/:id/admin-edit',     requireRole('admin'),                     adminEditLeave);
 
 // Public-to-internal-staff: lightweight "who's on leave today" for badges
-router.get('/on-leave-today',     requireRole('admin', 'employee', 'sales'), onLeaveToday);
+router.get('/on-leave-today',     requireRole('admin', 'employee', 'sales', 'workroom'), onLeaveToday);
 
 export default router;

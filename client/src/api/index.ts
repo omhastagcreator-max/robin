@@ -230,6 +230,8 @@ export const assignTeamRoles  = () => api.post('/seed/assign-roles', {}).then(r 
 export const cwListWorkflows    = (params: { q?: string; mine?: '1' } = {}) =>
   api.get('/client-workflows', { params }).then(r => r.data);
 export const cwGetWorkflow      = (id: string) => api.get(`/client-workflows/${id}`).then(r => r.data);
+// Oct 2026 — read-only whole-pipeline map for the Decision Tree (every staff role).
+export const cwPipelineOverview = () => api.get('/client-workflows/pipeline-overview').then(r => r.data);
 // Aug 2026 — permanent delete. Server gates this to admin / canEditAllClients
 // (Om), NOT all staff. To merely take a client off the active board without
 // destroying anything, set operationalStatus to 'cancelled' or 'completed'

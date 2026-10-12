@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { dashboardForRole } from '@/components/ProtectedRoute';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import * as api from '@/api';
+import { RecoveryActions } from '@/components/shared/RecoveryActions';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
@@ -169,6 +170,12 @@ function LoginInner() {
               </div>
             </div>
           )}
+
+          {/* Oct 2026 — self-service recovery when login fails. */}
+          <div className="mt-6 pt-4 border-t border-border">
+            <p className="text-[11px] text-muted-foreground text-center mb-2">Trouble signing in?</p>
+            <RecoveryActions variant="light" />
+          </div>
 
           {/* Owner ask (June 2026): "remove the profiles from the landing
               page." The quick-access chip grid previously listed real

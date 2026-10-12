@@ -357,7 +357,7 @@ export async function updateWorkflowDetails(req: AuthRequest, res: Response): Pr
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
     if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
-    if (!canSeeWorkflow(wf, req.user!.id, req.user!.role)) {
+    if (!canSeeWorkflow(wf, req.user!.id, req.user!.role, req.user!.serviceScope || [], !!req.user!.canEditAllClients)) {
       res.status(403).json({ error: 'Not authorized to edit this client' });
       return;
     }
@@ -564,7 +564,15 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
     // (empty scope = unaffected) so it can't reintroduce the old
     // "Client CRM is blank" bug for anyone who isn't explicitly scoped.
     const scope = req.user!.serviceScope || [];
-    const isScoped = isInternalStaff && role !== 'admin' && role !== 'sales' && scope.length > 0;
+    // Oct 2026 — owner ask: "CRM pipeline should be role-individual — they
+    // can only see their own role-wise tasks, nothing else from the CRM".
+    // Every employee/workroom user is now scoped (not just those with an
+    // explicit serviceScope): they see only clients where THEY hold an
+    // assigned service, and only those services. admin/sales and Om
+    // (canEditAllClients) keep full visibility. The whole-pipeline view
+    // ("where is each client stuck") lives in the Decision Tree via
+    // GET /client-workflows/pipeline-overview instead.
+    const isScoped = isRoleScopedUser(req.user!);
     if (!isInternalStaff) {
       // Defensive fallback only — route-level requireRole() should already
       // block anyone who isn't internal staff from reaching this handler.
@@ -573,7 +581,9 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
         { createdBy: req.user!.id },
       ]});
     } else if (isScoped) {
-      andGroups.push({ services: { $elemMatch: { assignedTo: req.user!.id, serviceType: { $in: scope } } } });
+      andGroups.push({ services: { $elemMatch: scope.length
+        ? { assignedTo: req.user!.id, serviceType: { $in: scope } }
+        : { assignedTo: req.user!.id } } });
     } else if (mine === '1') {
       filter['services.assignedTo'] = req.user!.id;
     }
@@ -638,13 +648,20 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
  */
 function applyServiceScope(wf: any, userId: string, scope: string[]): any {
   const visibleServices = (wf.services || []).filter(
-    (s: any) => scope.includes(s.serviceType) && s.assignedTo === userId,
+    (s: any) => String(s.assignedTo) === String(userId) && (scope.length === 0 || scope.includes(s.serviceType)),
   );
+  const visibleTypes = new Set(visibleServices.map((s: any) => s.serviceType));
   const {
     totalAmount, advanceReceived, remaining, nextPaymentAmount, nextPaymentDate,
     nextPaymentCondition, metaAdsFeeModel, paymentStatus, ...rest
   } = wf;
-  return { ...rest, services: visibleServices, scopeRestricted: true };
+  // Activity: keep only entries about the user's own services (plus
+  // general client-level notes with no serviceType) so other teams' work
+  // doesn't leak through the audit log.
+  const activity = Array.isArray(rest.activity)
+    ? rest.activity.filter((a: any) => !a.serviceType || visibleTypes.has(a.serviceType))
+    : rest.activity;
+  return { ...rest, activity, services: visibleServices, scopeRestricted: true };
 }
 
 /**
@@ -662,11 +679,21 @@ function applyServiceScope(wf: any, userId: string, scope: string[]): any {
  * Centralised so getWorkflow / addNote / returnService / etc. all enforce
  * the same rule. Returns true if access is allowed.
  */
-function canSeeWorkflow(wf: any, userId: string, role: string, scope: string[] = []): boolean {
+/**
+ * Oct 2026 — true for employee/workroom users who are NOT Om
+ * (canEditAllClients). These users only see their own assigned services
+ * in the CRM. See listWorkflows for the owner ask.
+ */
+function isRoleScopedUser(u: { role: string; canEditAllClients?: boolean }): boolean {
+  return ['employee', 'workroom'].includes(u.role) && !u.canEditAllClients;
+}
+
+function canSeeWorkflow(wf: any, userId: string, role: string, scope: string[] = [], canEditAll = false): boolean {
   if (role === 'admin' || role === 'sales') return true;
   if (['employee', 'workroom'].includes(role)) {
-    if (scope.length === 0) return true;
-    return (wf.services || []).some((s: any) => s.assignedTo === userId && scope.includes(s.serviceType));
+    if (canEditAll) return true;
+    return (wf.services || []).some((s: any) =>
+      String(s.assignedTo) === String(userId) && (scope.length === 0 || scope.includes(s.serviceType)));
   }
   if (wf.createdBy === userId) return true;
   return (wf.services || []).some((s: any) => s.assignedTo === userId);
@@ -681,11 +708,11 @@ export async function getWorkflow(req: AuthRequest, res: Response): Promise<void
     if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
     const scope = req.user!.serviceScope || [];
     // AuthZ: stop employees from URL-guessing into workflows they don't own.
-    if (!canSeeWorkflow(wf, req.user!.id, req.user!.role, scope)) {
+    if (!canSeeWorkflow(wf, req.user!.id, req.user!.role, scope, !!req.user!.canEditAllClients)) {
       res.status(403).json({ error: 'You do not have access to this client' });
       return;
     }
-    const isScoped = ['employee', 'workroom'].includes(req.user!.role) && scope.length > 0;
+    const isScoped = isRoleScopedUser(req.user!);
 
     // Hydrate assignee names on services AND activity log actor names so
     // the UI doesn't show user IDs as avatars.
@@ -925,7 +952,7 @@ export async function returnService(req: AuthRequest, res: Response): Promise<vo
     // AuthZ: only people who can see this workflow can return one of its
     // services. Admin/sales always, employees only when they own at least
     // one service on this client.
-    if (!canSeeWorkflow(wf, req.user!.id, req.user!.role)) {
+    if (!canSeeWorkflow(wf, req.user!.id, req.user!.role, req.user!.serviceScope || [], !!req.user!.canEditAllClients)) {
       res.status(403).json({ error: 'You do not have access to this client' });
       return;
     }
@@ -974,7 +1001,7 @@ export async function addNote(req: AuthRequest, res: Response): Promise<void> {
     const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId });
     if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
     // AuthZ: prevent spam-notes from random employees in the org.
-    if (!canSeeWorkflow(wf, req.user!.id, req.user!.role)) {
+    if (!canSeeWorkflow(wf, req.user!.id, req.user!.role, req.user!.serviceScope || [], !!req.user!.canEditAllClients)) {
       res.status(403).json({ error: 'You do not have access to this client' });
       return;
     }
@@ -1331,7 +1358,7 @@ export async function bulkWorkflowAction(req: AuthRequest, res: Response): Promi
     const notifyTargets = new Set<string>();
 
     for (const wf of wfs) {
-      if (!canSeeWorkflow(wf, req.user!.id, req.user!.role)) {
+      if (!canSeeWorkflow(wf, req.user!.id, req.user!.role, req.user!.serviceScope || [], !!req.user!.canEditAllClients)) {
         skipped++;
         continue;
       }
@@ -1401,4 +1428,108 @@ export async function bulkWorkflowAction(req: AuthRequest, res: Response): Promi
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
+}
+
+// ── Whole-pipeline overview (Decision Tree) ──────────────────────────────
+/**
+ * GET /api/client-workflows/pipeline-overview
+ *
+ * Oct 2026 — owner ask: "in Decision Tree they can see the whole client
+ * pipeline — where is the client stuck". The CRM list is now role-scoped
+ * (employees see only their own services), so the Decision Tree needs its
+ * own read-only, org-wide view. Open to every internal staff role.
+ *
+ * Returns, per active client: every service stage with its status,
+ * owner name and checklist progress, plus a computed `stuckAt` (the stage
+ * the client is currently held at, and why). Deliberately NO financial
+ * fields, contact details or activity log — this is a "where is it stuck"
+ * map, not a second copy of the CRM.
+ */
+export async function pipelineOverview(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const orgId = await getOrgId(req.user!.id);
+    if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
+
+    const list = await ClientWorkflow.find({
+      organizationId: orgId,
+      operationalStatus: { $nin: ['completed', 'cancelled'] },
+    })
+      .select('clientName services operationalStatus healthLevel ownerFlag blockerType blockerReason blockedSince daysInactive delayCause eta priority updatedAt')
+      .sort({ clientName: 1 })
+      .lean();
+
+    const ids = new Set<string>();
+    for (const wf of list as any[]) for (const s of wf.services || []) if (s.assignedTo) ids.add(String(s.assignedTo));
+    const users = ids.size ? await User.find({ _id: { $in: Array.from(ids) } }).select('name email').lean() : [];
+    const nameById = new Map(users.map((u: any) => [String(u._id), u.name || u.email || '']));
+
+    const now = Date.now();
+    const rows = (list as any[]).map(wf => {
+      const services = (wf.services || []).map((s: any) => {
+        const checklist = s.checklist || [];
+        return {
+          _id: String(s._id),
+          label: s.label,
+          serviceType: s.serviceType,
+          status: s.status,
+          assigneeName: s.assignedTo ? nameById.get(String(s.assignedTo)) || '' : '',
+          done: checklist.filter((c: any) => c.done).length,
+          total: checklist.length,
+          nextItem: (checklist.find((c: any) => !c.done) || {}).text || '',
+          returnedReason: s.returnedReason || '',
+          eta: s.eta || null,
+          overdue: !!(s.eta && s.status !== 'done' && new Date(s.eta).getTime() < now),
+        };
+      });
+
+      // Where is it stuck? Priority: explicit client-level blocker →
+      // a blocked/returned service → the active (in-progress) stage →
+      // the first pending stage. All done → not stuck.
+      let stuckAt: { stage: string; owner: string; reason: string; severity: 'blocked' | 'waiting' | 'active' | 'done' };
+      const blockedSvc = services.find((s: any) => s.status === 'blocked' || s.returnedReason);
+      const activeSvc  = services.find((s: any) => s.status === 'in_progress') || services.find((s: any) => s.status === 'pending');
+      if (wf.blockerType || wf.blockerReason) {
+        const svc = blockedSvc || activeSvc;
+        stuckAt = {
+          stage: svc?.label || 'Client level',
+          owner: svc?.assigneeName || '',
+          reason: wf.blockerReason || String(wf.blockerType).replace(/_/g, ' '),
+          severity: 'blocked',
+        };
+      } else if (blockedSvc) {
+        stuckAt = {
+          stage: blockedSvc.label,
+          owner: blockedSvc.assigneeName,
+          reason: blockedSvc.returnedReason || 'Waiting on an earlier stage',
+          severity: blockedSvc.returnedReason ? 'blocked' : 'waiting',
+        };
+      } else if (activeSvc) {
+        stuckAt = {
+          stage: activeSvc.label,
+          owner: activeSvc.assigneeName,
+          reason: activeSvc.overdue
+            ? 'Past its ETA'
+            : activeSvc.nextItem ? `Next: ${activeSvc.nextItem}` : 'In progress',
+          severity: activeSvc.overdue ? 'blocked' : 'active',
+        };
+      } else {
+        stuckAt = { stage: services.length ? 'All stages complete' : 'No stages set up', owner: '', reason: '', severity: 'done' };
+      }
+
+      return {
+        _id: String(wf._id),
+        clientName: wf.clientName || 'Client',
+        operationalStatus: wf.operationalStatus || 'in_progress',
+        healthLevel: wf.healthLevel || 'green',
+        ownerFlag: wf.ownerFlag || '',
+        priority: wf.priority || 'medium',
+        daysInactive: wf.daysInactive || 0,
+        blockedSince: wf.blockedSince || null,
+        updatedAt: wf.updatedAt,
+        services,
+        stuckAt,
+      };
+    });
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }

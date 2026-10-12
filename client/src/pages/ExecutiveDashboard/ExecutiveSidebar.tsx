@@ -65,12 +65,19 @@ export function ExecutiveSidebar() {
             </Link>
           )}
 
-          {can(['admin']) && (
-            <Link to="/admin/leaves" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/admin/leaves') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
-              <i className="fa-solid fa-stamp w-5 text-center text-amber-400"></i>
-              <span className="truncate">Approvals</span>
-            </Link>
-          )}
+          {/* Oct 2026 — Approvals for everyone: admins land on the review
+              queue (which has an "Apply for leave" button); everyone else
+              lands straight on the apply-for-leave form + their requests. */}
+          {can(['admin', 'employee', 'sales', 'workroom']) && (() => {
+            const to = can(['admin']) ? '/admin/leaves' : '/leaves';
+            const active = isActive('/admin/leaves') || isActive('/leaves');
+            return (
+              <Link to={to} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${active ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+                <i className="fa-solid fa-stamp w-5 text-center text-amber-400"></i>
+                <span className="truncate">{can(['admin']) ? 'Approvals' : 'Approvals · Apply leave'}</span>
+              </Link>
+            );
+          })()}
 
           {can(['admin']) && (
             <Link to="/admin/crash-logs" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/admin/crash-logs') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>

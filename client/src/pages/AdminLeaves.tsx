@@ -6,6 +6,7 @@ import {
   ClipboardList, BarChart3, Calendar,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { Link } from 'react-router-dom';
 import * as api from '@/api';
 import { toast } from 'sonner';
 
@@ -167,13 +168,23 @@ export default function AdminLeaves() {
   return (
     <AppLayout requiredRole="admin">
       <div className="max-w-5xl mx-auto space-y-5 page-transition-enter">
-        <div className="pb-4 mb-1 border-b border-border">
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <CalendarOff className="h-6 w-6 text-primary" /> Leaves
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Review pending applications, or switch to Report for per-employee usage.
-          </p>
+        <div className="pb-4 mb-1 border-b border-border flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <CalendarOff className="h-6 w-6 text-primary" /> Leaves
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Review pending applications, or switch to Report for per-employee usage.
+            </p>
+          </div>
+          {/* Oct 2026 — owner ask: "in Approvals there should be an option
+              to apply for leave". Opens the existing apply form (LeavesPage). */}
+          <Link
+            to="/leaves"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 transition"
+          >
+            <Calendar className="h-3.5 w-3.5" /> Apply for leave
+          </Link>
         </div>
 
         {/* Tab toggle */}

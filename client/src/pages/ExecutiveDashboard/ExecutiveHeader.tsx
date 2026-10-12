@@ -3,6 +3,7 @@ import { useSession } from '@/hooks/useSession';
 import { useAuth } from '@/contexts/AuthContext';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { toast } from 'sonner';
+import { RecoveryActions } from '@/components/shared/RecoveryActions';
 
 const formatTime = (ms: number) => {
   const totalSeconds = Math.floor(ms / 1000);
@@ -85,6 +86,10 @@ export function ExecutiveHeader() {
 
       {/* Log In / Log Out Toggle Button */}
       <div className="flex items-center gap-3">
+        {/* Oct 2026 — Refresh / Clear cache / Restart / Sign out. The
+            red button next to it only ends the WORK DAY; "Sign out"
+            here signs out of the account. */}
+        <RecoveryActions variant="dark" />
         <button 
           onClick={handleToggleLogin} 
           className={isLogged 
@@ -93,7 +98,7 @@ export function ExecutiveHeader() {
           }
         >
           {isLogged ? (
-            <><i className="fa-solid fa-right-from-bracket"></i> Log out</>
+            <><i className="fa-solid fa-right-from-bracket"></i> End day</>
           ) : (
             <><i className="fa-solid fa-right-to-bracket"></i> Log in</>
           )}
