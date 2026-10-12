@@ -162,6 +162,9 @@ export default function WorkroomHome() {
                   of the page so cross-team handoffs aren't missed. */}
               <PendingAcceptanceBanner />
 
+              {/* Team incentives — quiet one-liner, expands on click (Oct 2026). */}
+              <IncentivesStrip />
+
               {/* My work desk — assigned client stages + tasks, updatable in
                   place. Shows as "Creative desk" for design/video (Beant). */}
               <MyWorkDesk />
@@ -177,9 +180,6 @@ export default function WorkroomHome() {
                   employee sees when they sit down. Auto-hides when no
                   plan has been set for the current week. */}
               <DayPlanTable />
-
-              {/* Team incentives — quiet one-liner, expands on click (Oct 2026). */}
-              <IncentivesStrip />
 
               {loading && !snap ? (
                 <SkeletonBlock />

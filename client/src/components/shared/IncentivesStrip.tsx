@@ -33,12 +33,12 @@ const monthLabel = (m: string) => {
   return new Date(Date.UTC(y, mo - 1, 1)).toLocaleString('en-IN', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 };
 
-export function IncentivesStrip() {
+export function IncentivesStrip({ defaultOpen = false }: { defaultOpen?: boolean } = {}) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || ((user as any)?.roles || []).includes('admin');
   const [month, setMonth] = useState(thisMonth());
   const [data, setData] = useState<Data | null>(null);
-  const [open, setOpen] = useState<boolean>(() => { try { return localStorage.getItem(OPEN_KEY) === '1'; } catch { return false; } });
+  const [open, setOpen] = useState<boolean>(() => { if (defaultOpen) return true; try { return localStorage.getItem(OPEN_KEY) === '1'; } catch { return false; } });
   const [expanded, setExpanded] = useState<string | null>(null);
   const [form, setForm] = useState({ userId: '', amount: '', reason: '' });
   const [saving, setSaving] = useState(false);

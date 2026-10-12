@@ -14,6 +14,7 @@ const WorkRoom          = lazy(() => import('@/pages/WorkRoom'));
 const ProfilePage       = lazy(() => import('@/pages/ProfilePage'));
 const AdminLeaves       = lazy(() => import('@/pages/AdminLeaves'));
 const LeavesPage        = lazy(() => import('@/pages/LeavesPage'));
+const IncentivesPage    = lazy(() => import('@/pages/IncentivesPage'));
 const AdminAttendance   = lazy(() => import('@/pages/AdminAttendance'));
 const AdminCrashLogs    = lazy(() => import('@/pages/AdminCrashLogs'));
 const ClientWorkspacePage      = lazy(() => import('@/pages/ClientWorkspacePage'));
@@ -141,6 +142,7 @@ function AppRoutes() {
           <Route path="/command-center"   element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><DecisionTreeView /></E></ProtectedRoute>} />
           {/* Oct 2026 — apply-for-leave form, reached from "Approvals" in
               the sidebar. Every staff role can apply. */}
+          <Route path="/incentives"       element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><IncentivesPage /></E></ProtectedRoute>} />
           <Route path="/leaves"           element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><LeavesPage /></E></ProtectedRoute>} />
           {/* Team Pulse — Om + admin dashboard of every teammate's
               morning / midday / evening checkin. Route gate allows

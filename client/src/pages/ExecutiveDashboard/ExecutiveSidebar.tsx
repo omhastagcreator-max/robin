@@ -79,6 +79,13 @@ export function ExecutiveSidebar() {
             );
           })()}
 
+          {can(['admin', 'employee', 'sales', 'workroom']) && (
+            <Link to="/incentives" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/incentives') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+              <i className="fa-solid fa-indian-rupee-sign w-5 text-center text-emerald-400"></i>
+              <span className="truncate">Incentives</span>
+            </Link>
+          )}
+
           {can(['admin']) && (
             <Link to="/admin/crash-logs" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/admin/crash-logs') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
               <i className="fa-solid fa-code-branch w-5 text-center text-cyan-400"></i>

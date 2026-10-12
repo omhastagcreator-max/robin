@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
-  Palette, Clapperboard, Briefcase, CheckSquare, Square, CalendarClock, Send, Loader2,
-  PackageCheck, Play, Check, Ban, ExternalLink,
+  Palette, Briefcase, CheckSquare, Square, CalendarClock, Send, Loader2,
+  PackageCheck, Play, Check, ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import * as api from '@/api';
@@ -47,6 +47,8 @@ export function MyWorkDesk() {
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [showAllTasks, setShowAllTasks] = useState(false);
 
   const userTeams = [user?.team, ...(user?.teams || [])].filter(Boolean) as string[];
 
@@ -115,91 +117,97 @@ export function MyWorkDesk() {
   if (services.length === 0 && tasks.length === 0) return null;
 
   const Icon = isCreative ? Palette : Briefcase;
+  // Tasks: most urgent first; show 5 unless expanded.
+  const sortedTasks = [...tasks].sort((a, b) => {
+    const da = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+    const db = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+    return da - db;
+  });
+  const visibleTasks = showAllTasks ? sortedTasks : sortedTasks.slice(0, 5);
+
   return (
-    <section className="rounded-2xl border border-border bg-card overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
-        <Icon className="h-4 w-4 text-primary" />
-        <h2 className="text-[13px] font-semibold">{isCreative ? 'Creative desk — designs & videos' : 'My work desk'}</h2>
+    <section className="rounded-2xl border border-border bg-card overflow-hidden text-[12.5px]">
+      <div className="px-4 py-2 border-b border-border flex items-center gap-2">
+        <Icon className="h-3.5 w-3.5 text-primary" />
+        <h2 className="text-[13px] font-semibold">{isCreative ? 'Creative desk' : 'My work desk'}</h2>
         <span className="text-[11px] text-muted-foreground">{services.length} stage{services.length === 1 ? '' : 's'} · {tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
-        <span className="ml-auto text-[10.5px] text-muted-foreground hidden sm:inline">Update here — CRM & Decision Tree sync instantly</span>
       </div>
 
       {sorted.length > 0 && (
-        <ul className="divide-y divide-border">
+        <ul className="divide-y divide-border/70">
           {sorted.map(s => {
             const done = s.checklist.filter(c => c.done).length;
             const total = s.checklist.length;
             const allTicked = total > 0 && done === total;
-            const SIcon = s.serviceType === 'video_editing' ? Clapperboard : s.serviceType === 'graphic_design' ? Palette : Briefcase;
             const blocked = s.status === 'blocked';
+            const isOpen = openId === s._id;
+            const remaining = s.checklist.map((c, i) => ({ ...c, i })).filter(c => !c.done);
+            // One status chip only — the most important thing about this stage.
+            const chip = s.returnedReason ? { t: 'Returned', c: 'bg-rose-500/12 text-rose-600', tip: s.returnedReason }
+              : blocked ? { t: 'Waiting', c: 'bg-amber-500/12 text-amber-600', tip: 'Waiting on an earlier stage' }
+              : allTicked ? { t: 'Ready to deliver', c: 'bg-emerald-500/12 text-emerald-600', tip: '' }
+              : isOverdue(s.eta) ? { t: `Overdue · ${fmtDate(s.eta)}`, c: 'bg-rose-500/12 text-rose-600', tip: '' }
+              : !s.eta ? { t: 'No ETA', c: 'bg-amber-500/12 text-amber-600', tip: 'Set an ETA' }
+              : { t: `ETA ${fmtDate(s.eta)}`, c: 'bg-muted text-muted-foreground', tip: '' };
             return (
-              <li key={s._id} className="px-4 py-3 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <SIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="font-semibold text-[13px]">{s.clientName}</span>
-                  <span className="text-[12px] text-muted-foreground">· {s.label}</span>
-                  {blocked && <span className="text-[10.5px] px-1.5 py-0.5 rounded bg-amber-500/12 text-amber-700">Waiting on earlier stage</span>}
-                  {s.returnedReason && <span className="text-[10.5px] px-1.5 py-0.5 rounded bg-rose-500/12 text-rose-700">Returned: {s.returnedReason}</span>}
-                  <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">{done}/{total}</span>
-                  <Link to={`/clients/pipeline/${s.wid}`} className="text-muted-foreground hover:text-foreground" title="Open client"><ExternalLink className="h-3.5 w-3.5" /></Link>
-                </div>
-
-                {total > 0 && (
-                  <div className="h-1 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full bg-primary/70 transition-all" style={{ width: `${(done / total) * 100}%` }} />
-                  </div>
-                )}
-
-                {total > 0 && (
-                  <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1">
-                    {s.checklist.map((c, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        disabled={blocked || busy === `${s._id}-${i}`}
-                        onClick={() => tick(s, i)}
-                        className={`flex items-center gap-1.5 text-left text-[12px] disabled:opacity-50 ${c.done ? 'text-muted-foreground line-through' : 'text-foreground hover:text-primary'}`}
-                      >
-                        {busy === `${s._id}-${i}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : c.done ? <CheckSquare className="h-3.5 w-3.5 text-emerald-600" /> : <Square className="h-3.5 w-3.5" />}
-                        <span className="truncate">{c.text}</span>
+              <li key={s._id}>
+                <div className="px-4 py-2 flex items-center gap-2 cursor-pointer hover:bg-muted/40" onClick={() => setOpenId(isOpen ? null : s._id)}>
+                  <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                  <span className="font-semibold truncate">{s.clientName}</span>
+                  <span className="text-muted-foreground truncate hidden sm:inline">{s.label}</span>
+                  <span title={chip.tip} className={`shrink-0 text-[10.5px] px-1.5 py-0.5 rounded ${chip.c}`}>{chip.t}</span>
+                  <span className="ml-auto flex items-center gap-2 shrink-0">
+                    {total > 0 && (
+                      <span className="hidden sm:block w-16 h-1 rounded-full bg-muted overflow-hidden">
+                        <span className="block h-full bg-primary/70" style={{ width: `${(done / total) * 100}%` }} />
+                      </span>
+                    )}
+                    <span className="text-[11px] tabular-nums text-muted-foreground w-8 text-right">{done}/{total}</span>
+                    {allTicked && (
+                      <button type="button" onClick={(e) => { e.stopPropagation(); deliver(s); }} disabled={busy === `${s._id}-done`} className="h-6 px-2 inline-flex items-center gap-1 rounded-md bg-emerald-600 text-white text-[11px] font-medium hover:bg-emerald-500 disabled:opacity-50">
+                        {busy === `${s._id}-done` ? <Loader2 className="h-3 w-3 animate-spin" /> : <PackageCheck className="h-3 w-3" />} Deliver
                       </button>
-                    ))}
+                    )}
+                  </span>
+                </div>
+
+                {isOpen && (
+                  <div className="px-4 pb-3 pl-10 space-y-2">
+                    {s.returnedReason && <p className="text-[11.5px] text-rose-600">Returned: {s.returnedReason}</p>}
+                    {remaining.length > 0 ? (
+                      <div className="space-y-1">
+                        {remaining.map(c => (
+                          <button key={c.i} type="button" disabled={blocked || busy === `${s._id}-${c.i}`} onClick={() => tick(s, c.i)} className="flex items-center gap-1.5 text-left hover:text-primary disabled:opacity-50">
+                            {busy === `${s._id}-${c.i}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
+                            <span>{c.text}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : total > 0 ? <p className="text-muted-foreground">All items ticked.</p> : null}
+                    {done > 0 && (
+                      <p className="text-[11px] text-muted-foreground">
+                        <CheckSquare className="inline h-3 w-3 text-emerald-600 mr-1" />{done} done
+                        <Link to={`/clients/pipeline/${s.wid}`} className="ml-2 underline underline-offset-2 hover:text-foreground">open client</Link>
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <label className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <CalendarClock className="h-3.5 w-3.5" />
+                        <input type="date" defaultValue={toDateInput(s.eta)} onChange={(e) => setEta(s, e.target.value)} className="h-6 rounded border border-border bg-background px-1 text-[11px] text-foreground" />
+                      </label>
+                      <input
+                        value={notes[s._id] || ''}
+                        onChange={(e) => setNotes(n => ({ ...n, [s._id]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') postNote(s); }}
+                        placeholder="Post an update…"
+                        className="h-6 flex-1 min-w-[10rem] rounded border border-border bg-background px-2 text-[11.5px]"
+                      />
+                      <button type="button" onClick={() => postNote(s)} disabled={busy === `${s._id}-note` || !(notes[s._id] || '').trim()} className="h-6 w-6 inline-flex items-center justify-center rounded border border-border hover:bg-muted disabled:opacity-40" title="Post update">
+                        {busy === `${s._id}-note` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                      </button>
+                    </div>
                   </div>
                 )}
-
-                <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                  <label className={`inline-flex items-center gap-1.5 text-[11.5px] ${!s.eta ? 'text-amber-700' : isOverdue(s.eta) ? 'text-rose-700' : 'text-muted-foreground'}`}>
-                    <CalendarClock className="h-3.5 w-3.5" />
-                    {!s.eta ? 'Set ETA' : isOverdue(s.eta) ? 'Overdue' : 'ETA'}
-                    <input
-                      type="date"
-                      defaultValue={toDateInput(s.eta)}
-                      onChange={(e) => setEta(s, e.target.value)}
-                      className="h-7 rounded-md border border-border bg-background px-1.5 text-[11.5px] text-foreground"
-                    />
-                  </label>
-                  <div className="flex-1 min-w-[12rem] flex items-center gap-1">
-                    <input
-                      value={notes[s._id] || ''}
-                      onChange={(e) => setNotes(n => ({ ...n, [s._id]: e.target.value }))}
-                      onKeyDown={(e) => { if (e.key === 'Enter') postNote(s); }}
-                      placeholder="Post an update (e.g. 'draft 2 shared with client')"
-                      className="h-7 flex-1 rounded-md border border-border bg-background px-2 text-[11.5px]"
-                    />
-                    <button type="button" onClick={() => postNote(s)} disabled={busy === `${s._id}-note` || !(notes[s._id] || '').trim()} className="h-7 w-7 inline-flex items-center justify-center rounded-md border border-border hover:bg-muted disabled:opacity-40" title="Post update">
-                      {busy === `${s._id}-note` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => deliver(s)}
-                    disabled={!allTicked || busy === `${s._id}-done`}
-                    title={allTicked ? 'Mark this stage delivered' : 'Tick every item first'}
-                    className="h-7 px-2.5 inline-flex items-center gap-1 rounded-md bg-emerald-600 text-white text-[11.5px] font-medium hover:bg-emerald-500 disabled:opacity-35"
-                  >
-                    {busy === `${s._id}-done` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="h-3.5 w-3.5" />} Delivered
-                  </button>
-                </div>
               </li>
             );
           })}
@@ -208,26 +216,27 @@ export function MyWorkDesk() {
 
       {tasks.length > 0 && (
         <div className="border-t border-border">
-          <p className="px-4 pt-2.5 text-[10.5px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">My tasks</p>
-          <ul className="divide-y divide-border">
-            {tasks.slice(0, 12).map(t => (
-              <li key={t._id} className="px-4 py-2 flex flex-wrap items-center gap-2 text-[12.5px]">
-                <span className={`h-1.5 w-1.5 rounded-full ${t.status === 'ongoing' ? 'bg-blue-500' : t.status === 'blocked' ? 'bg-rose-500' : 'bg-muted-foreground/40'}`} />
-                <span className="font-medium truncate max-w-[22rem]">{t.title}</span>
-                {t.clientName && <span className="text-muted-foreground">· {t.clientName}</span>}
-                {t.dueDate && <span className={`text-[11px] ${isOverdue(t.dueDate) ? 'text-rose-700' : 'text-muted-foreground'}`}>· due {fmtDate(t.dueDate)}</span>}
-                <span className="ml-auto inline-flex items-center gap-1">
+          <ul className="divide-y divide-border/70">
+            {visibleTasks.map(t => (
+              <li key={t._id} className="group px-4 py-1.5 flex items-center gap-2">
+                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${t.status === 'ongoing' ? 'bg-blue-500' : t.status === 'blocked' ? 'bg-rose-500' : 'bg-muted-foreground/40'}`} />
+                <span className="truncate">{t.title}</span>
+                {t.clientName && <span className="text-muted-foreground truncate hidden md:inline">· {t.clientName}</span>}
+                <span className="ml-auto flex items-center gap-1 shrink-0">
+                  {t.dueDate && <span className={`text-[11px] mr-1 ${isOverdue(t.dueDate) ? 'text-rose-600' : 'text-muted-foreground'}`}>{fmtDate(t.dueDate)}</span>}
                   {t.status !== 'ongoing' && (
-                    <button type="button" onClick={() => setTaskStatus(t, 'ongoing')} disabled={!!busy} className="h-6 px-2 inline-flex items-center gap-1 rounded border border-border text-[11px] hover:bg-muted"><Play className="h-3 w-3" />Start</button>
+                    <button type="button" title="Start" onClick={() => setTaskStatus(t, 'ongoing')} disabled={!!busy} className="h-6 w-6 inline-flex items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"><Play className="h-3 w-3" /></button>
                   )}
-                  <button type="button" onClick={() => setTaskStatus(t, 'done')} disabled={!!busy} className="h-6 px-2 inline-flex items-center gap-1 rounded border border-emerald-500/40 text-emerald-700 text-[11px] hover:bg-emerald-500/10"><Check className="h-3 w-3" />Done</button>
-                  {t.status !== 'blocked' && (
-                    <button type="button" onClick={() => setTaskStatus(t, 'blocked')} disabled={!!busy} className="h-6 px-2 inline-flex items-center gap-1 rounded border border-border text-[11px] text-muted-foreground hover:bg-muted"><Ban className="h-3 w-3" />Blocked</button>
-                  )}
+                  <button type="button" title="Mark done" onClick={() => setTaskStatus(t, 'done')} disabled={!!busy} className="h-6 w-6 inline-flex items-center justify-center rounded text-emerald-600 hover:bg-emerald-500/10"><Check className="h-3.5 w-3.5" /></button>
                 </span>
               </li>
             ))}
           </ul>
+          {tasks.length > 5 && (
+            <button type="button" onClick={() => setShowAllTasks(v => !v)} className="w-full px-4 py-1.5 text-[11px] text-muted-foreground hover:text-foreground text-left border-t border-border/70">
+              {showAllTasks ? 'Show fewer' : `Show all ${tasks.length} tasks`}
+            </button>
+          )}
         </div>
       )}
     </section>
