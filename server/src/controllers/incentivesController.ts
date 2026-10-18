@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { auditDelete } from '../services/auditLog';
 import { AuthRequest } from '../middleware/authMiddleware';
 import Incentive from '../models/Incentive';
 import User from '../models/User';
@@ -90,7 +91,9 @@ export async function deleteIncentive(req: AuthRequest, res: Response): Promise<
   try {
     const orgId = await getOrg(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
-    const r = await Incentive.deleteOne({ _id: req.params.id, organizationId: orgId });
+    const gone = await Incentive.findOneAndDelete({ _id: req.params.id, organizationId: orgId });
+    if (gone) auditDelete(req, 'incentive', gone);   // Oct 2026 — every delete is logged
+    const r = { deletedCount: gone ? 1 : 0 };
     if (!r.deletedCount) { res.status(404).json({ error: 'Not found' }); return; }
     notifyDataChanged(req.app.get('io'), orgId, 'incentive.deleted', req.params.id);
     res.json({ ok: true });

@@ -5,7 +5,7 @@ import ClientWorkflow from '../models/ClientWorkflow';
 import VideoSopRun from '../models/VideoSopRun';
 import ActivityLog from '../models/ActivityLog';
 import { SERVICE_TEMPLATES } from '../lib/workflowTemplates';
-import { startRun, markDoneBefore, videoSupportIds, syncServiceChecklist } from '../services/videoSopEngine';
+import { startRun, markDoneBefore, videoSupportIds, syncServiceChecklist, buildSteps } from '../services/videoSopEngine';
 
 /**
  * applyClientSetup — Oct 2026, the owner's answers (18 Oct, 21:5x IST):
@@ -102,7 +102,13 @@ export async function applyClientSetup(): Promise<void> {
         await wf.save();
 
         let run: any = await VideoSopRun.findOne({ organizationId: org._id, serviceId: svc._id });
-        if (run && run.status !== 'active') { run = null; await VideoSopRun.deleteOne({ organizationId: org._id, serviceId: svc._id, status: { $ne: 'active' } }); }
+        if (run && run.status !== 'active') {
+          // Re-open the old run instead of deleting it — its log is kept (owner: "logs to be maintained").
+          run.status = 'active'; run.completedAt = null;
+          run.startedAt = new Date(); run.steps = buildSteps(run.startedAt);
+          const n = markDoneBefore(run, b.step, new Date(), actor);
+          run.log.push({ actorId: actor, actorName: 'Robin', action: 'restarted', detail: `Re-opened in client set-up at "${b.step}" (${n} earlier steps done before tracking)` });
+        }
         if (!run) {
           run = await startRun(orgId, String(wf._id), String(svc._id), new Date(), actor);
           if (run) {

@@ -22,6 +22,7 @@ const VideoSopPage      = lazy(() => import('@/pages/VideoSopPage'));
 const MyAttendancePage  = lazy(() => import('@/pages/MyAttendancePage'));
 const TeamRolesPage     = lazy(() => import('@/pages/TeamRolesPage'));
 const ClientsCleanupPage = lazy(() => import('@/pages/ClientsCleanupPage'));
+const ActivityLogsPage  = lazy(() => import('@/pages/ActivityLogsPage'));
 const ClientWorkspacePage      = lazy(() => import('@/pages/ClientWorkspacePage'));
 const StageWorkspacePage       = lazy(() => import('@/pages/StageWorkspacePage'));
 const MetaShareView     = lazy(() => import('@/pages/MetaShareView'));
@@ -168,6 +169,7 @@ function AppRoutes() {
           {/* Oct 2026 — every employee's own attendance calendar; Team & roles + client clean-up (admin / Rahul — pages self-gate, server enforces). */}
           <Route path="/my-attendance"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><MyAttendancePage /></E></ProtectedRoute>} />
           <Route path="/admin/team"       element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><TeamRolesPage /></E></ProtectedRoute>} />
+          <Route path="/admin/logs"       element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><ActivityLogsPage /></E></ProtectedRoute>} />
           <Route path="/admin/clients-cleanup" element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><ClientsCleanupPage /></E></ProtectedRoute>} />
           <Route path="/video-sop"        element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><VideoSopPage /></E></ProtectedRoute>} />
           <Route path="/admin/oversight"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><AdminOversight /></E></ProtectedRoute>} />

@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { auditDelete } from '../services/auditLog';
 import { AuthRequest } from '../middleware/authMiddleware';
 import User from '../models/User';
 import Project from '../models/Project';
@@ -76,6 +77,7 @@ export async function deleteProject(req: AuthRequest, res: Response): Promise<vo
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     const result = await Project.findOneAndDelete({ _id: req.params.id, organizationId: orgId });
+    if (result) auditDelete(req, 'project', result);   // Oct 2026 — every delete is logged
     if (!result) { res.status(404).json({ error: 'Project not found' }); return; }
     res.json({ message: 'Project deleted' });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }

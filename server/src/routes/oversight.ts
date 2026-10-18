@@ -8,9 +8,11 @@ import { requireOversight, getOversightDay, listOversightAccess, setOversightAcc
  * dashboard. Visible to admin + any manager flagged canViewOversight
  * (Rahul). Only admin can grant/revoke that flag.
  */
+import { getLogs } from '../controllers/logsController';
 const router = Router();
 router.use(authMiddleware);
 
+router.get('/logs',           requireOversight, getLogs);     // Oct 2026 — every permanent log in one place (+ CSV)
 router.get('/day',            requireOversight, getOversightDay);
 router.get('/members',         requireOversight, listMembers);
 router.post('/members',        requireOversight, addMember);

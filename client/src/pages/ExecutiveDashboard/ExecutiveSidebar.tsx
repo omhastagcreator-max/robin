@@ -81,6 +81,12 @@ export function ExecutiveSidebar() {
             </Link>
           )}
           {(can(['admin']) || (user as any)?.canViewOversight === true) && (
+            <Link to="/admin/logs" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/admin/logs') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+              <i className="fa-solid fa-clock-rotate-left w-5 text-center text-sky-400"></i>
+              <span className="truncate">Activity logs</span>
+            </Link>
+          )}
+          {(can(['admin']) || (user as any)?.canViewOversight === true) && (
             <Link to="/admin/clients-cleanup" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/admin/clients-cleanup') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
               <i className="fa-solid fa-broom w-5 text-center text-amber-400"></i>
               <span className="truncate">Clean up clients</span>

@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { auditDelete } from '../services/auditLog';
 import { AuthRequest } from '../middleware/authMiddleware';
 import ClientSchedule from '../models/ClientSchedule';
 import User from '../models/User';
@@ -269,6 +270,7 @@ export async function deleteSchedule(req: AuthRequest, res: Response): Promise<v
     const filter: any = { _id: req.params.id, organizationId: orgId };
     if (req.user!.role !== 'admin') filter.userId = req.user!.id;
     const result = await ClientSchedule.findOneAndDelete(filter);
+    if (result) auditDelete(req, 'schedule', result);   // Oct 2026 — every delete is logged
     if (!result) { res.status(404).json({ error: 'Schedule entry not found' }); return; }
     res.json({ ok: true });
   } catch (err) {

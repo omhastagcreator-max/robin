@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { auditDelete } from '../services/auditLog';
 import { AuthRequest } from '../middleware/authMiddleware';
 import User from '../models/User';
 import ProjectTask from '../models/ProjectTask';
@@ -211,6 +212,7 @@ export async function deleteTask(req: AuthRequest, res: Response): Promise<void>
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     const result = await ProjectTask.findOneAndDelete({ _id: req.params.id, organizationId: orgId });
+    if (result) auditDelete(req, 'task', result);   // Oct 2026 — every delete is logged
     if (!result) { res.status(404).json({ error: 'Task not found' }); return; }
     res.json({ message: 'Task deleted' });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }

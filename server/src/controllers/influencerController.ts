@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { auditDelete } from '../services/auditLog';
 import { AuthRequest } from '../middleware/authMiddleware';
 import Influencer from '../models/Influencer';
 import User from '../models/User';
@@ -61,6 +62,7 @@ export async function deleteInfluencer(req: AuthRequest, res: Response): Promise
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     const result = await Influencer.findOneAndDelete({ _id: req.params.id, organizationId: orgId });
+    if (result) auditDelete(req, 'influencer', result);   // Oct 2026 — every delete is logged
     if (!result) { res.status(404).json({ error: 'Not found' }); return; }
     res.json({ message: 'Deleted' });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }

@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { auditDelete } from '../services/auditLog';
 import { AuthRequest } from '../middleware/authMiddleware';
 import User from '../models/User';
 import Deal from '../models/Deal';
@@ -51,6 +52,7 @@ export async function deleteDeal(req: AuthRequest, res: Response): Promise<void>
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     const result = await Deal.findOneAndDelete({ _id: req.params.id, organizationId: orgId });
+    if (result) auditDelete(req, 'deal', result);   // Oct 2026 — every delete is logged
     if (!result) { res.status(404).json({ error: 'Deal not found' }); return; }
     res.json({ message: 'Deal deleted' });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }

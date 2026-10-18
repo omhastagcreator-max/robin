@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { auditDelete } from '../services/auditLog';
 import { AuthRequest } from '../middleware/authMiddleware';
 import ClientCredential from '../models/ClientCredential';
 import User from '../models/User';
@@ -267,6 +268,7 @@ export async function deleteCredential(req: AuthRequest, res: Response): Promise
   try {
     const orgId = await getOrgId(req.user!.id);
     const doc = await ClientCredential.findOneAndDelete({ _id: req.params.id, organizationId: orgId });
+    if (doc) auditDelete(req, 'credential', doc);   // Oct 2026 — every delete is logged
     if (!doc) { res.status(404).json({ error: 'Not found' }); return; }
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }

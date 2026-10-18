@@ -47,6 +47,13 @@ A `Session` doc tracks a work day: `status: active | on_break | ended`, `startTi
 - Cleanup script for corrupted break data: `cd server && npm run fix-open-breaks -- --apply` (dry-run without `--apply`).
 - History of bugs here: "253h break", "timer stuck at 0", "timer runs backwards", "can't end break". Every guard in `useSession.ts` / `sessionsController.ts` has a comment explaining which bug it prevents — **don't remove guards without reading the comments.**
 
+## Last done (Oct 2026, late night) — logs are maintained (nothing silently lost) + Activity logs page
+
+- **Deletes keep history**: deleting a client (or a lead that created one) no longer wipes its `WorkflowActivity` history. Every delete of a business record (client, lead, task, deal, schedule, project, goal, influencer, ad report, vault credential, incentive) writes a permanent `ActivityLog deleted.<entity>` row — who, when, label + small snapshot (never secrets) — via `services/auditLog.ts auditDelete()`. `applyClientSetup` re-opens a cancelled SOP run instead of deleting it.
+- **Activity logs** `/admin/logs` (admin + canViewOversight): one timeline merging ActivityLog (sign-ins, opens, team, roster, access, leave, deletions, vault), WorkflowActivity (client work, status updates, client updates, UGC SOP mirror), VideoSopRun logs (SOP actions, reminders) and Sessions (clock in/out, breaks). Filters: date range (≤ ~3 months per query), person, client, type, text; CSV download (`?format=csv`). API `GET /api/oversight/logs` (`controllers/logsController.ts`).
+- Still trimmed by design: `ClientWorkflow.activity` inline copy (last 500 — the full history is WorkflowActivity), `ErrorLog` (technical crash logs, 30-day TTL).
+- Verified: 127 API + 42 UI checks, vite build, server tsc.
+
 ## Last done (Oct 2026, night) — owner's live-client set-up, Priyanka + Amit together, video status tracker, Rahul's journey strip
 
 - **One-time client set-up** `jobs/applyClientSetup.ts` (runs once per `SETUP_VERSION`, after `applyRoster`): active = Oudfy, MotoCasa, ArdoWellness, Woodsify, Dufft, Early Flux + UGC brands Koshnika, Meta Go, Dhobi Express, Tridosh Herbal (videos coming / editing → SOP at `first_draft`) and MAA (`script_sent`). Everything else archived (restorable); clients onboarded after 18 Oct 22:00 IST never touched. Missing UGC brands created name-only. Deadlines restart from the import time; CRM UGC checklist caught up via `syncServiceChecklist`.

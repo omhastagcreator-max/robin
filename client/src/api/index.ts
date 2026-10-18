@@ -670,6 +670,8 @@ const silentPost = (url: string, body: unknown) => api.post(url, body, { headers
 // ── Team Oversight (Oct 2026) — admin + managers flagged canViewOversight ──
 export const getOversightDay    = (date?: string) => api.get('/oversight/day', { params: date ? { date } : {} }).then(r => r.data);
 export const listOversightAccess = () => api.get('/oversight/access').then(r => r.data);
+export const activityLogs = (params: Record<string, string>) => api.get('/oversight/logs', { params }).then(r => r.data);
+export const activityLogsCsv = (params: Record<string, string>) => api.get('/oversight/logs', { params: { ...params, format: 'csv' }, responseType: 'blob' }).then(r => r.data as Blob);
 export const listTeamMembers  = () => api.get('/oversight/members').then(r => r.data);
 export const updateTeamMember = (id: string, patch: { role?: string; teams?: string[]; department?: string; isActive?: boolean }) => api.put(`/oversight/members/${id}`, patch).then(r => r.data);
 export const myAttendance     = (month: string, userId?: string) => api.get('/my-attendance', { params: { month, ...(userId ? { userId } : {}) } }).then(r => r.data);

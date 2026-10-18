@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { auditDelete } from '../services/auditLog';
 import { AuthRequest } from '../middleware/authMiddleware';
 import User from '../models/User';
 import Lead from '../models/Lead';
@@ -144,6 +145,7 @@ export async function deleteLead(req: AuthRequest, res: Response): Promise<void>
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     const result = await Lead.findOneAndDelete({ _id: req.params.id, organizationId: orgId });
     if (!result) { res.status(404).json({ error: 'Lead not found' }); return; }
+    auditDelete(req, 'lead', result);
     // Sep 2026 — delete COMPLETELY, including the Client CRM side: the
     // lead's own child docs (notes, focus-list rows, deals) are removed,
     // any CRM workflow created when this lead was onboarded is deleted
@@ -169,13 +171,14 @@ export async function deleteLead(req: AuthRequest, res: Response): Promise<void>
     }).select('_id clientId').lean();
     workflows.forEach((w: any) => { if (w.clientId) clientIds.add(String(w.clientId)); });
     const workflowIds = workflows.map((w: any) => w._id);
+    // Oct 2026 — keep the CRM activity history of any client deleted with the lead; audit each one.
+    for (const w of await ClientWorkflow.find({ _id: { $in: workflowIds } }).lean()) auditDelete(req, 'client', w, { via: 'lead deleted' });
     await Promise.all([
       LeadNote.deleteMany({ leadId: result._id }),
       FocusList.deleteMany({ leadId: result._id }),
       Deal.deleteMany({ leadId: result._id }),
       ...(workflowIds.length ? [
         ClientWorkflow.deleteMany({ _id: { $in: workflowIds } }),
-        WorkflowActivity.deleteMany({ workflowId: { $in: workflowIds } }),
       ] : []),
     ]);
     res.json({ message: 'Lead deleted' });

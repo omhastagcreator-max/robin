@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { Types } from 'mongoose';
 import VideoSopRun from '../models/VideoSopRun';
 import { computeRunState, hasUpdateToday, stepTitle, progressSummary } from '../services/videoSopEngine';
+import { auditDelete } from '../services/auditLog';
 import { AuthRequest } from '../middleware/authMiddleware';
 import ClientWorkflow from '../models/ClientWorkflow';
 import WorkflowActivity from '../models/WorkflowActivity';
@@ -536,12 +537,18 @@ export async function deleteWorkflow(req: AuthRequest, res: Response): Promise<v
     if (!wf) { res.status(404).json({ error: 'Client not found' }); return; }
 
     const name = wf.clientName || 'Client';
-    const [tasks, perf, activity] = await Promise.all([
+    // Oct 2026 ("logs to be maintained") — the client's activity history is
+    // KEPT (WorkflowActivity rows stay, readable in Activity logs) and the
+    // delete itself is audited with a snapshot. Only tasks / performance
+    // entries go with the client.
+    const activityCount = await WorkflowActivity.countDocuments({ workflowId: wf._id });
+    const [tasks, perf] = await Promise.all([
       ProjectTask.deleteMany({ clientWorkflowId: wf._id }),
       ClientPerformanceEntry.deleteMany({ clientWorkflowId: wf._id }),
-      WorkflowActivity.deleteMany({ workflowId: wf._id }),
     ]);
+    auditDelete(req, 'client', wf, { services: (wf.services || []).map((s: any) => `${s.label} (${s.status})`), tasksDeleted: tasks.deletedCount || 0, activityKept: activityCount });
     await ClientWorkflow.deleteOne({ _id: wf._id });
+    const activity = { deletedCount: 0 };
 
     console.log(`[deleteWorkflow] "${name}" (${String(wf._id)}) deleted by ${req.user!.id} — ` +
       `${tasks.deletedCount || 0} tasks, ${perf.deletedCount || 0} performance entries, ${activity.deletedCount || 0} activity rows`);
