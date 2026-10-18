@@ -654,6 +654,7 @@ export const videoSopStart     = (workflowId: string, serviceId: string, started
   api.post('/video-sop/start', { workflowId, serviceId, startedAt, ...opts }).then(r => r.data);
 export const videoSopTeam      = () => api.get('/video-sop/team').then(r => r.data);
 export const videoSopMyToday   = () => api.get('/video-sop/my-today', { headers: { 'X-Silent': '1' } }).then(r => r.data);
+export const videoSopProgress = (id: string, body: { total: number; scripting: number; shooting: number; editing: number; delivered: number; note?: string }) => api.put(`/video-sop/${id}/progress`, body).then(r => r.data);
 export const videoSopDailyUpdate = (id: string, text: string, blocker?: string) => api.put(`/video-sop/${id}/daily-update`, { text, blocker }).then(r => r.data);
 
 // ── Decision Tree desk (Oct 2026, Rahul's voice notes) ─────────────────

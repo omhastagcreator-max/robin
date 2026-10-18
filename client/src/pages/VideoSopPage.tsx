@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { VideoProgressBar, VideoProgressEditor, type Progress } from '@/components/shared/VideoProgress';
 
 /**
  * UGC Video SOP — Oct 2026 (owner: "for the UGC team I need this to be
@@ -23,6 +24,8 @@ interface Run {
   log: { at: string; actorName: string; action: string; detail: string }[];
   dailyUpdates?: { dateIST: string; at: string; byName: string; stepKey: string; text: string; blocker: string }[];
   salesBrief?: Record<string, any> | null;
+  progress?: Progress;
+  helpers?: { id: string; name: string }[];
   updatedToday?: boolean;
   steps: RunStep[]; doneCount: number; total: number; missed: number; overdue: number; lateDone: number;
   health: 'on_track' | 'due_soon' | 'overdue' | 'missed' | 'completed'; currentStep: string | null; currentDueAt: string | null; dayNumber: number;
@@ -164,6 +167,7 @@ export default function VideoSopPage() {
                           {r.steps.map(s => <span key={s.key} title={`${meta?.steps.find(d => d.key === s.key)?.title || s.key} — ${STATE_STYLE[s.state].label}`} className={`h-2 flex-1 rounded-full ${STATE_STYLE[s.state].dot}`} />)}
                           <span className="ml-2 text-[10.5px] text-slate-400 tabular-nums">{r.doneCount}/{r.total}</span>
                         </div>
+                        <div className="mt-2"><VideoProgressBar p={r.progress} compact /></div>
                         {cur && curDef && (
                           <div className="mt-1.5 text-[11px] text-slate-400">
                             Now: <span className="text-slate-200">{curDef.title}</span> · due {fmtWhen(cur.dueAt)} <span className={cur.state === 'missed' || cur.state === 'overdue' ? 'text-rose-400 font-semibold' : ''}>({countdown(cur.dueAt)})</span>
@@ -200,7 +204,8 @@ function Count({ label, value, cls }: { label: string; value: number; cls: strin
 
 function RunDetail({ run, meta, me, canManage, onChange, onClose, reload }: { run: Run; meta: Meta; me: string; canManage: boolean; onChange: (r: Run) => void; onClose: () => void; reload: () => void }) {
   const navigate = useNavigate();
-  const isOwner = run.assignedTo === me && run.status === 'active';
+  const isOwner = (run.assignedTo === me || (run.helpers || []).some(h => h.id === me)) && run.status === 'active';
+  const isHelper = run.assignedTo !== me && (run.helpers || []).some(h => h.id === me);
   const [busy, setBusy] = useState<string | null>(null);
   const [lateFor, setLateFor] = useState<string | null>(null);
   const [users, setUsers] = useState<{ _id: string; name: string; videoTeam?: boolean }[]>([]);
@@ -248,8 +253,9 @@ function RunDetail({ run, meta, me, canManage, onChange, onClose, reload }: { ru
                 {users.map(u => <option key={u._id} value={u._id}>{u.name}{u.videoTeam ? ' (video team)' : ''}</option>)}
               </select>
             ) : <span className="text-white font-semibold">{run.assigneeName || 'Not assigned'}</span>}
-            {isOwner && <span className="px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 text-[10.5px] font-semibold">You own this SOP</span>}
+            {isOwner && <span className="px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 text-[10.5px] font-semibold">{isHelper ? 'You help on this SOP' : 'You own this SOP'}</span>}
           </div>
+          {(run.helpers || []).length > 0 && <div className="mt-1 text-[11px] text-slate-400">Working with: {(run.helpers || []).map(h => h.name).join(', ')}</div>}
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => navigate('/command-center', { state: { clientId: run.workflowId } })} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 rounded-lg"><i className="fa-solid fa-diagram-project mr-1"></i> DT</button>
@@ -264,6 +270,16 @@ function RunDetail({ run, meta, me, canManage, onChange, onClose, reload }: { ru
       )}
 
       <div className="p-4 space-y-5 max-h-[calc(100vh-260px)] overflow-y-auto">
+        <section className="rounded-lg border border-slate-700 bg-slate-950/50 p-3">
+          <h4 className="text-xs font-bold text-white mb-2"><i className="fa-solid fa-film mr-1.5 text-rose-400"></i>Video status{run.progress?.updatedAt ? <span className="text-slate-500 font-normal"> · updated {fmtWhen(run.progress.updatedAt)}</span> : ''}</h4>
+          <VideoProgressBar p={run.progress} />
+          {isOwner && (
+            <div className="mt-3">
+              <VideoProgressEditor key={run.progress?.updatedAt || 'new'} initial={run.progress} busy={busy === 'progress'}
+                onSave={v => act('progress', async () => { const r = await api.videoSopProgress(run._id, v); toast.success('Video status saved.'); return r; })} />
+            </div>
+          )}
+        </section>
         {run.salesBrief && (
           <section className="rounded-lg border border-slate-700 bg-slate-950/50 p-3 text-[11.5px] text-slate-300">
             <h4 className="text-xs font-bold text-white mb-1.5"><i className="fa-solid fa-handshake mr-1.5 text-emerald-400"></i>From sales at onboarding</h4>

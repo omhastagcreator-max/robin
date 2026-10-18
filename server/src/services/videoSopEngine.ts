@@ -81,7 +81,7 @@ export async function ensureRunsForOrg(orgId: string): Promise<void> {
     operationalStatus: { $nin: ['cancelled'] },
   }).select('_id clientName services onboardedAt createdAt').lean();
   if (!wfs.length) return;
-  const existing = await VideoSopRun.find({ organizationId: orgId }).select('serviceId assignedTo clientName status').lean();
+  const existing = await VideoSopRun.find({ organizationId: orgId }).select('serviceId assignedTo clientName status helpers').lean();
   const byService = new Map(existing.map((r: any) => [String(r.serviceId), r]));
   for (const wf of wfs as any[]) {
     for (const svc of wf.services || []) {
@@ -91,6 +91,10 @@ export async function ensureRunsForOrg(orgId: string): Promise<void> {
         const patch: any = {};
         if ((svc.assignedTo || '') !== (run.assignedTo || '') && run.status === 'active') patch.assignedTo = svc.assignedTo || '';
         if (wf.clientName && wf.clientName !== run.clientName) patch.clientName = wf.clientName;
+        if (run.status === 'active' && !(run.helpers || []).length) {
+          const h = await videoSupportIds(orgId, svc.assignedTo || '');
+          if (h.length) patch.helpers = h;
+        }
         if (Object.keys(patch).length) await VideoSopRun.updateOne({ _id: run._id }, { $set: patch });
         continue;
       }
@@ -98,6 +102,54 @@ export async function ensureRunsForOrg(orgId: string): Promise<void> {
       if (svc.status === 'done' || born < SOP_EFFECTIVE_FROM) continue;
       await startRun(orgId, String(wf._id), String(svc._id), born, '');
     }
+  }
+}
+
+/** Video-team support (interns, e.g. Amit) — added as helpers on every new SOP run. */
+export async function videoSupportIds(orgId: string, ownerId: string): Promise<string[]> {
+  const u = await User.find({ organizationId: orgId, isActive: true, $or: [{ team: 'video_support' }, { teams: 'video_support' }] }).select('_id').lean();
+  return u.map((x: any) => String(x._id)).filter(id => id !== ownerId);
+}
+
+/**
+ * Start a live brand part-way: every step that has to be done BEFORE
+ * `currentStep` (its dependency chain + anything earlier in the SOP) is marked
+ * "done before SOP tracking" — not late — so the SOP picks up where the brand is.
+ */
+export function markDoneBefore(run: any, currentStep: string, at: Date, actorId: string): number {
+  const idx = (run.steps || []).findIndex((x: any) => x.key === currentStep);
+  if (idx <= 0) return 0;
+  let n = 0;
+  for (let i = 0; i < idx; i++) {
+    const st: any = run.steps[i];
+    if (st.doneAt) continue;
+    st.doneAt = at; st.doneBy = actorId; st.note = 'Done before SOP tracking started';
+    st.items = (st.items || []).map(() => ({ done: true, doneAt: at, doneBy: actorId }));
+    n++;
+  }
+  return n;
+}
+
+/**
+ * Bring the brand's CRM UGC checklist in line with every SOP step already
+ * done (used when a live brand is picked up part-way, so CRM / DT / Rahul's
+ * board don't say "0/4" while the SOP is on step 7).
+ */
+export async function syncServiceChecklist(run: any, actorId: string): Promise<void> {
+  const wf: any = await ClientWorkflow.findById(run.workflowId);
+  const svc = wf?.services?.id(run.serviceId);
+  if (!svc) return;
+  let changed = false;
+  for (const st of run.steps || []) {
+    const idx = SERVICE_CHECKLIST_SYNC[st.key];
+    if (idx === undefined || !st.doneAt || !svc.checklist?.[idx] || svc.checklist[idx].done) continue;
+    svc.checklist[idx].done = true; svc.checklist[idx].doneAt = st.doneAt; svc.checklist[idx].doneBy = actorId;
+    changed = true;
+  }
+  if (changed) {
+    if (svc.status === 'pending') svc.status = 'in_progress';
+    if (!svc.startedAt) svc.startedAt = new Date();
+    await wf.save();
   }
 }
 
@@ -120,6 +172,7 @@ export async function startRun(orgId: string, workflowId: string, serviceId: str
       workflowId, serviceId,
       clientName: wf.clientName || '',
       assignedTo: svc.assignedTo || '',
+      helpers: await videoSupportIds(orgId, svc.assignedTo || ''),
       startedAt, startedBy: actorId,
       steps: buildSteps(startedAt),
       // Sales handover pre-fills the Day-1 brief; the video person confirms it in the meeting.
@@ -186,6 +239,8 @@ export const DAILY_UPDATE_FROM_HOUR = 17;
 export function hasUpdateToday(run: any, now = Date.now()): boolean {
   const today = istDateKey(now);
   if ((run.dailyUpdates || []).some((u: any) => u.dateIST === today)) return true;
+  // Saving the video status (counts per stage) is also an update for the day.
+  if (run.videoProgress?.updatedAt && istDateKey(new Date(run.videoProgress.updatedAt).getTime()) === today) return true;
   return (run.steps || []).some((s: any) =>
     (s.doneAt && istDateKey(new Date(s.doneAt).getTime()) === today) ||
     (s.items || []).some((i: any) => i.done && i.doneAt && istDateKey(new Date(i.doneAt).getTime()) === today));
@@ -203,6 +258,20 @@ export function updateRequired(run: any, now = Date.now()): { required: boolean;
   if (cur && (cur.state === 'overdue' || cur.state === 'missed')) return { required: true, why: 'overdue' };
   if (istHourNow(now) >= DAILY_UPDATE_FROM_HOUR) return { required: true, why: 'end_of_day' };
   return { required: false, why: '' };
+}
+
+/** Videos: total and where each one is. notStarted = total − everything else. */
+export function progressSummary(run: any) {
+  const p = run.videoProgress || {};
+  const total = Number(p.total) || Number(run.brief?.videos) || 0;
+  const scripting = Number(p.scripting) || 0, shooting = Number(p.shooting) || 0, editing = Number(p.editing) || 0, delivered = Number(p.delivered) || 0;
+  const notStarted = Math.max(0, total - scripting - shooting - editing - delivered);
+  const parts = [`${delivered}/${total || '?'} delivered`];
+  if (editing) parts.push(`${editing} in editing`);
+  if (shooting) parts.push(`${shooting} with creator`);
+  if (scripting) parts.push(`${scripting} in script`);
+  if (notStarted && total) parts.push(`${notStarted} not started`);
+  return { total, scripting, shooting, editing, delivered, notStarted, note: p.note || '', updatedAt: p.updatedAt || null, updatedBy: p.updatedBy || '', label: parts.join(' · '), confirmed: !!p.updatedAt };
 }
 
 export const stepTitle = (key: string) => SOP_STEP_BY_KEY.get(key)?.title || key;

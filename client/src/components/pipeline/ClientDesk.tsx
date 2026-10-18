@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { VideoProgressBar } from '@/components/shared/VideoProgress';
 
 /**
  * ClientDesk — Oct 2026. The Decision Tree's one-brand view, rebuilt from
@@ -41,6 +42,44 @@ const STATUS_CLS: Record<string, string> = {
 };
 const when = (iso?: string | null) => iso ? new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
 const dateOnly = (iso?: string | null) => iso ? new Date(iso).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' }) : '';
+/**
+ * Rahul's journey (voice note 1: "Discovery, Development, Video, Meta, Launch,
+ * Scaling — that's how ours was"). Derived from the client's services:
+ *   Discovery   onboarded (always done once the client is in Robin)
+ *   Development Shopify / website stage
+ *   Video       UGC videos stage (+ Video SOP)
+ *   Meta        Meta Ads account set-up
+ *   Launch      awareness campaigns live (Meta Ads item 2)
+ *   Scaling     conversion / sales campaigns live (Meta Ads item 3)
+ * A phase the client didn't buy shows as "not in plan".
+ */
+type PhaseState = 'done' | 'active' | 'pending' | 'none';
+function journey(services: DeskService[]): { label: string; state: PhaseState; who?: string }[] {
+  const by = (t: string) => services.find(s => s.serviceType === t);
+  const svcState = (s?: DeskService): PhaseState => !s ? 'none' : s.status === 'done' ? 'done' : s.status === 'in_progress' ? 'active' : 'pending';
+  const item = (s: DeskService | undefined, i: number) => !!s?.checklist?.[i]?.done;
+  const dev = by('shopify') || by('misc');
+  const video = by('influencer') || by('video_editing');
+  const meta = by('meta_ads');
+  const metaState: PhaseState = !meta ? 'none' : item(meta, 0) ? 'done' : meta.status === 'blocked' ? 'pending' : 'active';
+  const launch: PhaseState = !meta ? 'none' : item(meta, 1) ? 'done' : item(meta, 0) ? 'active' : 'pending';
+  const scaling: PhaseState = !meta ? 'none' : item(meta, 2) || meta.status === 'done' ? 'done' : item(meta, 1) ? 'active' : 'pending';
+  return [
+    { label: 'Discovery', state: 'done' },
+    { label: 'Development', state: svcState(dev), who: dev?.assignee?.name },
+    { label: 'Video', state: svcState(video), who: video?.assignee?.name },
+    { label: 'Meta', state: metaState, who: meta?.assignee?.name },
+    { label: 'Launch', state: launch, who: meta?.assignee?.name },
+    { label: 'Scaling', state: scaling, who: meta?.assignee?.name },
+  ];
+}
+const PHASE_CLS: Record<PhaseState, string> = {
+  done: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200',
+  active: 'bg-blue-600/20 border-blue-500 text-white ring-1 ring-blue-500/40',
+  pending: 'bg-slate-900 border-slate-700 text-slate-400',
+  none: 'bg-transparent border-dashed border-slate-800 text-slate-600',
+};
+
 const lastDoneIdx = (s: DeskService) => (s.checklist || []).reduce((m, it, i) => it.done ? i : m, -1);
 
 export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWorkflow; onBack: () => void; onChanged: (wf: any) => void }) {
@@ -167,6 +206,19 @@ export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWork
         </div>
       </div>
 
+      {/* Rahul's journey: Discovery → Development → Video → Meta → Launch → Scaling */}
+      <ol className="grid grid-cols-3 md:grid-cols-6 gap-1.5" aria-label="Client journey">
+        {journey(services).map((ph, i) => (
+          <li key={ph.label} className={`rounded-lg border px-2.5 py-2 ${PHASE_CLS[ph.state]}`}>
+            <div className="text-[10px] uppercase tracking-wider font-bold opacity-80">{i + 1}. {ph.label}</div>
+            <div className="text-[11px] mt-0.5">
+              {ph.state === 'done' ? '✓ Done' : ph.state === 'active' ? 'In progress' : ph.state === 'pending' ? 'Not started' : 'Not in plan'}
+              {ph.who && ph.state !== 'none' && ph.state !== 'done' ? <span className="opacity-70"> · {ph.who}</span> : null}
+            </div>
+          </li>
+        ))}
+      </ol>
+
       {/* The 3 things — visible without clicking */}
       {services.length === 0 ? <p className="text-sm text-slate-500">No stages on this client yet.</p> : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -288,6 +340,7 @@ export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWork
           <div className="min-w-0">
             <div className="text-xs font-bold text-white"><i className="fa-solid fa-clapperboard text-rose-400 mr-2"></i>UGC Video SOP · {sop.doneCount}/{sop.total} steps{sop.status === 'active' ? ` · Day ${sop.dayNumber} of 7` : ` · ${sop.status}`}</div>
             <div className="mt-1.5 flex gap-1 w-64 max-w-full">{sop.steps.map((s: any) => <span key={s.key} className={`h-1.5 flex-1 rounded-full ${s.state === 'done' ? 'bg-emerald-500' : s.state === 'done_late' ? 'bg-amber-400' : s.state === 'missed' ? 'bg-rose-500' : s.state === 'overdue' ? 'bg-orange-500' : 'bg-slate-700'}`} />)}</div>
+            <div className="mt-2 w-72 max-w-full"><VideoProgressBar p={sop.progress} compact /></div>
             {sopCur && <div className="mt-1 text-[11px] text-slate-400">Now: <span className="text-slate-200">{sop.currentTitle || sopCur.key}</span> · due {when(sopCur.dueAt)}</div>}
           </div>
           <button onClick={() => navigate(`/video-sop?run=${sop._id}`)} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg">Open Video SOP</button>

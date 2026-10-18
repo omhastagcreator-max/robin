@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { Types } from 'mongoose';
 import VideoSopRun from '../models/VideoSopRun';
-import { computeRunState, hasUpdateToday, stepTitle } from '../services/videoSopEngine';
+import { computeRunState, hasUpdateToday, stepTitle, progressSummary } from '../services/videoSopEngine';
 import { AuthRequest } from '../middleware/authMiddleware';
 import ClientWorkflow from '../models/ClientWorkflow';
 import WorkflowActivity from '../models/WorkflowActivity';
@@ -1529,6 +1529,7 @@ export async function pipelineOverview(req: AuthRequest, res: Response): Promise
           owner: nameById.get(String(run.assignedTo)) || '',
           lastUpdate: lastU ? { at: lastU.at, text: lastU.text, blocker: lastU.blocker || '' } : null,
           updatedToday: hasUpdateToday(run),
+          progress: progressSummary(run),
         };
         // A missed / overdue SOP step is the most specific "why" there is.
         if (cur && (cur.state === 'missed' || cur.state === 'overdue') && stuckAt.severity !== 'blocked') {

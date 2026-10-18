@@ -5,7 +5,7 @@ import VideoSopRun from '../models/VideoSopRun';
 import ClientWorkflow from '../models/ClientWorkflow';
 import { notify, notifyDataChanged } from '../services/notify';
 import { SOP_STEPS, SOP_STEP_BY_KEY, BRIEF_FIELDS, LATE_REASONS, LATE_REASON_KEYS } from '../lib/videoSop';
-import { computeRunState, ensureRunsForOrg, startRun, mirrorToCrm, stepTitle, hasUpdateToday, updateRequired, istDateKey, depsDone } from '../services/videoSopEngine';
+import { computeRunState, ensureRunsForOrg, startRun, mirrorToCrm, stepTitle, hasUpdateToday, updateRequired, istDateKey, depsDone, markDoneBefore, progressSummary, syncServiceChecklist } from '../services/videoSopEngine';
 
 /**
  * videoSopController — Oct 2026. API for the UGC Video SOP.
@@ -32,7 +32,7 @@ async function isManager(req: AuthRequest): Promise<boolean> {
 
 async function hydrate(runs: any[]) {
   const ids = new Set<string>();
-  runs.forEach(r => { if (r.assignedTo) ids.add(r.assignedTo); (r.steps || []).forEach((s: any) => s.doneBy && ids.add(s.doneBy)); (r.dailyUpdates || []).forEach((u: any) => u.by && ids.add(u.by)); });
+  runs.forEach(r => { if (r.assignedTo) ids.add(r.assignedTo); (r.helpers || []).forEach((h: string) => ids.add(h)); (r.steps || []).forEach((s: any) => s.doneBy && ids.add(s.doneBy)); (r.dailyUpdates || []).forEach((u: any) => u.by && ids.add(u.by)); });
   const users = await User.find({ _id: { $in: Array.from(ids) } }).select('name team').lean();
   const name = new Map(users.map((u: any) => [String(u._id), u.name]));
   return runs.map(r => {
@@ -44,11 +44,13 @@ async function hydrate(runs: any[]) {
       clientName: r.clientName,
       assignedTo: r.assignedTo,
       assigneeName: name.get(r.assignedTo) || '',
+      helpers: (r.helpers || []).map((h: string) => ({ id: h, name: name.get(h) || '' })),
       startedAt: r.startedAt,
       status: r.status,
       completedAt: r.completedAt,
       brief: r.brief,
       salesBrief: r.salesBrief || null,
+      progress: progressSummary(r),
       log: (r.log || []).slice(-60).reverse(),
       dailyUpdates: (r.dailyUpdates || []).slice(-14).reverse().map((u: any) => ({ ...u, byName: name.get(u.by) || '' })),
       updatedToday: hasUpdateToday(r),
@@ -114,8 +116,8 @@ async function loadForAction(req: AuthRequest, res: Response): Promise<any | nul
   if (!run) { res.status(404).json({ error: 'SOP run not found' }); return null; }
   if (run.status !== 'active') { res.status(409).json({ error: 'This SOP is already closed' }); return null; }
   if (!run.assignedTo) { res.status(409).json({ error: 'No video-team person is assigned yet — ask admin to assign one first' }); return null; }
-  if (run.assignedTo !== req.user!.id) {
-    res.status(403).json({ error: 'Only the assigned video-team person can mark this SOP' });
+  if (run.assignedTo !== req.user!.id && !(run.helpers || []).includes(req.user!.id)) {
+    res.status(403).json({ error: 'Only the assigned video-team person (or their helper) can mark this SOP' });
     return null;
   }
   return run;
@@ -265,7 +267,7 @@ export async function myToday(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await orgOf(req);
     if (!orgId) { res.json({ items: [] }); return; }
-    const runs = await VideoSopRun.find({ organizationId: orgId, status: 'active', assignedTo: req.user!.id }).lean();
+    const runs = await VideoSopRun.find({ organizationId: orgId, status: 'active', $or: [{ assignedTo: req.user!.id }, { helpers: req.user!.id }] }).lean();
     const now = Date.now();
     const items = runs.map((r: any) => {
       const st = computeRunState(r, now);
@@ -279,8 +281,14 @@ export async function myToday(req: AuthRequest, res: Response): Promise<void> {
         runId: String(r._id), clientName: r.clientName, dayNumber: st.dayNumber,
         stepKey: cur?.key || '', stepTitle: def?.title || '', dueAt: cur?.dueAt || null, graceUntil: cur?.graceUntil || null,
         state: cur?.state || 'done', todo: left,
-        updatedToday: hasUpdateToday(r, now), required: req2.required, why: req2.why,
+        updatedToday: hasUpdateToday(r, now),
+        // The owner is accountable for the daily update; helpers see the work but aren't blocked.
+        role: r.assignedTo === req.user!.id ? 'owner' : 'helper',
+        required: r.assignedTo === req.user!.id && req2.required, why: req2.why,
         lastUpdate: (r.dailyUpdates || []).slice(-1)[0] || null,
+        progress: progressSummary(r),
+        // Owner or helper: the brand's video counts have never been confirmed → ask at login.
+        needsProgress: !r.videoProgress?.updatedAt,
       };
     }).sort((a: any, b: any) => String(a.dueAt).localeCompare(String(b.dueAt)));
     res.json({ items, fromHour: 17 });
@@ -313,6 +321,28 @@ export async function postDailyUpdate(req: AuthRequest, res: Response): Promise<
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 
+// PUT /api/video-sop/:id/progress  { total, scripting, shooting, editing, delivered, note } — owner or helper
+export async function updateProgressCounts(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const run = await loadForAction(req, res); if (!run) return;
+    const n = (v: any) => Math.max(0, Math.min(500, Math.round(Number(v) || 0)));
+    const b = req.body || {};
+    const total = n(b.total), scripting = n(b.scripting), shooting = n(b.shooting), editing = n(b.editing), delivered = n(b.delivered);
+    if (total < 1) { res.status(400).json({ error: 'Enter the total number of videos for this brand' }); return; }
+    if (scripting + shooting + editing + delivered > total) { res.status(400).json({ error: `Those add up to ${scripting + shooting + editing + delivered} — more than the ${total} total videos` }); return; }
+    const before = progressSummary(run.toObject());
+    run.videoProgress = { total, scripting, shooting, editing, delivered, note: String(b.note || '').slice(0, 300), updatedAt: new Date(), updatedBy: req.user!.id } as any;
+    if (!run.brief?.videos) (run.brief as any).videos = String(total);
+    const after = progressSummary(run.toObject());
+    run.log.push({ actorId: req.user!.id, actorName: req.user!.name, action: 'progress', detail: `Videos: ${after.label}${after.note ? ` — ${after.note}` : ''}` });
+    await run.save();
+    await mirrorToCrm(run, req.user!.id, '', `UGC videos: ${after.label} (was ${before.label})${after.note ? ` — ${after.note}` : ''}`);
+    notifyDataChanged(req.app.get('io'), String(run.organizationId), 'video_sop.progress', String(run._id));
+    const [h] = await hydrate([run.toObject()]);
+    res.json(h);
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
 // ── Manager actions ─────────────────────────────────────────────────────
 
 // POST /api/video-sop/start  { workflowId, serviceId, startedAt? }
@@ -328,16 +358,11 @@ export async function startRunManually(req: AuthRequest, res: Response): Promise
     // `currentStep` as done-before-tracking (not late), so the SOP picks up
     // exactly where the brand really is.
     const currentStep = String(req.body?.currentStep || '');
-    const idx = currentStep ? run.steps.findIndex((x: any) => x.key === currentStep) : -1;
-    if (idx > 0 && run.status === 'active' && !run.steps[0].doneAt) {
-      for (let i = 0; i < idx; i++) {
-        const st: any = run.steps[i];
-        st.doneAt = start; st.doneBy = req.user!.id; st.note = 'Done before SOP tracking started';
-        st.items = (st.items || []).map(() => ({ done: true, doneAt: start, doneBy: req.user!.id }));
-      }
+    if (currentStep && run.status === 'active' && !run.steps[0].doneAt && markDoneBefore(run, currentStep, start, req.user!.id) > 0) {
       run.log.push({ actorId: req.user!.id, actorName: req.user!.name, action: 'imported',
         detail: `Started mid-way — steps before "${stepTitle(currentStep)}" marked done before tracking` });
       await run.save();
+      await syncServiceChecklist(run, req.user!.id);
     }
     if (req.body?.assignTo) {
       const u: any = await User.findOne({ _id: req.body.assignTo, organizationId: orgId, isActive: true }).select('_id name').lean();

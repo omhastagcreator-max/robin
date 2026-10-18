@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as api from '@/api';
 import { ClientDesk } from '@/components/pipeline/ClientDesk';
+import { VideoProgressBar } from '@/components/shared/VideoProgress';
 
 // Oct 2026 (Rahul's voice note): DT remembers the brand you were on — leave
 // to the CRM and come back, and the same brand is still open.
@@ -52,7 +53,7 @@ interface OverviewRow {
   priority: string; daysInactive: number; updatedAt?: string;
   services: OverviewService[];
   stuckAt: { stage: string; owner: string; reason: string; severity: 'blocked' | 'waiting' | 'active' | 'done' };
-  sop?: { runId: string; dayNumber: number; doneCount: number; total: number; health: string; step: string; stepState: string; owner: string; updatedToday: boolean; lastUpdate: { at: string; text: string; blocker: string } | null } | null;
+  sop?: { progress?: any; runId: string; dayNumber: number; doneCount: number; total: number; health: string; step: string; stepState: string; owner: string; updatedToday: boolean; lastUpdate: { at: string; text: string; blocker: string } | null } | null;
   lastUpdate?: { at: string; who: string; what: string } | null;
   daysSinceUpdate?: number | null;
   why?: string;
@@ -267,6 +268,7 @@ export function DecisionTreeView() {
                           <i className="fa-solid fa-clapperboard mr-1"></i>Video SOP Day {r.sop.dayNumber} · {r.sop.step || 'complete'}{r.sop.stepState === 'missed' ? ' · MISSED' : r.sop.stepState === 'overdue' ? ' · overdue' : ''}
                         </div>
                       )}
+                      {r.sop && <div className="mt-1.5 max-w-[260px]"><VideoProgressBar p={r.sop.progress} compact /></div>}
                       <div className="mt-1.5"><StageStrip services={r.services} /></div>
                     </td>
                     <td className="p-3 text-slate-300">

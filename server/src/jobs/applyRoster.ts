@@ -11,16 +11,19 @@ import { deactivateMember } from '../services/teamRoster';
  * guessed. To change the team later, use Team & roles in Robin — or bump
  * ROSTER_VERSION after editing the list.
  *
- *   Priyanka, Amit Kamble ... video team (UGC)
+ *   Priyanka ................ video team (UGC) — owns every UGC brand
+ *   Amit Kamble ............. video team intern — helper on every Video SOP
  *   Shakshi ................. Meta Ads executive
  *   Chetan .................. Meta Ads intern
  *   Bhawna .................. removed (switched off, her clients reassigned)
  */
-const ROSTER_VERSION = '2026-10-18';
-type Entry = { match: RegExp; who: string; addTeams?: string[]; department?: string; remove?: boolean };
+const ROSTER_VERSION = '2026-10-18b';
+type Entry = { match: RegExp; who: string; addTeams?: string[]; removeTeams?: string[]; department?: string; remove?: boolean };
 const ROSTER: Entry[] = [
   { match: /^priyanka(\s|$)/i,        who: 'Priyanka',    addTeams: ['influencer'], department: 'Video team (UGC)' },
-  { match: /^amit\s+kamble(\s|$)/i,   who: 'Amit Kamble', addTeams: ['influencer'], department: 'Video team (UGC)' },
+  // Amit is an intern who works WITH Priyanka: helper on every Video SOP
+  // (video_support), not a separate owner who gets brands auto-assigned.
+  { match: /^amit\s+kamble(\s|$)/i,   who: 'Amit Kamble', addTeams: ['video_support'], removeTeams: ['influencer'], department: 'Video team intern' },
   { match: /^(shakshi|sakshi)(\s|$)/i, who: 'Shakshi',    addTeams: ['meta'],       department: 'Meta Ads Executive' },
   { match: /^chetan(\s|$)/i,          who: 'Chetan',      addTeams: ['meta'],       department: 'Meta Ads Intern' },
   { match: /^bhawna(\s|$)/i,          who: 'Bhawna',      remove: true },
@@ -43,7 +46,8 @@ export async function applyRoster(): Promise<void> {
           notes.push(`${u.name}: removed, ${moved.length} stage(s) reassigned`);
           continue;
         }
-        u.teams = Array.from(new Set([...(u.teams || []), ...(e.addTeams || [])]));
+        u.teams = Array.from(new Set([...(u.teams || []), ...(e.addTeams || [])])).filter(t => !(e.removeTeams || []).includes(t));
+        if (u.team && (e.removeTeams || []).includes(u.team)) u.team = '';
         if (!u.team && e.addTeams?.[0]) u.team = e.addTeams[0];
         if (e.department) u.department = e.department;
         if (u.role === 'workroom' || u.role === 'client') u.role = 'employee';

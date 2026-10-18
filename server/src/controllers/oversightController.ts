@@ -475,7 +475,7 @@ export async function setOversightAccess(req: AuthRequest, res: Response): Promi
  * (the model bcrypts it on save) for Rahul to share.
  */
 const MEMBER_ROLES = ['employee', 'sales', 'workroom'];
-const MEMBER_TEAMS = ['development', 'meta', 'influencer', 'sales', 'design', 'script', 'social', 'qa', 'management'];
+const MEMBER_TEAMS = ['development', 'meta', 'influencer', 'video_support', 'sales', 'design', 'script', 'social', 'qa', 'management'];
 function startingPassword(name: string) {
   const first = (name.split(/\s+/)[0] || 'Robin').replace(/[^a-z]/gi, '') || 'Robin';
   const n = Math.floor(1000 + Math.random() * 9000);

@@ -53,6 +53,9 @@ const VideoSopRunSchema = new Schema({
   serviceId:      { type: Types.ObjectId, required: true },
   clientName:     { type: String, default: '' },
   assignedTo:     { type: String, default: '', index: true },
+  // Oct 2026 — "Amit is intern so they work together": helpers can tick steps
+  // and post updates alongside the owner; the owner stays accountable.
+  helpers:        { type: [String], default: [] },
   startedAt:      { type: Date, required: true },
   startedBy:      { type: String, default: '' },
   status:         { type: String, enum: ['active', 'completed', 'cancelled'], default: 'active', index: true },
@@ -76,6 +79,19 @@ const VideoSopRunSchema = new Schema({
   normalSentFor:   { type: [String], default: [] },   // step keys already given their "due soon" reminder
   log:            { type: [LogSchema], default: [] },
   dailyUpdates:   { type: [DailyUpdateSchema], default: [] },
+  // Oct 2026 — per-brand video count tracker ("X videos: Y delivered, 3 in
+  // editing…"). Owner or helper updates it; null updatedAt = never confirmed,
+  // which makes the login popup ask for it.
+  videoProgress: {
+    total:     { type: Number, default: 0 },
+    scripting: { type: Number, default: 0 },   // script being written / approved
+    shooting:  { type: Number, default: 0 },   // with the creator (shipped / shooting)
+    editing:   { type: Number, default: 0 },   // received, in editing / corrections
+    delivered: { type: Number, default: 0 },   // final video in the client group
+    note:      { type: String, default: '' },
+    updatedAt: { type: Date, default: null },
+    updatedBy: { type: String, default: '' },
+  },
   // Evening escalation bookkeeping: IST dates already chased / escalated.
   dailyChasedFor:    { type: String, default: '' },
   dailyEscalatedFor: { type: String, default: '' },

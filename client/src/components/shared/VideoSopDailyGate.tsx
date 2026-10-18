@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { VideoProgressEditor, VideoProgressBar, type Progress } from '@/components/shared/VideoProgress';
 
 /**
  * VideoSopDailyGate — Oct 2026 (owner: "day need to update for each step…
@@ -23,6 +24,7 @@ interface Item {
   runId: string; clientName: string; dayNumber: number; stepKey: string; stepTitle: string;
   dueAt: string | null; graceUntil: string | null; state: string; todo: string[];
   updatedToday: boolean; required: boolean; why: string;
+  role?: 'owner' | 'helper'; needsProgress?: boolean; progress?: Progress;
 }
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '';
 const late = (s: string) => s === 'overdue' || s === 'missed';
@@ -52,6 +54,14 @@ export function VideoSopDailyGate() {
   if (!staff || items.length === 0) return null;
   const onSopPage = location.pathname.startsWith('/video-sop');
   const required = items.filter(i => i.required);
+  // "Tomorrow when they log in, ask them to update the total status of the brands."
+  const needProgress = items.filter(i => i.needsProgress);
+  const saveProgress = async (it: Item, v: any) => {
+    setBusy('p' + it.runId);
+    try { await api.videoSopProgress(it.runId, v); toast.success(`${it.clientName}: video status saved.`); load(); }
+    catch (e: any) { toast.error(e?.response?.data?.error || 'Could not save.'); }
+    finally { setBusy(null); }
+  };
 
   const submit = async (it: Item) => {
     const d = drafts[it.runId] || { text: '', blocker: '' };
@@ -83,7 +93,25 @@ export function VideoSopDailyGate() {
       )}
 
       {/* Must-answer popup */}
-      {required.length > 0 && !onSopPage && (
+      {needProgress.length > 0 && !onSopPage && (
+        <div className="fixed inset-0 z-[91] bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="sop-progress-title">
+          <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-5 space-y-4">
+            <div>
+              <h2 id="sop-progress-title" className="text-white font-bold text-base"><i className="fa-solid fa-film text-emerald-400 mr-2"></i>Update the video status of your brands</h2>
+              <p className="text-xs text-slate-400 mt-1">For each brand: how many videos in total, and how many are in script, with the creator, in editing and delivered. Rahul sees this on his board.</p>
+            </div>
+            {needProgress.map(it => (
+              <div key={it.runId} className="rounded-xl border border-slate-700 bg-slate-950/50 p-3.5 space-y-2">
+                <div className="text-sm font-bold text-white">{it.clientName} <span className="text-slate-400 font-normal">· now at {it.stepTitle || 'final steps'}</span></div>
+                {it.progress?.total ? <VideoProgressBar p={it.progress} compact /> : null}
+                <VideoProgressEditor initial={it.progress} busy={busy === 'p' + it.runId} onSave={v => saveProgress(it, v)} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {required.length > 0 && !onSopPage && needProgress.length === 0 && (
         <div className="fixed inset-0 z-[90] bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="sop-gate-title">
           <div className="bg-slate-900 border border-rose-500/40 rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto p-5 space-y-4">
             <div>
