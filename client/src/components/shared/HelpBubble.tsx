@@ -105,7 +105,7 @@ export function HelpBubble() {
       <button
         onClick={() => setOpen(o => !o)}
         title={open ? 'Close Robin AI' : 'Ask Robin AI / Report an issue'}
-        className="fixed bottom-24 right-5 z-[80] h-12 w-12 rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-transform overflow-visible"
+        className="fixed bottom-[8.25rem] right-5 z-[80] h-12 w-12 rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-transform overflow-visible"
         style={{
           background: 'linear-gradient(135deg, hsl(178 65% 26%) 0%, hsl(178 70% 38%) 50%, hsl(40 90% 55%) 100%)',
           boxShadow: '0 8px 28px -8px hsl(178 65% 26% / 0.55), 0 0 0 1px hsl(178 65% 26% / 0.15)',
@@ -131,7 +131,7 @@ export function HelpBubble() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
             transition={{ duration: 0.15 }}
-            className="fixed bottom-40 right-5 z-[80] w-[min(380px,calc(100vw-2.5rem))] max-h-[min(560px,calc(100vh-12rem))] bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            className="fixed bottom-[12rem] right-5 z-[80] w-[min(380px,calc(100vw-2.5rem))] max-h-[min(560px,calc(100vh-12rem))] bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden"
           >
             {/* Header */}
             <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-muted/30">

@@ -51,6 +51,12 @@ const ServiceSchema = new Schema({
   // many videos were agreed on (e.g. "3 UGC videos"), not just a checklist.
   // Optional/unused for the other service types.
   quantity:       { type: Number, default: null },
+  // Oct 2026 — Decision Tree "next task" (Rahul's voice note): after moving
+  // a stage, the owner states what happens next and by when.
+  nextTask:       { type: String, default: '' },
+  nextTaskDue:    { type: Date, default: null },
+  nextTaskSetBy:  { type: String, default: '' },
+  nextTaskSetAt:  { type: Date, default: null },
 }, { _id: true });
 
 // Added Aug 2026 — CRM upgrade. Meta Ads fee model, set at onboarding when
@@ -275,6 +281,12 @@ const ClientWorkflowSchema = new Schema({
   // `clientId` (which points at the client-login User, the pre-existing
   // linkage convention — see Lead.convertedToClientId / usersController).
   onboardedBy: { type: String, default: '' },   // userId — Rishi, Om, etc.
+  // Oct 2026 — UGC handover from sales at onboarding (Rishi): number of
+  // videos, product, price, offer, requirements, competitors, contact.
+  // Pre-fills the Video SOP's Day-1 brief. See lib/videoSop.ts BRIEF_FIELDS.
+  ugcBrief: { type: Schema.Types.Mixed, default: null },
+  // Oct 2026 — status before "Clean up clients" archived it (restored on un-archive).
+  archivedFromStatus: { type: String, default: '' },
   onboardedAt: { type: Date,   default: null },
   leadId:      { type: Types.ObjectId, ref: 'Lead', default: null, index: true },
 

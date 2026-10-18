@@ -20,7 +20,9 @@ export function dashboardForRole(role: string): string {
     // Workroom landing (tuned for IC work, with brief, tasks,
     // targets). Admin can still reach /workroom-home from the sidebar
     // to see their personal clock + tasks.
-    case 'admin':    return '/executive-dashboard';
+    // Oct 2026 — owner/Rahul open Robin to "see which client is at which
+    // stage and why it's halted": land on the whole-pipeline board.
+    case 'admin':    return '/command-center?view=board';
     case 'sales':    return '/executive-dashboard';
     case 'employee': return '/workroom-home';
     case 'workroom': return '/workroom-home';
@@ -79,7 +81,7 @@ export function ProtectedRoute({ children, requiredRole }: Props) {
       // SAFETY: if redirecting would land on the same path we're already on,
       // the Navigate would loop and freeze the tab (this is what crashed
       // Robin for everyone). Render AccessDenied instead — terminal state.
-      if (target === location.pathname) {
+      if (target.split('?')[0] === location.pathname) {
         return <AccessDenied role={role} />;
       }
       return <Navigate to={target} replace />;

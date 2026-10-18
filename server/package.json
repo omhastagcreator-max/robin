@@ -34,6 +34,8 @@
     "update-brand-statuses": "ts-node src/scripts/updateBrandStatuses.ts",
     "apply-roster-sync": "ts-node src/scripts/applyRosterSyncAug2026.ts",
     "grant-client-edit": "ts-node src/scripts/grantClientEditPermission.ts",
+    "grant-oversight": "ts-node src/scripts/grantOversightAccess.ts",
+    "set-video-team": "ts-node src/scripts/setVideoTeam.ts",
     "apply-owner-round": "ts-node src/scripts/applyOwnerRoundAug2026.ts"
   },
   "dependencies": {

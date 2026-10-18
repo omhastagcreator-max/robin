@@ -639,6 +639,43 @@ export const myLeaveToday      = () => api.get('/leaves/mine-today').then(r => r
 export const setWorkingDespiteLeave = (workingType: 'full' | 'first_half' | 'second_half') =>
   api.put('/leaves/mine-today/working', { workingType }).then(r => r.data);
 export const adminLeavesSummary = () => api.get('/leaves/admin/summary').then(r => r.data);
+// ── UGC Video SOP (Oct 2026) — strict day-based SOP per brand ──────────
+export const videoSopMeta      = () => api.get('/video-sop/meta').then(r => r.data);
+export const videoSopList      = (status: 'active' | 'completed' | 'all' = 'active') => api.get('/video-sop', { params: { status } }).then(r => r.data);
+export const videoSopGet       = (id: string) => api.get(`/video-sop/${id}`).then(r => r.data);
+export const videoSopByWorkflow = (workflowId: string) => api.get(`/video-sop/by-workflow/${workflowId}`).then(r => r.data);
+export const videoSopSaveBrief = (id: string, brief: Record<string, string>) => api.put(`/video-sop/${id}/brief`, brief).then(r => r.data);
+export const videoSopToggleItem = (id: string, key: string, idx: number, done: boolean) => api.put(`/video-sop/${id}/steps/${key}/items/${idx}`, { done }).then(r => r.data);
+export const videoSopComplete  = (id: string, key: string, body: { link?: string; note?: string; lateReason?: string; lateNote?: string }) => api.put(`/video-sop/${id}/steps/${key}/complete`, body).then(r => r.data);
+export const videoSopReopen    = (id: string, key: string, reason: string) => api.put(`/video-sop/${id}/steps/${key}/reopen`, { reason }).then(r => r.data);
+export const videoSopAssign    = (id: string, userId: string) => api.put(`/video-sop/${id}/assign`, { userId }).then(r => r.data);
+export const videoSopCancel    = (id: string, reason: string) => api.put(`/video-sop/${id}/cancel`, { reason }).then(r => r.data);
+export const videoSopStart     = (workflowId: string, serviceId: string, startedAt?: string, opts: { currentStep?: string; assignTo?: string } = {}) =>
+  api.post('/video-sop/start', { workflowId, serviceId, startedAt, ...opts }).then(r => r.data);
+export const videoSopTeam      = () => api.get('/video-sop/team').then(r => r.data);
+export const videoSopMyToday   = () => api.get('/video-sop/my-today', { headers: { 'X-Silent': '1' } }).then(r => r.data);
+export const videoSopDailyUpdate = (id: string, text: string, blocker?: string) => api.put(`/video-sop/${id}/daily-update`, { text, blocker }).then(r => r.data);
+
+// ── Decision Tree desk (Oct 2026, Rahul's voice notes) ─────────────────
+export const cwRecordOpen   = (id: string, where = 'decision_tree') => silentPost(`/client-workflows/${id}/viewed`, { where });
+export const cwOpens        = (id: string) => api.get(`/client-workflows/${id}/opens`).then(r => r.data);
+export const cwCleanLog     = (id: string) => api.get(`/client-workflows/${id}/log`).then(r => r.data);
+export const cwUpdateProgress = (id: string, sid: string, body: { reachedIndex?: number; nextTask?: string; nextTaskDue?: string | null; note?: string }) =>
+  api.put(`/client-workflows/${id}/services/${sid}/progress`, body).then(r => r.data);
+export const cwLogClientUpdate = (id: string, message: string, channel: 'whatsapp' | 'copy') =>
+  api.post(`/client-workflows/${id}/client-update`, { message, channel }).then(r => r.data);
+const silentPost = (url: string, body: unknown) => api.post(url, body, { headers: { 'X-Silent': '1' } }).then(r => r.data).catch(() => null);
+
+// ── Team Oversight (Oct 2026) — admin + managers flagged canViewOversight ──
+export const getOversightDay    = (date?: string) => api.get('/oversight/day', { params: date ? { date } : {} }).then(r => r.data);
+export const listOversightAccess = () => api.get('/oversight/access').then(r => r.data);
+export const listTeamMembers  = () => api.get('/oversight/members').then(r => r.data);
+export const updateTeamMember = (id: string, patch: { role?: string; teams?: string[]; department?: string; isActive?: boolean }) => api.put(`/oversight/members/${id}`, patch).then(r => r.data);
+export const myAttendance     = (month: string, userId?: string) => api.get('/my-attendance', { params: { month, ...(userId ? { userId } : {}) } }).then(r => r.data);
+export const clientsCleanupList  = () => api.get('/client-workflows/cleanup/list').then(r => r.data);
+export const clientsCleanupApply = (keep: string[], archive: string[]) => api.post('/client-workflows/cleanup', { keep, archive }).then(r => r.data);
+export const addTeamMember = (d: { name: string; email: string; phone?: string; role: string; teams: string[] }) => api.post('/oversight/members', d).then(r => r.data);
+export const setOversightAccess  = (id: string, enabled: boolean) => api.put(`/oversight/access/${id}`, { enabled }).then(r => r.data);
 export const adminAttendance    = (date?: string) => api.get('/admin/attendance', { params: date ? { date } : {} }).then(r => r.data);
 export const adminAttendanceMonthly = (month?: string) => api.get('/admin/attendance/monthly', { params: month ? { month } : {} }).then(r => r.data);
 export const adminAttendanceRange   = (from: string, to: string, userId?: string) =>

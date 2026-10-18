@@ -11,6 +11,7 @@ import LeaveApplication from '../models/LeaveApplication';
 import { sessionTotals, effectiveEndMs } from '../services/sessionTime';
 import * as meta from '../services/metaAdsService';
 import { callGemini } from '../services/aiTriage';
+import { deactivateMember } from '../services/teamRoster';
 
 // GET /api/admin/employees
 export async function listEmployees(req: AuthRequest, res: Response): Promise<void> {
@@ -224,9 +225,9 @@ export async function deactivateUser(req: AuthRequest, res: Response): Promise<v
     }
     const user = await User.findById(req.params.id);
     if (!user) { res.status(404).json({ error: 'User not found' }); return; }
-    user.isActive = false;
-    await user.save();
-    res.json({ message: `${user.name || user.email} has been removed`, userId: String(user._id) });
+    // Oct 2026 — also hand their open client stages to a teammate (shared with Team & roles).
+    const { moved } = await deactivateMember(String(user.organizationId), String(user._id), req.user!.id);
+    res.json({ message: `${user.name || user.email} has been removed`, userId: String(user._id), reassigned: moved });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }
 

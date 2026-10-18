@@ -10,5 +10,7 @@ const ActivityLogSchema = new Schema({
 }, { timestamps: { createdAt: 'createdAt', updatedAt: false } });
 
 ActivityLogSchema.index({ organizationId: 1, createdAt: -1 });
+// Oct 2026 — Team Oversight: per-user sign-in lookups (auth.login / auth.resume).
+ActivityLogSchema.index({ userId: 1, action: 1, createdAt: -1 });
 
 export default model('ActivityLog', ActivityLogSchema);

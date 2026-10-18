@@ -54,8 +54,45 @@ export function ExecutiveSidebar() {
             <span className="truncate">Decision Tree (DT)</span>
           </Link>
 
+          {/* Oct 2026 — UGC Video SOP (every brand, Day 1 → Day 6). */}
+          {can(['admin', 'employee', 'sales', 'workroom']) && (
+            <Link to="/video-sop" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/video-sop') ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+              <i className="fa-solid fa-clapperboard w-5 text-center text-rose-400"></i>
+              <span className="truncate">UGC Video SOP</span>
+            </Link>
+          )}
+
           {can(['admin', 'employee', 'sales', 'workroom', 'client']) && (
             <div className="pt-4 text-[10px] font-semibold tracking-wider text-slate-500 uppercase px-3 pb-2">Operations & Management</div>
+          )}
+
+          {/* Oct 2026 — Team Oversight: admin + managers granted access (Rahul). */}
+          {(can(['admin']) || (user as any)?.canViewOversight === true) && (
+            <Link to="/admin/oversight" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/admin/oversight') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+              <i className="fa-solid fa-binoculars w-5 text-center text-sky-400"></i>
+              <span className="truncate">Team Oversight</span>
+            </Link>
+          )}
+
+          {(can(['admin']) || (user as any)?.canViewOversight === true) && (
+            <Link to="/admin/team" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/admin/team') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+              <i className="fa-solid fa-people-group w-5 text-center text-sky-400"></i>
+              <span className="truncate">Team & roles</span>
+            </Link>
+          )}
+          {(can(['admin']) || (user as any)?.canViewOversight === true) && (
+            <Link to="/admin/clients-cleanup" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/admin/clients-cleanup') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+              <i className="fa-solid fa-broom w-5 text-center text-amber-400"></i>
+              <span className="truncate">Clean up clients</span>
+            </Link>
+          )}
+
+          {/* Oct 2026 — everyone's own attendance calendar. */}
+          {can(['admin', 'employee', 'sales', 'workroom']) && (
+            <Link to="/my-attendance" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/my-attendance') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+              <i className="fa-solid fa-calendar-days w-5 text-center text-emerald-400"></i>
+              <span className="truncate">My attendance</span>
+            </Link>
           )}
 
           {can(['admin']) && (
@@ -115,6 +152,21 @@ export function ExecutiveSidebar() {
           )}
         </nav>
       </div>
+
+      {/* Oct 2026 — moved here from a floating pill that overlapped this footer. */}
+      {can(['admin', 'sales', 'employee']) && (
+        <div className="px-4 pb-3 shrink-0">
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event('robin:assign-task'))}
+            title="Assign a task to anyone (press 't' anywhere)"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition"
+          >
+            <i className="fa-solid fa-plus text-blue-400"></i> Assign task
+            <kbd className="ml-auto text-[10px] text-slate-400 border border-slate-600 rounded px-1.5">T</kbd>
+          </button>
+        </div>
+      )}
 
       {/* User Footer Profile */}
       <div className="p-4 border-t border-slate-800 bg-slate-900/80 flex items-center justify-between shrink-0">

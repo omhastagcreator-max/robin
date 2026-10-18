@@ -78,13 +78,14 @@ export function CRMView() {
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [awaitingOpen, setAwaitingOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   // Real server-backed "just mine" filter — cwListWorkflows({mine:'1'})
   // restricts to workflows the signed-in user created or is assigned a
   // service on (see clientWorkflowController.listWorkflows).
   const [focusedOnly, setFocusedOnly] = useState(false);
-  const [sortBy, setSortBy] = useState<'recent' | 'priority' | 'stuck'>('stuck');
+  // Oct 2026 (Rahul's voice note): "Focused / Sort — remove". Stuck-first is
+  // the only order that matters; the count cards below now filter instead.
+  const [statusFilter, setStatusFilter] = useState<'all' | 'onTrack' | 'atRisk' | 'awaiting' | 'delayed' | 'movedToday'>('all');
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [taskFor, setTaskFor] = useState<string | null>(null);
   const [savingEta, setSavingEta] = useState<string | null>(null);
@@ -115,24 +116,32 @@ export function CRMView() {
 
   useEffect(() => { load(focusedOnly); }, [focusedOnly]);
 
-  const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
 
+  const isToday = (iso?: string) => {
+    if (!iso) return false;
+    const d = new Date(iso), n = new Date();
+    return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+  };
+  const STATUS_TEST: Record<typeof statusFilter, (c: ClientRow) => boolean> = {
+    all:        () => true,
+    onTrack:    c => c.health === 'healthy' || c.health === 'ready_to_deliver',
+    atRisk:     c => c.health === 'at_risk',
+    awaiting:   c => c.health === 'waiting_client',
+    delayed:    c => c.health === 'delayed' || c.health === 'blocked',
+    movedToday: c => isToday(c.lastUpdate?.at || c.updatedAt),
+  };
   const filteredClients = clients
+    .filter(STATUS_TEST[statusFilter])
     .filter(c =>
       (c.clientName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (c.clientPhone || '').includes(searchQuery)
+      (c.clientPhone || '').includes(searchQuery) ||
+      ((c as any).clientEmail || '').toLowerCase().includes(searchQuery.toLowerCase())
     )
     .sort((a: any, b: any) => {
-      if (sortBy === 'stuck') {
-        const R: Record<string, number> = { blocked: 0, waiting: 1, active: 2, done: 3 };
-        return (R[a.stuckAt?.severity] ?? 9) - (R[b.stuckAt?.severity] ?? 9);
-      }
-      if (sortBy === 'priority') {
-        return (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9);
-      }
-      // 'recent' — server already sorts by updatedAt desc, but re-sort
-      // client-side too so it stays correct after local search/filter.
-      return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+      // Most stuck first, then most recently updated.
+      const R: Record<string, number> = { blocked: 0, waiting: 1, active: 2, done: 3 };
+      return ((R[a.stuckAt?.severity] ?? 9) - (R[b.stuckAt?.severity] ?? 9))
+        || (new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
     });
 
   const metrics = useMemo(() => {
@@ -150,18 +159,16 @@ export function CRMView() {
     return { onTrack, atRisk, delayed, awaiting, stageMovedToday };
   }, [clients]);
 
-  const awaitingClients = useMemo(() => clients.filter(c => c.health === 'waiting_client'), [clients]);
 
   const percent = clients.length
     ? Math.round((clients.filter(c => c.health === 'healthy' || c.health === 'ready_to_deliver').length / clients.length) * 100)
     : 0;
-  let ringColor = '#4ade80';
-  if (percent < 50) ringColor = '#ef4444';
-  else if (percent <= 80) ringColor = '#f59e0b';
 
+  // Opens the Decision Tree for THIS brand only. DT remembers it, so coming
+  // back to DT from the sidebar reopens the same brand (Rahul's voice note).
   const openDT = (client: ClientRow) => {
+    try { localStorage.setItem('robin:dt:lastClient', client._id); } catch { /* storage blocked — state still carries it */ }
     navigate('/command-center', { state: { clientId: client._id, clientName: client.clientName } });
-    toast.success(`Client "${client.clientName}" loaded into CRM context. Decision Tree unlocked.`);
   };
 
   return (
@@ -170,11 +177,8 @@ export function CRMView() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-slate-800/80">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <i className="fa-solid fa-folder-open text-blue-500"></i> {roleScoped ? 'My client tasks' : 'Client project pipeline'}
+            <i className="fa-solid fa-address-book text-blue-500"></i> {roleScoped ? 'My clients' : 'Clients'}
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">{roleScoped
-            ? 'Only the clients and stages assigned to you. See the Decision Tree for where every client is in the pipeline.'
-            : 'Live overview of active agency projects, current stage, and verified audit logs.'}</p>
         </div>
         <div className="flex items-center gap-3">
           {/* Real Gemini-backed brief covering every active project — same
@@ -186,122 +190,71 @@ export function CRMView() {
         </div>
       </div>
 
-      {/* Toolbar & Search Bar */}
-      <div className="space-y-3">
-        <div className="relative">
-          <span className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-slate-400">
-            <i className="fa-solid fa-magnifying-glass"></i>
-          </span>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by phone, brand name or email — selects client instantly for Decision Tree unlocking"
-            className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-11 pr-4 py-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition shadow-inner"
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
-          <div className="flex flex-wrap items-center gap-2">
-            {!roleScoped && <button
+      {/* Search — centred and larger (Rahul's voice note). */}
+      <div className="w-full max-w-2xl mx-auto relative">
+        <span className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-slate-500">
+          <i className="fa-solid fa-magnifying-glass text-sm"></i>
+        </span>
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search brand, phone or email"
+          aria-label="Search clients"
+          className="w-full bg-slate-900 border border-slate-700 rounded-2xl pl-11 pr-4 py-3.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition"
+        />
+        {!roleScoped && (
+          <div className="flex justify-center mt-2">
+            <button
               onClick={() => setFocusedOnly(v => !v)}
+              aria-pressed={focusedOnly}
               title="Show only clients you created or are assigned a service on"
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition ${focusedOnly ? 'bg-blue-600 text-white' : 'bg-slate-950 border border-slate-800 text-slate-300 hover:text-white'}`}
+              className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition ${focusedOnly ? 'bg-blue-600 border-blue-500 text-white' : 'border-slate-700 text-slate-400 hover:text-white'}`}
             >
-              <i className="fa-solid fa-crosshairs mr-1.5"></i> {focusedOnly ? 'Focused Pipeline · Mine' : 'Focused Pipeline'}
-            </button>}
-            <div className="h-4 w-px bg-slate-800 mx-1"></div>
-            <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-300">
-              <span className="text-slate-500 font-semibold uppercase text-[10px]">SORT</span>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'recent' | 'priority' | 'stuck')}
-                className="bg-transparent text-white font-medium focus:outline-none [&>option]:bg-slate-900 [&>option]:text-white"
-              >
-                <option value="stuck">Most stuck first</option>
-                <option value="recent">Recently Updated</option>
-                <option value="priority">Priority · High to Low</option>
-              </select>
-            </div>
+              {focusedOnly ? '✓ Only my clients' : 'Only my clients'}
+            </button>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-400 font-mono">{filteredClients.length} {roleScoped ? 'assigned to you' : 'active accounts'}</span>
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* Progress Overview */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
-        <div className="flex items-center gap-4 w-full md:w-auto">
-          <div className="relative w-16 h-16 flex items-center justify-center rounded-full bg-slate-950 border-4 shadow-inner transition-all duration-500" style={{ borderColor: ringColor + '66' }}>
-            <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-white">{percent}%</span>
-          </div>
-          <div>
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">OVERALL AGENCY PROGRESS</span>
-            <h3 className="text-base font-bold text-white">{metrics.onTrack} of {clients.length} accounts on track</h3>
-          </div>
-        </div>
-      </div>
-
-      {/* 6 Metric Cards Row */}
+      {/* Count cards — click a number to filter the list to those clients. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase">Active Projects</span>
-            <i className="fa-solid fa-folder text-blue-400 text-xs"></i>
-          </div>
-          <h4 className="text-2xl font-bold text-white">{clients.length}</h4>
-        </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase">On Track</span>
-            <i className="fa-solid fa-circle-check text-emerald-400 text-xs"></i>
-          </div>
-          <h4 className="text-2xl font-bold text-emerald-400">{metrics.onTrack}</h4>
-        </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase">At Risk</span>
-            <i className="fa-solid fa-triangle-exclamation text-amber-400 text-xs"></i>
-          </div>
-          <h4 className="text-2xl font-bold text-amber-400">{metrics.atRisk}</h4>
-        </div>
-
-        <div onClick={() => awaitingClients.length && setAwaitingOpen(true)} className="bg-slate-900 border border-purple-500/30 hover:border-purple-500/70 cursor-pointer rounded-xl p-4 flex flex-col justify-between shadow-sm transition-all group">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-semibold text-purple-400 uppercase group-hover:underline">Awaiting Client</span>
-            <i className="fa-solid fa-user-clock text-purple-400 text-xs animate-pulse"></i>
-          </div>
-          <div className="flex items-baseline justify-between">
-            <h4 className="text-2xl font-bold text-purple-400">{metrics.awaiting}</h4>
-            <span className="text-[10px] text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded">View Blockers</span>
-          </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase">Delayed</span>
-            <i className="fa-solid fa-clock text-rose-400 text-xs"></i>
-          </div>
-          <h4 className="text-2xl font-bold text-rose-400">{metrics.delayed}</h4>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase">Stage Moved Today</span>
-            <i className="fa-solid fa-arrow-progress text-cyan-400 text-xs"></i>
-          </div>
-          <h4 className="text-2xl font-bold text-cyan-400">{metrics.stageMovedToday}</h4>
-        </div>
+        {([
+          { k: 'all',        label: 'All clients',     value: clients.length,          icon: 'fa-folder',               tone: 'text-white',       sub: `${percent}% on track` },
+          { k: 'onTrack',    label: 'On track',        value: metrics.onTrack,         icon: 'fa-circle-check',         tone: 'text-emerald-400' },
+          { k: 'atRisk',     label: 'At risk',         value: metrics.atRisk,          icon: 'fa-triangle-exclamation', tone: 'text-amber-400' },
+          { k: 'awaiting',   label: 'Awaiting client', value: metrics.awaiting,        icon: 'fa-user-clock',           tone: 'text-purple-400' },
+          { k: 'delayed',    label: 'Delayed',         value: metrics.delayed,         icon: 'fa-clock',                tone: 'text-rose-400' },
+          { k: 'movedToday', label: 'Moved today',     value: metrics.stageMovedToday, icon: 'fa-arrow-right',          tone: 'text-cyan-400' },
+        ] as const).map(card => {
+          const active = statusFilter === card.k;
+          return (
+            <button
+              key={card.k}
+              onClick={() => setStatusFilter(active && card.k !== 'all' ? 'all' : card.k)}
+              aria-pressed={active}
+              className={`text-left bg-slate-900 border rounded-xl p-4 shadow-sm transition ${active ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-800 hover:border-slate-600'}`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-semibold text-slate-400 uppercase">{card.label}</span>
+                <i className={`fa-solid ${card.icon} ${card.tone} text-xs`}></i>
+              </div>
+              <h4 className={`text-2xl font-bold ${card.tone}`}>{card.value}</h4>
+              {'sub' in card && card.sub && <p className="text-[10.5px] text-slate-500 mt-0.5">{card.sub}</p>}
+            </button>
+          );
+        })}
       </div>
 
       {/* Client Table Feed */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <i className="fa-solid fa-table-list text-blue-400"></i> Active Client Accounts & Pipeline Directory
+            <i className="fa-solid fa-table-list text-blue-400"></i> {statusFilter === 'all' ? 'All clients' : `Filtered: ${({ onTrack: 'On track', atRisk: 'At risk', awaiting: 'Awaiting client', delayed: 'Delayed', movedToday: 'Moved today' } as Record<string, string>)[statusFilter]}`}
+            <span className="text-xs text-slate-500 font-normal">· {filteredClients.length}</span>
+            {statusFilter !== 'all' && <button onClick={() => setStatusFilter('all')} className="text-[11px] text-blue-400 hover:text-blue-300 font-normal">clear</button>}
           </h3>
-          <span className="text-xs text-slate-400">Click a row to see every stage, its owner and ETA</span>
+          <span className="text-xs text-slate-400 hidden md:inline">Click a row for every stage, owner and ETA</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -363,8 +316,8 @@ export function CRMView() {
                       >
                         <i className="fa-solid fa-folder-open"></i>
                       </button>
-                      <button onClick={() => openDT(client)} title="Open in Decision Tree" className="bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-semibold transition shadow">
-                        <i className="fa-solid fa-diagram-project"></i>
+                      <button onClick={() => openDT(client)} title="Open this brand in the Decision Tree" className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow">
+                        <i className="fa-solid fa-diagram-project mr-1"></i> DT
                       </button>
                     </td>
                   </tr>
@@ -425,49 +378,6 @@ export function CRMView() {
           </table>
         </div>
       </div>
-
-      {/* Awaiting Client Modal */}
-      {awaitingOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 border border-purple-500/40 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-lg">
-                  <i className="fa-solid fa-user-clock"></i>
-                </div>
-                <div>
-                  <h4 className="font-bold text-white text-sm">Awaiting Client & Blockers Breakdown</h4>
-                  <p className="text-xs text-slate-400">Live operational review of pending client approvals</p>
-                </div>
-              </div>
-              <button onClick={() => setAwaitingOpen(false)} className="text-slate-400 hover:text-white p-2">
-                <i className="fa-solid fa-xmark text-base"></i>
-              </button>
-            </div>
-
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-              {awaitingClients.map(c => (
-                <div key={c._id} className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-white">{c.clientName}</span>
-                    <span className="text-purple-400 font-medium">{currentStageLabel(c)}</span>
-                  </div>
-                  <p className="text-xs text-slate-300">{c.lastUpdate?.detail || 'Waiting on client input to proceed.'}</p>
-                  <span className="text-[10px] font-mono text-slate-500">
-                    Last Follow-up: {c.lastUpdate?.at || c.updatedAt ? new Date(c.lastUpdate?.at || c.updatedAt!).toLocaleString() : '—'}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex justify-end pt-2 border-t border-slate-800">
-              <button onClick={() => setAwaitingOpen(false)} className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl text-xs font-semibold transition shadow">
-                Close & Return
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Real "onboard a client" flow — picks/creates the client, assigns
           services, and creates the actual ClientWorkflow via the live API.

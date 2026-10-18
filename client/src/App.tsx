@@ -17,6 +17,11 @@ const LeavesPage        = lazy(() => import('@/pages/LeavesPage'));
 const IncentivesPage    = lazy(() => import('@/pages/IncentivesPage'));
 const AdminAttendance   = lazy(() => import('@/pages/AdminAttendance'));
 const AdminCrashLogs    = lazy(() => import('@/pages/AdminCrashLogs'));
+const AdminOversight    = lazy(() => import('@/pages/AdminOversight'));
+const VideoSopPage      = lazy(() => import('@/pages/VideoSopPage'));
+const MyAttendancePage  = lazy(() => import('@/pages/MyAttendancePage'));
+const TeamRolesPage     = lazy(() => import('@/pages/TeamRolesPage'));
+const ClientsCleanupPage = lazy(() => import('@/pages/ClientsCleanupPage'));
 const ClientWorkspacePage      = lazy(() => import('@/pages/ClientWorkspacePage'));
 const StageWorkspacePage       = lazy(() => import('@/pages/StageWorkspacePage'));
 const MetaShareView     = lazy(() => import('@/pages/MetaShareView'));
@@ -155,6 +160,17 @@ function AppRoutes() {
           {/* Admin only */}
           <Route path="/admin/leaves"     element={<ProtectedRoute requiredRole="admin"><E><AdminLeaves /></E></ProtectedRoute>} />
           <Route path="/admin/attendance" element={<ProtectedRoute requiredRole="admin"><E><AdminAttendance /></E></ProtectedRoute>} />
+          {/* Oct 2026 — Team Oversight: admin + managers (canViewOversight,
+              e.g. Rahul). The route lets every staff role through because
+              a manager may not hold the admin role; the page itself and
+              the /api/oversight server gate enforce the real check. */}
+          {/* Oct 2026 — UGC Video SOP board: all staff see it, only the assigned video person marks steps (server-enforced). */}
+          {/* Oct 2026 — every employee's own attendance calendar; Team & roles + client clean-up (admin / Rahul — pages self-gate, server enforces). */}
+          <Route path="/my-attendance"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><MyAttendancePage /></E></ProtectedRoute>} />
+          <Route path="/admin/team"       element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><TeamRolesPage /></E></ProtectedRoute>} />
+          <Route path="/admin/clients-cleanup" element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><ClientsCleanupPage /></E></ProtectedRoute>} />
+          <Route path="/video-sop"        element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><VideoSopPage /></E></ProtectedRoute>} />
+          <Route path="/admin/oversight"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><AdminOversight /></E></ProtectedRoute>} />
           <Route path="/admin/crash-logs" element={<ProtectedRoute requiredRole="admin"><E><AdminCrashLogs /></E></ProtectedRoute>} />
           <Route path="/clients/pipeline"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><CRMView /></E></ProtectedRoute>} />
           {/* Two-layer system (May 2026, v3) */}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { UgcBriefFields, emptyUgcBrief, ugcBriefMissing, type UgcBrief } from '@/components/shared/UgcBriefFields';
 import { AppLayout } from '@/components/AppLayout';
 import { useDrawer } from '@/components/ui/RightDrawer';
 import { LeadAIPanel } from '@/components/panels/LeadAIPanel';
@@ -165,6 +166,8 @@ export default function SalesDashboard() {
     metaFeeType: '' as '' | 'fixed' | 'percentage' | 'hybrid' | 'custom',
     metaFixedFee: '', metaPercentage: '', metaCustomDesc: '',
   });
+  // Oct 2026 — UGC brief Rishi must fill when UGC Videos is on the deal.
+  const [ugcBrief, setUgcBrief] = useState<UgcBrief>(emptyUgcBrief());
   const [onboardForm, setOnboardForm] = useState(freshOnboardForm());
   const [onboarding, setOnboarding]       = useState(false);
   // Quick-add per column — when set, that stage's column shows an inline
@@ -416,11 +419,15 @@ export default function SalesDashboard() {
     const services: { type: string; quantity?: number | null }[] = [];
     if (onboardForm.svcShopify)    services.push({ type: 'shopify' });
     if (onboardForm.svcMetaAds)    services.push({ type: 'meta_ads' });
-    if (onboardForm.svcInfluencer) services.push({ type: 'influencer', quantity: onboardForm.influencerQty ? Number(onboardForm.influencerQty) : null });
+    if (onboardForm.svcInfluencer) services.push({ type: 'influencer', quantity: Number(ugcBrief.videos) || null });
     if (onboardForm.svcMisc)       services.push({ type: 'misc' });
     if (services.length === 0) {
       toast.error('Pick at least one service (Website, Meta Ads, UGC Videos, or Misc)');
       return;
+    }
+    if (onboardForm.svcInfluencer) {
+      const missing = ugcBriefMissing(ugcBrief);
+      if (missing.length) { toast.error(`UGC Videos: fill in ${missing.join(', ')}`); return; }
     }
 
     setOnboarding(true);
@@ -459,6 +466,7 @@ export default function SalesDashboard() {
           },
         } : {}),
         leadId: onboardLead._id,
+        ...(onboardForm.svcInfluencer ? { ugcBrief: { ...ugcBrief, videos: Number(ugcBrief.videos) } } : {}),
       });
 
       // Delivery-team instructions (e.g. "needs 5 creatives/week, focus on
@@ -1385,13 +1393,15 @@ export default function SalesDashboard() {
                     <label className="flex items-center gap-2 text-xs mb-1">
                       <input type="checkbox" checked={onboardForm.svcInfluencer} onChange={e => setOnboardForm(p => ({ ...p, svcInfluencer: e.target.checked }))} /> UGC Videos
                     </label>
-                    {onboardForm.svcInfluencer && (
-                      <input type="number" min={1} value={onboardForm.influencerQty} onChange={e => setOnboardForm(p => ({ ...p, influencerQty: e.target.value }))} placeholder="# of videos" className="w-full text-xs p-1.5 border rounded-lg bg-card ml-5" style={{ width: 'calc(100% - 1.25rem)' }} />
-                    )}
+                    {onboardForm.svcInfluencer && <p className="text-[10.5px] text-rose-500 ml-5">Fill the UGC brief below ↓</p>}
                     <label className="flex items-center gap-2 text-xs mb-1">
                       <input type="checkbox" checked={onboardForm.svcMisc} onChange={e => setOnboardForm(p => ({ ...p, svcMisc: e.target.checked }))} /> Miscellaneous
                     </label>
                   </div>
+
+                  {onboardForm.svcInfluencer && (
+                    <div className="col-span-2"><UgcBriefFields value={ugcBrief} onChange={setUgcBrief} /></div>
+                  )}
 
                   {onboardForm.svcMetaAds && (
                     <div className="col-span-2 border rounded-xl p-3 bg-blue-50/50 space-y-2">

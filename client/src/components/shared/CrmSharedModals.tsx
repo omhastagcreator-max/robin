@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { UgcBriefFields, emptyUgcBrief, ugcBriefMissing, type UgcBrief } from '@/components/shared/UgcBriefFields';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Loader2, X, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
@@ -42,6 +43,7 @@ export function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => voi
   // real urgency from day one, not whatever was auto-assigned.
   const [priority, setPriority] = useState<'urgent' | 'high' | 'medium' | 'low'>('medium');
   const [saving, setSaving]     = useState(false);
+  const [ugcBrief, setUgcBrief] = useState<UgcBrief>(emptyUgcBrief());
   // Needed to fire the org-wide confetti broadcast on a successful save.
   const socket = useSocket();
   const { user } = useAuth();
@@ -64,6 +66,10 @@ export function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => voi
       return;
     }
     if (chosen.size === 0) { toast.error('Pick at least one service'); return; }
+    if (chosen.has('influencer')) {
+      const missing = ugcBriefMissing(ugcBrief);
+      if (missing.length) { toast.error(`UGC Videos: fill in ${missing.join(', ')}`); return; }
+    }
     setSaving(true);
     try {
       // Priority is sent alongside the standard fields. The server's
@@ -73,8 +79,9 @@ export function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => voi
       // either and mints a placeholder client login for the name-only case.
       await (api.cwCreateWorkflow as any)({
         ...(newMode ? { clientName: typedName } : { clientId }),
-        services: Array.from(chosen),
+        services: Array.from(chosen).map(t => t === 'influencer' ? { type: t, quantity: Number(ugcBrief.videos) } : t),
         priority,
+        ...(chosen.has('influencer') ? { ugcBrief: { ...ugcBrief, videos: Number(ugcBrief.videos) } } : {}),
       });
       toast.success('Client CRM entry created — teammates have been auto-assigned');
       // Broadcast the celebration org-wide. Surface the client name on
@@ -202,6 +209,9 @@ export function CreateWorkflowModal({ onClose, onCreated }: { onClose: () => voi
               })}
             </div>
           </div>
+
+          {/* Oct 2026 — UGC Videos needs the sales handover before it can start. */}
+          {chosen.has('influencer') && <UgcBriefFields value={ugcBrief} onChange={setUgcBrief} />}
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-2 pt-2">

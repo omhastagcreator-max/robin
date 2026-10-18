@@ -40,6 +40,11 @@ import workroomOnboardRoutes from './routes/workroomOnboard';
 import issuesRoutes        from './routes/issues';
 import aiAutomationRoutes  from './routes/aiAutomation';
 import focusListRoutes     from './routes/focusList';
+import oversightRoutes from './routes/oversight';
+import videoSopRoutes from './routes/videoSop';
+import myAttendanceRoutes from './routes/myAttendance';
+import { startVideoSopCron, setVideoSopIo } from './jobs/videoSopCron';
+import { applyRoster } from './jobs/applyRoster';
 import { startSheetSyncJob } from './jobs/sheetSyncJob';
 import credentialsRoutes  from './routes/credentials';
 import leavesRoutes       from './routes/leaves';
@@ -163,9 +168,26 @@ const authLimiter = rateLimit({
 
 // Looser limiter for everything else — guards against accidental loops
 // or scrapers without throttling normal use. 300 req/min per IP.
+// Oct 2026 — key the limit per SIGNED-IN USER, not per IP. The whole office
+// shares one public IP, and an idle Robin tab already makes ~25 requests/min
+// (heartbeat + session checks), so 8 people on one connection were within a
+// page-load of the shared 300/min ceiling — at which point Robin starts
+// refusing everyone (empty lists, "client not found"). A verified JWT gets
+// its own bucket; anything unauthenticated still shares the IP bucket.
 const generalLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 300,
+  keyGenerator: (req: any) => {
+    const h = String(req.headers?.authorization || '');
+    if (h.startsWith('Bearer ')) {
+      try {
+        const p = jwt.verify(h.slice(7), process.env.JWT_SECRET!) as { id?: string; userId?: string };
+        const id = p.id || p.userId;
+        if (id) return `u:${id}`;
+      } catch { /* invalid token → fall back to IP */ }
+    }
+    return `ip:${req.ip}`;
+  },
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, slow down.' },
@@ -716,6 +738,9 @@ app.use('/api/workroom-onboard', workroomOnboardRoutes); // admin OR canManageWo
 app.use('/api/issues',          issuesRoutes);            // bug reports + Ask Robin AI helper
 app.use('/api/ai-automation',   aiAutomationRoutes);      // lead scoring, workflow summary, morning brief
 app.use('/api/focus-list',      focusListRoutes);          // sales "Focus This Week" priority lists + assignments
+app.use('/api/oversight',       oversightRoutes);          // Oct 2026 — Team Oversight dashboard (admin + managers)
+app.use('/api/my-attendance',   myAttendanceRoutes);       // Oct 2026 — each employee's own attendance calendar
+app.use('/api/video-sop',       videoSopRoutes);           // Oct 2026 — UGC Video SOP (strict, day-based, escalating)
 
 // ── 404 + Error handler ───────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
@@ -791,6 +816,12 @@ connectDB().then(() => {
     // on it: pending-acceptance >24h, or accepted-but-stale >3 days.
     setNudgeIo(io);
     startTaskNudgeCron();
+
+    // Oct 2026 — UGC Video SOP: every 15 min, normal → aggressive → hyper reminders.
+    setVideoSopIo(io);
+    startVideoSopCron();
+    // Oct 2026 — owner's current team (video team, Meta Ads, Bhawna removed). Runs once per roster version.
+    applyRoster();
 
     // Stale-socket sweep — runs every 10 minutes.
     //

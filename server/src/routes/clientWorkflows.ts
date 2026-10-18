@@ -7,6 +7,7 @@ import {
   blockWorkflow, unblockWorkflow, listWorkflowActivity,
   bulkWorkflowAction, setServiceEta, updateWorkflowDetails, pipelineOverview,
 } from '../controllers/clientWorkflowController';
+import { recordOpen, listOpens, cleanLog, updateProgress, logClientUpdate, cleanupList, cleanupApply } from '../controllers/clientDeskController';
 import { getPerformance, upsertPerformance } from '../controllers/clientPerformanceController';
 
 const router = Router();
@@ -27,6 +28,8 @@ router.get('/templates', requireRole(...STAFF), getServiceTemplates);
 // Oct 2026 — read-only whole-pipeline map for the Decision Tree ("where is
 // each client stuck"). MUST be registered before '/:id' or Express would
 // treat 'pipeline-overview' as a workflow id.
+router.get('/cleanup/list',      requireRole(...STAFF), cleanupList);   // Oct 2026 — client clean-up (admin/managers)
+router.post('/cleanup',          requireRole(...STAFF), cleanupApply);
 router.get('/pipeline-overview', requireRole(...STAFF), pipelineOverview);
 
 // List + search
@@ -77,6 +80,12 @@ router.get ('/:id/activity',                              requireRole(...STAFF),
 // Pipeline 2.1 — bulk actions powering the multi-select toolbar on the
 // redesigned ClientPipelinePage. priority + mark-on-track are admin/sales
 // only (destructive overwrite); note is open to all internal roles.
+// Oct 2026 — Rahul's Decision Tree asks: who opened, clean log, one-step status update, client updates.
+router.post('/:id/viewed',                                requireRole(...STAFF),   recordOpen);
+router.get ('/:id/opens',                                 requireRole(...STAFF),   listOpens);
+router.get ('/:id/log',                                   requireRole(...STAFF),   cleanLog);
+router.put ('/:id/services/:sid/progress',               requireRole(...STAFF),   updateProgress);
+router.post('/:id/client-update',                         requireRole(...STAFF),   logClientUpdate);
 router.post('/bulk',                                      requireRole(...STAFF),   bulkWorkflowAction);
 
 export default router;

@@ -62,7 +62,7 @@ export function RobinOrb() {
   const Icon = cfg.icon;
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2 pointer-events-none">
+    <div className="fixed bottom-[4.25rem] right-5 z-40 flex flex-col items-end gap-2 pointer-events-none">
       {/* Live transcript bubble — only while armed / thinking / speaking */}
       {j.enabled && (j.state === 'armed' || j.state === 'thinking' || j.state === 'speaking') && (
         <div className="pointer-events-auto max-w-xs rounded-2xl bg-card border border-border shadow-lg px-3 py-2 text-[12px] leading-snug">
@@ -80,7 +80,7 @@ export function RobinOrb() {
         onClick={j.toggle}
         disabled={!j.supported}
         title={j.supported ? cfg.label : 'Voice not supported in this browser. Try Chrome or Edge.'}
-        className={`pointer-events-auto h-14 w-14 rounded-full shadow-xl flex items-center justify-center transition-all hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed ${cfg.bg} ${cfg.ring}`}
+        className={`pointer-events-auto h-12 w-12 rounded-full shadow-xl flex items-center justify-center transition-all hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed ${cfg.bg} ${cfg.ring}`}
         aria-label={cfg.label}
       >
         <Icon className={`h-6 w-6 ${j.state === 'thinking' ? 'animate-spin' : ''}`} />

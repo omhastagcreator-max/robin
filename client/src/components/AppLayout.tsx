@@ -23,6 +23,7 @@ import { GlobalSearch } from '@/components/shared/GlobalSearch';
 import { AssignTaskModal } from '@/components/shared/AssignTaskModal';
 import { GlobalShortcuts } from '@/components/v2/GlobalShortcuts';
 import { ExecutiveSidebar } from '@/pages/ExecutiveDashboard/ExecutiveSidebar';
+import { VideoSopDailyGate } from '@/components/shared/VideoSopDailyGate';
 import { ExecutiveHeader } from '@/pages/ExecutiveDashboard/ExecutiveHeader';
 import { CheckinOrchestrator } from '@/components/checkin/CheckinOrchestrator';
 import { PageErrorBoundary } from '@/components/shared/PageErrorBoundary';
@@ -89,6 +90,11 @@ function AppLayoutInner({ children }: Props) {
   // (rendered below) AND from the keyboard ('t' shortcut). Anyone on
   // Robin can open it from anywhere.
   const [assignTaskOpen, setAssignTaskOpen] = useState(false);
+  useEffect(() => {
+    const open = () => setAssignTaskOpen(true);
+    window.addEventListener('robin:assign-task', open);
+    return () => window.removeEventListener('robin:assign-task', open);
+  }, []);
 
   // 't' keyboard shortcut to open the assign-task modal. We skip the
   // listener when an input/textarea is focused or a modifier key is
@@ -286,6 +292,12 @@ function AppLayoutInner({ children }: Props) {
           <CheckinOrchestrator />
         </PageErrorBoundary>
 
+        {/* Oct 2026 — UGC Video SOP: "do now" bar + must-answer daily update
+            popup for whoever owns a brand in the SOP. */}
+        <PageErrorBoundary fallback={null}>
+          <VideoSopDailyGate />
+        </PageErrorBoundary>
+
         {/* Random brand-accountability question — DISABLED (Aug 2026, owner
             ask: remove the mid-screen popups asking about each client's
             data). Component + server cron left in place, just not mounted;
@@ -337,7 +349,9 @@ function AppLayoutInner({ children }: Props) {
           </div>
         )}
 
-        <div className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto bg-slate-950">
+        {/* pb-28: keep the last rows of every page clear of the floating
+            Start meeting / Ask Robin / voice buttons (bottom-right). */}
+        <div className="flex-1 p-4 sm:p-6 lg:p-8 pb-28 sm:pb-28 lg:pb-28 overflow-y-auto bg-slate-950">
           {children}
         </div>
       </main>
@@ -349,17 +363,10 @@ function AppLayoutInner({ children }: Props) {
       {user && ['admin', 'sales', 'employee'].includes(role) && <GlobalSearch />}
       {user && ['admin', 'sales', 'employee'].includes(role) && (
         <>
-          <button
-            type="button"
-            onClick={() => setAssignTaskOpen(true)}
-            className="fixed bottom-5 left-5 z-40 inline-flex items-center gap-1.5 px-3 py-2.5 rounded-full shadow-lg bg-card border border-border text-[12px] font-semibold hover:bg-muted/40 transition-transform hover:scale-[1.03]"
-            title="Assign a task to anyone (press 't' anywhere)"
-            aria-label="Assign a task"
-          >
-            <span className="h-5 w-5 rounded-md inline-flex items-center justify-center text-white text-[12px] font-bold"
-                  style={{ background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 100%)' }}>+</span>
-            Assign task
-          </button>
+          {/* Oct 2026 — the floating "Assign task" pill sat on top of the
+              sidebar's profile footer. It now lives IN the sidebar
+              (ExecutiveSidebar dispatches 'robin:assign-task'); the 't'
+              shortcut still works. */}
           <AssignTaskModal open={assignTaskOpen} onClose={() => setAssignTaskOpen(false)} />
         </>
       )}

@@ -1,5 +1,7 @@
 import { Response } from 'express';
 import { Types } from 'mongoose';
+import VideoSopRun from '../models/VideoSopRun';
+import { computeRunState, hasUpdateToday, stepTitle } from '../services/videoSopEngine';
 import { AuthRequest } from '../middleware/authMiddleware';
 import ClientWorkflow from '../models/ClientWorkflow';
 import WorkflowActivity from '../models/WorkflowActivity';
@@ -56,7 +58,7 @@ async function resolveTemplate(orgId: string, type: ServiceType): Promise<{ labe
  * anything outside the Client CRM. Granted to Om via
  * `server/src/scripts/grantClientEditPermission.ts`.
  */
-function isPrivilegedEditor(user: { role: string; roles?: string[]; canEditAllClients?: boolean }): boolean {
+export function isPrivilegedEditor(user: { role: string; roles?: string[]; canEditAllClients?: boolean }): boolean {
   return user.role === 'admin' || !!(user.roles && user.roles.includes('admin')) || !!user.canEditAllClients;
 }
 
@@ -71,7 +73,7 @@ const normPhone = (p?: string) => (p || '').replace(/\D/g, '').slice(-10);
  * Derive each service's status from checklist progress + dependencies.
  * Pure function — operates on the workflow in memory before save.
  */
-function recomputeServiceStatuses(wf: any) {
+export function recomputeServiceStatuses(wf: any) {
   const presentTypes: ServiceType[] = wf.services.map((s: any) => s.serviceType);
   const doneTypes = new Set<ServiceType>(
     wf.services.filter((s: any) => s.status === 'done').map((s: any) => s.serviceType),
@@ -142,6 +144,8 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
       metaAdsFeeModel, leadId, onboardedBy,
       // Aug 2026 — name-only creation for not-yet-onboarded brands.
       clientName,
+      // Oct 2026 — UGC handover from sales (see below).
+      ugcBrief,
     } = req.body || {};
     // Aug 2026 — owner ask: "allow Om to add a new client that is not even
     // onboarded as well." Previously this endpoint REQUIRED clientId, i.e.
@@ -165,6 +169,29 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
     // { type, quantity? } (Aug 2026 — lets Onboarding specify e.g.
     // "3 UGC videos" for the influencer service).
     const normalizedServices = services.map((s: any) => (typeof s === 'string' ? { type: s, quantity: null } : { type: s.type, quantity: s.quantity ?? null }));
+    // Oct 2026 — UGC handover (owner: "Rishi should enter the details of the
+    // client and number of videos required"). Required whenever UGC Videos
+    // is on the deal; it pre-fills the Video SOP's Day-1 brief.
+    let cleanUgc: any = null;
+    const ugcSvc: any = normalizedServices.find((s: any) => s.type === 'influencer');
+    if (ugcSvc) {
+      const b = ugcBrief || {};
+      const str = (v: any) => String(v ?? '').trim().slice(0, 2000);
+      const videos = Number(b.videos ?? ugcSvc.quantity);
+      const missing: string[] = [];
+      if (!Number.isFinite(videos) || videos < 1) missing.push('number of videos');
+      if (!str(b.product)) missing.push('product');
+      if (!str(b.price)) missing.push('price');
+      if (!str(b.requirements)) missing.push("client's requirements");
+      if (missing.length) { res.status(400).json({ error: `UGC Videos needs the client details: ${missing.join(', ')}` }); return; }
+      ugcSvc.quantity = Math.round(videos);
+      cleanUgc = {
+        videos: Math.round(videos), product: str(b.product), price: str(b.price), offer: str(b.offer),
+        requirements: str(b.requirements), competitors: str(b.competitors), competitorLinks: str(b.competitorLinks),
+        referenceVideo: str(b.referenceVideo), contactName: str(b.contactName).slice(0, 120), contactPhone: str(b.contactPhone).slice(0, 20),
+        by: req.user!.id, at: new Date(),
+      };
+    }
     const invalid = normalizedServices.filter((s: any) => !SERVICE_TYPES.includes(s.type as any));
     if (invalid.length) { res.status(400).json({ error: `Unknown service: ${invalid.map((s: any) => s.type).join(', ')}` }); return; }
     // Priority is optional — defaults to 'medium' on the schema. We
@@ -260,6 +287,7 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
         return;
       }
       existing.services.push(...(toAdd as any));
+      if (cleanUgc && toAdd.some(t => t.serviceType === 'influencer')) existing.set('ugcBrief', cleanUgc);
       existing.activity.push({
         actorId: req.user!.id, action: 'services_added',
         detail: `Added: ${toAdd.map(s => s.label).join(', ')}`,
@@ -283,6 +311,7 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
         onboardedBy: onboardedBy || req.user!.id,
         onboardedAt: new Date(),
         leadId: leadId || null,
+        ...(cleanUgc ? { ugcBrief: cleanUgc } : {}),
         createdBy: req.user!.id,
         activity: [{
           actorId: req.user!.id,
@@ -536,6 +565,8 @@ export async function listWorkflows(req: AuthRequest, res: Response): Promise<vo
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
 
     const filter: any = { organizationId: orgId };
+    // Oct 2026 — clients archived from "Clean up clients" stay out of the CRM.
+    if (req.query.includeArchived !== '1') filter.tags = { $ne: 'archived' };
     const { q, mine } = req.query as Record<string, string>;
 
     // We compose multiple $or groups via $and to avoid one section
@@ -1297,10 +1328,12 @@ export async function listWorkflowActivity(req: AuthRequest, res: Response): Pro
     const wf = await ClientWorkflow.findOne({ _id: req.params.id, organizationId: orgId }).select('_id services createdBy').lean() as any;
     if (!wf) { res.status(404).json({ error: 'Workflow not found' }); return; }
     const role = req.user!.role;
-    if (role !== 'admin' && role !== 'sales') {
+    if (role !== 'admin' && role !== 'sales' && !isPrivilegedEditor(req.user!)) {
       const assigned = (wf.services || []).some((s: any) => s.assignedTo === req.user!.id);
       const created  = wf.createdBy === req.user!.id;
-      if (!assigned && !created) {
+      // Oct 2026 — managers granted Team Oversight (Rahul) read every client's log.
+      const mgr: any = (!assigned && !created) ? await User.findById(req.user!.id).select('canViewOversight').lean() : null;
+      if (!assigned && !created && mgr?.canViewOversight !== true) {
         res.status(403).json({ error: 'No access to this workflow' });
         return;
       }
@@ -1466,17 +1499,48 @@ export async function pipelineOverview(req: AuthRequest, res: Response): Promise
       organizationId: orgId,
       operationalStatus: { $nin: ['completed', 'cancelled'] },
     })
-      .select('clientName services operationalStatus healthLevel ownerFlag blockerType blockerReason blockedSince daysInactive delayCause eta priority updatedAt')
+      .select('clientName services operationalStatus healthLevel ownerFlag blockerType blockerReason blockedSince daysInactive delayCause eta priority updatedAt lastActivityAt lastActivitySummary lastActorId')
       .sort({ clientName: 1 })
       .lean();
 
     const ids = new Set<string>();
-    for (const wf of list as any[]) for (const s of wf.services || []) if (s.assignedTo) ids.add(String(s.assignedTo));
+    for (const wf of list as any[]) {
+      for (const s of wf.services || []) if (s.assignedTo) ids.add(String(s.assignedTo));
+      if (wf.lastActorId) ids.add(String(wf.lastActorId));
+    }
+    // Oct 2026 — "Rahul opens Robin and instantly sees which client is at
+    // which stage and WHY it's halted": fold in the Video SOP state too.
+    const sopRuns = await VideoSopRun.find({ organizationId: orgId, status: 'active' }).lean();
+    const sopByWf = new Map((sopRuns as any[]).map(r => [String(r.workflowId), r]));
     const users = ids.size ? await User.find({ _id: { $in: Array.from(ids) } }).select('name email').lean() : [];
     const nameById = new Map(users.map((u: any) => [String(u._id), u.name || u.email || '']));
 
     const rows = (list as any[]).map(wf => {
       const { services, stuckAt } = summarizePipeline(wf, nameById);
+      const run: any = sopByWf.get(String(wf._id));
+      let sop: any = null;
+      if (run) {
+        const st = computeRunState(run);
+        const cur: any = st.steps.find((x: any) => x.key === st.currentStep);
+        const lastU: any = (run.dailyUpdates || []).slice(-1)[0] || null;
+        sop = {
+          runId: String(run._id), dayNumber: st.dayNumber, doneCount: st.doneCount, total: st.total, health: st.health,
+          step: st.currentStep ? stepTitle(st.currentStep) : '', stepState: cur?.state || '', dueAt: cur?.dueAt || null,
+          owner: nameById.get(String(run.assignedTo)) || '',
+          lastUpdate: lastU ? { at: lastU.at, text: lastU.text, blocker: lastU.blocker || '' } : null,
+          updatedToday: hasUpdateToday(run),
+        };
+        // A missed / overdue SOP step is the most specific "why" there is.
+        if (cur && (cur.state === 'missed' || cur.state === 'overdue') && stuckAt.severity !== 'blocked') {
+          // Overdue SOP step = not moving. Missed, or overdue with a reported blocker = Stuck.
+          stuckAt.severity = (cur.state === 'missed' || lastU?.blocker) ? 'blocked' : 'waiting';
+          stuckAt.reason = `Video SOP: "${sop.step}" ${cur.state === 'missed' ? 'MISSED' : 'overdue'}${lastU?.blocker ? ` — blocker: ${lastU.blocker}` : ''}${stuckAt.reason ? ` · ${stuckAt.reason}` : ''}`;
+        } else if (lastU?.blocker && lastU.at && Date.now() - new Date(lastU.at).getTime() < 3 * 86_400_000) {
+          stuckAt.reason = `Video team blocked: ${lastU.blocker}${stuckAt.reason ? ` · ${stuckAt.reason}` : ''}`;
+          if (stuckAt.severity === 'active') stuckAt.severity = 'waiting';
+        }
+      }
+      const lastAt = wf.lastActivityAt || wf.updatedAt || null;
       return {
         _id: String(wf._id),
         clientName: wf.clientName || 'Client',
@@ -1489,6 +1553,15 @@ export async function pipelineOverview(req: AuthRequest, res: Response): Promise
         updatedAt: wf.updatedAt,
         services,
         stuckAt,
+        sop,
+        lastUpdate: lastAt ? {
+          at: lastAt,
+          who: wf.lastActorId ? nameById.get(String(wf.lastActorId)) || '' : '',
+          what: wf.lastActivitySummary || '',
+        } : null,
+        daysSinceUpdate: lastAt ? Math.floor((Date.now() - new Date(lastAt).getTime()) / 86_400_000) : null,
+        // "Why" without the "Next: …" part — the board shows next step in its own column.
+        why: stuckAt.reason.split(' · ').filter((p: string) => !p.startsWith('Next:')).join(' · '),
       };
     });
     res.json(rows);
@@ -1517,6 +1590,8 @@ export function summarizePipeline(wf: any, nameById: Map<string, string>) {
       returnedReason: s.returnedReason || '',
       eta: s.eta || null,
       overdue: !!(s.eta && s.status !== 'done' && new Date(s.eta).getTime() < now),
+      nextTask: s.nextTask || '',
+      nextTaskDue: s.nextTaskDue || null,
     };
   });
 
@@ -1546,7 +1621,10 @@ export function summarizePipeline(wf: any, nameById: Map<string, string>) {
     if (activeSvc.overdue) parts.push('Past its ETA');
     else if (!activeSvc.eta) parts.push('No ETA set');
     if (!activeSvc.assigneeName) parts.push('No owner');
-    if (activeSvc.nextItem) parts.push(`Next: ${activeSvc.nextItem}`);
+    if (activeSvc.nextTask) {
+      const late = activeSvc.nextTaskDue && new Date(activeSvc.nextTaskDue).getTime() < now;
+      parts.push(`Next: ${activeSvc.nextTask}${activeSvc.nextTaskDue ? ` (by ${new Date(activeSvc.nextTaskDue).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' })}${late ? ' — LATE' : ''})` : ''}`);
+    } else if (activeSvc.nextItem) parts.push(`Next: ${activeSvc.nextItem}`);
     stuckAt = {
       stage: activeSvc.label,
       owner: activeSvc.assigneeName,

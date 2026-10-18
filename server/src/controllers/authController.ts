@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User';
 import Organization from '../models/Organization';
+import ActivityLog from '../models/ActivityLog';
 
 const JWT_SECRET  = process.env.JWT_SECRET!;
 // 30 days by default — bumped from 7d. With sliding refresh in getMe(),
@@ -46,7 +47,34 @@ function publicUser(u: any) {
     // client, not just services assigned to them) for a trusted non-admin
     // — see clientWorkflowController.ts's isPrivilegedEditor().
     canEditAllClients: u.canEditAllClients === true,
+    // Oct 2026 — Team Oversight dashboard (manager read-only view). Admins
+    // get it implicitly; this flag is for non-admin managers.
+    canViewOversight: u.canViewOversight === true,
   };
+}
+
+/**
+ * recordLogin — Oct 2026. Logins were never stored anywhere, so the
+ * Team Oversight dashboard couldn't answer "when did X sign in, from
+ * what device?". Writes one ActivityLog row per successful sign-in.
+ * Fire-and-forget: a logging failure must NEVER block someone signing in.
+ */
+function recordLogin(req: Request, u: any, method: 'password' | 'google') {
+  try {
+    const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    ActivityLog.create({
+      organizationId: u.organizationId,
+      userId: String(u._id),
+      action: 'auth.login',
+      entity: 'user',
+      entityId: u._id,
+      metadata: {
+        method,
+        ip: fwd || req.ip || '',
+        userAgent: String(req.headers['user-agent'] || '').slice(0, 300),
+      },
+    }).catch(err => console.warn('[auth] recordLogin failed', (err as Error).message));
+  } catch { /* never block login */ }
 }
 
 // ── Register ─────────────────────────────────────────────────────────────────
@@ -84,6 +112,7 @@ export async function login(req: Request, res: Response): Promise<void> {
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) { res.status(401).json({ error: 'Invalid credentials' }); return; }
 
+    recordLogin(req, user, 'password');
     const token = signToken(String(user._id));
     res.json({
       token,
@@ -133,6 +162,7 @@ export async function googleAuth(req: Request, res: Response): Promise<void> {
       }
     }
 
+    recordLogin(req, user, 'google');
     const token = signToken(String(user._id));
     res.json({
       token,
@@ -148,6 +178,27 @@ export async function googleAuth(req: Request, res: Response): Promise<void> {
   }
 }
 
+function recordFirstOpenToday(req: Request, u: any) {
+  (async () => {
+    const istMidnightUtc = new Date(Math.floor((Date.now() + 330 * 60_000) / 86_400_000) * 86_400_000 - 330 * 60_000);
+    const already = await ActivityLog.exists({
+      userId: String(u._id),
+      action: { $in: ['auth.login', 'auth.resume'] },
+      createdAt: { $gte: istMidnightUtc },
+    });
+    if (already) return;
+    const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    await ActivityLog.create({
+      organizationId: u.organizationId,
+      userId: String(u._id),
+      action: 'auth.resume',
+      entity: 'user',
+      entityId: u._id,
+      metadata: { method: 'session', ip: fwd || req.ip || '', userAgent: String(req.headers['user-agent'] || '').slice(0, 300) },
+    });
+  })().catch(err => console.warn('[auth] recordFirstOpenToday failed', (err as Error).message));
+}
+
 // ── Get Me ────────────────────────────────────────────────────────────────────
 //
 // Also handles SLIDING SESSION REFRESH: if the JWT was issued more than
@@ -159,6 +210,12 @@ export async function getMe(req: any, res: Response): Promise<void> {
   try {
     const user = await User.findById(req.user.id);
     if (!user) { res.status(404).json({ error: 'User not found' }); return; }
+
+    // Oct 2026 — staff hold a 30-day sliding JWT, so most days nobody
+    // passes through login() at all. Record the first app-open of each
+    // IST day as an 'auth.resume' row so the Team Oversight dashboard
+    // still knows when each person started using Robin today.
+    recordFirstOpenToday(req, user);
 
     // Inspect the token's `iat` (issued-at) to decide if it needs refresh.
     let refreshedToken: string | undefined;

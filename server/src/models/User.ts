@@ -54,6 +54,15 @@ export interface IUser extends Document {
    * "allow Om to edit anything any status of clients").
    */
   canEditAllClients?: boolean;
+  /**
+   * Oct 2026 — Team Oversight dashboard access (/admin/oversight). Admins
+   * always see it; this flag lets the owner give the SAME full read-only
+   * view (logins, clock-in/out, breaks, huddle, check-ins, tasks, activity
+   * for every teammate) to a manager who isn't a full admin — e.g. Rahul.
+   * Read-only: it grants no edit powers anywhere else. Admin-only to flip
+   * (Team Oversight → Manage access, or scripts/grantOversightAccess.ts).
+   */
+  canViewOversight?: boolean;
   importedFrom?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -94,6 +103,8 @@ const UserSchema = new Schema<IUser>(
     // status/checklist/ETA, not just services assigned to them? See
     // IUser.canEditAllClients above.
     canEditAllClients: { type: Boolean, default: false },
+    // See IUser.canViewOversight above.
+    canViewOversight: { type: Boolean, default: false },
     // Bookkeeping for bulk wipe-and-replace imports of placeholder
     // client users from the CRM sheets. NOT set on real internal staff.
     importedFrom: { type: String, default: '' },
