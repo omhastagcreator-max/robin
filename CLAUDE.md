@@ -47,6 +47,10 @@ A `Session` doc tracks a work day: `status: active | on_break | ended`, `startTi
 - Cleanup script for corrupted break data: `cd server && npm run fix-open-breaks -- --apply` (dry-run without `--apply`).
 - History of bugs here: "253h break", "timer stuck at 0", "timer runs backwards", "can't end break". Every guard in `useSession.ts` / `sessionsController.ts` has a comment explaining which bug it prevents — **don't remove guards without reading the comments.**
 
+## Last done (19 Oct 2026, 10 AM) — "screen is blinking" fixed (update checker reload loop)
+- Cause: useAppUpdater compared the bundle's Vercel SHA with Render's /api/version. The two deploy at different speeds, so after every push (or a failed Render build) idle tabs reloaded every 30s.
+- Now: vite emits `dist/version.json` ({version: BUILD_VERSION}); the hook polls that on the same origin and reloads at most once per new version (sessionStorage `robin.updateReloadedFor`). /api/version is kept for old tabs.
+
 ## Last done (19 Oct 2026, 9:30 AM) — the word "SOP" is gone from every screen; video team lands on "My tasks"
 - Owner: "don't ever mention SOP anywhere — it's Robin and their daily tasks; this is the only tasks they have to do". UI name is "My tasks" for the video team, "Video tasks" for everyone else. Route `/video-tasks` (`/video-sop` redirects). Code/model names (VideoSopRun, /api/video-sop) are unchanged on purpose — never show them.
 - `isVideoTeam(user)` (ProtectedRoute): teams include influencer or video_support. Non-admin video team lands on `/video-tasks` (`dashboardForRole(role, user)`), sees "My tasks" at the top of the sidebar, no Workroom / Process Training; the page opens filtered to their brands.

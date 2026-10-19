@@ -15,8 +15,19 @@ const BUILD_VERSION =
   process.env.COMMIT_SHA ||
   'dev';
 
+// Oct 19 2026 — the running page compares itself with THIS file (same
+// website, same deploy), not with the API server. Vercel and Render finish
+// deploying at different times; comparing the two made idle tabs reload
+// every 30s until both matched ("why is the screen blinking").
+const versionFile = () => ({
+  name: 'robin-version-file',
+  generateBundle(this: any) {
+    this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version: BUILD_VERSION }) });
+  },
+});
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), versionFile()],
   define: {
     // Inline as a string literal — Vite replaces this at build time so
     // there's zero runtime cost and no risk of an undefined global.

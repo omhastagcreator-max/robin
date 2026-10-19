@@ -9,9 +9,12 @@ import { toast } from 'sonner';
  * That's how people end up with two-week-old code while Slack-typing
  * "yeh feature mere paas dikha hi nahi".
  *
- * This hook polls /api/version every 60s (and on tab focus) and compares
- * the returned `version` against the SHA Vite stamped into THIS bundle
- * (`__APP_VERSION__`). When they differ:
+ * This hook polls /version.json on the SAME website every 30s (and on tab
+ * focus) and compares it with the SHA Vite stamped into THIS bundle
+ * (`__APP_VERSION__`). Oct 19 2026: it used to ask the API server
+ * (/api/version), but Render and Vercel deploy at different speeds — while
+ * they disagreed every idle tab reloaded every 30s ("screen is blinking").
+ * A tab now reloads at most ONCE per new version. When they differ:
  *   - If the user is actively typing / clicking, show a sticky toast
  *     with a Reload button. They reload when they're at a clean stop.
  *   - If the user has been idle for 5+ min, silently reload the tab
@@ -55,8 +58,9 @@ export function useAppUpdater() {
 
     let cancelled = false;
 
-    const apiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
-    const versionUrl = apiBase ? `${apiBase}/api/version` : '/api/version';
+    const versionUrl = '/version.json';
+    const RELOADED_KEY = 'robin.updateReloadedFor';
+    let target: string | null = null;
 
     const checkOnce = async () => {
       try {
@@ -68,10 +72,11 @@ export function useAppUpdater() {
           cache: 'no-store',
         });
         if (!res.ok) return;
-        const data = await res.json() as { version?: string };
+        const data = await res.json() as { version?: string };   // HTML (old deploy) → throws → ignored
         const serverVersion = data?.version;
-        if (cancelled || !serverVersion) return;
+        if (cancelled || !serverVersion || serverVersion === 'dev') return;
         if (serverVersion === ourVersion) return;            // up to date
+        target = serverVersion;
         if (toastShownForVersionRef.current === serverVersion) {
           // Same new version still pending acknowledgement — re-check
           // idle to maybe auto-reload now.
@@ -100,6 +105,16 @@ export function useAppUpdater() {
       }
     };
 
+    const reloadOnce = () => {
+      // Never loop: if we already reloaded for this version and are STILL
+      // behind (CDN lag), wait for the user to press "Reload now".
+      try {
+        if (target && sessionStorage.getItem(RELOADED_KEY) === target) return;
+        if (target) sessionStorage.setItem(RELOADED_KEY, target);
+      } catch { return; }
+      window.location.reload();
+    };
+
     const maybeAutoReload = () => {
       // Aggressive policy (June 2026): if the tab is hidden, reload
       // immediately — the user isn't looking, so a silent swap is
@@ -108,12 +123,12 @@ export function useAppUpdater() {
       // idle window so we don't yank a half-typed message out from
       // under someone.
       if (document.visibilityState === 'hidden') {
-        window.location.reload();
+        reloadOnce();
         return;
       }
       const idleFor = Date.now() - lastActivityRef.current;
       if (idleFor < IDLE_AUTO_RELOAD_MS) return;
-      window.location.reload();
+      reloadOnce();
     };
 
     // First check on mount, then on a steady interval, plus on every
