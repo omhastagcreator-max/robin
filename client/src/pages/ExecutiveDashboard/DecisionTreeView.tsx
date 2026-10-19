@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as api from '@/api';
 import { ClientDesk } from '@/components/pipeline/ClientDesk';
-import { VideoProgressBar } from '@/components/shared/VideoProgress';
 
 // Oct 2026 (Rahul's voice note): DT remembers the brand you were on — leave
 // to the CRM and come back, and the same brand is still open.
@@ -58,14 +57,8 @@ interface OverviewRow {
   daysSinceUpdate?: number | null;
   why?: string;
 }
-const ago = (iso?: string) => {
-  if (!iso) return '';
-  const h = (Date.now() - new Date(iso).getTime()) / 3_600_000;
-  return h < 1 ? 'just now' : h < 24 ? `${Math.round(h)}h ago` : `${Math.round(h / 24)}d ago`;
-};
 type ClientOption = OverviewRow;
 
-const SEVERITY_RANK: Record<string, number> = { blocked: 0, waiting: 1, active: 2, done: 3 };
 const SEVERITY_STYLE: Record<string, string> = {
   blocked: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
   waiting: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
@@ -80,27 +73,6 @@ const STAGE_CHIP: Record<string, string> = {
   blocked:     'bg-rose-500/15 text-rose-300 border-rose-500/40',
 };
 
-/** Read-only stage strip — one chip per service, coloured by status. */
-function StageStrip({ services }: { services: OverviewService[] }) {
-  if (!services.length) return <span className="text-slate-600">No stages</span>;
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      {services.map((s, i) => (
-        <React.Fragment key={s._id}>
-          {i > 0 && <i className="fa-solid fa-chevron-right text-[8px] text-slate-600"></i>}
-          <span
-            title={`${s.label} — ${STATUS_LABEL[s.status] || s.status}${s.assigneeName ? ` · ${s.assigneeName}` : ''}${s.total ? ` · ${s.done}/${s.total}` : ''}`}
-            className={`px-1.5 py-0.5 rounded border text-[10px] font-medium whitespace-nowrap ${s.returnedReason || s.overdue ? STAGE_CHIP.blocked : STAGE_CHIP[s.status] || STAGE_CHIP.pending}`}
-          >
-            {s.status === 'done' && <i className="fa-solid fa-check mr-1"></i>}
-            {s.label}{s.total && s.status !== 'done' ? ` ${s.done}/${s.total}` : ''}
-          </span>
-        </React.Fragment>
-      ))}
-    </div>
-  );
-}
-
 const STATUS_LABEL: Record<string, string> = {
   blocked: 'Blocked / Pending Dependency',
   pending: 'Pending — Not Started',
@@ -113,10 +85,8 @@ export function DecisionTreeView() {
   const location = useLocation() as { state?: { clientId?: string; clientName?: string } };
 
   const [clientOptions, setClientOptions] = useState<ClientOption[]>([]);
-  // ?view=board (the admin landing page) always opens on the whole board;
-  // otherwise DT reopens the brand you were last on.
-  const boardFirst = new URLSearchParams((location as any).search || '').get('view') === 'board';
-  const [selectedClientId, setSelectedClientIdRaw] = useState<string | null>(location.state?.clientId || (boardFirst ? null : readLast()));
+  // DT reopens the brand you were last on (or the one sent from the CRM).
+  const [selectedClientId, setSelectedClientIdRaw] = useState<string | null>(location.state?.clientId || readLast());
   const setSelectedClientId = useCallback((id: string | null) => { writeLast(id); setSelectedClientIdRaw(id); }, []);
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [loading, setLoading] = useState(false);
@@ -128,7 +98,6 @@ export function DecisionTreeView() {
   // staff role sees every client's stages + where it's stuck), since the
   // CRM list itself is role-scoped.
   const [overviewLoading, setOverviewLoading] = useState(true);
-  const [boardFilter, setBoardFilter] = useState<'all' | 'blocked' | 'waiting' | 'active' | 'done' | 'stale'>('all');
   const loadOverview = useCallback(() => {
     api.cwPipelineOverview()
       .then((rows: ClientOption[]) => setClientOptions(Array.isArray(rows) ? rows : []))
@@ -171,7 +140,7 @@ export function DecisionTreeView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClientId]);
 
-  // Enter in the board filter jumps straight into the first matching client.
+  // Enter in the brand box jumps straight into the first matching client.
   const onFetchClient = () => {
     const q = fetchQuery.trim().toLowerCase();
     if (!q) return;
@@ -180,118 +149,40 @@ export function DecisionTreeView() {
     setSelectedClientId(match._id);
   };
 
-  // ── Whole-pipeline board — no client picked yet ───────────────────────
+  // ── No brand picked — Oct 19 2026 (owner: "DT was supposed to be clean,
+  // still there is a list of brands"): DT never lists brands. You open a
+  // brand from the CRM (its DT button) or type its name here.
   if (!selectedClientId) {
-    const counts = clientOptions.reduce((m, r) => { m[r.stuckAt.severity] = (m[r.stuckAt.severity] || 0) + 1; return m; }, {} as Record<string, number>);
     const q = fetchQuery.trim().toLowerCase();
-    const rows = clientOptions
-      .filter(r => boardFilter === 'all' || (boardFilter === 'stale' ? (r.daysSinceUpdate ?? 0) >= 3 && r.stuckAt.severity !== 'done' : r.stuckAt.severity === boardFilter))
-      .filter(r => !q || r.clientName.toLowerCase().includes(q) || r.stuckAt.owner.toLowerCase().includes(q) || r.stuckAt.stage.toLowerCase().includes(q))
-      .sort((a, b) => (SEVERITY_RANK[a.stuckAt.severity] - SEVERITY_RANK[b.stuckAt.severity]) || a.clientName.localeCompare(b.clientName));
-    const FILTERS: Array<{ k: typeof boardFilter; label: string }> = [
-      { k: 'all', label: `All · ${clientOptions.length}` },
-      { k: 'blocked', label: `Stuck · ${counts.blocked || 0}` },
-      { k: 'waiting', label: `Waiting · ${counts.waiting || 0}` },
-      { k: 'active', label: `Moving · ${counts.active || 0}` },
-      { k: 'done', label: `Complete · ${counts.done || 0}` },
-      { k: 'stale', label: `No update 3+ days · ${clientOptions.filter(r => (r.daysSinceUpdate ?? 0) >= 3 && r.stuckAt.severity !== 'done').length}` },
-    ];
+    const matches = q ? clientOptions.filter(c => (c.clientName || '').toLowerCase().includes(q)).slice(0, 6) : [];
     return (
-      <div className="flex-1 flex flex-col min-h-0 p-6 space-y-4 overflow-y-auto animate-in fade-in duration-300">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
-          <div>
-            <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-              <i className="fa-solid fa-diagram-project text-blue-500"></i> Where every client is
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">Each client's stage right now, why it isn't moving, what happens next and who last touched it. Click a client to open it.</p>
-          </div>
-          <div className="relative w-full md:w-80">
+      <div className="flex-1 flex items-center justify-center p-6 animate-in fade-in duration-300">
+        <div className="w-full max-w-md text-center">
+          <i className="fa-solid fa-diagram-project text-3xl text-blue-500"></i>
+          <h2 className="mt-3 text-lg font-bold text-white">Decision Tree</h2>
+          <p className="mt-1 text-xs text-slate-400">Open a brand from the CRM with its <b className="text-slate-200">DT</b> button, or type its name.</p>
+          <div className="relative mt-5 text-left">
             <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-500"><i className="fa-solid fa-magnifying-glass text-xs"></i></span>
             <input
-              type="text"
+              type="text" autoFocus aria-label="Brand name"
               value={fetchQuery}
               onChange={(e) => setFetchQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') onFetchClient(); }}
-              placeholder="Filter by client, stage or owner…"
-              className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+              placeholder="Brand name…"
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
             />
+            {matches.length > 0 && (
+              <ul className="absolute z-10 mt-1 w-full bg-slate-900 border border-slate-700 rounded-lg overflow-hidden shadow-xl">
+                {matches.map(m => (
+                  <li key={m._id}>
+                    <button onClick={() => setSelectedClientId(m._id)} className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800">{m.clientName}</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {q && !overviewLoading && matches.length === 0 && <p className="mt-2 text-xs text-slate-500">No brand matching "{fetchQuery}".</p>}
           </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {FILTERS.map(f => (
-            <button
-              key={f.k}
-              onClick={() => setBoardFilter(f.k)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${boardFilter === f.k ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white'}`}
-            >{f.label}</button>
-          ))}
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-950/80 text-slate-400 border-b border-slate-800 uppercase tracking-wider text-[10px]">
-                <tr>
-                  <th className="p-3">Client</th>
-                  <th className="p-3">Stage now</th>
-                  <th className="p-3 min-w-[240px]">Why it's halted</th>
-                  <th className="p-3">Next step</th>
-                  <th className="p-3">Last update</th>
-                  <th className="p-3">Owner</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                {overviewLoading ? (
-                  <tr><td colSpan={6} className="p-6 text-center text-slate-500">Loading pipeline…</td></tr>
-                ) : rows.length === 0 ? (
-                  <tr><td colSpan={6} className="p-6 text-center text-slate-500">No clients match.</td></tr>
-                ) : rows.map(r => {
-                  const active = r.services.find(s => s.status === 'in_progress') || r.services.find(s => s.status === 'pending') || r.services.find(s => s.status === 'blocked');
-                  const next = active?.nextTask ? `${active.nextTask}${active.nextTaskDue ? ` · by ${new Date(active.nextTaskDue).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : ''}` : active?.nextItem || '—';
-                  const nextLate = !!(active?.nextTaskDue && new Date(active.nextTaskDue).getTime() < Date.now());
-                  const stale = (r.daysSinceUpdate ?? 0) >= 3 && r.stuckAt.severity !== 'done';
-                  return (
-                  <tr key={r._id} onClick={() => setSelectedClientId(r._id)} className="hover:bg-slate-800/40 cursor-pointer transition align-top">
-                    <td className="p-3 font-semibold text-white whitespace-nowrap">
-                      {r.ownerFlag === 'critical' && <i className="fa-solid fa-circle text-[7px] text-rose-500 mr-1.5 align-middle"></i>}
-                      {r.clientName}
-                    </td>
-                    <td className="p-3">
-                      <div className="flex items-center gap-2 whitespace-nowrap">
-                        <span className={`px-2 py-0.5 rounded border text-[10.5px] font-semibold ${SEVERITY_STYLE[r.stuckAt.severity]}`}>{SEVERITY_LABEL[r.stuckAt.severity]}</span>
-                        <span className="text-white">{r.stuckAt.stage}</span>
-                        {active?.total ? <span className="text-slate-500 text-[10.5px]">{active.done}/{active.total}</span> : null}
-                      </div>
-                      {r.sop && (
-                        <div className={`mt-1 text-[10.5px] ${r.sop.stepState === 'missed' ? 'text-rose-400' : r.sop.stepState === 'overdue' ? 'text-orange-400' : 'text-slate-400'}`}>
-                          <i className="fa-solid fa-clapperboard mr-1"></i>Video SOP Day {r.sop.dayNumber} · {r.sop.step || 'complete'}{r.sop.stepState === 'missed' ? ' · MISSED' : r.sop.stepState === 'overdue' ? ' · overdue' : ''}
-                        </div>
-                      )}
-                      {r.sop && <div className="mt-1.5 max-w-[260px]"><VideoProgressBar p={r.sop.progress} compact /></div>}
-                      <div className="mt-1.5"><StageStrip services={r.services} /></div>
-                    </td>
-                    <td className="p-3 text-slate-300">
-                      {(r.why ?? r.stuckAt.reason) || (r.stuckAt.severity === 'done' ? 'All done' : 'In progress — nothing blocking')}
-                      {stale && <div className="mt-1 text-[10.5px] font-semibold text-rose-400">No update for {r.daysSinceUpdate} days</div>}
-                      {r.sop?.lastUpdate?.blocker && <div className="mt-1 text-[10.5px] text-rose-300">Video team: {r.sop.lastUpdate.blocker}</div>}
-                    </td>
-                    <td className={`p-3 ${nextLate ? 'text-rose-400' : 'text-slate-300'}`}>{next}{nextLate ? ' · LATE' : ''}</td>
-                    <td className="p-3 text-[11.5px]">
-                      {r.lastUpdate ? (
-                        <>
-                          <div className="text-slate-200">{r.lastUpdate.who ? `${r.lastUpdate.who} · ` : 'Updated '}<span className={stale ? 'text-rose-400' : 'text-slate-400'}>{ago(r.lastUpdate.at)}</span></div>
-                          {r.lastUpdate.what && <div className="text-slate-500 line-clamp-2 max-w-[240px]">{r.lastUpdate.what}</div>}
-                        </>
-                      ) : <span className="text-slate-600">Never</span>}
-                    </td>
-                    <td className="p-3 whitespace-nowrap">{r.stuckAt.owner || <span className="text-amber-400">Unassigned</span>}</td>
-                  </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <button onClick={() => navigate('/clients/pipeline')} className="mt-5 text-xs text-blue-400 hover:text-blue-300"><i className="fa-solid fa-arrow-left mr-1.5"></i>Go to CRM</button>
         </div>
       </div>
     );
@@ -304,8 +195,8 @@ export function DecisionTreeView() {
     return (
       <div className="flex-1 flex flex-col min-h-0 p-6 space-y-4 overflow-y-auto animate-in fade-in duration-300">
         <div className="flex items-center justify-between gap-3">
-          <button onClick={() => { setSelectedClientId(null); setReadOnly(false); }} className="text-xs text-blue-400 hover:text-blue-300">
-            <i className="fa-solid fa-arrow-left mr-1.5"></i> Whole pipeline
+          <button onClick={() => navigate('/clients/pipeline')} className="text-xs text-blue-400 hover:text-blue-300">
+            <i className="fa-solid fa-arrow-left mr-1.5"></i> Clients
           </button>
           <span className="px-2.5 py-1 rounded-md text-[10.5px] bg-slate-800 text-slate-300 border border-slate-700">
             <i className="fa-solid fa-eye mr-1"></i> View only — not one of your stages
@@ -356,7 +247,7 @@ export function DecisionTreeView() {
         <p>{loadError ? `Couldn't load this client — ${loadError}` : 'Loading client…'}</p>
         <div className="flex gap-2">
           {loadError && <button onClick={() => selectedClientId && loadWorkflow(selectedClientId)} className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">Retry</button>}
-          <button onClick={() => { setSelectedClientId(null); setWorkflow(null); }} className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs">Whole pipeline</button>
+          <button onClick={() => { setSelectedClientId(null); setWorkflow(null); }} className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs">Pick another brand</button>
         </div>
       </div>
     );
@@ -365,7 +256,7 @@ export function DecisionTreeView() {
   return (
     <ClientDesk
       workflow={workflow as any}
-      onBack={() => { setSelectedClientId(null); setWorkflow(null); }}
+      onBack={() => navigate('/clients/pipeline')}
       onChanged={() => { loadWorkflow(workflow._id); loadOverview(); }}
     />
   );

@@ -15,7 +15,10 @@ import { VideoProgressBar } from '@/components/shared/VideoProgress';
  *   · log reads "Name (Dept) · what changed · when" with notes under it
  *   · records who opened the client and when, even if they changed nothing
  *   · client update can be pushed straight to WhatsApp (and is logged)
- *   · no brand picker here — the brand is chosen in the CRM / pipeline board
+ *   · no brand picker here — the brand is chosen in the CRM (DT button)
+ * Oct 19 2026 re-listen ("DT was supposed to be clean"): one screen, no
+ * scrolling for the essentials — journey, 3 tiles, Update status next to
+ * Update the client, the last few log lines; everything else is one click.
  */
 
 interface ChecklistItem { text: string; done: boolean; doneAt?: string; doneBy?: string }
@@ -96,6 +99,8 @@ export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWork
   const [log, setLog] = useState<LogRow[] | null>(null);
   const [opens, setOpens] = useState<OpenRow[] | null>(null);
   const [showOpens, setShowOpens] = useState(false);
+  const [showAllLog, setShowAllLog] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [sop, setSop] = useState<any>(null);
 
   // Update form
@@ -173,8 +178,10 @@ export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWork
     if (stage?.nextTask) lines.push(`Next: ${stage.nextTask}${stage.nextTaskDue ? ` by ${dateOnly(stage.nextTaskDue)}` : ''}`);
     else if (nextItem) lines.push(`Next: ${nextItem}`);
     if (extra.trim()) lines.push(extra.trim());
+    // Voice note 2: the message goes out in the sender's name ("from Rahul").
+    lines.push(`— ${user?.name || 'Team'}, Hashtag Creator`);
     return lines.join('\n');
-  }, [workflow, services, stage, nextItem, extra]);
+  }, [workflow, services, stage, nextItem, extra, user?.name]);
 
   const pushWhatsApp = () => {
     const phone = (workflow.clientPhone || '').replace(/\D/g, '');
@@ -191,27 +198,45 @@ export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWork
 
   const lastOpen = opens?.[0];
   const sopCur = sop?.steps?.find((s: any) => s.key === sop.currentStep);
+  const LOG_PREVIEW = 3;
+  const shownLog = log ? (showAllLog ? log : log.slice(0, LOG_PREVIEW)) : null;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-y-auto p-6 space-y-4 animate-in fade-in duration-300">
-      {/* Header — brand name, no brand dropdown */}
+    <div className="flex-1 flex flex-col min-h-0 overflow-y-auto px-6 py-4 space-y-3 animate-in fade-in duration-300">
+      {/* Header — brand name only; who opened it sits small on the right */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <button onClick={onBack} className="text-xs text-slate-400 hover:text-white bg-slate-900 border border-slate-800 px-2.5 py-1.5 rounded-lg"><i className="fa-solid fa-arrow-left mr-1.5"></i>Whole pipeline</button>
+          <button onClick={onBack} className="text-xs text-slate-400 hover:text-white bg-slate-900 border border-slate-800 px-2.5 py-1.5 rounded-lg"><i className="fa-solid fa-arrow-left mr-1.5"></i>Clients</button>
           <h2 className="text-xl font-bold text-white truncate">{workflow.clientName}</h2>
         </div>
-        <div className="flex items-center gap-3 text-[11.5px] text-slate-400">
-          {lastOpen && <span>Last opened by <b className="text-slate-200">{lastOpen.name}</b> · {when(lastOpen.at)}</span>}
-          <button onClick={() => navigate(`/clients/pipeline/${workflow._id}`)} className="text-blue-400 hover:text-blue-300 underline underline-offset-2">Full workspace</button>
+        <div className="relative flex items-center gap-3 text-[11px] text-slate-500">
+          <button onClick={() => setShowOpens(v => !v)} aria-expanded={showOpens} className="hover:text-slate-300">
+            <i className="fa-regular fa-eye mr-1"></i>
+            {opens === null ? '…' : lastOpen ? <>Opened by <b className="text-slate-300 font-medium">{lastOpen.name}</b> · {when(lastOpen.at)}</> : 'Not opened yet'}
+          </button>
+          <button onClick={() => navigate(`/clients/pipeline/${workflow._id}`)} className="hover:text-slate-300">Full workspace</button>
+          {showOpens && opens && opens.length > 0 && (
+            <div className="absolute right-0 top-6 z-30 w-72 max-h-72 overflow-y-auto bg-slate-900 border border-slate-700 rounded-lg shadow-xl p-3">
+              <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1.5">Who opened it</div>
+              <ul className="space-y-1">
+                {opens.map((o, i) => (
+                  <li key={i} className="flex justify-between gap-2 text-[11.5px]">
+                    <span className="text-slate-200">{o.name}{o.department && <span className="text-slate-500"> ({o.department})</span>}</span>
+                    <span className="text-slate-500 whitespace-nowrap">{when(o.at)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Rahul's journey: Discovery → Development → Video → Meta → Launch → Scaling */}
       <ol className="grid grid-cols-3 md:grid-cols-6 gap-1.5" aria-label="Client journey">
         {journey(services).map((ph, i) => (
-          <li key={ph.label} className={`rounded-lg border px-2.5 py-2 ${PHASE_CLS[ph.state]}`}>
+          <li key={ph.label} className={`rounded-lg border px-2.5 py-1.5 ${PHASE_CLS[ph.state]}`}>
             <div className="text-[10px] uppercase tracking-wider font-bold opacity-80">{i + 1}. {ph.label}</div>
-            <div className="text-[11px] mt-0.5">
+            <div className="text-[11px]">
               {ph.state === 'done' ? '✓ Done' : ph.state === 'active' ? 'In progress' : ph.state === 'pending' ? 'Not started' : 'Not in plan'}
               {ph.who && ph.state !== 'none' && ph.state !== 'done' ? <span className="opacity-70"> · {ph.who}</span> : null}
             </div>
@@ -222,64 +247,73 @@ export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWork
       {/* The 3 things — visible without clicking */}
       {services.length === 0 ? <p className="text-sm text-slate-500">No stages on this client yet.</p> : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3">
             <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Current stage</div>
-            <div className="mt-1 text-base font-bold text-white">{active ? active.label : 'All stages complete'}</div>
-            {active && <span className={`mt-1.5 inline-block px-2 py-0.5 rounded border text-[10.5px] font-semibold ${STATUS_CLS[active.status]}`}>{STATUS_TXT[active.status]}{active.checklist?.length ? ` · ${active.checklist.filter(i => i.done).length}/${active.checklist.length}` : ''}</span>}
+            <div className="mt-0.5 text-base font-bold text-white">{active ? active.label : 'All stages complete'}</div>
+            {active && <span className={`mt-1 inline-block px-2 py-0.5 rounded border text-[10.5px] font-semibold ${STATUS_CLS[active.status]}`}>{STATUS_TXT[active.status]}{active.checklist?.length ? ` · ${active.checklist.filter(i => i.done).length}/${active.checklist.length}` : ''}</span>}
             {active?.returnedReason && <div className="mt-1 text-[11px] text-rose-400">Returned: {active.returnedReason}</div>}
           </div>
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3">
             <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Owner</div>
-            <div className="mt-1 text-base font-bold text-white">{active?.assignee?.name || <span className="text-amber-400">Unassigned</span>}</div>
+            <div className="mt-0.5 text-base font-bold text-white">{active?.assignee?.name || <span className="text-amber-400">Unassigned</span>}</div>
             {active?.eta && <div className="mt-1 text-[11.5px] text-slate-400">ETA {dateOnly(active.eta)}{new Date(active.eta).getTime() < Date.now() ? <span className="text-rose-400"> · overdue</span> : ''}</div>}
           </div>
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3">
             <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Next task</div>
-            <div className="mt-1 text-base font-bold text-white">{active?.nextTask || nextItem || '—'}</div>
+            <div className="mt-0.5 text-base font-bold text-white">{active?.nextTask || nextItem || '—'}</div>
             {active?.nextTaskDue && <div className={`mt-1 text-[11.5px] ${new Date(active.nextTaskDue).getTime() < Date.now() ? 'text-rose-400' : 'text-slate-400'}`}>by {dateOnly(active.nextTaskDue)}</div>}
           </div>
         </div>
       )}
 
-      {/* Details — one click away */}
+      {/* Details — one click away (every stage's checklist + the video SOP) */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl">
-        <button onClick={() => setDetailsOpen(o => !o)} aria-expanded={detailsOpen} className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-slate-300">
-          <span className="flex items-center gap-2 flex-wrap">
-            <i className="fa-solid fa-list-check text-slate-500"></i> All stages & checklist
-            {services.map(s => <span key={s._id} className={`px-1.5 py-0.5 rounded border text-[10px] font-medium ${STATUS_CLS[s.status]}`}>{s.status === 'done' && <i className="fa-solid fa-check mr-1"></i>}{s.label}</span>)}
-          </span>
+        <button onClick={() => setDetailsOpen(o => !o)} aria-expanded={detailsOpen} className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-slate-300">
+          <span className="flex items-center gap-2"><i className="fa-solid fa-list-check text-slate-500"></i> Details{sop ? ' · checklist & video SOP' : ' · checklist'}</span>
           <i className={`fa-solid fa-chevron-down transition-transform ${detailsOpen ? 'rotate-180' : ''}`}></i>
         </button>
         {detailsOpen && (
-          <div className="px-4 pb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {services.map(s => {
-              const mine = s.assignedTo === user?.id || canEditAny;
-              return (
-                <div key={s._id} className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-white">{s.label}</span>
-                    <span className="text-slate-500">{s.assignee?.name || 'Unassigned'}</span>
-                  </div>
-                  <ul className="mt-2 space-y-1">
-                    {(s.checklist || []).map((it, i) => (
-                      <li key={i}>
-                        <button disabled={!mine || s.status === 'done'} onClick={() => toggleItem(s, i, it)}
-                          className={`flex items-start gap-1.5 text-left text-[11.5px] w-full ${it.done ? 'text-emerald-400' : 'text-slate-300'} ${mine && s.status !== 'done' ? 'hover:text-white' : 'cursor-default'}`}>
-                          <i className={`mt-0.5 ${it.done ? 'fa-solid fa-square-check' : 'fa-regular fa-square'}`}></i>{it.text}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+          <div className="px-4 pb-4 space-y-3">
+            {sop && (
+              <div className="rounded-lg border border-rose-500/20 bg-slate-950/50 p-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-white"><i className="fa-solid fa-clapperboard text-rose-400 mr-2"></i>UGC Video SOP · {sop.doneCount}/{sop.total} steps{sop.status === 'active' ? ` · Day ${sop.dayNumber} of 7` : ` · ${sop.status}`}</div>
+                  <div className="mt-1.5 w-72 max-w-full"><VideoProgressBar p={sop.progress} compact /></div>
+                  {sopCur && <div className="mt-1 text-[11px] text-slate-400">Now: <span className="text-slate-200">{sop.currentTitle || sopCur.key}</span> · due {when(sopCur.dueAt)}</div>}
                 </div>
-              );
-            })}
+                <button onClick={() => navigate(`/video-sop?run=${sop._id}`)} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg">Open Video SOP</button>
+              </div>
+            )}
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {services.map(s => {
+                const mine = s.assignedTo === user?.id || canEditAny;
+                return (
+                  <div key={s._id} className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-white">{s.label}</span>
+                      <span className="text-slate-500">{s.assignee?.name || 'Unassigned'}</span>
+                    </div>
+                    <ul className="mt-2 space-y-1">
+                      {(s.checklist || []).map((it, i) => (
+                        <li key={i}>
+                          <button disabled={!mine || s.status === 'done'} onClick={() => toggleItem(s, i, it)}
+                            className={`flex items-start gap-1.5 text-left text-[11.5px] w-full ${it.done ? 'text-emerald-400' : 'text-slate-300'} ${mine && s.status !== 'done' ? 'hover:text-white' : 'cursor-default'}`}>
+                            <i className={`mt-0.5 ${it.done ? 'fa-solid fa-square-check' : 'fa-regular fa-square'}`}></i>{it.text}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {/* Update status */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+      <div className="grid gap-3 xl:grid-cols-2">
+        {/* Update status: stage reached → next task → notes */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2.5">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-white"><i className="fa-solid fa-pen-to-square text-blue-400 mr-2"></i>Update status</h3>
             {services.filter(s => s.status !== 'done').length > 1 && (
@@ -300,7 +334,7 @@ export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWork
               </label>
               <div className="grid grid-cols-[1fr_auto] gap-2">
                 <label className="block text-[11px] text-slate-400">Next task
-                  <input value={nextTask} onChange={e => setNextTask(e.target.value)} placeholder="What happens next (e.g. Collect logo files from client)"
+                  <input value={nextTask} onChange={e => setNextTask(e.target.value)} placeholder="What happens next"
                     className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600" />
                 </label>
                 <label className="block text-[11px] text-slate-400">By
@@ -308,7 +342,7 @@ export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWork
                 </label>
               </div>
               <label className="block text-[11px] text-slate-400">Notes
-                <textarea rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Last call done, client approved the hooks"
+                <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Last call done, client approved the hooks"
                   className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600" />
               </label>
               <div className="flex justify-between items-center gap-2">
@@ -322,12 +356,17 @@ export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWork
           )}
         </div>
 
-        {/* Push update to client */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
-          <h3 className="text-sm font-bold text-white"><i className="fa-brands fa-whatsapp text-emerald-400 mr-2"></i>Update the client</h3>
-          <pre className="whitespace-pre-wrap text-[11.5px] text-slate-300 bg-slate-950 border border-slate-800 rounded-lg p-3 max-h-40 overflow-y-auto font-sans">{message}</pre>
-          <textarea rows={2} value={extra} onChange={e => setExtra(e.target.value)} placeholder="Add anything extra for the client (optional)"
-            className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600" />
+        {/* Push update to client — notes + WhatsApp / Copy, preview on demand */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2.5 flex flex-col">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-bold text-white"><i className="fa-brands fa-whatsapp text-emerald-400 mr-2"></i>Update the client</h3>
+            <button onClick={() => setShowPreview(v => !v)} className="text-[11px] text-slate-400 hover:text-white">{showPreview ? 'Hide message' : 'See message'}</button>
+          </div>
+          {showPreview && <pre className="whitespace-pre-wrap text-[11.5px] text-slate-300 bg-slate-950 border border-slate-800 rounded-lg p-3 max-h-40 overflow-y-auto font-sans">{message}</pre>}
+          <label className="block text-[11px] text-slate-400 flex-1">Notes for the client (optional)
+            <textarea rows={showPreview ? 2 : 4} value={extra} onChange={e => setExtra(e.target.value)} placeholder="Added under the stage summary"
+              className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600" />
+          </label>
           <div className="flex justify-end gap-2">
             <button onClick={copyMsg} className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg text-xs font-semibold"><i className="fa-regular fa-copy mr-1.5"></i>Copy</button>
             <button onClick={pushWhatsApp} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-xs font-semibold"><i className="fa-brands fa-whatsapp mr-1.5"></i>Send on WhatsApp</button>
@@ -335,51 +374,26 @@ export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWork
         </div>
       </div>
 
-      {sop && (
-        <div className="bg-slate-900 border border-rose-500/20 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-xs font-bold text-white"><i className="fa-solid fa-clapperboard text-rose-400 mr-2"></i>UGC Video SOP · {sop.doneCount}/{sop.total} steps{sop.status === 'active' ? ` · Day ${sop.dayNumber} of 7` : ` · ${sop.status}`}</div>
-            <div className="mt-1.5 flex gap-1 w-64 max-w-full">{sop.steps.map((s: any) => <span key={s.key} className={`h-1.5 flex-1 rounded-full ${s.state === 'done' ? 'bg-emerald-500' : s.state === 'done_late' ? 'bg-amber-400' : s.state === 'missed' ? 'bg-rose-500' : s.state === 'overdue' ? 'bg-orange-500' : 'bg-slate-700'}`} />)}</div>
-            <div className="mt-2 w-72 max-w-full"><VideoProgressBar p={sop.progress} compact /></div>
-            {sopCur && <div className="mt-1 text-[11px] text-slate-400">Now: <span className="text-slate-200">{sop.currentTitle || sopCur.key}</span> · due {when(sopCur.dueAt)}</div>}
-          </div>
-          <button onClick={() => navigate(`/video-sop?run=${sop._id}`)} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg">Open Video SOP</button>
+      {/* Clean log — only what people added: who (dept), what, when, notes */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3">
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-sm font-bold text-white"><i className="fa-solid fa-clock-rotate-left text-slate-400 mr-2"></i>Log</h3>
+          {log && log.length > LOG_PREVIEW && <button onClick={() => setShowAllLog(v => !v)} className="text-[11px] text-blue-400 hover:text-blue-300">{showAllLog ? 'Show less' : `Show all ${log.length}`}</button>}
         </div>
-      )}
-
-      {/* Clean log */}
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <h3 className="text-sm font-bold text-white mb-3"><i className="fa-solid fa-clock-rotate-left text-slate-400 mr-2"></i>Log</h3>
-          {log === null ? <p className="text-xs text-slate-500">Loading…</p> : log.length === 0 ? <p className="text-xs text-slate-500">No changes logged yet.</p> : (
-            <ul className="divide-y divide-slate-800/70">
-              {log.map((r, i) => (
-                <li key={i} className="py-2.5">
-                  <div className="flex flex-wrap justify-between gap-x-3 text-xs">
-                    <span className="text-slate-300"><b className="text-white">{r.name}</b>{r.department && <span className="text-slate-500"> ({r.department})</span>} {r.what}{r.stage && !r.what.includes(r.stage) ? <span className="text-slate-500"> · {r.stage}</span> : ''}</span>
-                    <span className="text-slate-500 whitespace-nowrap">{when(r.at)}</span>
-                  </div>
-                  {r.nextTask && <div className="text-[11.5px] text-blue-300 mt-0.5">Next: {r.nextTask}{r.nextTaskDue ? ` · by ${dateOnly(r.nextTaskDue)}` : ''}</div>}
-                  {r.notes && r.action !== 'item_checked' && <div className="text-[11.5px] text-slate-400 mt-0.5 whitespace-pre-line">{r.notes}</div>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 self-start">
-          <h3 className="text-sm font-bold text-white mb-2"><i className="fa-regular fa-eye text-slate-400 mr-2"></i>Who opened it</h3>
-          {opens === null ? <p className="text-xs text-slate-500">Loading…</p> : opens.length === 0 ? <p className="text-xs text-slate-500">Nobody yet.</p> : (
-            <ul className="space-y-1.5">
-              {(showOpens ? opens : opens.slice(0, 5)).map((o, i) => (
-                <li key={i} className="flex justify-between gap-2 text-[11.5px]">
-                  <span className="text-slate-200">{o.name}{o.department && <span className="text-slate-500"> ({o.department})</span>}</span>
-                  <span className="text-slate-500 whitespace-nowrap">{when(o.at)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {opens && opens.length > 5 && <button onClick={() => setShowOpens(v => !v)} className="mt-2 text-[11px] text-blue-400">{showOpens ? 'Show less' : `Show all ${opens.length}`}</button>}
-        </div>
+        {shownLog === null ? <p className="text-xs text-slate-500">Loading…</p> : shownLog.length === 0 ? <p className="text-xs text-slate-500">No changes logged yet.</p> : (
+          <ul className="divide-y divide-slate-800/70">
+            {shownLog.map((r, i) => (
+              <li key={i} className="py-2">
+                <div className="flex flex-wrap justify-between gap-x-3 text-xs">
+                  <span className="text-slate-300"><b className="text-white">{r.name}</b>{r.department && <span className="text-slate-500"> ({r.department})</span>} {r.what}{r.stage && !r.what.includes(r.stage) ? <span className="text-slate-500"> · {r.stage}</span> : ''}</span>
+                  <span className="text-slate-500 whitespace-nowrap">{when(r.at)}</span>
+                </div>
+                {r.nextTask && <div className="text-[11.5px] text-blue-300 mt-0.5">Next: {r.nextTask}{r.nextTaskDue ? ` · by ${dateOnly(r.nextTaskDue)}` : ''}</div>}
+                {r.notes && r.action !== 'item_checked' && <div className="text-[11.5px] text-slate-400 mt-0.5 whitespace-pre-line">{r.notes}</div>}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );

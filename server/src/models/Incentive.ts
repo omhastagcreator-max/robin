@@ -16,6 +16,12 @@ const IncentiveSchema = new Schema({
   reason:         { type: String, trim: true, default: '', maxlength: 200 },
   month:          { type: String, required: true, match: /^\d{4}-\d{2}$/ },
   createdBy:      { type: String, required: true },
+  // Oct 19 2026 (Rahul's voice note: staff "go to incentives and add their
+  // own"): a teammate's own entry is 'pending' until an admin/manager
+  // approves it. Only approved entries count in the totals.
+  status:         { type: String, enum: ['approved', 'pending', 'rejected'], default: 'approved' },
+  reviewedBy:     { type: String, default: '' },
+  reviewedAt:     { type: Date, default: null },
 }, { timestamps: true });
 
 IncentiveSchema.index({ organizationId: 1, month: 1 });

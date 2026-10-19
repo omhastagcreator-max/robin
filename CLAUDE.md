@@ -47,6 +47,13 @@ A `Session` doc tracks a work day: `status: active | on_break | ended`, `startTi
 - Cleanup script for corrupted break data: `cd server && npm run fix-open-breaks -- --apply` (dry-run without `--apply`).
 - History of bugs here: "253h break", "timer stuck at 0", "timer runs backwards", "can't end break". Every guard in `useSession.ts` / `sessionsController.ts` has a comment explaining which bug it prevents — **don't remove guards without reading the comments.**
 
+## Last done (19 Oct 2026) — clean Decision Tree (Rahul's voice notes re-checked) + staff add own incentives
+- DT never lists brands: no "Where every client is" board, no `?view=board`. Empty DT = brand-name box + "Go to CRM". Brands open from the CRM's DT button (remembered in `robin:dt:lastClient`).
+- Admin landing is `/clients/pipeline` (CRM already shows Stuck at / Why it's not moving).
+- ClientDesk = one screen: header (small "Opened by X · time", list on click), journey strip, 3 tiles, "Details" fold (checklists + Video SOP card), Update status beside Update the client (notes + Copy/WhatsApp, message preview on demand, signed with sender's name), last 3 log lines + "Show all".
+- ExecutiveSidebar collapses to icons (auto on DT, toggle remembered elsewhere in `robin:sidebar:collapsed`); manager pages folded into one "Admin" group. ClientPillsBar hidden on `/command-center`.
+- Incentives: any staff can POST their own (forced to self, `status:'pending'`, reason required); admin/`canViewOversight` approve/reject via `PUT /api/incentives/:id/review`; only approved count in totals; owner can withdraw while pending.
+
 ## Last done (Oct 2026, late night) — logs are maintained (nothing silently lost) + Activity logs page
 
 - **Deletes keep history**: deleting a client (or a lead that created one) no longer wipes its `WorkflowActivity` history. Every delete of a business record (client, lead, task, deal, schedule, project, goal, influencer, ad report, vault credential, incentive) writes a permanent `ActivityLog deleted.<entity>` row — who, when, label + small snapshot (never secrets) — via `services/auditLog.ts auditDelete()`. `applyClientSetup` re-opens a cancelled SOP run instead of deleting it.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, IndianRupee, Plus, Trash2, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, IndianRupee, Plus, Trash2, Loader2, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import * as api from '@/api';
@@ -18,7 +18,7 @@ import * as api from '@/api';
 
 interface Person { userId: string; name: string; total: number; count: number }
 interface Entry { _id: string; userId: string; name: string; amount: number; reason: string; createdAt: string }
-interface Data { month: string; total: number; people: Person[]; entries: Entry[]; staff: { _id: string; name: string }[] }
+interface Data { month: string; total: number; people: Person[]; entries: Entry[]; staff: { _id: string; name: string }[]; pending?: Entry[]; canReview?: boolean }
 
 const OPEN_KEY = 'robin.incentives.open';
 const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
@@ -42,6 +42,8 @@ export function IncentivesStrip({ defaultOpen = false }: { defaultOpen?: boolean
   const [expanded, setExpanded] = useState<string | null>(null);
   const [form, setForm] = useState({ userId: '', amount: '', reason: '' });
   const [saving, setSaving] = useState(false);
+  // Oct 19 2026 — anyone can add their own incentive (pending approval).
+  const [mine, setMine] = useState({ amount: '', reason: '' });
 
   const load = useCallback(() => {
     api.listIncentives(month).then(setData).catch(() => setData(null));
@@ -66,6 +68,23 @@ export function IncentivesStrip({ defaultOpen = false }: { defaultOpen?: boolean
       load();
     } catch (e: any) { toast.error(e?.response?.data?.error || 'Could not add.'); }
     finally { setSaving(false); }
+  };
+
+  const addMine = async () => {
+    const amount = Number(mine.amount);
+    if (!(amount > 0) || mine.reason.trim().length < 3) { toast.error('Enter the amount and what it is for.'); return; }
+    setSaving(true);
+    try {
+      await api.addIncentive({ amount, reason: mine.reason.trim(), month });
+      setMine({ amount: '', reason: '' });
+      toast.success('Sent for approval.');
+      load();
+    } catch (e: any) { toast.error(e?.response?.data?.error || 'Could not add.'); }
+    finally { setSaving(false); }
+  };
+  const review = async (id: string, d: 'approve' | 'reject') => {
+    try { await api.reviewIncentive(id, d); toast.success(d === 'approve' ? 'Approved.' : 'Rejected.'); load(); }
+    catch (e: any) { toast.error(e?.response?.data?.error || 'Could not update.'); }
   };
 
   const remove = async (id: string) => {
@@ -129,6 +148,40 @@ export function IncentivesStrip({ defaultOpen = false }: { defaultOpen?: boolean
                 </li>
               ))}
             </ul>
+          )}
+
+          {(data.pending || []).length > 0 && (
+            <div className="pt-2 border-t border-border/40 space-y-1">
+              <div className="text-[10.5px] font-medium text-amber-600">Waiting for approval</div>
+              {(data.pending || []).map(e => (
+                <div key={e._id} className="flex items-center gap-2 text-[11.5px]">
+                  <span className="truncate text-foreground/85 max-w-[8rem]">{e.name}</span>
+                  <span className="tabular-nums font-medium">{inr(e.amount)}</span>
+                  <span className="truncate text-muted-foreground">{e.reason}</span>
+                  <span className="ml-auto flex items-center gap-1 shrink-0">
+                    {data.canReview ? (
+                      <>
+                        <button type="button" onClick={() => review(e._id, 'approve')} className="h-6 px-2 inline-flex items-center gap-1 rounded bg-emerald-600 text-white text-[11px]"><Check className="h-3 w-3" />Approve</button>
+                        <button type="button" onClick={() => review(e._id, 'reject')} className="h-6 px-2 inline-flex items-center gap-1 rounded border border-border text-[11px]"><X className="h-3 w-3" />Reject</button>
+                      </>
+                    ) : e.userId === user?.id ? (
+                      <button type="button" onClick={() => remove(e._id)} className="p-0.5 rounded hover:text-rose-600" aria-label="Withdraw"><Trash2 className="h-3 w-3" /></button>
+                    ) : null}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!isAdmin && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-border/40">
+              <span className="text-[11px] text-muted-foreground">Add my incentive</span>
+              <input value={mine.amount} onChange={e => setMine(f => ({ ...f, amount: e.target.value.replace(/[^\d]/g, '') }))} inputMode="numeric" placeholder="₹ amount" aria-label="My incentive amount" className="h-7 w-24 rounded-md border border-border bg-background px-2 text-[11.5px]" />
+              <input value={mine.reason} onChange={e => setMine(f => ({ ...f, reason: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') addMine(); }} placeholder="For what (e.g. MotoCasa ROAS target hit)" maxLength={200} className="h-7 flex-1 min-w-[8rem] rounded-md border border-border bg-background px-2 text-[11.5px]" />
+              <button type="button" onClick={addMine} disabled={saving} className="h-7 px-2.5 inline-flex items-center gap-1 rounded-md bg-emerald-600 text-white text-[11.5px] font-medium hover:bg-emerald-500 disabled:opacity-50">
+                {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />} Send for approval
+              </button>
+            </div>
           )}
 
           {isAdmin && data.staff.length > 0 && (

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { ClientQuickUpdateModal } from '@/components/shared/ClientQuickUpdateModal';
@@ -94,6 +95,9 @@ const POLL_MS = 5 * 60_000;
 
 export function ClientPillsBar() {
   const { role } = useAuth();
+  // Oct 19 2026 — owner: "DT was supposed to be clean but still there is a
+  // list of brands". The brand strip stays on every page except the DT.
+  const onDT = useLocation().pathname.startsWith('/command-center');
   const [clients, setClients] = useState<ClientPill[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -139,7 +143,7 @@ export function ClientPillsBar() {
     };
   }, [isStaff, load]);
 
-  if (!isStaff) return null;
+  if (!isStaff || onDT) return null;
   // Render nothing until the first successful load, so we never flash an
   // empty bar and shove the page down a moment later.
   if (!loaded || clients.length === 0) return null;

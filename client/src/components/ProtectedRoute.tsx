@@ -21,8 +21,9 @@ export function dashboardForRole(role: string): string {
     // targets). Admin can still reach /workroom-home from the sidebar
     // to see their personal clock + tasks.
     // Oct 2026 — owner/Rahul open Robin to "see which client is at which
-    // stage and why it's halted": land on the whole-pipeline board.
-    case 'admin':    return '/command-center?view=board';
+    // stage and why it's halted": land on the CRM client list (Stuck at /
+    // Why it's not moving). Oct 19: the DT itself shows one brand only.
+    case 'admin':    return '/clients/pipeline';
     case 'sales':    return '/executive-dashboard';
     case 'employee': return '/workroom-home';
     case 'workroom': return '/workroom-home';
