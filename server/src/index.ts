@@ -46,6 +46,7 @@ import myAttendanceRoutes from './routes/myAttendance';
 import { startVideoSopCron, setVideoSopIo } from './jobs/videoSopCron';
 import { applyRoster } from './jobs/applyRoster';
 import { applyClientSetup } from './jobs/applyClientSetup';
+import { mergeDuplicateClients } from './jobs/mergeDuplicateClients';
 import { startSheetSyncJob } from './jobs/sheetSyncJob';
 import credentialsRoutes  from './routes/credentials';
 import leavesRoutes       from './routes/leaves';
@@ -823,7 +824,7 @@ connectDB().then(() => {
     startVideoSopCron();
     // Oct 2026 — owner's current team (video team, Meta Ads, Bhawna removed). Runs once per roster version.
     // …then the owner's active-client list + live UGC brands (once per version; after the roster so Amit is a helper).
-    applyRoster().then(() => applyClientSetup());
+    applyRoster().then(() => applyClientSetup()).then(() => mergeDuplicateClients());
 
     // Stale-socket sweep — runs every 10 minutes.
     //

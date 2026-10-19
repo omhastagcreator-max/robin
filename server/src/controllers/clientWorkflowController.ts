@@ -240,6 +240,22 @@ export async function createWorkflow(req: AuthRequest, res: Response): Promise<v
       effectiveClientId = String((client as any)._id);
     }
 
+    // Oct 19 2026 — no second copy of a brand that's already live (the
+    // owner saw Koshnika / Dhobi Express / Tridosh Herbal twice). Same name
+    // ignoring case, spaces and punctuation, on a different client record.
+    {
+      const norm = (x?: string | null) => (x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const want = norm((client as any)?.name || rawName);
+      if (want) {
+        const live = await ClientWorkflow.find({ organizationId: orgId, clientId: { $ne: effectiveClientId }, tags: { $ne: 'archived' } }).select('clientName').lean();
+        const twin: any = (live as any[]).find(w => norm(w.clientName) === want);
+        if (twin) {
+          res.status(409).json({ error: `${twin.clientName} is already in Robin — open it from the CRM to add services.`, existingId: String(twin._id) });
+          return;
+        }
+      }
+    }
+
     // Build each service from its (possibly overridden) template, auto-
     // assigning a teammate from the right team.
     const serviceDocs = await Promise.all(normalizedServices.map(async ({ type, quantity }: { type: ServiceType; quantity: number | null }) => {

@@ -510,22 +510,25 @@ function StartModal({ options, steps, onClose, onStarted }: { options: { workflo
 }
 
 function RulesCard() {
+  // Oct 19 2026 — owner: "not just to mention — it has to be followed for
+  // every client and Robin should drive the employees". So this card says
+  // what Robin DOES, not what people should do.
   const [open, setOpen] = useState(false);
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl">
       <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-slate-300">
-        <span><i className="fa-solid fa-book mr-2 text-slate-500"></i>The rules (Video SOP · 12 Oct 2026)</span>
+        <span><i className="fa-solid fa-shield-halved mr-2 text-rose-400"></i>Enforced by Robin on every UGC brand (SOP · 12 Oct 2026)</span>
         <i className={`fa-solid fa-chevron-down transition-transform ${open ? 'rotate-180' : ''}`}></i>
       </button>
       {open && (
         <ul className="px-5 pb-4 text-[12px] text-slate-400 space-y-1 list-disc">
-          <li>Day 1 = when the brand is onboarded (sales fills the number of videos, product, price and requirements). Everything finishes inside Day 1 → Day 7. Only the assigned video-team person can mark a step, and each step waits for the ones it depends on.</li>
-          <li>Day 1: client meeting — product USP discussed, requirements fully understood (product, price, offer, competitors, their links, reference video) — then research (shipping details to brand, proven hooks, competitor videos, USP confirmed), max 24h.</li>
-          <li>Day 2: creator selection (grace up to Day 3) and Draft 1 script with reference hook + CTA; client changes on Day 2 too.</li>
-          <li>Day 3 max: final script (no script after the product ships), script sent to creator, product shipped to creators within 72h.</li>
-          <li>Videos must start coming within 24h of Day 3. Edits done and the final video in the video + brand group by Day 6; Day 7 is the last-option grace.</li>
-          <li>Late steps need a reason from the list (product not launched, in manufacturing, delivery not possible, …). The grace window is the last option.</li>
-          <li>Reminders: normal (due in 6h) → aggressive (overdue, every 2h) → hyper (missed: assignee + admin + Rahul, hourly).</li>
+          <li>Every live brand with UGC Videos is in the SOP automatically — new or old. No owner? Robin assigns the video team member with the fewest brands; Amit joins as helper.</li>
+          <li>A brand can't be onboarded with UGC until sales fills the number of videos, product, price and requirements. Day 1 starts at onboarding; everything closes by Day 7.</li>
+          <li>Steps unlock only in order (Day 1 meeting + research → Day 2 creator & Draft 1 → Day 3 final script, script sent, product shipped → videos → edits → final delivery by Day 6). Only the owner or helper can tick them.</li>
+          <li>Every page shows the owner a "Do now" bar with the exact step, what's left and the deadline.</li>
+          <li>A late or missed step, or no update by 5 PM, brings up a popup they must answer before carrying on.</li>
+          <li>A step finished late can't be closed without a reason from the list. Grace is the last option.</li>
+          <li>Reminders escalate: due in 6h → overdue every 2h → missed, hourly to the owner + admin + Rahul. Rahul gets a 7:30 PM list of brands with no update.</li>
         </ul>
       )}
     </div>

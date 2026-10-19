@@ -75,10 +75,16 @@ export function computeRunState(run: any, now = Date.now()) {
  * run.assignedTo / clientName in step with the CRM.
  */
 export async function ensureRunsForOrg(orgId: string): Promise<void> {
+  // Oct 19 2026 — owner: "this has to be followed for EVERY client and Robin
+  // should drive the employees to follow it". Every live brand with UGC
+  // Videos not yet delivered is in the SOP — no matter when it was onboarded
+  // — and always has a video-team owner, so the do-now bar, the must-answer
+  // popup and the reminders reach someone.
   const wfs = await ClientWorkflow.find({
     organizationId: orgId,
     'services.serviceType': 'influencer',
     operationalStatus: { $nin: ['cancelled'] },
+    tags: { $ne: 'archived' },
   }).select('_id clientName services onboardedAt createdAt').lean();
   if (!wfs.length) return;
   const existing = await VideoSopRun.find({ organizationId: orgId }).select('serviceId assignedTo clientName status helpers').lean();
@@ -86,6 +92,13 @@ export async function ensureRunsForOrg(orgId: string): Promise<void> {
   for (const wf of wfs as any[]) {
     for (const svc of wf.services || []) {
       if (svc.serviceType !== 'influencer') continue;
+      if (!svc.assignedTo && svc.status !== 'done') {
+        const who = await pickVideoOwner(orgId);
+        if (who) {
+          await assignUgcService(String(wf._id), String(svc._id), who);
+          svc.assignedTo = who;
+        }
+      }
       const run: any = byService.get(String(svc._id));
       if (run) {
         const patch: any = {};
@@ -98,11 +111,48 @@ export async function ensureRunsForOrg(orgId: string): Promise<void> {
         if (Object.keys(patch).length) await VideoSopRun.updateOne({ _id: run._id }, { $set: patch });
         continue;
       }
+      if (svc.status === 'done') continue;
       const born = new Date(wf.onboardedAt || wf.createdAt || Date.now());
-      if (svc.status === 'done' || born < SOP_EFFECTIVE_FROM) continue;
-      await startRun(orgId, String(wf._id), String(svc._id), born, '');
+      if (born >= SOP_EFFECTIVE_FROM) { await startRun(orgId, String(wf._id), String(svc._id), born, ''); continue; }
+      // Onboarded before the SOP existed: pick it up where its CRM checklist
+      // says it is; the remaining deadlines start from now.
+      const r: any = await startRun(orgId, String(wf._id), String(svc._id), new Date(), '');
+      if (!r) continue;
+      const from = importStepFromChecklist(svc);
+      const n = from ? markDoneBefore(r, from, new Date(), '') : 0;
+      r.log.push({ actorId: '', actorName: 'Robin', action: 'imported', detail: `Brand from before the SOP — picked up at "${stepTitle(from || SOP_STEPS[0].key)}" (${n} earlier steps already done); deadlines start today` });
+      await r.save();
     }
   }
+}
+
+/** First SOP step NOT yet covered by the brand's CRM UGC checklist. */
+function importStepFromChecklist(svc: any): string | null {
+  const done = (svc.checklist || []).reduce((m: number, it: any, i: number) => it?.done ? i : m, -1);
+  if (done < 0) return null;
+  const doneKeys = Object.entries(SERVICE_CHECKLIST_SYNC).filter(([, i]) => i <= done).map(([k]) => k);
+  const lastIdx = Math.max(...doneKeys.map(k => SOP_STEPS.findIndex(st => st.key === k)));
+  return SOP_STEPS[lastIdx + 1]?.key || null;
+}
+
+/** Video-team owner with the fewest live brands (never an intern / helper). */
+export async function pickVideoOwner(orgId: string): Promise<string | null> {
+  const team = await User.find({ organizationId: orgId, isActive: true, role: { $ne: 'client' },
+    $or: [{ team: 'influencer' }, { teams: 'influencer' }] }).select('_id teams team').lean();
+  const owners = (team as any[]).filter(u => !(u.teams || []).includes('video_support') && u.team !== 'video_support');
+  if (!owners.length) return null;
+  const load = await Promise.all(owners.map(async u => ({ id: String(u._id), n: await VideoSopRun.countDocuments({ organizationId: orgId, assignedTo: String(u._id), status: 'active' }) })));
+  load.sort((a, b) => a.n - b.n || a.id.localeCompare(b.id));
+  return load[0].id;
+}
+
+async function assignUgcService(workflowId: string, serviceId: string, userId: string): Promise<void> {
+  const wf: any = await ClientWorkflow.findById(workflowId);
+  const svc = wf?.services?.id ? wf.services.id(serviceId) : (wf?.services || []).find((x: any) => String(x._id) === serviceId);
+  if (!wf || !svc || svc.assignedTo) return;
+  svc.assignedTo = userId;
+  wf.activity.push({ actorId: 'system', action: 'assigned', detail: 'UGC Videos had no owner — Robin assigned the video team (SOP applies to every brand)' });
+  await wf.save();
 }
 
 /** Video-team support (interns, e.g. Amit) — added as helpers on every new SOP run. */

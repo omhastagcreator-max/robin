@@ -5,6 +5,7 @@ import ClientWorkflow from '../models/ClientWorkflow';
 import VideoSopRun from '../models/VideoSopRun';
 import ActivityLog from '../models/ActivityLog';
 import { SERVICE_TEMPLATES } from '../lib/workflowTemplates';
+import { claimJob } from '../services/jobLock';
 import { startRun, markDoneBefore, videoSupportIds, syncServiceChecklist, buildSteps } from '../services/videoSopEngine';
 
 /**
@@ -42,6 +43,8 @@ export async function applyClientSetup(): Promise<void> {
     for (const org of orgs as any[]) {
       const orgId = String(org._id);
       if (await ActivityLog.exists({ organizationId: org._id, action: 'clients.setup', 'metadata.version': SETUP_VERSION })) continue;
+      // Oct 19 — only ONE booting instance may run this (see JobLock).
+      if (!(await claimJob(`clients.setup:${SETUP_VERSION}:${orgId}`))) continue;
       const notes: string[] = [];
       const admin: any = await User.findOne({ organizationId: org._id, role: 'admin', isActive: true }).select('_id').lean();
       const actor = admin ? String(admin._id) : '';

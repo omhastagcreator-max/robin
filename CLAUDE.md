@@ -47,6 +47,13 @@ A `Session` doc tracks a work day: `status: active | on_break | ended`, `startTi
 - Cleanup script for corrupted break data: `cd server && npm run fix-open-breaks -- --apply` (dry-run without `--apply`).
 - History of bugs here: "253h break", "timer stuck at 0", "timer runs backwards", "can't end break". Every guard in `useSession.ts` / `sessionsController.ts` has a comment explaining which bug it prevents — **don't remove guards without reading the comments.**
 
+## Last done (19 Oct 2026, 9 AM) — duplicate brands merged, boot jobs locked, Video SOP on EVERY UGC brand
+- Cause of the duplicate Koshnika / Dhobi Express / Tridosh Herbal: the 18 Oct set-up ran on two overlapping Render instances. New `JobLock` model (`_id` = key) + `services/jobLock.claimJob()`; applyRoster / applyClientSetup claim before running.
+- `jobs/mergeDuplicateClients.ts` runs on every boot (after set-up): same normName live clients → keep the copy with the most real work, copy over newer video status, daily updates, steps done, WorkflowActivity; archive the extra (tags archived + duplicate), cancel its SOP run, log `clients.merged_duplicate`. Each duplicate set is claimed once.
+- createWorkflow refuses (409) a new client whose name matches a live brand on a different client record.
+- `ensureRunsForOrg`: every live, non-archived UGC service not done gets a SOP run, whatever its onboarding date (pre-SOP brands are picked up from their CRM checklist; deadlines from now). An unowned UGC service gets the least-busy video-team owner (never video_support). The "Not started" list is therefore normally empty.
+- Video SOP rules card now reads "Enforced by Robin on every UGC brand" and describes what Robin does.
+
 ## Last done (19 Oct 2026) — clean Decision Tree (Rahul's voice notes re-checked) + staff add own incentives
 - DT never lists brands: no "Where every client is" board, no `?view=board`. Empty DT = brand-name box + "Go to CRM". Brands open from the CRM's DT button (remembered in `robin:dt:lastClient`).
 - Admin landing is `/clients/pipeline` (CRM already shows Stuck at / Why it's not moving).

@@ -1,4 +1,5 @@
 import Organization from '../models/Organization';
+import { claimJob } from '../services/jobLock';
 import User from '../models/User';
 import ActivityLog from '../models/ActivityLog';
 import { deactivateMember } from '../services/teamRoster';
@@ -35,6 +36,7 @@ export async function applyRoster(): Promise<void> {
     for (const org of orgs as any[]) {
       const done = await ActivityLog.exists({ organizationId: org._id, action: 'roster.applied', 'metadata.version': ROSTER_VERSION });
       if (done) continue;
+      if (!(await claimJob(`roster.applied:${ROSTER_VERSION}:${String(org._id)}`))) continue;
       const notes: string[] = [];
       for (const e of ROSTER) {
         const found = await User.find({ organizationId: org._id, isActive: true, name: e.match, role: { $ne: 'client' } });
