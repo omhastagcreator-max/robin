@@ -4,7 +4,7 @@ import { Modal } from '@/components/ui/Modal';
 import * as api from '@/api';
 
 export const TEAM_OPTIONS: { key: string; label: string }[] = [
-  { key: 'influencer', label: 'Video team (UGC)' }, { key: 'development', label: 'Development / Shopify' },
+  { key: 'influencer', label: 'Video team' }, { key: 'development', label: 'Development / Shopify' },
   { key: 'meta', label: 'Meta Ads' }, { key: 'sales', label: 'Sales' }, { key: 'design', label: 'Design' },
   { key: 'script', label: 'Script' }, { key: 'social', label: 'Social media' }, { key: 'management', label: 'Management' },
 ];
@@ -53,7 +53,7 @@ export function AddMemberModal({ open, isAdmin, onClose, onAdded }: { open: bool
               <label className="text-[12px] font-medium">WhatsApp number <span className="text-muted-foreground font-normal">(optional)</span><input className={inputCls + ' mt-1'} value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} placeholder="98765 43210" /></label>
               <label className="text-[12px] font-medium sm:col-span-2">Role
                 <select className={inputCls + ' mt-1'} value={f.role} onChange={e => setF({ ...f, role: e.target.value })}>
-                  <option value="employee">Employee — works on clients, tasks, SOPs</option>
+                  <option value="employee">Employee — works on clients and their daily tasks</option>
                   <option value="sales">Sales — CRM, leads, onboarding clients</option>
                   <option value="workroom">Workroom — huddle / floor only</option>
                   {isAdmin && <option value="admin">Admin — full access</option>}
@@ -71,7 +71,7 @@ export function AddMemberModal({ open, isAdmin, onClose, onAdded }: { open: bool
                   );
                 })}
               </div>
-              {f.teams.includes('influencer') && <p className="text-[11px] text-muted-foreground mt-1.5">New UGC brands will be auto-assigned to the video team.</p>}
+              {f.teams.includes('influencer') && <p className="text-[11px] text-muted-foreground mt-1.5">New video brands will be auto-assigned to the video team.</p>}
             </div>
             {err && <p className="text-[12.5px] text-rose-600">{err}</p>}
             <div className="flex justify-end gap-2">

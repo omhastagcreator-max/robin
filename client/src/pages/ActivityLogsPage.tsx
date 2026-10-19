@@ -19,7 +19,7 @@ const TYPES: { k: string; label: string; cls: string }[] = [
   { k: 'login', label: 'Sign-ins', cls: 'text-sky-300' },
   { k: 'attendance', label: 'Clock in / breaks', cls: 'text-emerald-300' },
   { k: 'client', label: 'Client work', cls: 'text-blue-300' },
-  { k: 'video', label: 'Video SOP', cls: 'text-rose-300' },
+  { k: 'video', label: 'Video tasks', cls: 'text-rose-300' },
   { k: 'team', label: 'Team changes', cls: 'text-violet-300' },
   { k: 'leave', label: 'Leave', cls: 'text-cyan-300' },
   { k: 'deletion', label: 'Deletions', cls: 'text-red-400' },

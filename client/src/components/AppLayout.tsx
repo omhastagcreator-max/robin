@@ -292,7 +292,7 @@ function AppLayoutInner({ children }: Props) {
           <CheckinOrchestrator />
         </PageErrorBoundary>
 
-        {/* Oct 2026 — UGC Video SOP: "do now" bar + must-answer daily update
+        {/* Oct 2026 — Video SOP: "do now" bar + must-answer daily update
             popup for whoever owns a brand in the SOP. */}
         <PageErrorBoundary fallback={null}>
           <VideoSopDailyGate />

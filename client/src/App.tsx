@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { FullPageSpinner } from '@/components/shared/Spinner';
@@ -165,13 +165,14 @@ function AppRoutes() {
               e.g. Rahul). The route lets every staff role through because
               a manager may not hold the admin role; the page itself and
               the /api/oversight server gate enforce the real check. */}
-          {/* Oct 2026 — UGC Video SOP board: all staff see it, only the assigned video person marks steps (server-enforced). */}
+          {/* Oct 2026 — video tasks board: all staff see it, only the assigned video person marks steps (server-enforced). */}
           {/* Oct 2026 — every employee's own attendance calendar; Team & roles + client clean-up (admin / Rahul — pages self-gate, server enforces). */}
           <Route path="/my-attendance"    element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><MyAttendancePage /></E></ProtectedRoute>} />
           <Route path="/admin/team"       element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><TeamRolesPage /></E></ProtectedRoute>} />
           <Route path="/admin/logs"       element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><ActivityLogsPage /></E></ProtectedRoute>} />
           <Route path="/admin/clients-cleanup" element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><ClientsCleanupPage /></E></ProtectedRoute>} />
-          <Route path="/video-sop"        element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><VideoSopPage /></E></ProtectedRoute>} />
+          <Route path="/video-tasks"        element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><VideoSopPage /></E></ProtectedRoute>} />
+          <Route path="/video-sop"        element={<VideoTasksRedirect />} />
           <Route path="/admin/oversight"  element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><AdminOversight /></E></ProtectedRoute>} />
           <Route path="/admin/crash-logs" element={<ProtectedRoute requiredRole="admin"><E><AdminCrashLogs /></E></ProtectedRoute>} />
           <Route path="/clients/pipeline"     element={<ProtectedRoute requiredRole={['admin', 'employee', 'sales', 'workroom']}><E><CRMView /></E></ProtectedRoute>} />
@@ -198,6 +199,11 @@ import { CheckinProvider } from '@/contexts/CheckinContext';
 import { BreakOverlay } from '@/components/shared/BreakOverlay';
 import { NetworkStatus } from '@/components/shared/NetworkStatus';
 import { RightDrawerProvider } from '@/components/ui/RightDrawer';
+
+function VideoTasksRedirect() {
+  const loc = useLocation();
+  return <Navigate to={`/video-tasks${loc.search}`} replace />;
+}
 
 export default function App() {
   // White-label: on meeting.hastagcreator.com, render ONLY the public guest

@@ -893,7 +893,7 @@ export default function ClientWorkflowDetailPage() {
             {/* Checklist — always editable when user has access; deps don't block prep */}
             <div className="space-y-0.5">
               {active.checklist.length === 0 ? (
-                <EmptyState size="sm" title="No SOP items for this service" />
+                <EmptyState size="sm" title="No checklist items for this service" />
               ) : (
                 active.checklist.map((c, i) => {
                   const editable = Boolean(canEditActive) && !busy;

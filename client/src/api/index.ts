@@ -639,7 +639,7 @@ export const myLeaveToday      = () => api.get('/leaves/mine-today').then(r => r
 export const setWorkingDespiteLeave = (workingType: 'full' | 'first_half' | 'second_half') =>
   api.put('/leaves/mine-today/working', { workingType }).then(r => r.data);
 export const adminLeavesSummary = () => api.get('/leaves/admin/summary').then(r => r.data);
-// ── UGC Video SOP (Oct 2026) — strict day-based SOP per brand ──────────
+// ── Video SOP (Oct 2026) — strict day-based SOP per brand ──────────
 export const videoSopMeta      = () => api.get('/video-sop/meta').then(r => r.data);
 export const videoSopList      = (status: 'active' | 'completed' | 'all' = 'active') => api.get('/video-sop', { params: { status } }).then(r => r.data);
 export const videoSopGet       = (id: string) => api.get(`/video-sop/${id}`).then(r => r.data);

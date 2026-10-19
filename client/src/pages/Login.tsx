@@ -31,7 +31,7 @@ function LoginInner() {
     // and `role` may still be the empty default for one render. Without
     // role in the deps, we'd navigate using stale role and land everyone
     // on /dashboard regardless of who they are.
-    if (user) navigate(dashboardForRole(role), { replace: true });
+    if (user) navigate(dashboardForRole(role, user), { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, role]);
 
@@ -57,7 +57,7 @@ function LoginInner() {
       toast.error(isNetwork ? 'Network error — server may be starting up, try again in 10s' : safe);
       return;
     }
-    navigate(dashboardForRole(role), { replace: true });
+    navigate(dashboardForRole(role, user), { replace: true });
   };
 
   const handleGoogle = async (credentialResponse: any) => {
@@ -66,7 +66,7 @@ function LoginInner() {
       const data = await api.googleLogin(credentialResponse.credential);
       loginWithToken(data.token, data.user);
       toast.success(`Welcome, ${data.user.name}!`);
-      navigate(dashboardForRole(data.user.role), { replace: true });
+      navigate(dashboardForRole(data.user.role, data.user), { replace: true });
     } catch (err: any) {
       toast.error(err?.response?.data?.error || 'Google sign-in failed');
     } finally {

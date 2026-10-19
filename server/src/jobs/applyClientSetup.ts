@@ -12,17 +12,17 @@ import { startRun, markDoneBefore, videoSupportIds, syncServiceChecklist, buildS
  * applyClientSetup — Oct 2026, the owner's answers (18 Oct, 21:5x IST):
  *
  *   Active clients ... Oudfy, MotoCasa, ArdoWellness, Woodsify, Dufft, Early Flux
- *                      + the UGC brands below
- *   UGC brands ....... Koshnika, Meta Go, Dhobi Express, Tridosh Herbal → videos coming / editing
+ *                      + the video brands below
+ *   video brands ....... Koshnika, Meta Go, Dhobi Express, Tridosh Herbal → videos coming / editing
  *                      MAA → script sent / shipping
- *   Owner ............ Priyanka on every UGC brand; Amit Kamble (intern) helps on all
+ *   Owner ............ Priyanka on every video brand; Amit Kamble (intern) helps on all
  *   Deadlines ........ restart from today for the remaining steps
  *
  * Every other client is ARCHIVED (hidden, never deleted — restore from
  * "Clean up clients"). Clients onboarded after ACTIVE_CUTOFF are never touched,
  * so a brand Rishi adds before this deploys stays live. Runs ONCE per
  * SETUP_VERSION (marker row), so later clean-ups made in the app are never undone.
- * Names match case/spacing/punctuation-insensitively; a UGC brand with no
+ * Names match case/spacing/punctuation-insensitively; a video brand with no
  * match is created (name-only, like "Add client").
  */
 const SETUP_VERSION = '2026-10-18';
@@ -50,7 +50,7 @@ export async function applyClientSetup(): Promise<void> {
       const actor = admin ? String(admin._id) : '';
       const owners = await User.find({ organizationId: org._id, isActive: true, name: /^priyanka(\s|$)/i }).select('_id name').lean();
       const owner: any = owners.length === 1 ? owners[0] : null;
-      if (!owner) notes.push(`Priyanka: ${owners.length ? 'several matches' : 'not found'} — UGC brands left unassigned`);
+      if (!owner) notes.push(`Priyanka: ${owners.length ? 'several matches' : 'not found'} — video brands left unassigned`);
 
       const keep = new Set([...ACTIVE, ...UGC.map(u => u.name)].map(normName));
       const all = await ClientWorkflow.find({ organizationId: org._id });
@@ -79,7 +79,7 @@ export async function applyClientSetup(): Promise<void> {
         notes.push(`${wf.clientName}: restored`);
       }
 
-      // 2. UGC brands: make sure they exist, Priyanka owns the UGC stage, SOP runs from the right step.
+      // 2. video brands: make sure they exist, Priyanka owns the UGC stage, SOP runs from the right step.
       const tpl: any = (SERVICE_TEMPLATES as any).influencer;
       for (const b of UGC) {
         let wf: any = (await ClientWorkflow.find({ organizationId: org._id })).find((w: any) => normName(w.clientName) === normName(b.name));
@@ -90,7 +90,7 @@ export async function applyClientSetup(): Promise<void> {
           wf = await ClientWorkflow.create({
             organizationId: org._id, clientId: String(cu._id), clientName: b.name, createdBy: actor || String(cu._id),
             onboardedBy: actor, onboardedAt: new Date(), services: [],
-            activity: [{ actorId: actor || 'system', action: 'created', detail: 'Added in client set-up (UGC brand, 18 Oct)' }],
+            activity: [{ actorId: actor || 'system', action: 'created', detail: 'Added in client set-up (video brand, 18 Oct)' }],
           });
           notes.push(`${b.name}: created`);
         }
@@ -124,7 +124,7 @@ export async function applyClientSetup(): Promise<void> {
           run.helpers = await videoSupportIds(orgId, run.assignedTo);
           await run.save();
           await syncServiceChecklist(run, actor);
-          notes.push(`${b.name}: SOP at ${b.step}`);
+          notes.push(`${b.name}: video tasks at ${b.step}`);
         }
       }
       await ActivityLog.create({ organizationId: org._id, action: 'clients.setup', entity: 'organization', metadata: { version: SETUP_VERSION, notes } });

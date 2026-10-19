@@ -68,21 +68,21 @@ export async function videoSopTick(now = Date.now()): Promise<number> {
       const s: any = soon[0];
       await notify({ io, organizationId: orgId, userId: run.assignedTo, includeActor: true, ...link,
         title: `⏰ ${run.clientName}: "${stepTitle(s.key)}" due ${fmt(s.dueAt)}`,
-        body: `Video SOP · Day ${st.dayNumber}. Mark it in Video SOP once done.` });
+        body: `Day ${st.dayNumber} of 7. Tick it in My tasks once done.` });
       run.normalSentFor.push(...soon.map((x: any) => x.key));
     } else if (level === 'aggressive') {
       const names = overdue.map((s: any) => `"${stepTitle(s.key)}" (grace ends ${fmt(s.graceUntil)})`).join(', ');
       await notify({ io, organizationId: orgId, userId: run.assignedTo, includeActor: true, ...link,
-        title: `🚨 OVERDUE — ${run.clientName} Video SOP`,
+        title: `🚨 OVERDUE — ${run.clientName}`,
         body: `${names}. Finish it now and give the delay reason — after the grace window it goes to Rahul & admin as MISSED.` });
     } else {
       const recipients = new Set(await managersOf(run.organizationId));
       if (run.assignedTo) recipients.add(run.assignedTo);
       const body = !run.assignedTo
-        ? 'No video-team person is assigned, so nobody can mark the SOP. Assign someone in Video SOP now.'
+        ? 'No video-team person is assigned, so nobody is doing these tasks. Assign someone in Video tasks now.'
         : `MISSED: ${missed.map((s: any) => `"${stepTitle(s.key)}" (was due ${fmt(s.dueAt)})`).join(', ')}. Day ${st.dayNumber} of 7.`;
       await notify({ io, organizationId: orgId, userIds: Array.from(recipients), includeActor: true, ...link,
-        title: `🔥 ${run.clientName}: Video SOP ${run.assignedTo ? 'deadline MISSED' : 'has no owner'}`, body });
+        title: `🔥 ${run.clientName}: ${run.assignedTo ? 'deadline MISSED' : 'video tasks have no owner'}`, body });
     }
     run.lastNotifyLevel = level;
     run.lastNotifyAt = new Date(now);

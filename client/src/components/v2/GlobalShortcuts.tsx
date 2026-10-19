@@ -26,12 +26,12 @@ import { useRobinCopilot } from '@/components/ai/RobinCopilot';
  */
 export function GlobalShortcuts() {
   const navigate = useNavigate();
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const drawer = useDrawer();
   const openCopilot = useRobinCopilot();
 
   // Universal navigation.
-  useShortcut('g d', () => navigate(dashboardForRole(role)));
+  useShortcut('g d', () => navigate(dashboardForRole(role, user)));
   useShortcut('g w', () => { if (role !== 'client') navigate('/workroom'); });
 
   // Internal-staff destinations — handler-gated.

@@ -15,8 +15,8 @@ interface Member { id: string; name: string; email: string; role: string; isAdmi
 
 const ROLE_INFO: Record<string, string> = {
   admin: 'Everything, incl. payroll reports, access and settings',
-  employee: 'Their clients & stages, Decision Tree, Video SOP, tasks, attendance',
-  sales: 'CRM, leads, onboarding clients (incl. the UGC brief), sales pipeline',
+  employee: 'Their clients & stages, Decision Tree, video tasks, tasks, attendance',
+  sales: 'CRM, leads, onboarding clients (incl. the Video brief), sales pipeline',
   workroom: 'Huddle / workroom, attendance and leave only',
 };
 

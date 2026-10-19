@@ -8,7 +8,7 @@ import { SOP_STEPS, SOP_STEP_BY_KEY, BRIEF_FIELDS, LATE_REASONS, LATE_REASON_KEY
 import { computeRunState, ensureRunsForOrg, startRun, mirrorToCrm, stepTitle, hasUpdateToday, updateRequired, istDateKey, depsDone, markDoneBefore, progressSummary, syncServiceChecklist } from '../services/videoSopEngine';
 
 /**
- * videoSopController — Oct 2026. API for the UGC Video SOP.
+ * videoSopController — Oct 2026. API for the Video SOP.
  *
  * Visibility: every staff member can SEE every run (it's a team board).
  * Acting: ONLY the run's assigned video-team person can tick items, fill the
@@ -92,7 +92,7 @@ export async function getRun(req: AuthRequest, res: Response): Promise<void> {
   try {
     const orgId = await orgOf(req);
     const run = await VideoSopRun.findOne({ _id: req.params.id, organizationId: orgId }).lean();
-    if (!run) { res.status(404).json({ error: 'SOP run not found' }); return; }
+    if (!run) { res.status(404).json({ error: 'Video brand not found' }); return; }
     const [h] = await hydrate([run]);
     res.json({ ...h, canManage: await isManager(req), me: req.user!.id });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
@@ -113,11 +113,11 @@ export async function getRunByWorkflow(req: AuthRequest, res: Response): Promise
 async function loadForAction(req: AuthRequest, res: Response): Promise<any | null> {
   const orgId = await orgOf(req);
   const run = await VideoSopRun.findOne({ _id: req.params.id, organizationId: orgId });
-  if (!run) { res.status(404).json({ error: 'SOP run not found' }); return null; }
-  if (run.status !== 'active') { res.status(409).json({ error: 'This SOP is already closed' }); return null; }
+  if (!run) { res.status(404).json({ error: 'Video brand not found' }); return null; }
+  if (run.status !== 'active') { res.status(409).json({ error: 'This brand\'s video tasks are already closed' }); return null; }
   if (!run.assignedTo) { res.status(409).json({ error: 'No video-team person is assigned yet — ask admin to assign one first' }); return null; }
   if (run.assignedTo !== req.user!.id && !(run.helpers || []).includes(req.user!.id)) {
-    res.status(403).json({ error: 'Only the assigned video-team person (or their helper) can mark this SOP' });
+    res.status(403).json({ error: 'Only the assigned video-team person (or their helper) can tick these tasks' });
     return null;
   }
   return run;
@@ -166,7 +166,7 @@ export async function toggleItem(req: AuthRequest, res: Response): Promise<void>
     const { idx, step, def } = stepOf(run, req.params.key);
     if (!step || !def) { res.status(404).json({ error: 'Unknown step' }); return; }
     if (step.doneAt) { res.status(409).json({ error: 'Step already completed' }); return; }
-    if (!previousDone(run, idx)) { res.status(409).json({ error: `Finish ${blockersOf(run, def.key)} first — the SOP runs in order` }); return; }
+    if (!previousDone(run, idx)) { res.status(409).json({ error: `Finish ${blockersOf(run, def.key)} first — tasks go in order` }); return; }
     const i = Number(req.params.idx);
     if (!step.items[i]) { res.status(400).json({ error: 'Invalid item' }); return; }
     const done = !!req.body?.done;
@@ -187,7 +187,7 @@ export async function completeStep(req: AuthRequest, res: Response): Promise<voi
     const { idx, step, def } = stepOf(run, req.params.key);
     if (!step || !def) { res.status(404).json({ error: 'Unknown step' }); return; }
     if (step.doneAt) { res.status(409).json({ error: 'Step already completed' }); return; }
-    if (!previousDone(run, idx)) { res.status(409).json({ error: `Finish ${blockersOf(run, def.key)} first — the SOP runs in order` }); return; }
+    if (!previousDone(run, idx)) { res.status(409).json({ error: `Finish ${blockersOf(run, def.key)} first — tasks go in order` }); return; }
 
     const missing: string[] = [];
     if (def.briefFields) {
@@ -224,14 +224,14 @@ export async function completeStep(req: AuthRequest, res: Response): Promise<voi
     if (allDone) {
       run.status = 'completed';
       run.completedAt = now;
-      run.log.push({ actorId: req.user!.id, actorName: req.user!.name, action: 'completed', detail: 'All SOP steps complete' });
+      run.log.push({ actorId: req.user!.id, actorName: req.user!.name, action: 'completed', detail: 'All video tasks complete' });
     }
     // A completed step resets escalation so the next step starts from "normal".
     run.lastNotifyLevel = '';
     run.lastNotifyAt = null;
     await run.save();
 
-    await mirrorToCrm(run, req.user!.id, def.key, `UGC SOP · ${def.title}${lateTxt}${step.link ? ` · ${step.link}` : ''}`);
+    await mirrorToCrm(run, req.user!.id, def.key, `Video task · ${def.title}${lateTxt}${step.link ? ` · ${step.link}` : ''}`);
     const io = req.app.get('io');
     notifyDataChanged(io, String(run.organizationId), 'video_sop.step', String(run._id));
     if (late) {
@@ -308,7 +308,7 @@ export async function postDailyUpdate(req: AuthRequest, res: Response): Promise<
     run.log.push({ actorId: req.user!.id, actorName: req.user!.name, action: 'daily_update', stepKey: st.currentStep || '',
       detail: `Daily update (${stepTitle(st.currentStep || '')}): ${text.slice(0, 200)}${blocker ? ` · Blocker: ${blocker}` : ''}` });
     await run.save();
-    await mirrorToCrm(run, req.user!.id, '', `UGC SOP daily update · ${stepTitle(st.currentStep || '')}: ${text}${blocker ? ` · Blocker: ${blocker}` : ''}`);
+    await mirrorToCrm(run, req.user!.id, '', `Video daily update · ${stepTitle(st.currentStep || '')}: ${text}${blocker ? ` · Blocker: ${blocker}` : ''}`);
     if (blocker) {
       const managers = await User.find({ organizationId: run.organizationId, isActive: true, $or: [{ role: 'admin' }, { roles: 'admin' }, { canViewOversight: true }] }).select('_id').lean();
       notify({ io: req.app.get('io'), organizationId: String(run.organizationId), actorId: req.user!.id, userIds: managers.map((m: any) => String(m._id)),
@@ -336,7 +336,7 @@ export async function updateProgressCounts(req: AuthRequest, res: Response): Pro
     const after = progressSummary(run.toObject());
     run.log.push({ actorId: req.user!.id, actorName: req.user!.name, action: 'progress', detail: `Videos: ${after.label}${after.note ? ` — ${after.note}` : ''}` });
     await run.save();
-    await mirrorToCrm(run, req.user!.id, '', `UGC videos: ${after.label} (was ${before.label})${after.note ? ` — ${after.note}` : ''}`);
+    await mirrorToCrm(run, req.user!.id, '', `Videos: ${after.label} (was ${before.label})${after.note ? ` — ${after.note}` : ''}`);
     notifyDataChanged(req.app.get('io'), String(run.organizationId), 'video_sop.progress', String(run._id));
     const [h] = await hydrate([run.toObject()]);
     res.json(h);
@@ -348,7 +348,7 @@ export async function updateProgressCounts(req: AuthRequest, res: Response): Pro
 // POST /api/video-sop/start  { workflowId, serviceId, startedAt? }
 export async function startRunManually(req: AuthRequest, res: Response): Promise<void> {
   try {
-    if (!(await isManager(req))) { res.status(403).json({ error: 'Only admin / managers can start an SOP manually' }); return; }
+    if (!(await isManager(req))) { res.status(403).json({ error: 'Only admin / managers can add a brand manually' }); return; }
     const orgId = await orgOf(req);
     const { workflowId, serviceId, startedAt } = req.body || {};
     const start = startedAt ? new Date(startedAt) : new Date();
@@ -384,7 +384,7 @@ export async function assignRun(req: AuthRequest, res: Response): Promise<void> 
     if (!(await isManager(req))) { res.status(403).json({ error: 'Only admin / managers can reassign' }); return; }
     const orgId = await orgOf(req);
     const run = await VideoSopRun.findOne({ _id: req.params.id, organizationId: orgId });
-    if (!run) { res.status(404).json({ error: 'SOP run not found' }); return; }
+    if (!run) { res.status(404).json({ error: 'Video brand not found' }); return; }
     const u: any = await User.findOne({ _id: req.body?.userId, organizationId: orgId, isActive: true }).select('_id name').lean();
     if (!u) { res.status(400).json({ error: 'Pick a teammate' }); return; }
     // CRM first, then the run — so a failure can't leave CRM, DT and the SOP disagreeing.
@@ -394,7 +394,7 @@ export async function assignRun(req: AuthRequest, res: Response): Promise<void> 
     await run.save();
     notify({ io: req.app.get('io'), organizationId: String(run.organizationId), userId: String(u._id), actorId: req.user!.id,
       type: 'video_sop.assigned', entityType: 'video_sop', entityId: String(run._id),
-      title: `🎬 Video SOP assigned: ${run.clientName}`, body: 'You own every step of this brand\'s UGC SOP. Open Video SOP to start.' });
+      title: `🎬 New video brand: ${run.clientName}`, body: 'Robin has set your tasks for this brand. Open My tasks to start.' });
     const [h] = await hydrate([run.toObject()]);
     res.json(h);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
@@ -406,7 +406,7 @@ export async function reopenStep(req: AuthRequest, res: Response): Promise<void>
     if (!(await isManager(req))) { res.status(403).json({ error: 'Only admin / managers can reopen a step' }); return; }
     const orgId = await orgOf(req);
     const run = await VideoSopRun.findOne({ _id: req.params.id, organizationId: orgId });
-    if (!run) { res.status(404).json({ error: 'SOP run not found' }); return; }
+    if (!run) { res.status(404).json({ error: 'Video brand not found' }); return; }
     const { idx, def } = stepOf(run, req.params.key);
     if (idx < 0 || !def) { res.status(404).json({ error: 'Unknown step' }); return; }
     const reason = String(req.body?.reason || '').trim();
@@ -430,9 +430,9 @@ export async function cancelRun(req: AuthRequest, res: Response): Promise<void> 
     if (!(await isManager(req))) { res.status(403).json({ error: 'Only admin / managers can cancel' }); return; }
     const orgId = await orgOf(req);
     const run = await VideoSopRun.findOne({ _id: req.params.id, organizationId: orgId });
-    if (!run) { res.status(404).json({ error: 'SOP run not found' }); return; }
+    if (!run) { res.status(404).json({ error: 'Video brand not found' }); return; }
     const reason = String(req.body?.reason || '').trim();
-    if (reason.length < 3) { res.status(400).json({ error: 'Say why the SOP is being cancelled' }); return; }
+    if (reason.length < 3) { res.status(400).json({ error: 'Say why the video tasks are being stopped' }); return; }
     run.status = 'cancelled';
     run.log.push({ actorId: req.user!.id, actorName: req.user!.name, action: 'cancelled', detail: reason });
     await run.save();

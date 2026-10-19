@@ -6,7 +6,7 @@ import {
   startRunManually, assignRun, reopenStep, cancelRun, myToday, postDailyUpdate, listSopTeam, updateProgressCounts,
 } from '../controllers/videoSopController';
 
-/** UGC Video SOP — Oct 2026. See lib/videoSop.ts for the rules. */
+/** Video SOP — Oct 2026. See lib/videoSop.ts for the rules. */
 const router = Router();
 router.use(authMiddleware);
 const STAFF = requireRole('admin', 'employee', 'sales', 'workroom');

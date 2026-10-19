@@ -6,7 +6,7 @@ import User from '../models/User';
 import { SOP_STEPS, SOP_STEP_BY_KEY, SOP_EFFECTIVE_FROM, SERVICE_CHECKLIST_SYNC, HOUR } from '../lib/videoSop';
 
 /**
- * videoSopEngine — Oct 2026. Shared logic for the UGC Video SOP:
+ * videoSopEngine — Oct 2026. Shared logic for the Video SOP:
  * creating runs, computing each step's live state, and mirroring progress
  * into the brand's CRM log + UGC service checklist. Used by the controller
  * and the escalation cron.
@@ -151,7 +151,7 @@ async function assignUgcService(workflowId: string, serviceId: string, userId: s
   const svc = wf?.services?.id ? wf.services.id(serviceId) : (wf?.services || []).find((x: any) => String(x._id) === serviceId);
   if (!wf || !svc || svc.assignedTo) return;
   svc.assignedTo = userId;
-  wf.activity.push({ actorId: 'system', action: 'assigned', detail: 'UGC Videos had no owner — Robin assigned the video team (SOP applies to every brand)' });
+  wf.activity.push({ actorId: 'system', action: 'assigned', detail: 'UGC Videos had no owner — Robin assigned the video team (every video brand has an owner)' });
   await wf.save();
 }
 
@@ -173,7 +173,7 @@ export function markDoneBefore(run: any, currentStep: string, at: Date, actorId:
   for (let i = 0; i < idx; i++) {
     const st: any = run.steps[i];
     if (st.doneAt) continue;
-    st.doneAt = at; st.doneBy = actorId; st.note = 'Done before SOP tracking started';
+    st.doneAt = at; st.doneBy = actorId; st.note = 'Done before Robin started tracking';
     st.items = (st.items || []).map(() => ({ done: true, doneAt: at, doneBy: actorId }));
     n++;
   }
@@ -228,7 +228,7 @@ export async function startRun(orgId: string, workflowId: string, serviceId: str
       // Sales handover pre-fills the Day-1 brief; the video person confirms it in the meeting.
       brief: briefFromSales(wf.ugcBrief, svc.quantity),
       salesBrief: wf.ugcBrief || null,
-      log: [{ actorId, actorName: actorId ? '' : 'Robin', action: 'started', detail: `SOP started — Day 1 = ${startedAt.toISOString()}` }],
+      log: [{ actorId, actorName: actorId ? '' : 'Robin', action: 'started', detail: `Video tasks started — Day 1 = ${startedAt.toISOString()}` }],
     });
   } catch (e: any) {
     if (e?.code === 11000) return VideoSopRun.findOne({ organizationId: orgId, serviceId });

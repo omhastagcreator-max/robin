@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { isVideoTeam } from '@/components/ProtectedRoute';
 
 export function ExecutiveSidebar() {
   const location = useLocation();
@@ -18,6 +19,7 @@ export function ExecutiveSidebar() {
   const userRoles = [role, ...((user as any)?.roles || [])].filter(Boolean);
   const can = (allowed: string[]) => allowed.some(r => userRoles.includes(r));
 
+  const videoTeam = !can(['admin']) && isVideoTeam(user);
   const isManager = can(['admin']) || (user as any)?.canViewOversight === true;
   const adminPaths = ['/admin/oversight', '/admin/team', '/admin/logs', '/admin/clients-cleanup', '/admin/attendance', '/admin/crash-logs'];
   const onAdminPage = adminPaths.some(p => location.pathname.startsWith(p));
@@ -68,6 +70,14 @@ export function ExecutiveSidebar() {
         <nav className={`${collapsed ? 'p-2' : 'p-4'} space-y-1.5 overflow-y-auto flex-1`}>
           <div className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase px-3 pb-2">Core Navigation</div>
           
+          {/* Oct 19 2026 — owner: "this is the only tasks they have to do". */}
+          {videoTeam && (
+            <Link title="My tasks" to="/video-tasks" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/video-tasks') ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+              <i className="fa-solid fa-list-check w-5 text-center text-rose-400"></i>
+              <span className="truncate">My tasks</span>
+            </Link>
+          )}
+
           <Link title="CRM Pipeline" 
             to="/clients/pipeline" 
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/clients/pipeline') ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}
@@ -84,11 +94,12 @@ export function ExecutiveSidebar() {
             <span className="truncate">Decision Tree (DT)</span>
           </Link>
 
-          {/* Oct 2026 — UGC Video SOP (every brand, Day 1 → Day 6). */}
-          {can(['admin', 'employee', 'sales', 'workroom']) && (
-            <Link title="UGC Video SOP" to="/video-sop" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/video-sop') ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+          {/* Oct 2026 — video tasks (Day 1 → Day 7 per brand). The video team's
+              own entry ("My tasks") sits at the very top instead. */}
+          {!videoTeam && can(['admin', 'employee', 'sales', 'workroom']) && (
+            <Link title="Video tasks" to="/video-tasks" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/video-tasks') ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
               <i className="fa-solid fa-clapperboard w-5 text-center text-rose-400"></i>
-              <span className="truncate">UGC Video SOP</span>
+              <span className="truncate">Video tasks</span>
             </Link>
           )}
 
@@ -128,14 +139,14 @@ export function ExecutiveSidebar() {
           )}
 
 
-          {can(['admin', 'employee', 'sales']) && (
+          {!videoTeam && can(['admin', 'employee', 'sales']) && (
             <Link title="Process Training" to="/workroom-onboard" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/workroom-onboard') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
               <i className="fa-solid fa-graduation-cap w-5 text-center text-indigo-400"></i>
               <span className="truncate">Process Training</span>
             </Link>
           )}
 
-          {can(['admin', 'employee', 'sales', 'workroom']) && (
+          {!videoTeam && can(['admin', 'employee', 'sales', 'workroom']) && (
             <Link title="Workroom" to="/workroom" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/workroom') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
               <i className="fa-solid fa-users-rectangle w-5 text-center text-rose-400"></i>
               <span className="truncate">Workroom</span>

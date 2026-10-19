@@ -47,6 +47,12 @@ A `Session` doc tracks a work day: `status: active | on_break | ended`, `startTi
 - Cleanup script for corrupted break data: `cd server && npm run fix-open-breaks -- --apply` (dry-run without `--apply`).
 - History of bugs here: "253h break", "timer stuck at 0", "timer runs backwards", "can't end break". Every guard in `useSession.ts` / `sessionsController.ts` has a comment explaining which bug it prevents — **don't remove guards without reading the comments.**
 
+## Last done (19 Oct 2026, 9:30 AM) — the word "SOP" is gone from every screen; video team lands on "My tasks"
+- Owner: "don't ever mention SOP anywhere — it's Robin and their daily tasks; this is the only tasks they have to do". UI name is "My tasks" for the video team, "Video tasks" for everyone else. Route `/video-tasks` (`/video-sop` redirects). Code/model names (VideoSopRun, /api/video-sop) are unchanged on purpose — never show them.
+- `isVideoTeam(user)` (ProtectedRoute): teams include influencer or video_support. Non-admin video team lands on `/video-tasks` (`dashboardForRole(role, user)`), sees "My tasks" at the top of the sidebar, no Workroom / Process Training; the page opens filtered to their brands.
+- Do-now bar = "Robin · do now"; popups/notifications/log lines/errors use "video tasks" wording. Keep it that way in new strings.
+- ROSTER_VERSION 2026-10-19 (department "Video team").
+
 ## Last done (19 Oct 2026, 9 AM) — duplicate brands merged, boot jobs locked, Video SOP on EVERY UGC brand
 - Cause of the duplicate Koshnika / Dhobi Express / Tridosh Herbal: the 18 Oct set-up ran on two overlapping Render instances. New `JobLock` model (`_id` = key) + `services/jobLock.claimJob()`; applyRoster / applyClientSetup claim before running.
 - `jobs/mergeDuplicateClients.ts` runs on every boot (after set-up): same normName live clients → keep the copy with the most real work, copy over newer video status, daily updates, steps done, WorkflowActivity; archive the extra (tags archived + duplicate), cancel its SOP run, log `clients.merged_duplicate`. Each duplicate set is claimed once.

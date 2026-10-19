@@ -28,8 +28,8 @@ export function UgcBriefFields({ value, onChange }: { value: UgcBrief; onChange:
   return (
     <div className="border border-rose-500/30 rounded-xl p-3 bg-rose-500/5 space-y-2.5">
       <div>
-        <p className="text-xs font-bold uppercase tracking-wide">UGC brief for the video team</p>
-        <p className="text-[11px] text-muted-foreground">Required — this starts the Video SOP (Day 1 → Day 7) and pre-fills the client meeting brief.</p>
+        <p className="text-xs font-bold uppercase tracking-wide">Video brief for the video team</p>
+        <p className="text-[11px] text-muted-foreground">Required — this starts the video team's tasks (Day 1 → Day 7) and pre-fills the client meeting brief.</p>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <label className={lab}>Number of videos *<input type="number" min={1} value={value.videos} onChange={set('videos')} placeholder="e.g. 6" className={cls + ' mt-1'} /></label>

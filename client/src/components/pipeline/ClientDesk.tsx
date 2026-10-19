@@ -269,7 +269,7 @@ export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWork
       {/* Details — one click away (every stage's checklist + the video SOP) */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl">
         <button onClick={() => setDetailsOpen(o => !o)} aria-expanded={detailsOpen} className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-slate-300">
-          <span className="flex items-center gap-2"><i className="fa-solid fa-list-check text-slate-500"></i> Details{sop ? ' · checklist & video SOP' : ' · checklist'}</span>
+          <span className="flex items-center gap-2"><i className="fa-solid fa-list-check text-slate-500"></i> Details{sop ? ' · checklist & video tasks' : ' · checklist'}</span>
           <i className={`fa-solid fa-chevron-down transition-transform ${detailsOpen ? 'rotate-180' : ''}`}></i>
         </button>
         {detailsOpen && (
@@ -277,11 +277,11 @@ export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWork
             {sop && (
               <div className="rounded-lg border border-rose-500/20 bg-slate-950/50 p-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-xs font-bold text-white"><i className="fa-solid fa-clapperboard text-rose-400 mr-2"></i>UGC Video SOP · {sop.doneCount}/{sop.total} steps{sop.status === 'active' ? ` · Day ${sop.dayNumber} of 7` : ` · ${sop.status}`}</div>
+                  <div className="text-xs font-bold text-white"><i className="fa-solid fa-clapperboard text-rose-400 mr-2"></i>Video tasks · {sop.doneCount}/{sop.total} done{sop.status === 'active' ? ` · Day ${sop.dayNumber} of 7` : ` · ${sop.status}`}</div>
                   <div className="mt-1.5 w-72 max-w-full"><VideoProgressBar p={sop.progress} compact /></div>
                   {sopCur && <div className="mt-1 text-[11px] text-slate-400">Now: <span className="text-slate-200">{sop.currentTitle || sopCur.key}</span> · due {when(sopCur.dueAt)}</div>}
                 </div>
-                <button onClick={() => navigate(`/video-sop?run=${sop._id}`)} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg">Open Video SOP</button>
+                <button onClick={() => navigate(`/video-tasks?run=${sop._id}`)} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg">Open video tasks</button>
               </div>
             )}
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">

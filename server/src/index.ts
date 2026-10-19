@@ -742,7 +742,7 @@ app.use('/api/ai-automation',   aiAutomationRoutes);      // lead scoring, workf
 app.use('/api/focus-list',      focusListRoutes);          // sales "Focus This Week" priority lists + assignments
 app.use('/api/oversight',       oversightRoutes);          // Oct 2026 — Team Oversight dashboard (admin + managers)
 app.use('/api/my-attendance',   myAttendanceRoutes);       // Oct 2026 — each employee's own attendance calendar
-app.use('/api/video-sop',       videoSopRoutes);           // Oct 2026 — UGC Video SOP (strict, day-based, escalating)
+app.use('/api/video-sop',       videoSopRoutes);           // Oct 2026 — Video SOP (strict, day-based, escalating)
 
 // ── 404 + Error handler ───────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
@@ -819,11 +819,11 @@ connectDB().then(() => {
     setNudgeIo(io);
     startTaskNudgeCron();
 
-    // Oct 2026 — UGC Video SOP: every 15 min, normal → aggressive → hyper reminders.
+    // Oct 2026 — Video SOP: every 15 min, normal → aggressive → hyper reminders.
     setVideoSopIo(io);
     startVideoSopCron();
     // Oct 2026 — owner's current team (video team, Meta Ads, Bhawna removed). Runs once per roster version.
-    // …then the owner's active-client list + live UGC brands (once per version; after the roster so Amit is a helper).
+    // …then the owner's active-client list + live video brands (once per version; after the roster so Amit is a helper).
     applyRoster().then(() => applyClientSetup()).then(() => mergeDuplicateClients());
 
     // Stale-socket sweep — runs every 10 minutes.

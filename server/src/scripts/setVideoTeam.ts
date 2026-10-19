@@ -1,6 +1,6 @@
 /**
  * setVideoTeam.ts — Oct 2026. Owner: the UGC video team is Priyanka and
- * Amit Kamble. New UGC brands auto-assign by team (pickAssignee('influencer')
+ * Amit Kamble. New video brands auto-assign by team (pickAssignee('influencer')
  * in clientWorkflowController), so both need 'influencer' in their teams.
  *
  * Dry run by default. From server/:

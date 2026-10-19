@@ -11,7 +11,7 @@ import { claimJob } from '../services/jobLock';
 /**
  * mergeDuplicateClients — Oct 19 2026. The owner saw Koshnika, Dhobi Express
  * and Tridosh Herbal twice in the client bar: the 18 Oct set-up ran on two
- * booting instances at once and each created the missing UGC brands.
+ * booting instances at once and each created the missing video brands.
  *
  * Runs on every boot and is a no-op once there are no duplicates. For every
  * brand name (case / spacing / punctuation-insensitive) with more than one

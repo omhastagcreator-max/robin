@@ -166,7 +166,7 @@ export default function SalesDashboard() {
     metaFeeType: '' as '' | 'fixed' | 'percentage' | 'hybrid' | 'custom',
     metaFixedFee: '', metaPercentage: '', metaCustomDesc: '',
   });
-  // Oct 2026 — UGC brief Rishi must fill when UGC Videos is on the deal.
+  // Oct 2026 — Video brief Rishi must fill when UGC Videos is on the deal.
   const [ugcBrief, setUgcBrief] = useState<UgcBrief>(emptyUgcBrief());
   const [onboardForm, setOnboardForm] = useState(freshOnboardForm());
   const [onboarding, setOnboarding]       = useState(false);
@@ -1393,7 +1393,7 @@ export default function SalesDashboard() {
                     <label className="flex items-center gap-2 text-xs mb-1">
                       <input type="checkbox" checked={onboardForm.svcInfluencer} onChange={e => setOnboardForm(p => ({ ...p, svcInfluencer: e.target.checked }))} /> UGC Videos
                     </label>
-                    {onboardForm.svcInfluencer && <p className="text-[10.5px] text-rose-500 ml-5">Fill the UGC brief below ↓</p>}
+                    {onboardForm.svcInfluencer && <p className="text-[10.5px] text-rose-500 ml-5">Fill the Video brief below ↓</p>}
                     <label className="flex items-center gap-2 text-xs mb-1">
                       <input type="checkbox" checked={onboardForm.svcMisc} onChange={e => setOnboardForm(p => ({ ...p, svcMisc: e.target.checked }))} /> Miscellaneous
                     </label>

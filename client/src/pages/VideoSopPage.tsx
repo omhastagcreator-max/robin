@@ -3,10 +3,11 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { isVideoTeam } from '@/components/ProtectedRoute';
 import { VideoProgressBar, VideoProgressEditor, type Progress } from '@/components/shared/VideoProgress';
 
 /**
- * UGC Video SOP — Oct 2026 (owner: "for the UGC team I need this to be
+ * Video SOP — Oct 2026 (owner: "for the UGC team I need this to be
  * strictly followed for every new brand… every step is to be marked by the
  * assigned person from the video team"). Rules live server-side in
  * server/src/lib/videoSop.ts; this page is the board + the per-brand
@@ -65,12 +66,14 @@ export default function VideoSopPage() {
   const [data, setData] = useState<ListPayload | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'mine' | 'late'>('all');
+  const { user, role } = useAuth();
+  const videoTeam = role !== 'admin' && isVideoTeam(user);
+  const [filter, setFilter] = useState<'all' | 'mine' | 'late'>(videoTeam ? 'mine' : 'all');
   const [startOpen, setStartOpen] = useState(false);
   const selectedId = params.get('run');
 
   const load = useCallback(() => {
-    api.videoSopList(tab).then(setData).catch(() => toast.error('Could not load Video SOP')).finally(() => setLoading(false));
+    api.videoSopList(tab).then(setData).catch(() => toast.error('Could not load the video tasks')).finally(() => setLoading(false));
   }, [tab]);
   useEffect(() => { api.videoSopMeta().then(setMeta).catch(() => {}); }, []);
   useEffect(() => { setLoading(true); load(); }, [load]);
@@ -111,9 +114,11 @@ export default function VideoSopPage() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 pb-3 border-b border-slate-800/80">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <i className="fa-solid fa-clapperboard text-rose-400"></i> UGC Video SOP
+            <i className="fa-solid fa-list-check text-rose-400"></i> {videoTeam ? 'My tasks' : 'Video tasks'}
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">Every new brand goes through these steps in order, Day 1 → Day 6. Only the assigned video-team person can mark a step; late steps need a reason.</p>
+          <p className="text-xs text-slate-400 mt-0.5">{videoTeam
+            ? 'From Robin: every brand you handle and the task to do now. Tick it when done and post today\'s update.'
+            : 'Every video brand, Day 1 → Day 7: the task the video team is on now, and whether it is on time.'}</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="inline-flex rounded-lg border border-slate-800 bg-slate-900 p-0.5">
@@ -123,7 +128,7 @@ export default function VideoSopPage() {
           </div>
           {data?.canManage && (data.notStarted.length > 0) && (
             <button onClick={() => setStartOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold">
-              <i className="fa-solid fa-play mr-1.5"></i> Start SOP for a brand ({data.notStarted.length})
+              <i className="fa-solid fa-play mr-1.5"></i> Add a brand ({data.notStarted.length})
             </button>
           )}
         </div>
@@ -131,7 +136,7 @@ export default function VideoSopPage() {
 
       {tab === 'active' && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          <Count label="Brands in SOP" value={counts.total} cls="text-white" />
+          <Count label="Brands" value={counts.total} cls="text-white" />
           <Count label="On track" value={counts.onTrack} cls="text-emerald-400" />
           <Count label="Due in 6h" value={counts.soon} cls="text-yellow-300" />
           <Count label="Overdue (grace)" value={counts.overdue} cls="text-orange-400" />
@@ -147,7 +152,7 @@ export default function VideoSopPage() {
             ))}
           </div>
           {loading ? <p className="p-6 text-center text-slate-500 text-xs">Loading…</p>
-            : runs.length === 0 ? <p className="p-8 text-center text-slate-500 text-xs">{tab === 'active' ? 'No brand is in the Video SOP right now. New brands with UGC Videos start automatically.' : 'No completed SOPs yet.'}</p>
+            : runs.length === 0 ? <p className="p-8 text-center text-slate-500 text-xs">{tab === 'active' ? 'No video brands right now. New brands with UGC Videos appear here automatically.' : 'No finished brands yet.'}</p>
             : (
               <ul className="divide-y divide-slate-800/70">
                 {runs.map(r => {
@@ -253,7 +258,7 @@ function RunDetail({ run, meta, me, canManage, onChange, onClose, reload }: { ru
                 {users.map(u => <option key={u._id} value={u._id}>{u.name}{u.videoTeam ? ' (video team)' : ''}</option>)}
               </select>
             ) : <span className="text-white font-semibold">{run.assigneeName || 'Not assigned'}</span>}
-            {isOwner && <span className="px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 text-[10.5px] font-semibold">{isHelper ? 'You help on this SOP' : 'You own this SOP'}</span>}
+            {isOwner && <span className="px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 text-[10.5px] font-semibold">{isHelper ? 'You help on this brand' : 'You own this brand'}</span>}
           </div>
           {(run.helpers || []).length > 0 && <div className="mt-1 text-[11px] text-slate-400">Working with: {(run.helpers || []).map(h => h.name).join(', ')}</div>}
         </div>
@@ -412,7 +417,7 @@ function RunDetail({ run, meta, me, canManage, onChange, onClose, reload }: { ru
         ))}
 
         <section>
-          <h4 className="text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-2">SOP log</h4>
+          <h4 className="text-[10.5px] font-bold uppercase tracking-wider text-slate-500 mb-2">Log</h4>
           <ul className="bg-slate-950 border border-slate-800 rounded-lg divide-y divide-slate-800/70 text-[11.5px]">
             {run.log.length === 0 && <li className="p-3 text-slate-500">Nothing yet.</li>}
             {run.log.map((l, i) => (
@@ -423,8 +428,8 @@ function RunDetail({ run, meta, me, canManage, onChange, onClose, reload }: { ru
             ))}
           </ul>
           {canManage && run.status === 'active' && (
-            <button onClick={() => { const reason = window.prompt('Cancel this brand\'s Video SOP? Give a reason (e.g. client paused UGC).'); if (reason) api.videoSopCancel(run._id, reason).then(() => { toast.success('SOP cancelled.'); onClose(); reload(); }).catch((e: any) => toast.error(e?.response?.data?.error || 'Could not cancel')); }}
-              className="mt-2 text-[11px] text-slate-500 hover:text-rose-300 underline">Cancel this SOP</button>
+            <button onClick={() => { const reason = window.prompt('Stop the video tasks for this brand? Give a reason (e.g. client paused videos).'); if (reason) api.videoSopCancel(run._id, reason).then(() => { toast.success('Stopped.'); onClose(); reload(); }).catch((e: any) => toast.error(e?.response?.data?.error || 'Could not cancel')); }}
+              className="mt-2 text-[11px] text-slate-500 hover:text-rose-300 underline">Stop video tasks for this brand</button>
           )}
         </section>
       </div>
@@ -473,14 +478,14 @@ function StartModal({ options, steps, onClose, onStarted }: { options: { workflo
   const go = async () => {
     const [w, s] = pick.split('|');
     setBusy(true);
-    try { await api.videoSopStart(w, s, new Date(`${date}:00+05:30`).toISOString(), { currentStep, assignTo: owner || undefined }); toast.success('Video SOP started.'); onStarted(); }
+    try { await api.videoSopStart(w, s, new Date(`${date}:00+05:30`).toISOString(), { currentStep, assignTo: owner || undefined }); toast.success('Brand added — Robin has set the tasks.'); onStarted(); }
     catch (e: any) { toast.error(e?.response?.data?.error || 'Could not start'); } finally { setBusy(false); }
   };
   return (
     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
       <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 space-y-4">
         <div>
-          <h4 className="text-white font-bold text-sm">Start the Video SOP for an existing brand</h4>
+          <h4 className="text-white font-bold text-sm">Add an existing brand to the video tasks</h4>
           <p className="text-xs text-slate-400 mt-1">New brands start automatically when they're onboarded with UGC Videos. Use this for live brands added before 12 Oct: pick where the brand is now and when its Day 1 was. If it's already behind, pick today as Day 1 to give the team fresh deadlines from the current step.</p>
         </div>
         <select value={pick} onChange={e => setPick(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white [&>option]:bg-slate-900">
@@ -493,7 +498,7 @@ function StartModal({ options, steps, onClose, onStarted }: { options: { workflo
         </label>
         <label className="block text-xs text-slate-400">Video person
           <select value={owner} onChange={e => setOwner(e.target.value)} className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white [&>option]:bg-slate-900">
-            <option value="">Keep the current UGC owner</option>
+            <option value="">Keep the current owner</option>
             {team.map(u => <option key={u._id} value={u._id}>{u.name}{u.videoTeam ? ' (video team)' : ''}</option>)}
           </select>
         </label>
@@ -502,7 +507,7 @@ function StartModal({ options, steps, onClose, onStarted }: { options: { workflo
         </label>
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white">Cancel</button>
-          <button disabled={!pick || busy} onClick={go} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white px-4 py-1.5 rounded-lg text-xs font-semibold">Start SOP</button>
+          <button disabled={!pick || busy} onClick={go} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white px-4 py-1.5 rounded-lg text-xs font-semibold">Add brand</button>
         </div>
       </div>
     </div>
@@ -517,13 +522,13 @@ function RulesCard() {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl">
       <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-slate-300">
-        <span><i className="fa-solid fa-shield-halved mr-2 text-rose-400"></i>Enforced by Robin on every UGC brand (SOP · 12 Oct 2026)</span>
+        <span><i className="fa-solid fa-shield-halved mr-2 text-rose-400"></i>How Robin runs every video brand (12 Oct 2026)</span>
         <i className={`fa-solid fa-chevron-down transition-transform ${open ? 'rotate-180' : ''}`}></i>
       </button>
       {open && (
         <ul className="px-5 pb-4 text-[12px] text-slate-400 space-y-1 list-disc">
-          <li>Every live brand with UGC Videos is in the SOP automatically — new or old. No owner? Robin assigns the video team member with the fewest brands; Amit joins as helper.</li>
-          <li>A brand can't be onboarded with UGC until sales fills the number of videos, product, price and requirements. Day 1 starts at onboarding; everything closes by Day 7.</li>
+          <li>Every live brand with UGC Videos gets these tasks automatically — new or old. No owner? Robin assigns the video team member with the fewest brands; Amit joins as helper.</li>
+          <li>A brand can't be onboarded with videos until sales fills the number of videos, product, price and requirements. Day 1 starts at onboarding; everything closes by Day 7.</li>
           <li>Steps unlock only in order (Day 1 meeting + research → Day 2 creator & Draft 1 → Day 3 final script, script sent, product shipped → videos → edits → final delivery by Day 6). Only the owner or helper can tick them.</li>
           <li>Every page shows the owner a "Do now" bar with the exact step, what's left and the deadline.</li>
           <li>A late or missed step, or no update by 5 PM, brings up a popup they must answer before carrying on.</li>

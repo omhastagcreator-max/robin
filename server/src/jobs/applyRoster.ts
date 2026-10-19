@@ -12,16 +12,16 @@ import { deactivateMember } from '../services/teamRoster';
  * guessed. To change the team later, use Team & roles in Robin — or bump
  * ROSTER_VERSION after editing the list.
  *
- *   Priyanka ................ video team (UGC) — owns every UGC brand
+ *   Priyanka ................ video team (UGC) — owns every video brand
  *   Amit Kamble ............. video team intern — helper on every Video SOP
  *   Shakshi ................. Meta Ads executive
  *   Chetan .................. Meta Ads intern
  *   Bhawna .................. removed (switched off, her clients reassigned)
  */
-const ROSTER_VERSION = '2026-10-18b';
+const ROSTER_VERSION = '2026-10-19';
 type Entry = { match: RegExp; who: string; addTeams?: string[]; removeTeams?: string[]; department?: string; remove?: boolean };
 const ROSTER: Entry[] = [
-  { match: /^priyanka(\s|$)/i,        who: 'Priyanka',    addTeams: ['influencer'], department: 'Video team (UGC)' },
+  { match: /^priyanka(\s|$)/i,        who: 'Priyanka',    addTeams: ['influencer'], department: 'Video team' },
   // Amit is an intern who works WITH Priyanka: helper on every Video SOP
   // (video_support), not a separate owner who gets brands auto-assigned.
   { match: /^amit\s+kamble(\s|$)/i,   who: 'Amit Kamble', addTeams: ['video_support'], removeTeams: ['influencer'], department: 'Video team intern' },

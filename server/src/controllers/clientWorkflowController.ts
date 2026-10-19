@@ -1558,7 +1558,7 @@ export async function pipelineOverview(req: AuthRequest, res: Response): Promise
         if (cur && (cur.state === 'missed' || cur.state === 'overdue') && stuckAt.severity !== 'blocked') {
           // Overdue SOP step = not moving. Missed, or overdue with a reported blocker = Stuck.
           stuckAt.severity = (cur.state === 'missed' || lastU?.blocker) ? 'blocked' : 'waiting';
-          stuckAt.reason = `Video SOP: "${sop.step}" ${cur.state === 'missed' ? 'MISSED' : 'overdue'}${lastU?.blocker ? ` — blocker: ${lastU.blocker}` : ''}${stuckAt.reason ? ` · ${stuckAt.reason}` : ''}`;
+          stuckAt.reason = `Video task "${sop.step}" ${cur.state === 'missed' ? 'MISSED' : 'overdue'}${lastU?.blocker ? ` — blocker: ${lastU.blocker}` : ''}${stuckAt.reason ? ` · ${stuckAt.reason}` : ''}`;
         } else if (lastU?.blocker && lastU.at && Date.now() - new Date(lastU.at).getTime() < 3 * 86_400_000) {
           stuckAt.reason = `Video team blocked: ${lastU.blocker}${stuckAt.reason ? ` · ${stuckAt.reason}` : ''}`;
           if (stuckAt.severity === 'active') stuckAt.severity = 'waiting';

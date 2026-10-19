@@ -87,14 +87,14 @@ async function collect(orgId: string, fromMs: number, toMs: number): Promise<Row
     const ugc = /^UGC /.test(w.comment || '');
     const status = (w.before?.status !== undefined || w.after?.status !== undefined) ? `changed status "${w.before?.status || '—'}" → "${w.after?.status || '—'}"` : String(w.action || '').replace(/_/g, ' ');
     rows.push({ at: new Date(w.createdAt).toISOString(), type: ugc ? 'video' : 'client', whoId: String(w.actorId || ''), who: name.get(String(w.actorId)) || w.actorName || 'Someone',
-      client: client.get(String(w.workflowId)) || '(deleted client)', what: ugc ? 'Video SOP' : status,
+      client: client.get(String(w.workflowId)) || '(deleted client)', what: ugc ? 'Video tasks' : status,
       detail: `${w.comment || ''}${w.after?.nextTask ? ` · Next: ${w.after.nextTask}` : ''}` });
   }
   for (const r of sopLogs as any[]) {
     const l = r.log;
     if (/^(step_done|step_done_late|daily_update|progress)$/.test(l.action)) continue;   // already in the client log (mirrored)
     rows.push({ at: new Date(l.at).toISOString(), type: l.action.startsWith('notified') ? 'reminder' : 'video', whoId: String(l.actorId || ''),
-      who: name.get(String(l.actorId)) || l.actorName || 'Robin', client: r.clientName || '', what: `Video SOP: ${String(l.action).replace(/_/g, ' ')}`, detail: l.detail || '' });
+      who: name.get(String(l.actorId)) || l.actorName || 'Robin', client: r.clientName || '', what: `Video tasks: ${String(l.action).replace(/_/g, ' ')}`, detail: l.detail || '' });
   }
   for (const s of sessions as any[]) {
     const uid = String(s.userId), who = name.get(uid) || 'Someone';

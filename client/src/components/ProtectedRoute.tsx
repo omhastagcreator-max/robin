@@ -12,7 +12,17 @@ interface Props { children: ReactNode; requiredRole?: string | string[]; }
  * to /dashboard — but ProtectedRoute also has a same-path guard so we
  * never get into a Navigate loop if /dashboard itself rejects the role.
  */
-export function dashboardForRole(role: string): string {
+function readStoredUser(): any { try { return JSON.parse(localStorage.getItem('robin_user') || 'null'); } catch { return null; } }
+
+/** Oct 19 2026 — the video team (owner or intern helper). Their day is their
+ *  video tasks from Robin, so that's where they land. */
+export function isVideoTeam(user: any): boolean {
+  const t = [user?.team, ...((user?.teams as string[]) || [])];
+  return t.includes('influencer') || t.includes('video_support');
+}
+
+export function dashboardForRole(role: string, user?: any): string {
+  if ((role === 'employee' || role === 'workroom') && isVideoTeam(user ?? readStoredUser())) return '/video-tasks';
   switch (role) {
     case 'client':   return '/client';
     // June 2026 Mission Control: admin lands on /command-center (the
@@ -78,7 +88,7 @@ export function ProtectedRoute({ children, requiredRole }: Props) {
     const userRoles = [role, ...((user as any).roles || [])].filter(Boolean);
     const hasAccess = userRoles.some(r => allowed.includes(r));
     if (!hasAccess) {
-      const target = dashboardForRole(role);
+      const target = dashboardForRole(role, user);
       // SAFETY: if redirecting would land on the same path we're already on,
       // the Navigate would loop and freeze the tab (this is what crashed
       // Robin for everyone). Render AccessDenied instead — terminal state.
