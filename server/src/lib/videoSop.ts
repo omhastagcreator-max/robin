@@ -51,6 +51,8 @@ export interface SopStepDef {
   noteLabel?: string;
   /** Step 1 captures the client brief as fields instead of tick-boxes. */
   briefFields?: boolean;
+  /** Nov 2026 — plain-language help behind the (i) button on each task. */
+  guide?: { what: string; how: string[]; doneWhen: string; tip?: string };
 }
 
 /**
@@ -86,6 +88,7 @@ export const SOP_STEPS: SopStepDef[] = [
       { text: 'Product USP discussed with the client', important: true },
       { text: "Client's requirements fully understood (videos, style, platform, language)", important: true },
     ],
+    guide: { what: "Talk to the client and write down exactly what videos they want.", how: ["Call or meet the client on Day 1.", "Ask about the product and what makes it special (the USP).", "Fill in the brief boxes: number of videos, product, price, offer, requirements, competitors.", "Repeat the brief back to the client so nothing is missed."], doneWhen: "The brief boxes are filled and all 3 boxes are ticked.", tip: "Sales may have already filled some boxes. Just check them with the client." },
   },
   {
     key: 'research', phase: 2, title: 'Research',
@@ -97,6 +100,7 @@ export const SOP_STEPS: SopStepDef[] = [
       { text: "Competitors' videos searched" },
       { text: 'USP for videos — confirmed with the client too' },
     ],
+    guide: { what: "Look at what already works for this kind of product before writing anything.", how: ["Share the shipping details with the brand.", "Collect 3–5 hooks (opening lines) that work well.", "Watch competitors' videos and note what they do.", "Confirm with the client which USP the videos should push."], doneWhen: "All 4 boxes are ticked, within 24h of the meeting.", tip: "Save the hook and competitor links. You'll use them in the script." },
   },
   {
     key: 'creator', phase: 2, title: 'Creator selection & finalisation',
@@ -107,6 +111,7 @@ export const SOP_STEPS: SopStepDef[] = [
       { text: 'Creator(s) finalised and confirmed' },
       { text: "Creators' shipping addresses collected" },
     ],
+    guide: { what: "Pick the creators who will make the videos.", how: ["Shortlist a few creators who suit the brand.", "Get the client's OK and confirm the final creator(s).", "Collect each creator's full shipping address."], doneWhen: "Creators are confirmed and you have every address.", tip: "No address means the product can't ship, so collect it today." },
   },
   {
     key: 'script_d1', phase: 3, title: 'Script — Draft 1',
@@ -119,6 +124,7 @@ export const SOP_STEPS: SopStepDef[] = [
       { text: 'Client changes on Draft 1 done (Day 2)' },
     ],
     linkLabel: 'Draft 1 script link',
+    guide: { what: "Write the first version of the script and get the client's comments.", how: ["Write Draft 1.", "Attach a reference hook and a reference CTA (call to action).", "Send it to the client and make their changes the same day.", "Paste the script link below."], doneWhen: "Draft 1 link is added and the client's changes are done.", tip: "Use the hooks you collected in Research." },
   },
   {
     key: 'script_final', phase: 3, title: 'Script — Draft 2 (final)',
@@ -130,12 +136,14 @@ export const SOP_STEPS: SopStepDef[] = [
       { text: 'Reference CTA attached with script' },
     ],
     linkLabel: 'Final script link',
+    guide: { what: "Get the client to approve the final script.", how: ["Make the last changes as Draft 2.", "Keep the reference hook and CTA attached.", "Get a clear 'approved' from the client.", "Paste the final script link below."], doneWhen: "The client has approved it, by Day 3 at the latest.", tip: "No script changes after the product is shipped, so lock it now." },
   },
   {
     key: 'script_sent', phase: 3, title: 'Script sent to creator',
     hint: 'Day 3',
     dueHours: 72, graceHours: 0, after: ['script_final', 'creator'],
     items: [{ text: 'Final script shared with every creator' }],
+    guide: { what: "Send the approved script to every creator.", how: ["Share the final script with each creator.", "Make sure each one has read it and has no questions."], doneWhen: "Every creator has the final script." },
   },
   {
     key: 'shipping', phase: 3, title: 'Product shipped to creators',
@@ -145,6 +153,7 @@ export const SOP_STEPS: SopStepDef[] = [
       { text: 'Product dispatched to every creator', important: true },
     ],
     noteLabel: 'Courier / tracking (AWB) details',
+    guide: { what: "Send the product to every creator.", how: ["Dispatch the product to each creator's address.", "Write the courier name and tracking (AWB) number below."], doneWhen: "Everything is dispatched and tracking is added, within 72h.", tip: "If the product isn't ready (not launched, still being made, or can't be delivered), choose that reason. Grace is the last option." },
   },
   {
     key: 'first_draft', phase: 4, title: '1st video draft received',
@@ -152,6 +161,7 @@ export const SOP_STEPS: SopStepDef[] = [
     dueHours: 96, graceHours: 24, after: ['script_sent', 'shipping'],
     items: [{ text: 'First video draft received from creator' }],
     linkLabel: '1st draft video link',
+    guide: { what: "Get the first video back from the creator.", how: ["Follow up with the creator once the product arrives.", "Download and check the first video.", "Paste the video link below."], doneWhen: "The first video link is added (about 24h after Day 3)." },
   },
   {
     key: 'edits', phase: 4, title: 'Video finalised & corrections done',
@@ -161,6 +171,7 @@ export const SOP_STEPS: SopStepDef[] = [
       { text: 'Corrections shared with creator / editor' },
       { text: 'Edited video checked and approved internally' },
     ],
+    guide: { what: "Fix the video until it is ready to send.", how: ["Send clear corrections to the creator or editor.", "Check the edited video yourself.", "Approve it inside the team."], doneWhen: "The edited video is approved inside the team, before Day 6." },
   },
   {
     key: 'final_delivery', phase: 4, title: 'Final video in client group',
@@ -168,6 +179,7 @@ export const SOP_STEPS: SopStepDef[] = [
     dueHours: 144, graceHours: 24, after: ['edits'],
     items: [{ text: 'Final draft posted in the video + brand WhatsApp group' }],
     linkLabel: 'Final video link',
+    guide: { what: "Deliver the final video to the client.", how: ["Post the final video in the video + brand WhatsApp group.", "Paste the final video link below."], doneWhen: "The final video is in the client group on Day 6.", tip: "Day 7 is the last-chance grace. Don't plan to use it." },
   },
 ];
 

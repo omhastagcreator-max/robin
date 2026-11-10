@@ -110,8 +110,27 @@ export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWork
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Client update
-  const [extra, setExtra] = useState('');
+  // Client update — Nov 2026 owner's standard WhatsApp format:
+  //   Hi Team, summarising our last discussion with @Name ji
+  //   *Status:* … / *Action Required (Brand Side):* … / *Next Step (Agency Side):* …
+  //   closing line
+  const autoStatus = () => {
+    const sv = stage || active;
+    if (!sv) return services.length && services.every(x => x.status === 'done') ? 'All work delivered ✅' : '';
+    const last = (sv.checklist || []).filter(i => i.done).slice(-1)[0]?.text;
+    return `${sv.label} — ${STATUS_TXT[sv.status] || sv.status}${last ? ` (latest: ${last})` : ''}`;
+  };
+  const [msgWith, setMsgWith] = useState('');
+  const [msgStatus, setMsgStatus] = useState('');
+  const [msgBrand, setMsgBrand] = useState('');
+  const [msgAgency, setMsgAgency] = useState('');
+  const [extra, setExtra] = useState('Please share your inputs so we can move ahead!');
+  // Pre-fill Status / Next step from the stage (still editable).
+  useEffect(() => {
+    setMsgStatus(autoStatus());
+    setMsgAgency(stage?.nextTask ? `${stage.nextTask}${stage.nextTaskDue ? ` by ${dateOnly(stage.nextTaskDue)}` : ''}` : '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageId, workflow]);
 
   useEffect(() => {
     if (!stage) return;
@@ -168,20 +187,21 @@ export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWork
   };
 
   const message = useMemo(() => {
-    const lines = [`Hi ${workflow.clientName} team, quick update from Hashtag Creator:`];
-    for (const s of services) {
-      const done = (s.checklist || []).filter(i => i.done).length;
-      const tot = (s.checklist || []).length;
-      const last = (s.checklist || []).filter(i => i.done).slice(-1)[0]?.text;
-      lines.push(`• ${s.label}: ${s.status === 'done' ? 'completed ✅' : `${STATUS_TXT[s.status]}${tot ? ` (${done}/${tot})` : ''}${last ? ` — latest: ${last}` : ''}`}`);
-    }
-    if (stage?.nextTask) lines.push(`Next: ${stage.nextTask}${stage.nextTaskDue ? ` by ${dateOnly(stage.nextTaskDue)}` : ''}`);
-    else if (nextItem) lines.push(`Next: ${nextItem}`);
-    if (extra.trim()) lines.push(extra.trim());
+    const who = msgWith.trim().replace(/^@~?/, '');
+    const lines: string[] = [who
+      ? `Hi Team, summarising our last discussion with @${who}${/\bji$/i.test(who) ? '' : ' ji'}`
+      : `Hi ${workflow.clientName} Team, here's a quick update from Hashtag Creator`];
+    const status = msgStatus.trim() || autoStatus();
+    if (status) lines.push('', `*Status:* ${status}`);
+    if (msgBrand.trim()) lines.push('', `*Action Required (Brand Side):* ${msgBrand.trim()}`);
+    const agency = msgAgency.trim() || (nextItem ? nextItem : '');
+    if (agency) lines.push('', `*Next Step (Agency Side):* ${agency}`);
+    if (extra.trim()) lines.push('', extra.trim());
     // Voice note 2: the message goes out in the sender's name ("from Rahul").
-    lines.push(`— ${user?.name || 'Team'}, Hashtag Creator`);
+    lines.push('', `— ${user?.name || 'Team'}, Hashtag Creator`);
     return lines.join('\n');
-  }, [workflow, services, stage, nextItem, extra, user?.name]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflow, services, stage, nextItem, msgWith, msgStatus, msgBrand, msgAgency, extra, user?.name]);
 
   const pushWhatsApp = () => {
     const phone = (workflow.clientPhone || '').replace(/\D/g, '');
@@ -362,11 +382,24 @@ export function ClientDesk({ workflow, onBack, onChanged }: { workflow: DeskWork
             <h3 className="text-sm font-bold text-white"><i className="fa-brands fa-whatsapp text-emerald-400 mr-2"></i>Update the client</h3>
             <button onClick={() => setShowPreview(v => !v)} className="text-[11px] text-slate-400 hover:text-white">{showPreview ? 'Hide message' : 'See message'}</button>
           </div>
-          {showPreview && <pre className="whitespace-pre-wrap text-[11.5px] text-slate-300 bg-slate-950 border border-slate-800 rounded-lg p-3 max-h-40 overflow-y-auto font-sans">{message}</pre>}
-          <label className="block text-[11px] text-slate-400 flex-1">Notes for the client (optional)
-            <textarea rows={showPreview ? 2 : 4} value={extra} onChange={e => setExtra(e.target.value)} placeholder="Added under the stage summary"
-              className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600" />
-          </label>
+          {showPreview && <pre className="whitespace-pre-wrap text-[11.5px] text-slate-300 bg-slate-950 border border-slate-800 rounded-lg p-3 max-h-56 overflow-y-auto font-sans">{message}</pre>}
+          <div className="grid gap-2 flex-1">
+            <label className="block text-[11px] text-slate-400">Discussion with (client contact)
+              <input value={msgWith} onChange={e => setMsgWith(e.target.value)} placeholder="e.g. Pranay Kudav (leave blank for a general update)" className="w-full mt-0.5 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-600" />
+            </label>
+            <label className="block text-[11px] text-slate-400">Status
+              <textarea rows={2} value={msgStatus} onChange={e => setMsgStatus(e.target.value)} placeholder="Where things stand right now" className="w-full mt-0.5 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-600" />
+            </label>
+            <label className="block text-[11px] text-slate-400">Action required (brand side)
+              <input value={msgBrand} onChange={e => setMsgBrand(e.target.value)} placeholder="What we need from the client, e.g. final budget approval" className="w-full mt-0.5 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-600" />
+            </label>
+            <label className="block text-[11px] text-slate-400">Next step (agency side)
+              <input value={msgAgency} onChange={e => setMsgAgency(e.target.value)} placeholder="What we'll do next, e.g. lock shoot dates once approved" className="w-full mt-0.5 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-600" />
+            </label>
+            <label className="block text-[11px] text-slate-400">Closing line
+              <input value={extra} onChange={e => setExtra(e.target.value)} placeholder="e.g. Please share your final decision so we can align the dates accordingly!" className="w-full mt-0.5 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-600" />
+            </label>
+          </div>
           <div className="flex justify-end gap-2">
             <button onClick={copyMsg} className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg text-xs font-semibold"><i className="fa-regular fa-copy mr-1.5"></i>Copy</button>
             <button onClick={pushWhatsApp} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-xs font-semibold"><i className="fa-brands fa-whatsapp mr-1.5"></i>Send on WhatsApp</button>

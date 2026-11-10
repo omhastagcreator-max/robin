@@ -16,7 +16,7 @@ import { VideoProgressBar, VideoProgressEditor, type Progress } from '@/componen
  */
 
 type StepState = 'done' | 'done_late' | 'locked' | 'open' | 'due_soon' | 'overdue' | 'missed';
-interface StepDef { key: string; phase: number; title: string; hint: string; dueHours: number; graceHours: number; after?: string[]; items: { text: string; important?: boolean }[]; linkLabel?: string; noteLabel?: string; briefFields?: boolean }
+interface StepDef { key: string; phase: number; title: string; hint: string; dueHours: number; graceHours: number; after?: string[]; items: { text: string; important?: boolean }[]; linkLabel?: string; noteLabel?: string; briefFields?: boolean; guide?: { what: string; how: string[]; doneWhen: string; tip?: string } }
 interface Meta { steps: StepDef[]; briefFields: { key: string; label: string; required: boolean; placeholder: string }[]; lateReasons: { key: string; label: string }[] }
 interface RunStep { key: string; dueAt: string; graceUntil: string; items: { done: boolean; doneAt?: string }[]; link: string; note: string; doneAt: string | null; doneBy: string; doneByName: string; late: boolean; afterGrace: boolean; lateReason: string; lateNote: string; state: StepState; unlocked: boolean }
 interface Run {
@@ -107,6 +107,20 @@ export default function VideoSopPage() {
   }, [data]);
 
   const selected = data?.runs.find(r => r._id === selectedId) || null;
+  // Nov 2026 — "make it easy": the video team lands straight on their most
+  // urgent brand (wide screens only, so phones still see the list first).
+  useEffect(() => {
+    if (!videoTeam || selectedId || params.get('workflow') || !data || tab !== 'active') return;
+    if (typeof window !== 'undefined' && window.innerWidth < 1280) return;
+    const first = runs.find(r => r.assignedTo === data.me || (r.helpers || []).some(h => h.id === data.me));
+    if (first) setParams({ run: first._id }, { replace: true });
+  }, [videoTeam, selectedId, data, runs, tab, params, setParams]);
+  const nextRunId = useMemo(() => {
+    if (!selected) return null;
+    const i = runs.findIndex(r => r._id === selected._id);
+    return runs.length > 1 ? runs[(i + 1) % runs.length]._id : null;
+  }, [runs, selected]);
+  const [helpOpen, setHelpOpen] = useState(false);
   const replaceRun = (r: Run) => setData(d => d ? { ...d, runs: d.runs.map(x => x._id === r._id ? { ...x, ...r } : x) } : d);
 
   return (
@@ -115,6 +129,10 @@ export default function VideoSopPage() {
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
             <i className="fa-solid fa-list-check text-rose-400"></i> {videoTeam ? 'My tasks' : 'Video tasks'}
+            <button type="button" onClick={() => setHelpOpen(true)} title="How this page works" aria-label="How this page works"
+              className="ml-1 h-6 w-6 rounded-full border border-slate-700 text-slate-400 hover:text-white hover:border-slate-500 text-[11px] flex items-center justify-center">
+              <i className="fa-solid fa-info"></i>
+            </button>
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">{videoTeam
             ? 'From Robin: every brand you handle and the task to do now. Tick it when done and post today\'s update.'
@@ -188,11 +206,13 @@ export default function VideoSopPage() {
 
         {selected && meta && (
           <RunDetail key={selected._id} run={selected} meta={meta} me={data!.me} canManage={data!.canManage}
-            onChange={replaceRun} onClose={() => setParams({})} reload={load} />
+            onChange={replaceRun} onClose={() => setParams({})} reload={load}
+            onNext={nextRunId ? () => setParams({ run: nextRunId }) : undefined} />
         )}
       </div>
 
       <RulesCard />
+      {helpOpen && <HowItWorksModal onClose={() => setHelpOpen(false)} />}
       {startOpen && data && meta && <StartModal options={data.notStarted} steps={meta.steps} onClose={() => setStartOpen(false)} onStarted={() => { setStartOpen(false); load(); }} />}
     </div>
   );
@@ -207,7 +227,7 @@ function Count({ label, value, cls }: { label: string; value: number; cls: strin
   );
 }
 
-function RunDetail({ run, meta, me, canManage, onChange, onClose, reload }: { run: Run; meta: Meta; me: string; canManage: boolean; onChange: (r: Run) => void; onClose: () => void; reload: () => void }) {
+function RunDetail({ run, meta, me, canManage, onChange, onClose, reload, onNext }: { run: Run; meta: Meta; me: string; canManage: boolean; onChange: (r: Run) => void; onClose: () => void; reload: () => void; onNext?: () => void }) {
   const navigate = useNavigate();
   const isOwner = (run.assignedTo === me || (run.helpers || []).some(h => h.id === me)) && run.status === 'active';
   const isHelper = run.assignedTo !== me && (run.helpers || []).some(h => h.id === me);
@@ -216,6 +236,8 @@ function RunDetail({ run, meta, me, canManage, onChange, onClose, reload }: { ru
   const [users, setUsers] = useState<{ _id: string; name: string; videoTeam?: boolean }[]>([]);
   const [daily, setDaily] = useState({ text: '', blocker: '' });
   const [drafts, setDrafts] = useState<Record<string, { link: string; note: string }>>({});
+  // Nov 2026 — the task you're on now opens its "how to do it" help by default.
+  const [openGuide, setOpenGuide] = useState<string | null>(run.currentStep || null);
   const [brief, setBrief] = useState<Record<string, string>>(run.brief || {});
   useEffect(() => { if (canManage) api.videoSopTeam().then(setUsers).catch(() => {}); }, [canManage]);
   const postDaily = () => {
@@ -237,11 +259,35 @@ function RunDetail({ run, meta, me, canManage, onChange, onClose, reload }: { ru
     if (new Date(step.dueAt).getTime() < Date.now() && !extra.lateReason) { setLateFor(key); return; }
     act(key, async () => {
       const r = await api.videoSopComplete(run._id, key, { link: d.link || step.link, note: d.note || step.note, ...extra });
-      toast.success('Step marked done and logged to the CRM.');
+      toast.success('Task done and logged to the CRM. The next task is open.');
       setLateFor(null);
       return r;
     });
   };
+
+  // Nov 2026 — "make Robin follow the tasks": say exactly what is still
+  // missing on a task, and finish it automatically once nothing is.
+  const missingFor = (def: StepDef, st: RunStep, link: string): string[] => {
+    const out: string[] = [];
+    const left = def.items.filter((_, i) => !st.items[i]?.done).length;
+    if (left) out.push(`tick ${left} more box${left > 1 ? 'es' : ''}`);
+    if (def.briefFields) {
+      const empty = meta.briefFields.filter(f => f.required && !(brief[f.key] || '').trim()).length;
+      if (empty) out.push(`fill ${empty} brief field${empty > 1 ? 's' : ''}`);
+    }
+    if (def.linkLabel && !/^https?:\/\//i.test((link || st.link || '').trim())) out.push(`add the ${def.linkLabel.toLowerCase()}`);
+    return out;
+  };
+  const toggleItem = (def: StepDef, i: number, checked: boolean) => act(def.key, async () => {
+    const r: Run = await api.videoSopToggleItem(run._id, def.key, i, checked);
+    const st = r.steps.find(x => x.key === def.key);
+    const d0 = drafts[def.key] || { link: '', note: '' };
+    if (checked && st && !st.doneAt && missingFor(def, st, d0.link).length === 0 && !def.noteLabel && !def.briefFields) {
+      toast.success('All done here — Robin is closing this task for you.');
+      setTimeout(() => complete(def.key), 0);
+    }
+    return r;
+  });
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden self-start">
@@ -264,6 +310,7 @@ function RunDetail({ run, meta, me, canManage, onChange, onClose, reload }: { ru
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => navigate('/command-center', { state: { clientId: run.workflowId } })} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 rounded-lg"><i className="fa-solid fa-diagram-project mr-1"></i> DT</button>
+          {onNext && <button onClick={onNext} title="Next brand in your list" className="text-[11px] text-slate-300 hover:text-white border border-slate-700 rounded-md px-2 py-1">Next brand <i className="fa-solid fa-arrow-right ml-1"></i></button>}
           <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-white px-2 py-1"><i className="fa-solid fa-xmark"></i></button>
         </div>
       </div>
@@ -339,20 +386,44 @@ function RunDetail({ run, meta, me, canManage, onChange, onClose, reload }: { ru
                 const editable = isOwner && !s.doneAt && s.unlocked;
                 const d = drafts[def.key] || { link: s.link || '', note: s.note || '' };
                 const setD = (p: Partial<typeof d>) => setDrafts(x => ({ ...x, [def.key]: { ...d, ...p } }));
+                const stepNo = meta.steps.findIndex(x => x.key === def.key) + 1;
+                const guideOpen = openGuide === def.key;
                 return (
                   <div key={def.key} className={`rounded-lg border p-3 ${isCurrent ? 'border-blue-500/50 bg-blue-600/5' : 'border-slate-800 bg-slate-950/40'}`}>
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="text-[13px] font-semibold text-white flex items-center gap-2">
-                          <span className={`h-2.5 w-2.5 rounded-full ${st.dot}`} />{def.title}
+                          <span className={`h-2.5 w-2.5 rounded-full ${st.dot}`} />
+                          <span className="text-[10.5px] font-semibold text-slate-500">Task {stepNo} of {meta.steps.length}</span>
+                          {def.title}
+                          {def.guide && (
+                            <button type="button" onClick={() => setOpenGuide(g => g === def.key ? null : def.key)} aria-expanded={guideOpen}
+                              title="How to do this task" aria-label={`How to do: ${def.title}`}
+                              className={`h-5 w-5 rounded-full border text-[10px] flex items-center justify-center ${guideOpen ? 'bg-blue-600 border-blue-500 text-white' : 'border-slate-700 text-slate-400 hover:text-white hover:border-slate-500'}`}>
+                              <i className="fa-solid fa-info"></i>
+                            </button>
+                          )}
                         </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">{def.hint}</div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">{def.guide?.what || def.hint}</div>
                       </div>
                       <div className="ml-auto text-right">
                         <span className={`inline-block px-2 py-0.5 rounded border text-[10.5px] font-semibold ${st.chip}`}>{st.label}</span>
                         {!s.doneAt && <div className="text-[10.5px] text-slate-400 mt-1">Due {fmtWhen(s.dueAt)} · {countdown(s.dueAt)}{def.graceHours ? ` · grace till ${fmtWhen(s.graceUntil)}` : ' · hard deadline'}</div>}
                       </div>
                     </div>
+
+                    {guideOpen && def.guide && (
+                      <div className="mt-2 rounded-md border border-blue-500/30 bg-blue-500/5 p-3 text-[12px] text-slate-300 space-y-2">
+                        <div><span className="font-semibold text-white">What:</span> {def.guide.what}</div>
+                        <div>
+                          <div className="font-semibold text-white">How to do it:</div>
+                          <ol className="list-decimal pl-5 mt-1 space-y-0.5">{def.guide.how.map((h, i) => <li key={i}>{h}</li>)}</ol>
+                        </div>
+                        <div><span className="font-semibold text-white">Done when:</span> {def.guide.doneWhen}</div>
+                        <div className="text-slate-400"><span className="font-semibold text-slate-300">Deadline:</span> {def.hint}{def.graceHours ? '. If late, pick a reason when you mark it done.' : '. This is a hard deadline with no grace.'}</div>
+                        {def.guide.tip && <div className="text-amber-300"><i className="fa-solid fa-lightbulb mr-1"></i>{def.guide.tip}</div>}
+                      </div>
+                    )}
 
                     {s.doneAt && (
                       <div className="mt-2 text-[11.5px] text-slate-300">
@@ -381,7 +452,7 @@ function RunDetail({ run, meta, me, canManage, onChange, onClose, reload }: { ru
                         {def.items.map((it, i) => (
                           <label key={i} className={`flex items-center gap-2 text-[12.5px] ${editable ? 'cursor-pointer' : ''} ${it.important ? 'text-amber-200' : 'text-slate-200'}`}>
                             <input type="checkbox" className="accent-blue-500 h-4 w-4" disabled={!editable || busy === def.key} checked={!!s.items[i]?.done}
-                              onChange={e => act(def.key, () => api.videoSopToggleItem(run._id, def.key, i, e.target.checked))} />
+                              onChange={e => toggleItem(def, i, e.target.checked)} />
                             <span className={s.items[i]?.done ? 'line-through decoration-emerald-500/60 text-slate-400' : ''}>{it.text}</span>
                             {it.important && <span className="text-[9.5px] font-bold uppercase text-amber-400">important</span>}
                           </label>
@@ -394,16 +465,19 @@ function RunDetail({ run, meta, me, canManage, onChange, onClose, reload }: { ru
                           <input disabled={!editable} value={d.note} onChange={e => setD({ note: e.target.value })} placeholder={def.noteLabel}
                             className="w-full bg-slate-950 border border-slate-800 rounded-md px-2.5 py-1.5 text-xs text-white placeholder-slate-600 disabled:opacity-60 focus:outline-none focus:border-blue-500" />
                         )}
-                        {editable && (
-                          <div className="flex justify-end pt-1">
-                            <button disabled={busy === def.key} onClick={() => def.briefFields
+                        {editable && (() => { const miss = missingFor(def, s, d.link); return (
+                          <div className="flex items-center justify-end gap-3 pt-1">
+                            {miss.length > 0
+                              ? <span className="text-[11px] text-amber-300"><i className="fa-solid fa-hand-point-right mr-1"></i>To finish: {miss.join(', ')}</span>
+                              : <span className="text-[11px] text-emerald-300"><i className="fa-solid fa-circle-check mr-1"></i>Ready to mark done</span>}
+                            <button disabled={busy === def.key || miss.length > 0} onClick={() => def.briefFields
                               ? api.videoSopSaveBrief(run._id, brief).then(() => complete(def.key)).catch((e: any) => toast.error(e?.response?.data?.error || 'Could not save brief'))
                               : complete(def.key)}
                               className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-1.5 rounded-lg text-xs font-semibold">
-                              <i className="fa-solid fa-check mr-1.5"></i> Mark step done
+                              <i className="fa-solid fa-check mr-1.5"></i> Mark task done
                             </button>
                           </div>
-                        )}
+                        ); })()}
                       </div>
                     )}
                     {!s.doneAt && !s.unlocked && (
@@ -536,6 +610,49 @@ function RulesCard() {
           <li>Reminders escalate: due in 6h → overdue every 2h → missed, hourly to the owner + admin + Rahul. Rahul gets a 7:30 PM list of brands with no update.</li>
         </ul>
       )}
+    </div>
+  );
+}
+
+/** Nov 2026 — (i) next to the page title: the whole page in plain words. */
+function HowItWorksModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, [onClose]);
+  const dots: [string, string][] = [
+    ['bg-blue-500', 'Open: you can do it now'],
+    ['bg-yellow-400', 'Due soon: less than 6 hours left'],
+    ['bg-orange-500', 'Overdue: past the deadline, still in grace'],
+    ['bg-rose-500', 'Missed: grace is over'],
+    ['bg-emerald-500', 'Done on time'],
+    ['bg-amber-400', 'Done late'],
+    ['bg-slate-700', 'Locked: waiting for an earlier task'],
+  ];
+  return (
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-lg w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <h4 className="text-white font-bold text-sm"><i className="fa-solid fa-circle-info text-blue-400 mr-2"></i>How video tasks work</h4>
+          <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-white"><i className="fa-solid fa-xmark"></i></button>
+        </div>
+        <ol className="list-decimal pl-5 space-y-1.5 text-[12.5px] text-slate-300">
+          <li><b className="text-white">Open a brand.</b> Each brand has 10 tasks, from the client meeting on Day 1 to the final video on Day 6.</li>
+          <li><b className="text-white">Do the task marked in blue.</b> Tap the <i className="fa-solid fa-info text-[10px]"></i> button on any task to see what it is, how to do it, and when it counts as done.</li>
+          <li><b className="text-white">Tick the boxes and add any link it asks for.</b> Robin shows what's left ("To finish: …"). When nothing is left, Robin closes the task for you, or you press "Mark task done". The next task then unlocks by itself.</li>
+          <li><b className="text-white">Post today's update</b> for every brand before 5 PM, even if it's one line. Add a blocker if something is stuck, and Rahul and admin will be alerted.</li>
+          <li><b className="text-white">Running late?</b> You can still finish the task. Robin will ask you to pick a reason.</li>
+        </ol>
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">What the colours mean</div>
+          <ul className="grid sm:grid-cols-2 gap-1.5 text-[12px] text-slate-300">
+            {dots.map(([c, t]) => <li key={t} className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${c}`} />{t}</li>)}
+          </ul>
+        </div>
+        <p className="text-[11.5px] text-slate-400">Stuck? Ask Amit (helper) or Rahul. Only the brand's video person or helper can tick its tasks.</p>
+        <div className="flex justify-end"><button onClick={onClose} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-xs font-semibold">Got it</button></div>
+      </div>
     </div>
   );
 }
