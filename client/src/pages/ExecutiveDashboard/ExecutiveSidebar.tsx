@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { isVideoTeam } from '@/components/ProtectedRoute';
+import { canGrantAllClients } from '@/components/admin/AllClientsAccessCard';
 
 export function ExecutiveSidebar() {
   const location = useLocation();
@@ -157,6 +158,14 @@ export function ExecutiveSidebar() {
             <Link title="Sales Pipeline" to="/sales" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/sales') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
               <i className="fa-solid fa-bullseye w-5 text-center text-orange-400"></i>
               <span className="truncate">Sales Pipeline</span>
+            </Link>
+          )}
+
+          {/* Nov 2026 — sales (Rishi) / Om: "Work on all clients" switches. */}
+          {!isManager && canGrantAllClients(user, role) && (
+            <Link title="Client access" to="/admin/team" className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive('/admin/team') ? 'bg-slate-800 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}`}>
+              <i className="fa-solid fa-unlock-keyhole w-5 text-center text-emerald-400"></i>
+              <span className="truncate">Client access</span>
             </Link>
           )}
 

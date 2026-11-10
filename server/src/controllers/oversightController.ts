@@ -15,6 +15,7 @@ import LeaveApplication from '../models/LeaveApplication';
 import ScreenSession from '../models/ScreenSession';
 import { sessionTotals, effectiveEndMs, huddleTotalMs, STANDARD_BREAK_MS } from '../services/sessionTime';
 import { deactivateMember } from '../services/teamRoster';
+import { notify } from '../services/notify';
 
 /**
  * oversightController — Oct 2026. Powers the Team Oversight dashboard
@@ -570,5 +571,85 @@ export async function updateMember(req: AuthRequest, res: Response): Promise<voi
     ActivityLog.create({ organizationId: orgId, userId: req.user!.id, action: 'member.updated', entity: 'user', entityId: u._id,
       metadata: { label: `${u.name}: ${u.role}${u.teams?.length ? ` · ${u.teams.join(', ')}` : ''}${u.department ? ` · ${u.department}` : ''}` } }).catch(() => {});
     res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+/**
+ * "Work on all clients" — Nov 2026 (owner: "enable an option where Amit can
+ * also work on all the clients and this can be assigned from Rishi or Om").
+ * Same canEditAllClients flag Om already has (see isPrivilegedEditor() in
+ * clientWorkflowController.ts), but grantable by more people than admin:
+ *   - admin
+ *   - sales (Rishi) — role or stacked roles[]
+ *   - anyone who already has canEditAllClients (Om)
+ * Guard rails: admins are never touched (they see everything anyway), and a
+ * non-admin can't switch it on/off for themselves. Every change is written
+ * to ActivityLog and the teammate gets a bell notification (which also makes
+ * their Robin re-read their access without a re-login).
+ */
+async function canGrantAllClients(req: AuthRequest): Promise<boolean> {
+  if (!req.user) return false;
+  const r = [req.user.role, ...(req.user.roles || [])];
+  if (r.includes('admin') || r.includes('sales')) return true;
+  if (req.user.canEditAllClients) return true;
+  return false;
+}
+
+export async function requireAllClientsGranter(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  if (!req.user) { res.status(401).json({ error: 'Not authenticated' }); return; }
+  if (await canGrantAllClients(req)) { next(); return; }
+  res.status(403).json({ error: 'Only admin, sales or someone who already works on all clients can change this' });
+}
+
+// GET /api/oversight/all-clients-access — teammates + whether each works on all clients
+export async function listAllClientsAccess(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const me = await User.findById(req.user!.id).select('organizationId').lean();
+    const users = await User.find({
+      organizationId: me?.organizationId, isActive: { $ne: false },
+      role: { $in: ['admin', 'employee', 'sales', 'workroom'] },
+    }).select('_id name email role roles team teams department canEditAllClients').sort({ name: 1 }).lean();
+    res.json(users.map((u: any) => ({
+      id: String(u._id), name: u.name, email: u.email, role: u.role,
+      isAdmin: u.role === 'admin' || (u.roles || []).includes('admin'),
+      teams: [u.team, ...(u.teams || [])].filter(Boolean).filter((t: string, i: number, a: string[]) => a.indexOf(t) === i),
+      department: u.department || '',
+      canEditAllClients: u.canEditAllClients === true,
+    })));
+  } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+}
+
+// PUT /api/oversight/all-clients-access/:id  { enabled: boolean }
+export async function setAllClientsAccess(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const me = await User.findById(req.user!.id).select('organizationId name').lean();
+    const orgId = String(me?.organizationId || '');
+    const enabled = req.body?.enabled === true || req.body?.enabled === 'true';
+    const u: any = await User.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!u) { res.status(404).json({ error: 'Teammate not found' }); return; }
+    const targetIsAdmin = u.role === 'admin' || (u.roles || []).includes('admin');
+    if (targetIsAdmin) { res.status(400).json({ error: 'Admins already work on every client' }); return; }
+    if (String(u._id) === req.user!.id && !isAdmin(req)) { res.status(400).json({ error: "You can't change your own access — ask admin, sales or Om" }); return; }
+    if (!['employee', 'sales', 'workroom'].includes(u.role)) { res.status(400).json({ error: 'Only staff accounts can get this' }); return; }
+    if ((u.canEditAllClients === true) === enabled) { res.json({ id: String(u._id), name: u.name, canEditAllClients: enabled, unchanged: true }); return; }
+    u.canEditAllClients = enabled;
+    await u.save();
+    ActivityLog.create({
+      organizationId: orgId, userId: req.user!.id,
+      action: enabled ? 'access.all_clients_granted' : 'access.all_clients_revoked',
+      entity: 'user', entityId: u._id,
+      metadata: { label: `${u.name} ${enabled ? 'can now work on all clients' : 'is back to their own clients only'} (by ${me?.name || req.user!.name})` },
+    }).catch(() => {});
+    const io = req.app.get('io');
+    notify({
+      io, organizationId: orgId, actorId: req.user!.id, userId: String(u._id),
+      type: 'access.all_clients',
+      title: enabled ? 'You can now work on all clients' : 'Your client access changed',
+      body: enabled
+        ? `${me?.name || req.user!.name} gave you access to every client in the CRM.`
+        : `${me?.name || req.user!.name} set you back to the clients assigned to you.`,
+      entityId: String(u._id), entityType: 'user',
+    }).catch(() => {});
+    res.json({ id: String(u._id), name: u.name, canEditAllClients: enabled });
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }

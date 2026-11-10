@@ -390,6 +390,8 @@ export default function ClientWorkflowDetailPage() {
   // now also counts as "admin-effective" here, same as the pre-existing
   // roles[] admin-stacking check.
   const isAdminEffective    = role === 'admin' || ((user as any)?.roles || []).includes('admin') || !!(user as any)?.canEditAllClients;
+  // Nov 2026 — sales (Rishi) can also change who owns a stage (owner approved).
+  const canReassign         = isAdminEffective || role === 'sales' || ((user as any)?.roles || []).includes('sales');
 
   const [wf, setWf]         = useState<Workflow | null>(null);
   const [loading, setL]     = useState(true);
@@ -426,11 +428,11 @@ export default function ClientWorkflowDetailPage() {
   const [depsByType, setDepsByType] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
-    if (!isAdminEffective) return;
+    if (!canReassign) return;
     api.listUsers({}).then((d: any[]) => {
       setTeammates(Array.isArray(d) ? d.filter(u => ['admin', 'employee', 'sales'].includes(u.role)) : []);
     }).catch(() => {});
-  }, [isAdminEffective]);
+  }, [canReassign]);
 
   useEffect(() => {
     api.cwGetTemplates().then((tpl: any[]) => {
@@ -817,7 +819,7 @@ export default function ClientWorkflowDetailPage() {
                   ) : (
                     <span className="text-[12px] text-muted-foreground">Unassigned</span>
                   )}
-                  {isAdminEffective && (
+                  {canReassign && (
                     <div className="relative">
                       <select
                         value={active.assignedTo || ''}

@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useHuddle } from '@/contexts/HuddleContext';
 import { toast } from 'sonner';
 import { RecoveryActions } from '@/components/shared/RecoveryActions';
+import { ThemeToggle } from '@/components/shared/ThemeToggle';
 
 const formatTime = (ms: number) => {
   const totalSeconds = Math.floor(ms / 1000);
@@ -89,6 +90,7 @@ export function ExecutiveHeader() {
         {/* Oct 2026 — Refresh / Clear cache / Restart / Sign out. The
             red button next to it only ends the WORK DAY; "Sign out"
             here signs out of the account. */}
+        <ThemeToggle />
         <RecoveryActions variant="dark" />
         <button 
           onClick={handleToggleLogin} 

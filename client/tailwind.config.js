@@ -18,11 +18,14 @@ module.exports = {
         accent: { DEFAULT: 'hsl(var(--accent))', foreground: 'hsl(var(--accent-foreground))' },
         popover: { DEFAULT: 'hsl(var(--popover))', foreground: 'hsl(var(--popover-foreground))' },
         card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' },
-        slate: {
-          850: '#151e32',
-          900: '#0f172a',
-          950: '#090d16'
-        },
+        // Nov 2026 — light/dark switch. The whole slate scale reads from CSS
+        // variables (defined in index.css) so `html.theme-light` can swap it
+        // for a light scale and re-theme every hard-coded slate class in the
+        // app at once. Dark values are unchanged from before.
+        slate: Object.fromEntries(
+          ['50', '100', '200', '300', '400', '500', '600', '700', '800', '850', '900', '950']
+            .map(k => [k, `rgb(var(--slate-${k}) / <alpha-value>)`])
+        ),
         sidebar: {
           DEFAULT: 'hsl(var(--sidebar-background))',
           foreground: 'hsl(var(--sidebar-foreground))',

@@ -100,6 +100,157 @@
   color-scheme: dark;
 }
 
+/* ── Light / dark switch — Nov 2026 ────────────────────────────────────
+ * The slate scale is a CSS variable (tailwind.config.js). Dark = the stock
+ * Tailwind slate values Robin has always used. `html.theme-light` (set by
+ * lib/theme.ts + the pre-paint script in index.html) flips the scale so
+ * the dark-first screens read light: page bg-slate-950 → soft grey,
+ * card bg-slate-900 → white, border-slate-800 → light hairline,
+ * text-slate-400 → dark grey, and so on. */
+:root {
+  --slate-50:  248 250 252;
+  --slate-100: 241 245 249;
+  --slate-200: 226 232 240;
+  --slate-300: 203 213 225;
+  --slate-400: 148 163 184;
+  --slate-500: 100 116 139;
+  --slate-600: 71 85 105;
+  --slate-700: 51 65 85;
+  --slate-800: 30 41 59;
+  --slate-850: 21 30 50;
+  --slate-900: 15 23 42;
+  --slate-950: 9 13 22;
+}
+html.theme-light {
+  --slate-50:  2 6 23;
+  --slate-100: 15 23 42;
+  --slate-200: 30 41 59;
+  --slate-300: 51 65 85;
+  --slate-400: 71 85 105;
+  --slate-500: 100 116 139;
+  --slate-600: 148 163 184;
+  --slate-700: 203 213 225;
+  --slate-800: 226 232 240;
+  --slate-850: 248 250 252;
+  --slate-900: 255 255 255;
+  --slate-950: 241 245 249;
+  color-scheme: light;
+}
+/* Semantic tokens inside the app shell (.dark wrapper) follow the switch too. */
+html.theme-light .dark {
+  --background:          210 40% 96%;
+  --foreground:          222 47% 11%;
+  --card:                0 0% 100%;
+  --card-foreground:     222 47% 11%;
+  --popover:             0 0% 100%;
+  --popover-foreground:  222 47% 11%;
+  --border:              214 32% 91%;
+  --input:               214 32% 91%;
+  --primary:             221 83% 53%;
+  --primary-foreground:  0 0% 100%;
+  --muted:               210 40% 96%;
+  --muted-foreground:    215 16% 40%;
+  --accent:              210 40% 94%;
+  --accent-foreground:   222 47% 11%;
+  --ring:                221 83% 53%;
+  color-scheme: light;
+}
+/* Headings written as text-white on dark cards become dark text… */
+html.theme-light .text-white { color: rgb(15 23 42); }
+html.theme-light .hover\:text-white:hover { color: rgb(2 6 23); }
+/* …but stay white on coloured buttons / badges. */
+html.theme-light [class*="bg-emerald-5"].text-white, html.theme-light [class*="bg-emerald-6"].text-white, html.theme-light [class*="bg-emerald-7"].text-white,
+html.theme-light [class*="bg-emerald-5"] .text-white, html.theme-light [class*="bg-emerald-6"] .text-white, html.theme-light [class*="bg-emerald-7"] .text-white,
+html.theme-light [class*="bg-green-5"].text-white, html.theme-light [class*="bg-green-6"].text-white, html.theme-light [class*="bg-green-7"].text-white,
+html.theme-light [class*="bg-green-5"] .text-white, html.theme-light [class*="bg-green-6"] .text-white, html.theme-light [class*="bg-green-7"] .text-white,
+html.theme-light [class*="bg-rose-5"].text-white, html.theme-light [class*="bg-rose-6"].text-white, html.theme-light [class*="bg-rose-7"].text-white,
+html.theme-light [class*="bg-rose-5"] .text-white, html.theme-light [class*="bg-rose-6"] .text-white, html.theme-light [class*="bg-rose-7"] .text-white,
+html.theme-light [class*="bg-red-5"].text-white, html.theme-light [class*="bg-red-6"].text-white, html.theme-light [class*="bg-red-7"].text-white,
+html.theme-light [class*="bg-red-5"] .text-white, html.theme-light [class*="bg-red-6"] .text-white, html.theme-light [class*="bg-red-7"] .text-white,
+html.theme-light [class*="bg-amber-5"].text-white, html.theme-light [class*="bg-amber-6"].text-white, html.theme-light [class*="bg-amber-7"].text-white,
+html.theme-light [class*="bg-amber-5"] .text-white, html.theme-light [class*="bg-amber-6"] .text-white, html.theme-light [class*="bg-amber-7"] .text-white,
+html.theme-light [class*="bg-yellow-5"].text-white, html.theme-light [class*="bg-yellow-6"].text-white, html.theme-light [class*="bg-yellow-7"].text-white,
+html.theme-light [class*="bg-yellow-5"] .text-white, html.theme-light [class*="bg-yellow-6"] .text-white, html.theme-light [class*="bg-yellow-7"] .text-white,
+html.theme-light [class*="bg-blue-5"].text-white, html.theme-light [class*="bg-blue-6"].text-white, html.theme-light [class*="bg-blue-7"].text-white,
+html.theme-light [class*="bg-blue-5"] .text-white, html.theme-light [class*="bg-blue-6"] .text-white, html.theme-light [class*="bg-blue-7"] .text-white,
+html.theme-light [class*="bg-sky-5"].text-white, html.theme-light [class*="bg-sky-6"].text-white, html.theme-light [class*="bg-sky-7"].text-white,
+html.theme-light [class*="bg-sky-5"] .text-white, html.theme-light [class*="bg-sky-6"] .text-white, html.theme-light [class*="bg-sky-7"] .text-white,
+html.theme-light [class*="bg-indigo-5"].text-white, html.theme-light [class*="bg-indigo-6"].text-white, html.theme-light [class*="bg-indigo-7"].text-white,
+html.theme-light [class*="bg-indigo-5"] .text-white, html.theme-light [class*="bg-indigo-6"] .text-white, html.theme-light [class*="bg-indigo-7"] .text-white,
+html.theme-light [class*="bg-violet-5"].text-white, html.theme-light [class*="bg-violet-6"].text-white, html.theme-light [class*="bg-violet-7"].text-white,
+html.theme-light [class*="bg-violet-5"] .text-white, html.theme-light [class*="bg-violet-6"] .text-white, html.theme-light [class*="bg-violet-7"] .text-white,
+html.theme-light [class*="bg-purple-5"].text-white, html.theme-light [class*="bg-purple-6"].text-white, html.theme-light [class*="bg-purple-7"].text-white,
+html.theme-light [class*="bg-purple-5"] .text-white, html.theme-light [class*="bg-purple-6"] .text-white, html.theme-light [class*="bg-purple-7"] .text-white,
+html.theme-light [class*="bg-cyan-5"].text-white, html.theme-light [class*="bg-cyan-6"].text-white, html.theme-light [class*="bg-cyan-7"].text-white,
+html.theme-light [class*="bg-cyan-5"] .text-white, html.theme-light [class*="bg-cyan-6"] .text-white, html.theme-light [class*="bg-cyan-7"] .text-white,
+html.theme-light [class*="bg-teal-5"].text-white, html.theme-light [class*="bg-teal-6"].text-white, html.theme-light [class*="bg-teal-7"].text-white,
+html.theme-light [class*="bg-teal-5"] .text-white, html.theme-light [class*="bg-teal-6"] .text-white, html.theme-light [class*="bg-teal-7"] .text-white,
+html.theme-light [class*="bg-orange-5"].text-white, html.theme-light [class*="bg-orange-6"].text-white, html.theme-light [class*="bg-orange-7"].text-white,
+html.theme-light [class*="bg-orange-5"] .text-white, html.theme-light [class*="bg-orange-6"] .text-white, html.theme-light [class*="bg-orange-7"] .text-white,
+html.theme-light [class*="bg-pink-5"].text-white, html.theme-light [class*="bg-pink-6"].text-white, html.theme-light [class*="bg-pink-7"].text-white,
+html.theme-light [class*="bg-pink-5"] .text-white, html.theme-light [class*="bg-pink-6"] .text-white, html.theme-light [class*="bg-pink-7"] .text-white,
+html.theme-light [class*="bg-fuchsia-5"].text-white, html.theme-light [class*="bg-fuchsia-6"].text-white, html.theme-light [class*="bg-fuchsia-7"].text-white,
+html.theme-light [class*="bg-fuchsia-5"] .text-white, html.theme-light [class*="bg-fuchsia-6"] .text-white, html.theme-light [class*="bg-fuchsia-7"] .text-white,
+html.theme-light [class*="bg-lime-5"].text-white, html.theme-light [class*="bg-lime-6"].text-white, html.theme-light [class*="bg-lime-7"].text-white,
+html.theme-light [class*="bg-lime-5"] .text-white, html.theme-light [class*="bg-lime-6"] .text-white, html.theme-light [class*="bg-lime-7"] .text-white,
+html.theme-light [class*="bg-gradient"] .text-white, html.theme-light [class*="bg-gradient"].text-white,
+html.theme-light [class*="bg-primary"].text-white, html.theme-light [class*="bg-primary"] .text-white,
+html.theme-light [class*="bg-black"].text-white, html.theme-light [class*="bg-black"] .text-white,
+html.theme-light video ~ * .text-white { color: rgb(255 255 255); }
+/* Pale accent text (made for dark backgrounds) → deeper shade for contrast on light. */
+html.theme-light .text-emerald-200 { color: rgb(4 120 87); }
+html.theme-light .text-emerald-300 { color: rgb(4 120 87); }
+html.theme-light .text-emerald-400 { color: rgb(5 150 105); }
+html.theme-light .text-green-200 { color: rgb(21 128 61); }
+html.theme-light .text-green-300 { color: rgb(21 128 61); }
+html.theme-light .text-green-400 { color: rgb(22 163 74); }
+html.theme-light .text-rose-200 { color: rgb(190 18 60); }
+html.theme-light .text-rose-300 { color: rgb(190 18 60); }
+html.theme-light .text-rose-400 { color: rgb(225 29 72); }
+html.theme-light .text-red-200 { color: rgb(185 28 28); }
+html.theme-light .text-red-300 { color: rgb(185 28 28); }
+html.theme-light .text-red-400 { color: rgb(220 38 38); }
+html.theme-light .text-amber-200 { color: rgb(180 83 9); }
+html.theme-light .text-amber-300 { color: rgb(180 83 9); }
+html.theme-light .text-amber-400 { color: rgb(217 119 6); }
+html.theme-light .text-yellow-200 { color: rgb(161 98 7); }
+html.theme-light .text-yellow-300 { color: rgb(161 98 7); }
+html.theme-light .text-yellow-400 { color: rgb(202 138 4); }
+html.theme-light .text-blue-200 { color: rgb(29 78 216); }
+html.theme-light .text-blue-300 { color: rgb(29 78 216); }
+html.theme-light .text-blue-400 { color: rgb(37 99 235); }
+html.theme-light .text-sky-200 { color: rgb(3 105 161); }
+html.theme-light .text-sky-300 { color: rgb(3 105 161); }
+html.theme-light .text-sky-400 { color: rgb(2 132 199); }
+html.theme-light .text-indigo-200 { color: rgb(67 56 202); }
+html.theme-light .text-indigo-300 { color: rgb(67 56 202); }
+html.theme-light .text-indigo-400 { color: rgb(79 70 229); }
+html.theme-light .text-violet-200 { color: rgb(109 40 217); }
+html.theme-light .text-violet-300 { color: rgb(109 40 217); }
+html.theme-light .text-violet-400 { color: rgb(124 58 237); }
+html.theme-light .text-purple-200 { color: rgb(126 34 206); }
+html.theme-light .text-purple-300 { color: rgb(126 34 206); }
+html.theme-light .text-purple-400 { color: rgb(147 51 234); }
+html.theme-light .text-cyan-200 { color: rgb(14 116 144); }
+html.theme-light .text-cyan-300 { color: rgb(14 116 144); }
+html.theme-light .text-cyan-400 { color: rgb(8 145 178); }
+html.theme-light .text-teal-200 { color: rgb(15 118 110); }
+html.theme-light .text-teal-300 { color: rgb(15 118 110); }
+html.theme-light .text-teal-400 { color: rgb(13 148 136); }
+html.theme-light .text-orange-200 { color: rgb(194 65 12); }
+html.theme-light .text-orange-300 { color: rgb(194 65 12); }
+html.theme-light .text-orange-400 { color: rgb(234 88 12); }
+html.theme-light .text-pink-200 { color: rgb(190 24 93); }
+html.theme-light .text-pink-300 { color: rgb(190 24 93); }
+html.theme-light .text-pink-400 { color: rgb(219 39 119); }
+html.theme-light .text-fuchsia-200 { color: rgb(162 28 175); }
+html.theme-light .text-fuchsia-300 { color: rgb(162 28 175); }
+html.theme-light .text-fuchsia-400 { color: rgb(192 38 211); }
+html.theme-light .text-lime-200 { color: rgb(77 124 15); }
+html.theme-light .text-lime-300 { color: rgb(77 124 15); }
+html.theme-light .text-lime-400 { color: rgb(101 163 13); }
+html.theme-light ::-webkit-scrollbar-thumb { background: rgb(203 213 225); }
+
 /* ── Opt-in themes (data-theme attribute on <html>) ────────────────── */
 
 /* Robin's-Egg — the previous brand teal+saffron palette. */

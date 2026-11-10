@@ -205,12 +205,22 @@ export async function setCanManageWorkroom(req: AuthRequest, res: Response): Pro
 export async function setCanEditAllClients(req: AuthRequest, res: Response): Promise<void> {
   try {
     const enabled = req.body.enabled === true || req.body.enabled === 'true';
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
+    // Nov 2026 — scope to the admin's own organization and log the change
+    // (it previously updated any user id, unlogged). Same flag that
+    // Team & roles → "Work on all clients" sets.
+    const me = await User.findById(req.user!.id).select('organizationId').lean();
+    const user = await User.findOneAndUpdate(
+      { _id: req.params.id, organizationId: (me as any)?.organizationId },
       { canEditAllClients: enabled },
       { new: true },
     ).select('-passwordHash');
     if (!user) { res.status(404).json({ error: 'User not found' }); return; }
+    ActivityLog.create({
+      organizationId: (me as any)?.organizationId, userId: req.user!.id,
+      action: enabled ? 'access.all_clients_granted' : 'access.all_clients_revoked',
+      entity: 'user', entityId: user._id,
+      metadata: { label: `${user.name} ${enabled ? 'can now work on all clients' : 'is back to their own clients only'}` },
+    }).catch(() => {});
     res.json(user);
   } catch (err) { res.status(500).json({ error: (err as Error).message }); }
 }

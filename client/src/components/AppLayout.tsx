@@ -82,7 +82,7 @@ export function PersistentAppLayout({ children }: { children: ReactNode }) {
 }
 
 function AppLayoutInner({ children }: Props) {
-  const { user, role } = useAuth();
+  const { user, role, refreshProfile } = useAuth();
   const location = useLocation();
   const socket = useSocket();
   const { isSharing, stopSharing } = useScreenShare();
@@ -183,8 +183,12 @@ function AppLayoutInner({ children }: Props) {
   // cause "chat dies after navigating around".
   useEffect(() => {
     if (!socket) return;
-    const onNotification = (data: { title: string; body?: string; message?: string }) => {
+    const onNotification = (data: { title: string; body?: string; message?: string; type?: string }) => {
       toast(data.title, { description: data.body || data.message, icon: '🔔', duration: 6000 });
+      // Nov 2026 — someone changed what this person can open (e.g. "work on
+      // all clients"). Re-read their profile so menus/pages update now,
+      // without asking them to sign out and back in.
+      if (data?.type && String(data.type).startsWith('access.')) { refreshProfile().catch(() => {}); }
     };
     const onChatMention = (data: { from: string; content: string }) => {
       if (!location.pathname.startsWith('/chat')) {

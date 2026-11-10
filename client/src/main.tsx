@@ -4,6 +4,10 @@ import './index.css';
 import App from './App';
 import { installGlobalErrorReporters } from '@/lib/errorReporter';
 import { applyCacheResetIfNeeded } from '@/lib/cacheReset';
+import { applyTheme, getTheme } from '@/lib/theme';
+
+// Nov 2026 — light/dark switch (index.html also does this pre-paint).
+applyTheme(getTheme());
 
 // Catch unhandled JS errors and ship them to /api/logs/error so admins
 // have one centralized crash log for both server and client errors.

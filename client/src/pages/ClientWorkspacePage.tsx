@@ -204,7 +204,8 @@ export default function ClientWorkspacePage() {
   // level reassignService already enforces server-side (admin or the
   // delegated canEditAllClients flag — NOT sales/employee, since this
   // moves who's accountable for the work, not just CRM metadata).
-  const canReassignOwner = role === 'admin' || user?.canEditAllClients === true;
+  // Nov 2026 — sales (Rishi) can change the owner too (owner approved).
+  const canReassignOwner = role === 'admin' || role === 'sales' || ((user as any)?.roles || []).includes('sales') || user?.canEditAllClients === true;
   const [reassignBusy, setReassignBusy] = useState(false);
   const navigate = useNavigate();
   // Click a service card → drill into its Stage Workspace (Layer 2).

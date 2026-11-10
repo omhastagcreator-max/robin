@@ -286,7 +286,7 @@ export default function StageWorkspacePage() {
             etaAt={etaAt || undefined}
             blockerReason={stageBlocked ? wf.blockerReason : undefined}
             teammates={teammates}
-            canReassign={canEditAny}
+            canReassign={canEditAny || role === 'sales' || ((user as any)?.roles || []).includes('sales')}
             onReassignOwner={handleReassignOwner}
             reassignBusy={reassignBusy}
           />

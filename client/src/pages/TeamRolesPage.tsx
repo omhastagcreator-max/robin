@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import * as api from '@/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { AddMemberModal, TEAM_OPTIONS } from '@/components/admin/AddMemberModal';
+import { AllClientsAccessCard, canGrantAllClients } from '@/components/admin/AllClientsAccessCard';
 
 /**
  * Team & roles — Oct 2026 (owner: "ask me about the employees, their role and
@@ -24,6 +25,9 @@ export default function TeamRolesPage() {
   const { user, role } = useAuth();
   const isAdmin = [role, ...((user as any)?.roles || [])].includes('admin');
   const allowed = isAdmin || (user as any)?.canViewOversight === true;
+  // Nov 2026 — sales (Rishi) and Om can open this page just for the
+  // "Work on all clients" switches, without the full roster controls.
+  const canGrant = canGrantAllClients(user, role);
   const [rows, setRows] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -45,6 +49,15 @@ export default function TeamRolesPage() {
     finally { setBusy(null); }
   };
 
+  if (!allowed && canGrant) return (
+    <div className="flex-1 flex flex-col min-h-0 bg-slate-950 p-6 space-y-5 overflow-y-auto w-full">
+      <div className="pb-3 border-b border-slate-800/80">
+        <h2 className="text-xl font-bold text-white tracking-tight"><i className="fa-solid fa-unlock-keyhole text-emerald-400 mr-2"></i>Client access</h2>
+        <p className="text-xs text-slate-400 mt-0.5">Choose who can work on every client.</p>
+      </div>
+      <AllClientsAccessCard />
+    </div>
+  );
   if (!allowed) return <div className="p-10 text-center text-slate-400 text-sm">Team & roles is for admin and managers.</div>;
   const active = rows.filter(r => r.isActive);
   const removed = rows.filter(r => !r.isActive);
@@ -116,6 +129,8 @@ export default function TeamRolesPage() {
           </table>
         </div>
       </div>
+
+      {canGrant && <AllClientsAccessCard />}
 
       {removed.length > 0 && (
         <div className="bg-slate-900 border border-slate-800 rounded-xl">

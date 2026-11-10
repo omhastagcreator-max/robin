@@ -673,6 +673,9 @@ export const listOversightAccess = () => api.get('/oversight/access').then(r => 
 export const activityLogs = (params: Record<string, string>) => api.get('/oversight/logs', { params }).then(r => r.data);
 export const activityLogsCsv = (params: Record<string, string>) => api.get('/oversight/logs', { params: { ...params, format: 'csv' }, responseType: 'blob' }).then(r => r.data as Blob);
 export const listTeamMembers  = () => api.get('/oversight/members').then(r => r.data);
+// Nov 2026 — "work on all clients" (canEditAllClients). Admin, sales (Rishi) or Om can switch it on for a teammate.
+export const listAllClientsAccess = () => api.get('/oversight/all-clients-access').then(r => r.data);
+export const setAllClientsAccess  = (id: string, enabled: boolean) => api.put(`/oversight/all-clients-access/${id}`, { enabled }).then(r => r.data);
 export const updateTeamMember = (id: string, patch: { role?: string; teams?: string[]; department?: string; isActive?: boolean }) => api.put(`/oversight/members/${id}`, patch).then(r => r.data);
 export const myAttendance     = (month: string, userId?: string) => api.get('/my-attendance', { params: { month, ...(userId ? { userId } : {}) } }).then(r => r.data);
 export const clientsCleanupList  = () => api.get('/client-workflows/cleanup/list').then(r => r.data);

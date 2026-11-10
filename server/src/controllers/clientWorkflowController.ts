@@ -1099,7 +1099,10 @@ export async function addNote(req: AuthRequest, res: Response): Promise<void> {
 // ── Admin: reassign a service ────────────────────────────────────────────
 export async function reassignService(req: AuthRequest, res: Response): Promise<void> {
   try {
-    if (!isPrivilegedEditor(req.user!)) { res.status(403).json({ error: 'Admin only' }); return; }
+    // Nov 2026 — owner said yes: sales (Rishi) can also change a stage's
+    // owner (e.g. hand work to Amit), alongside admin / canEditAllClients (Om).
+    const isSalesUser = req.user!.role === 'sales' || (req.user!.roles || []).includes('sales');
+    if (!isPrivilegedEditor(req.user!) && !isSalesUser) { res.status(403).json({ error: 'Only admin, sales or Om can change the owner' }); return; }
     const orgId = await getOrgId(req.user!.id);
     if (!orgId) { res.status(400).json({ error: 'No organization' }); return; }
     const { userId } = req.body || {};
@@ -1133,7 +1136,7 @@ export async function reassignService(req: AuthRequest, res: Response): Promise<
         io, organizationId: orgId, actorId: req.user!.id, userId,
         type: 'workflow.assigned',
         title: `New client work: ${svc.label}`,
-        body:  `${wf.clientName || 'A client'} — admin reassigned ${svc.label} to you.`,
+        body:  `${wf.clientName || 'A client'} — ${req.user!.name || 'admin'} assigned ${svc.label} to you.`,
         entityId: String(wf._id), entityType: 'workflow',
       });
     }
@@ -1142,7 +1145,7 @@ export async function reassignService(req: AuthRequest, res: Response): Promise<
         io, organizationId: orgId, actorId: req.user!.id, userId: before,
         type: 'workflow.unassigned',
         title: `Reassigned away from ${svc.label}`,
-        body:  `Admin moved ${svc.label} on ${wf.clientName || 'a client'} to someone else.`,
+        body:  `${req.user!.name || 'Admin'} moved ${svc.label} on ${wf.clientName || 'a client'} to someone else.`,
         entityId: String(wf._id), entityType: 'workflow',
       });
     }
